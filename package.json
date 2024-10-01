@@ -1,0 +1,12 @@
+{
+  "name": "manifold",
+  "version": "0.1",
+  "private": true,
+  "workspaces": [
+    "cloudflare"
+  ],
+  "scripts": {
+    "dev:cloudflare": "npm run dev --host --workspace=cloudflare",
+    "deploy:cloudflare": "npm run deploy --workspace=cloudflare"
+  }
+}
