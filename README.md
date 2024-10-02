@@ -2,13 +2,28 @@
 
 Trigger an action on any given URL.
 
-## TODO: platform compatiblity
+## TODO: tooling
 
-- [x] Cloudflare Workers
-- [ ] AWS Lambda
-- [ ] NodeJS
+- [ ] As CLI
+- [ ] As a package
+- [ ] As is
+
+## TODO: runtimes
+
+- [x] Node
 - [ ] Bun
 - [ ] Deno
+
+## TODO: launch wizards
+
+- [ ] GitHub actions
+- [x] Cloudflare Workers
+- [ ] SST
+
+## TODO: platforms
+
+- [x] Cloudflare
+- [ ] AWS
 
 ## TODO: features
 
