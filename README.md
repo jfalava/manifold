@@ -2,11 +2,11 @@
 
 Trigger an action on any given URL.
 
-## TODO: tooling
+## TODO: CLI tool
 
-- [ ] As CLI
-- [ ] As a package
-- [ ] As is
+- [ ] learn rust lmao
+- [ ] learn [ratatui](https://github.com/ratatui/ratatui)
+- [ ] build cli for `ts` file generators with type checkers
 
 ## TODO: runtimes
 
