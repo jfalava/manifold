@@ -1,6 +1,6 @@
 # manifold
 
-Trigger an action on any given URL.
+Trigger actions on any given URL request.
 
 ## TODO: CLI tool
 
@@ -14,10 +14,12 @@ Trigger an action on any given URL.
 - [ ] Bun
 - [ ] Deno
 
-## TODO: launch wizards
+## TODO: OOB ready configurations
 
-- [ ] GitHub actions
+- [ ] GitHub Actions
 - [x] Cloudflare Workers
+- [ ] Jenkins
+- [ ] AWS CloudFormation
 - [ ] SST
 
 ## TODO: platforms
@@ -31,3 +33,4 @@ Trigger an action on any given URL.
 - [ ] HTTPS rewrite
 - [ ] Add headers and cookies
 - [ ] Browser Cache TTL modifications
+- [ ] A/B Testing
