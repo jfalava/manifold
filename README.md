@@ -1,6 +1,6 @@
 # manifold
 
-Trigger actions on any given URL request.
+Ready to deploy stack configuration boilerplate generator
 
 ## TODO: CLI tool
 
