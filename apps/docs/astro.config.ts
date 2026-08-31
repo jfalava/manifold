@@ -15,7 +15,7 @@ const nimbusConfig = defineNimbusConfig({
     items: [
       {
         label: "Guides",
-        items: ["architecture", "auth", "paperback", "development"],
+        items: ["architecture", "auth", "install", "development"],
       },
       {
         label: "CLI",
