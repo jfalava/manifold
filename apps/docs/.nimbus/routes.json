@@ -6,21 +6,21 @@
     "/404",
     "/architecture",
     "/auth",
-    "/paperback",
-    "/development",
     "/cli",
-    "/cli/migrate/md2al",
     "/cli/migrate/al2md",
-    "/cli/migrate/wipe-al",
     "/cli/migrate/al2pas5",
+    "/cli/migrate/md2al",
+    "/cli/migrate/wipe-al",
     "/cli/ops/pending",
     "/cli/ops/retry",
     "/cli/reconcile-diff",
+    "/cli/registry/comix",
     "/cli/registry/import",
     "/cli/registry/mangadex",
-    "/cli/registry/comix",
     "/cli/stale-status",
-    "/cli/unfollow-dropped"
+    "/cli/unfollow-dropped",
+    "/development",
+    "/paperback"
   ],
   "opaqueNamespaces": []
 }
