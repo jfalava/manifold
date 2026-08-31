@@ -33,6 +33,7 @@
     "@vitejs/plugin-react": "catalog:build",
     "oxc-transform-react": "catalog:build",
     "oxlint": "catalog:build",
+    "oxlint-tsgolint": "catalog:build",
     "tailwindcss": "catalog:styling",
     "typescript": "catalog:build",
     "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",

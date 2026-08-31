@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "lint": "oxlint",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
@@ -13,6 +14,8 @@
   "devDependencies": {
       "@cloudflare/workers-types": "catalog:cloudflare",
       "bun-types": "catalog:types",
+      "oxlint": "catalog:build",
+      "oxlint-tsgolint": "catalog:build",
       "typescript": "catalog:build"
   }
 }

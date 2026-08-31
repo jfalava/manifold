@@ -5,6 +5,12 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
 
+import {
+  agentIgnores,
+  antiSlopJsPlugins,
+  antiSlopRules,
+} from "../../oxlint.config.ts";
+
 const MOUNT_PATH = "/admin/";
 
 export default defineConfig({
@@ -60,11 +66,19 @@ export default defineConfig({
       preserveDuplicates: false,
       preserveWhitespace: false,
     },
-    ignorePatterns: ["cloudflare-env.d.ts", "src/routeTree.gen.ts", "node_modules/**", "tools/**"],
+    // ignorePatterns stay within this package: oxlint rejects `..` segments.
+    ignorePatterns: [
+      ...agentIgnores,
+      "cloudflare-env.d.ts",
+      "src/routeTree.gen.ts",
+      "node_modules/**",
+    ],
   },
   lint: {
     plugins: ["eslint", "react", "typescript", "jsx-a11y", "unicorn", "oxc", "import", "promise"],
-    jsPlugins: [{ name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" }],
+    // Generic anti-slop only — admin has no direct `effect` dependency.
+    // jsPlugins specifier may use `../..` (plugin load path); ignorePatterns may not.
+    jsPlugins: antiSlopJsPlugins("../.."),
     categories: {
       correctness: "error",
       suspicious: "warn",
@@ -73,7 +87,7 @@ export default defineConfig({
       browser: true,
       ESNext: true,
     },
-    ignorePatterns: ["*.d.ts", "**/*.d.ts", "public/**", "tools/**"],
+    ignorePatterns: [...agentIgnores, "*.d.ts", "**/*.d.ts", "public/**"],
     rules: {
       "typescript/no-explicit-any": "error",
       "no-underscore-dangle": [
@@ -169,21 +183,7 @@ export default defineConfig({
       "react/no-unstable-nested-components": ["warn", { allowAsProps: true }],
       // Side-effect-only stylesheet imports are the standard Vite pattern.
       "import/no-unassigned-import": ["warn", { allow: ["**/*.css"] }],
-      "anti-slop/no-chained-type-assertions": "error",
-      "anti-slop/no-conditional-empty-object-spread": "error",
-      "anti-slop/no-known-value-widening": "error",
-      "anti-slop/no-module-mocking": "error",
-      "anti-slop/no-object-parameters": "error",
-      "anti-slop/no-reflect-apply": "error",
-      "anti-slop/no-reflect-get": "error",
-      "anti-slop/no-runtime-typeof": "error",
-      "anti-slop/no-shape-in-symbol-names": "error",
-      "anti-slop/no-unknown-parameters": "error",
-      "anti-slop/no-unknown-returns": "error",
-      "anti-slop/no-unknown-type-aliases": "error",
-      "anti-slop/no-unsafe-dictionary-type": "error",
-      "anti-slop/no-widen-then-assert": "error",
-      "anti-slop/require-safety-comment-for-type-assertion": "error",
+      ...antiSlopRules,
     },
     options: {
       typeAware: true,

@@ -27,6 +27,7 @@
         "@vitejs/plugin-react": "6.1.1",
         "oxc-transform-react": "0.147.0",
         "oxlint": "1.80.0",
+        "oxlint-tsgolint": "7.0.2001",
         "@oxlint/plugins": "1.80.0",
         "pagefind": "1.5.2",
         "satteri": "0.10.5",
@@ -91,8 +92,8 @@
   "scripts": {
     "check": "bun run typecheck && bun run --cwd apps/router typecheck && bun run check:docs && bun run --cwd apps/admin check",
     "check:global": "bun run typecheck && bun run --cwd apps/router typecheck && bun run check:docs && bun run --cwd apps/admin check",
-    "lint": "bun run --cwd apps/admin vp lint && bun run --cwd apps/docs lint:docs",
-    "lint:global": "bun run lint && bun run typecheck && bun run --cwd apps/router typecheck && bun run check:docs",
+    "lint": "bun run lint:global",
+    "lint:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter docs --filter @manifold/router --filter @manifold/canonical --filter @manifold/comix --filter @manifold/mangadex --filter @manifold/mangaupdates --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/source --filter @manifold/tracker --filter @manifold/iac lint",
     "typecheck": "tsc -b && bun run --cwd iac typecheck && bun run --cwd apps/api typecheck:test && bun run --cwd apps/cli typecheck && bun run --cwd apps/admin typecheck",
     "migrate:md2al": "bun run --cwd apps/cli md2al",
     "migrate:al2md": "bun run --cwd apps/cli al2md",
@@ -118,7 +119,10 @@
     "manifold": "bun run --cwd apps/cli manifold"
   },
   "devDependencies": {
+    "@oxlint/plugins": "catalog:build",
     "@types/node": "catalog:types",
+    "oxlint": "catalog:build",
+    "oxlint-tsgolint": "catalog:build",
     "realm": "catalog:paperback",
     "typescript": "catalog:build"
   },

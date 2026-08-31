@@ -11,10 +11,13 @@
       "effect": "catalog:effect"
   },
   "scripts": {
+      "lint": "oxlint",
       "typecheck": "tsc --noEmit",
       "test": "vitest run"
   },
   "devDependencies": {
+      "oxlint": "catalog:build",
+      "oxlint-tsgolint": "catalog:build",
       "typescript": "catalog:build",
       "vitest": "catalog:build"
   }

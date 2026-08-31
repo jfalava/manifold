@@ -8,6 +8,7 @@
     "plan": "alchemy plan",
     "deploy": "alchemy deploy",
     "destroy": "alchemy destroy",
+    "lint": "oxlint",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -19,6 +20,8 @@
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:cloudflare",
     "@types/node": "catalog:types",
+    "oxlint": "catalog:build",
+    "oxlint-tsgolint": "catalog:build",
     "typescript": "catalog:build"
   }
 }

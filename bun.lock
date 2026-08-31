@@ -5,7 +5,10 @@
     "": {
       "name": "manga-sync-monorepo",
       "devDependencies": {
+        "@oxlint/plugins": "catalog:build",
         "@types/node": "catalog:types",
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "realm": "catalog:paperback",
         "typescript": "catalog:build",
       },
@@ -32,6 +35,7 @@
         "@vitejs/plugin-react": "catalog:build",
         "oxc-transform-react": "catalog:build",
         "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "tailwindcss": "catalog:styling",
         "typescript": "catalog:build",
         "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
@@ -54,6 +58,8 @@
       },
       "devDependencies": {
         "@cloudflare/workers-types": "catalog:cloudflare",
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "typescript": "catalog:build",
         "vite": "catalog:build",
         "vitest": "catalog:build",
@@ -76,6 +82,8 @@
       "devDependencies": {
         "@types/bun": "catalog:types",
         "@types/cli-progress": "catalog:types",
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "typescript": "catalog:build",
         "vitest": "catalog:build",
       },
@@ -97,6 +105,7 @@
       "devDependencies": {
         "@astrojs/check": "catalog:build",
         "@tailwindcss/vite": "catalog:styling",
+        "oxlint": "catalog:build",
         "pagefind": "catalog:build",
         "satteri": "catalog:build",
         "tailwindcss": "catalog:styling",
@@ -112,6 +121,8 @@
       "devDependencies": {
         "@cloudflare/workers-types": "catalog:cloudflare",
         "bun-types": "catalog:types",
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "typescript": "catalog:build",
       },
     },
@@ -127,6 +138,8 @@
       "devDependencies": {
         "@cloudflare/workers-types": "catalog:cloudflare",
         "@types/node": "catalog:types",
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "typescript": "catalog:build",
       },
     },
@@ -137,6 +150,8 @@
         "effect": "catalog:effect",
       },
       "devDependencies": {
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "typescript": "catalog:build",
         "vitest": "catalog:build",
       },
@@ -148,6 +163,8 @@
         "effect": "catalog:effect",
       },
       "devDependencies": {
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "typescript": "catalog:build",
       },
     },
@@ -158,6 +175,8 @@
         "effect": "catalog:effect",
       },
       "devDependencies": {
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "typescript": "catalog:build",
         "vitest": "catalog:build",
       },
@@ -169,6 +188,8 @@
         "effect": "catalog:effect",
       },
       "devDependencies": {
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "typescript": "catalog:build",
         "vitest": "catalog:build",
       },
@@ -180,6 +201,8 @@
         "@paperback/types": "catalog:paperback",
       },
       "devDependencies": {
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "typescript": "catalog:build",
         "vitest": "catalog:build",
       },
@@ -192,6 +215,8 @@
         "@paperback/types": "catalog:paperback",
       },
       "devDependencies": {
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "typescript": "catalog:build",
         "vitest": "catalog:build",
       },
@@ -209,6 +234,8 @@
       },
       "devDependencies": {
         "@paperback/toolchain": "catalog:paperback",
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "typescript": "catalog:build",
         "vitest": "catalog:build",
       },
@@ -224,6 +251,8 @@
       },
       "devDependencies": {
         "@paperback/toolchain": "catalog:paperback",
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
         "typescript": "catalog:build",
         "vitest": "catalog:build",
       },
@@ -239,6 +268,7 @@
       "@vitejs/plugin-react": "6.1.1",
       "oxc-transform-react": "0.147.0",
       "oxlint": "1.80.0",
+      "oxlint-tsgolint": "7.0.2001",
       "pagefind": "1.5.2",
       "satteri": "0.10.5",
       "typescript": "7.0.2",

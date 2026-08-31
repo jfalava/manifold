@@ -16,6 +16,7 @@
     "ops": "bun index.ts ops",
     "reconcile:diff": "bun index.ts reconcile diff",
     "registry:import": "bun index.ts registry import",
+    "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "registry:mangadex": "bun index.ts registry mangadex",
@@ -33,6 +34,8 @@
   "devDependencies": {
     "@types/bun": "catalog:types",
     "@types/cli-progress": "catalog:types",
+    "oxlint": "catalog:build",
+    "oxlint-tsgolint": "catalog:build",
     "typescript": "catalog:build",
     "vitest": "catalog:build"
   }

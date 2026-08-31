@@ -15,6 +15,7 @@
     "effect": "catalog:effect"
   },
   "scripts": {
+    "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "bundle": "paperback-cli bundle --folder production",
@@ -24,6 +25,8 @@
   },
   "devDependencies": {
     "@paperback/toolchain": "catalog:paperback",
+    "oxlint": "catalog:build",
+    "oxlint-tsgolint": "catalog:build",
     "typescript": "catalog:build",
     "vitest": "catalog:build"
   }

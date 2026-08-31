@@ -6,8 +6,11 @@
   "scripts": {
     "build": "bun scripts/build.ts",
     "typecheck": "astro check",
+    "lint": "bun run lint:oxlint && bun run lint:docs",
     "lint:docs": "nimbus-docs lint",
-    "lint:docs:fix": "nimbus-docs lint --fix"
+    "lint:docs:fix": "nimbus-docs lint --fix",
+    "lint:oxlint": "oxlint src",
+    "lint:oxlint:fix": "oxlint src --fix"
   },
   "dependencies": {
       "@cloudflare/nimbus-docs": "catalog:docs",
@@ -23,6 +26,7 @@
   "devDependencies": {
       "@astrojs/check": "catalog:build",
       "@tailwindcss/vite": "catalog:styling",
+      "oxlint": "catalog:build",
       "pagefind": "catalog:build",
       "satteri": "catalog:build",
       "tailwindcss": "catalog:styling",

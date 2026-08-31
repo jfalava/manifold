@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "test:oauth": "vitest run test/oauth.test.ts",
@@ -21,6 +22,8 @@
   },
   "devDependencies": {
       "@cloudflare/workers-types": "catalog:cloudflare",
+      "oxlint": "catalog:build",
+      "oxlint-tsgolint": "catalog:build",
       "typescript": "catalog:build",
       "vite": "catalog:build",
       "vitest": "catalog:build"
