@@ -1,0 +1,24 @@
+{
+  "name": "@manifold/iac",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "alchemy dev",
+    "plan": "alchemy plan",
+    "deploy": "alchemy deploy",
+    "destroy": "alchemy destroy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+      "@effect/platform-bun": "catalog:effect",
+      "@effect/platform-node": "catalog:effect",
+      "alchemy": "catalog:iac",
+      "effect": "catalog:effect"
+  },
+  "devDependencies": {
+      "@cloudflare/workers-types": "catalog:cloudflare",
+      "@types/node": "catalog:types",
+      "typescript": "catalog:build"
+  }
+}

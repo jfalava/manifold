@@ -1,0 +1,28 @@
+{
+  "name": "@manifold/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "test:oauth": "vitest run test/oauth.test.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+      "@effect/platform-bun": "catalog:effect",
+      "@effect/platform-node": "catalog:effect",
+      "@manifold/canonical": "workspace:*",
+      "@manifold/comix": "workspace:*",
+      "@manifold/mangadex": "workspace:*",
+      "@manifold/source": "workspace:*",
+      "@manifold/tracker": "workspace:*",
+      "effect": "catalog:effect",
+      "hono": "catalog:cloudflare"
+  },
+  "devDependencies": {
+      "@cloudflare/workers-types": "catalog:cloudflare",
+      "typescript": "catalog:build",
+      "vite": "catalog:build",
+      "vitest": "catalog:build"
+  }
+}

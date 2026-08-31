@@ -1,0 +1,39 @@
+{
+  "name": "@manifold/cli",
+  "private": true,
+  "description": "manifold CLI: migrations, op-log triage, drift reconciliation, registry backfill.",
+  "bin": {
+    "manifold": "./index.ts"
+  },
+  "type": "module",
+  "scripts": {
+    "manifold": "bun index.ts",
+    "md2al": "bun index.ts migrate md2al",
+    "al2md": "bun index.ts migrate al2md",
+    "wipe-al": "bun index.ts migrate wipe-al",
+    "al2pas5": "bun index.ts migrate al2pas5",
+    "stale-status": "bun index.ts stale-status",
+    "ops": "bun index.ts ops",
+    "reconcile:diff": "bun index.ts reconcile diff",
+    "registry:import": "bun index.ts registry import",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "registry:mangadex": "bun index.ts registry mangadex",
+    "registry:comix": "bun index.ts registry comix"
+  },
+  "dependencies": {
+      "@effect/platform-bun": "catalog:effect",
+      "@manifold/canonical": "workspace:*",
+      "@manifold/mangadex": "workspace:*",
+      "cli-progress": "catalog:cli",
+      "effect": "catalog:effect",
+      "listr2": "catalog:cli",
+      "picocolors": "catalog:cli"
+  },
+  "devDependencies": {
+      "@types/bun": "catalog:types",
+      "@types/cli-progress": "catalog:types",
+      "typescript": "catalog:build",
+      "vitest": "catalog:build"
+  }
+}

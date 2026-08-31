@@ -1,0 +1,95 @@
+import { adopt } from "alchemy/AdoptPolicy";
+import * as Cloudflare from "alchemy/Cloudflare";
+import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+type SecretsStoreResource = Cloudflare.SecretsStore.Store;
+type SecretResource = Cloudflare.SecretsStore.Secret;
+
+export type ManagedSecrets = Readonly<Record<string, SecretResource>>;
+
+const iacEnvFile = resolve(import.meta.dirname, "../.env");
+
+const readIacEnv = (): Map<string, string> => {
+  let contents: string;
+  try {
+    contents = readFileSync(iacEnvFile, "utf8");
+  } catch {
+    return new Map();
+  }
+
+  const values = new Map<string, string>();
+  for (const line of contents.split(/\r?\n/u)) {
+    const match = line.match(/^\s*(?:export\s+)?([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/u);
+    if (!match) continue;
+
+    const [, key, rawValue] = match;
+    if (!key || rawValue === undefined) continue;
+
+    const value =
+      (rawValue.startsWith('"') && rawValue.endsWith('"')) ||
+      (rawValue.startsWith("'") && rawValue.endsWith("'"))
+        ? rawValue.slice(1, -1)
+        : rawValue.replace(/\s+#.*$/u, "").trim();
+    values.set(key, value);
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+
+  return values;
+};
+
+const iacEnv = readIacEnv();
+
+const managedSecretValue = (secretName: string): string | undefined =>
+  process.env[`ALCHEMY_SECRET_${secretName}`] ??
+  iacEnv.get(`ALCHEMY_SECRET_${secretName}`);
+
+/**
+ * Resolves a secret value for local development (`alchemy dev`) as a
+ * redacted plain-string Worker binding. Local workers accept string secrets
+ * directly, which avoids booting a Secrets Store gateway per secret.
+ */
+export const localSecretValue = (
+  secretName: string
+): Redacted.Redacted<string> => {
+  const value = managedSecretValue(secretName) ?? iacEnv.get(secretName);
+
+  if (value === undefined || value === "") {
+    throw new Error(
+      `Missing local secret ${secretName}. Set ALCHEMY_SECRET_${secretName} in iac/.env.`
+    );
+  }
+
+  return Redacted.make(value);
+};
+
+/**
+ * Declares the secrets explicitly supplied for this Alchemy run as Secrets
+ * Store Secret resources. Values use the ALCHEMY_SECRET_ prefix so ordinary
+ * runtime environment variables never rotate a Cloudflare secret. Names
+ * without a supplied value are skipped — they must already exist in the
+ * account store for their bindings to resolve.
+ */
+export const defineManagedSecrets = Effect.fn("defineManagedSecrets")(
+  function* (store: SecretsStoreResource, secretNames: readonly string[]) {
+    const managed: Record<string, SecretResource> = {};
+
+    for (const secretName of secretNames) {
+      const value = managedSecretValue(secretName);
+      if (value === undefined || value === "") continue;
+
+      managed[secretName] = yield* Cloudflare.SecretsStore.Secret(
+        `ManagedSecret${secretName}`,
+        {
+          store,
+          name: secretName,
+          value: Redacted.make(value)
+        }
+      ).pipe(adopt(true));
+    }
+
+    return managed;
+  }
+);

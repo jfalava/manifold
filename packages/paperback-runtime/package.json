@@ -1,0 +1,21 @@
+{
+  "name": "@manifold/paperback-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@manifold/canonical": "workspace:*",
+    "@paperback/types": "catalog:paperback"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "catalog:build",
+    "vitest": "catalog:build"
+  }
+}

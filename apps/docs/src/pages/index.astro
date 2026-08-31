@@ -1,0 +1,81 @@
+---
+import DocsLayout from "../layouts/DocsLayout.astro";
+import { config } from "virtual:nimbus/config";
+import {
+  getBreadcrumbs,
+  getPrevNext,
+  getSidebar,
+} from "@cloudflare/nimbus-docs";
+import {
+  withBaseBreadcrumbs,
+  withBasePrevNext,
+  withBaseSidebar,
+} from "../lib/urls";
+
+const rawSidebar = await getSidebar("/", { collection: "docs" });
+const sidebar = withBaseSidebar(rawSidebar);
+const breadcrumbs = withBaseBreadcrumbs(await getBreadcrumbs("/", { collection: "docs" }));
+const prevNext = withBasePrevNext(await getPrevNext("/", { sidebarTree: rawSidebar }));
+const baseUrl = import.meta.env.BASE_URL;
+---
+
+<DocsLayout
+  title={config.title}
+  description={config.description}
+  sidebar={sidebar}
+  headings={false}
+  breadcrumbs={breadcrumbs}
+  prevNext={prevNext}
+  mode="custom"
+  collection="docs"
+>
+  <div class="mx-auto max-w-3xl px-6 py-16 lg:px-8 lg:py-20">
+    <p class="text-sm font-semibold uppercase tracking-[0.16em] text-primary">
+      Start here
+    </p>
+    <h1 class="mt-4 text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
+      Manga Sync
+    </h1>
+    <p class="mt-5 max-w-2xl text-lg leading-8 text-muted-foreground">
+      Production documentation for the personal-first layer that searches
+      canonical manga identities and connects them to MangaDex, Comix, and
+      Paperback.
+    </p>
+
+    <div class="mt-12 grid gap-6 border-t border-border pt-8 sm:grid-cols-2">
+      <section>
+        <h2 class="text-lg font-semibold text-foreground">Use the stack</h2>
+        <p class="mt-2 leading-7 text-muted-foreground">
+          Learn the request flow, then start with the canonical search endpoint
+          before matching provider-specific entries.
+        </p>
+        <a
+          href={`${baseUrl}get-started/`}
+          class="mt-4 inline-flex font-medium text-primary no-underline hover:underline"
+        >
+          Read the getting started guide →
+        </a>
+      </section>
+      <section>
+        <h2 class="text-lg font-semibold text-foreground">Understand the deployment</h2>
+        <p class="mt-2 leading-7 text-muted-foreground">
+          The router owns one production hostname. The sync API owns personal
+          state, and the static Nimbus site documents the Paperback surface.
+        </p>
+        <a
+          href={`${baseUrl}workers/router/`}
+          class="mt-4 inline-flex font-medium text-primary no-underline hover:underline"
+        >
+          View the worker map →
+        </a>
+      </section>
+    </div>
+
+    <div class="mt-12 rounded-xl border border-border bg-card p-6">
+      <h2 class="text-lg font-semibold text-foreground">Production URL</h2>
+      <code class="mt-3 block overflow-x-auto text-sm text-muted-foreground">
+        https://df.criccadamus.eu
+      </code>
+    </div>
+  </div>
+</DocsLayout>

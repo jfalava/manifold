@@ -1,0 +1,31 @@
+{
+  "name": "docs",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "typecheck": "astro check",
+    "lint:docs": "nimbus-docs lint",
+    "lint:docs:fix": "nimbus-docs lint --fix"
+  },
+  "dependencies": {
+      "@cloudflare/nimbus-docs": "catalog:docs",
+      "@fontsource-variable/inter": "catalog:fonts",
+      "@fontsource-variable/jetbrains-mono": "catalog:fonts",
+      "@iconify-json/ph": "catalog:docs",
+      "astro": "catalog:docs",
+      "astro-og-canvas": "catalog:docs",
+      "canvaskit-wasm": "catalog:docs",
+      "clsx": "catalog:styling",
+      "tailwind-merge": "catalog:styling"
+  },
+  "devDependencies": {
+      "@astrojs/check": "catalog:build",
+      "@tailwindcss/vite": "catalog:styling",
+      "pagefind": "catalog:build",
+      "satteri": "catalog:build",
+      "tailwindcss": "catalog:styling",
+      "typescript": "catalog:build"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "base": "/",
+  "knownRoutes": [
+    "/",
+    "/404",
+    "/cli",
+    "/get-started",
+    "/source-repository",
+    "/workers/paperback-catalog",
+    "/workers/router",
+    "/workers/sync-api"
+  ],
+  "opaqueNamespaces": []
+}

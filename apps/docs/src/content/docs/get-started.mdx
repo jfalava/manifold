@@ -1,0 +1,59 @@
+---
+title: Get started
+description: How to use the production Manga Sync surface and its Paperback source.
+audience: human
+sidebar:
+  order: 1
+  badge: Start here
+---
+
+Manga Sync is a personal-first layer between a canonical manga identity and the
+providers you read from. The public surface is intentionally small: use the
+docs to understand the workers, then use the API or Paperback source.
+
+## The production surface
+
+There is one public hostname:
+
+```text
+https://manifold.jfa.dev
+```
+
+The router serves the Nimbus documentation at the hostname root and mounts the
+health check and sync API under `/api/*`, plus the Paperback source repository
+under `/paperback/`.
+
+<Aside type="note" title="Production only">
+  This project does not publish a development worker, workers.dev endpoint, or
+  separate development stack. Deployments are made through Alchemy.
+</Aside>
+
+## First steps
+
+<Steps>
+  <Step title="Read the worker map">
+    Start with the <a href="/workers/router/">router</a>, then follow
+    the links to the <a href="/workers/sync-api/">SyncApi</a> and
+    <a href="/workers/paperback-catalog/">PaperbackCatalog</a> pages.
+  </Step>
+  <Step title="Search canonically">
+    Use `GET /api/v1/canonical/search?q=...` to search AniList and MyAnimeList
+    records before matching provider-specific entries.
+  </Step>
+  <Step title="Install the source">
+    Add the production URL from the
+    <a href="/source-repository/">source repository</a> page in
+    Paperback, then configure its personal API token in the source settings.
+    Save titles to your library before reading so chapter reads sync.
+  </Step>
+</Steps>
+
+## The sync model
+
+The canonical record is the stable identity. MangaDex and Comix are provider
+adapters matched to that identity; neither provider owns the personal record.
+Changes are written to the personal Durable Object first, and remote sync is a
+separate operation.
+
+Provider login state stays with the client that owns it. In particular,
+Paperback browser cookies are not sent through the sync API.

@@ -1,0 +1,16 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/canonical" },
+    { "path": "./packages/mangadex" },
+    { "path": "./packages/mangaupdates" },
+    { "path": "./packages/comix" },
+    { "path": "./packages/paperback-comix" },
+    { "path": "./packages/paperback-runtime" },
+    { "path": "./source" },
+    { "path": "./tracker" },
+    { "path": "./apps/api" },
+    { "path": "./apps/router" },
+    { "path": "./apps/cli" }
+  ]
+}

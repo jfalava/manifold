@@ -1,0 +1,30 @@
+{
+  "name": "@manifold/source",
+  "version": "2.0.27",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./catalog": "./src/catalog.ts"
+  },
+  "dependencies": {
+    "@manifold/canonical": "workspace:*",
+    "@manifold/mangadex": "workspace:*",
+    "@manifold/paperback-comix": "workspace:*",
+    "@manifold/paperback-runtime": "workspace:*",
+    "@paperback/types": "catalog:paperback",
+    "effect": "catalog:effect"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "bundle": "paperback-cli bundle --folder production",
+    "bundle:debug": "paperback-cli bundle --debug --folder production",
+    "serve": "paperback-cli serve",
+    "dev": "paperback-cli serve --watch"
+  },
+  "devDependencies": {
+    "@paperback/toolchain": "catalog:paperback",
+    "typescript": "catalog:build",
+    "vitest": "catalog:build"
+  }
+}

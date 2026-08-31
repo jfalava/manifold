@@ -1,0 +1,22 @@
+{
+  "name": "@manifold/paperback-comix",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./parser": "./src/parser.ts",
+    "./webview": "./src/webview.ts"
+  },
+  "dependencies": {
+      "@paperback/types": "catalog:paperback"
+  },
+  "scripts": {
+      "typecheck": "tsc --noEmit",
+      "test": "vitest run"
+  },
+  "devDependencies": {
+      "typescript": "catalog:build",
+      "vitest": "catalog:build"
+  }
+}

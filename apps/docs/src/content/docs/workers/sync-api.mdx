@@ -1,0 +1,56 @@
+---
+title: SyncApi
+description: The personal API and canonical-source coordinator.
+audience: human
+sidebar:
+  order: 2
+---
+
+`SyncApi` owns the HTTP API for the personal stack. It runs the canonical
+search flow, handles provider authentication callbacks, and coordinates with
+the `ManifoldSync` Durable Object.
+
+## Canonical search
+
+Search returns normalized records from the configured canonical providers:
+
+```http
+GET https://manifold.jfa.dev/api/v1/canonical/search?q=one%20piece&provider=all&limit=10
+Authorization: Bearer <manifold-sync-token>
+```
+
+Each provider is queried independently. A provider failure is reported beside
+successful results instead of turning the entire search into a false match.
+The normalized result is the input for later MangaDex and Comix matching.
+
+## Authentication
+
+The API currently supports browser OAuth for AniList and MyAnimeList, plus the
+personal-client MangaDex login flow. Callback URLs are anchored to the
+production `manifold.jfa.dev` hostname under `/api`.
+
+The provider client IDs and secrets are injected by Alchemy as Worker secrets.
+They are never included in the docs site or Paperback source package.
+
+## Personal state
+
+`ManifoldSync` is a Durable Object bound to `SyncApi`. It is the write boundary
+for the personal library, linked provider IDs, OAuth tokens, and sync status.
+Tokens are encrypted before they are stored.
+
+The intended mutation order is:
+
+1. Validate and persist the local change in `ManifoldSync`.
+2. Return the local result to the caller.
+3. Perform provider sync work using the stored link and credentials.
+
+That ordering makes the personal side authoritative when an upstream provider
+is unavailable.
+
+## API status
+
+The API is mounted below the router, so the production URL is:
+
+```text
+https://manifold.jfa.dev/api/v1
+```

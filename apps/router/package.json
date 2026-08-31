@@ -1,0 +1,18 @@
+{
+  "name": "@manifold/router",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+      "hono": "catalog:cloudflare"
+  },
+  "devDependencies": {
+      "@cloudflare/workers-types": "catalog:cloudflare",
+      "bun-types": "catalog:types",
+      "typescript": "catalog:build"
+  }
+}

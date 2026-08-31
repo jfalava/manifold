@@ -1,0 +1,42 @@
+{
+  "name": "@manifold/admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vp build",
+    "cf-typegen": "wrangler types",
+    "check": "vp check --fix",
+    "dev": "vp dev",
+    "format": "vp fmt",
+    "lint": "vp lint",
+    "preview": "vp preview",
+    "serve": "vp preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/kumo": "catalog:cloudflare",
+    "@phosphor-icons/react": "catalog:ui",
+    "@tanstack/react-router": "catalog:tanstack",
+    "@tanstack/react-start": "catalog:tanstack",
+    "@tanstack/react-table": "catalog:tanstack",
+    "react": "catalog:react",
+    "react-dom": "catalog:react"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "catalog:cloudflare",
+    "@cloudflare/workers-types": "catalog:cloudflare",
+    "@oxlint/plugins": "catalog:build",
+    "@tailwindcss/vite": "catalog:styling",
+    "@types/react": "catalog:types",
+    "@types/react-dom": "catalog:types",
+    "@vitejs/plugin-react": "catalog:build",
+    "oxc-transform-react": "catalog:build",
+    "oxlint": "catalog:build",
+    "tailwindcss": "catalog:styling",
+    "typescript": "catalog:build",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
+    "vite-plus": "catalog:build",
+    "wrangler": "catalog:cloudflare"
+  }
+}
