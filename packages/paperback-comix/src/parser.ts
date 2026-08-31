@@ -9,6 +9,15 @@ import {
 
 export type JsonObject = Record<string, unknown>;
 
+/** Parsed payload from a Comix WebView inject or site-bundle capture. */
+export type ComixCaptureBody =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly ComixCaptureBody[]
+  | { readonly [key: string]: ComixCaptureBody };
+
 export type ComixPagination = {
   readonly currentPage?: number;
   readonly lastPage?: number;
@@ -30,8 +39,14 @@ const asObject = (value: unknown): JsonObject | undefined =>
 const asArray = (value: unknown): readonly unknown[] =>
   Array.isArray(value) ? value : [];
 
-const first = (...values: readonly unknown[]): unknown =>
-  values.find((value) => value !== undefined && value !== null && value !== "");
+const first = <T>(...values: readonly T[]): T | undefined => {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+  return undefined;
+};
 
 const asString = (value: unknown, fallback = ""): string =>
   typeof value === "string" || typeof value === "number" ? String(value) : fallback;
@@ -124,11 +139,9 @@ const toMangaInfo = (item: JsonObject): MangaInfo => {
       ? [{ id: "genres", title: "Genres", tags: genres.map((id) => ({ id, title: id })) }]
       : undefined,
     additionalInfo: {
-      ...(asString(item.type) ? { Type: asString(item.type) } : {}),
-      ...(year ? { Year: year } : {}),
-      ...(asString(first(item.originalLanguage, item.original_language))
-        ? { "Original language": asString(first(item.originalLanguage, item.original_language)) }
-        : {}),
+      ...(asString(item.type) && { Type: asString(item.type) }),
+      ...(year && { Year: year }),
+      ...(asString(first(item.originalLanguage, item.original_language)) && { "Original language": asString(first(item.originalLanguage, item.original_language)) }),
     },
   };
 };
@@ -189,12 +202,8 @@ export const toChapter = (item: JsonObject, sourceManga: SourceManga): Chapter =
   volume: asNumber(first(item.volume, item.volumeNumber, item.volume_number)),
   publishDate: asDate(first(item.publishDate, item.publishedAt, item.published_at, item.createdAt, item.created_at)),
   additionalInfo: {
-    ...(chapterUrlFromItem(item)
-      ? { "Comix chapter URL": chapterUrlFromItem(item) }
-      : {}),
-    ...(asString(first(item.scanlationGroup, item.scanlation_group))
-      ? { "Scanlation group": asString(first(item.scanlationGroup, item.scanlation_group)) }
-      : {}),
+    ...(chapterUrlFromItem(item) && { "Comix chapter URL": chapterUrlFromItem(item) }),
+    ...(asString(first(item.scanlationGroup, item.scanlation_group)) && { "Scanlation group": asString(first(item.scanlationGroup, item.scanlation_group)) }),
   },
 });
 

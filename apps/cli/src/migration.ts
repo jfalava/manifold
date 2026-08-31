@@ -14,14 +14,28 @@ const MD_REQUEST_INTERVAL_MS = 250;
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-export const ANILIST_TO_MANGADEX_STATUS: Record<string, MangaDexReadingStatus> = {
+export const ANILIST_TO_MANGADEX_STATUS = {
   CURRENT: "reading",
   REPEATING: "re_reading",
   COMPLETED: "completed",
   PAUSED: "on_hold",
   DROPPED: "dropped",
-  PLANNING: "plan_to_read"
-};
+  PLANNING: "plan_to_read",
+} as const satisfies Record<string, MangaDexReadingStatus>;
+
+type AniListMangaDexStatus = keyof typeof ANILIST_TO_MANGADEX_STATUS;
+
+const isAniListMangaDexStatus = (
+  status: string,
+): status is AniListMangaDexStatus =>
+  Object.hasOwn(ANILIST_TO_MANGADEX_STATUS, status);
+
+const mangaDexStatusFor = (
+  anilistStatus: string,
+): MangaDexReadingStatus | undefined =>
+  isAniListMangaDexStatus(anilistStatus)
+    ? ANILIST_TO_MANGADEX_STATUS[anilistStatus]
+    : undefined;
 
 export interface MigrationOptions {
   /** Push chapter read markers up to each entry's AniList progress. */
@@ -88,7 +102,7 @@ export const runMigration = async (
 
   for (const [index, entry] of anilistEntries.entries()) {
     if (index > 0) {await sleep(MD_REQUEST_INTERVAL_MS);}
-    const mangadexStatus = ANILIST_TO_MANGADEX_STATUS[entry.status];
+    const mangadexStatus = mangaDexStatusFor(entry.status);
 
     try {
       const match = await matchMangaDex(client, entry);
@@ -97,7 +111,7 @@ export const runMigration = async (
           mediaId: entry.mediaId,
           title: entry.title,
           anilistStatus: entry.status,
-          ...(entry.progress !== undefined ? { progress: entry.progress } : {}),
+          ...(entry.progress !== undefined && { progress: entry.progress }),
           reason: "No MangaDex candidate matched"
         });
         continue;
@@ -130,8 +144,8 @@ export const runMigration = async (
         mediaId: entry.mediaId,
         title: entry.title,
         anilistStatus: entry.status,
-        ...(mangadexStatus ? { mangadexStatus } : {}),
-        ...(entry.progress !== undefined ? { progress: entry.progress } : {}),
+        ...(mangadexStatus && { mangadexStatus }),
+        ...(entry.progress !== undefined && { progress: entry.progress }),
         mangaDexId: match.manga.id,
         matchedTitle: match.manga.title,
         matchMethod: match.method,
@@ -142,8 +156,8 @@ export const runMigration = async (
         mediaId: entry.mediaId,
         title: entry.title,
         anilistStatus: entry.status,
-        ...(mangadexStatus ? { mangadexStatus } : {}),
-        ...(entry.progress !== undefined ? { progress: entry.progress } : {}),
+        ...(mangadexStatus && { mangadexStatus }),
+        ...(entry.progress !== undefined && { progress: entry.progress }),
         mangaDexId: "",
         matchedTitle: "",
         matchMethod: "links-al",
@@ -166,19 +180,19 @@ export const runMigration = async (
 
 type WithRetry = <A>(action: () => Promise<A>) => Promise<A>;
 
-interface SourceErrorShape {
+interface MangaDexAuthErrorPayload {
   readonly _tag?: string;
   readonly status?: number;
 }
 
 const isAuthFailure = (error: unknown): boolean => {
-  // SAFETY: caught value narrowed to SourceErrorShape | undefined; at this site
-  const shape = error as SourceErrorShape | undefined;
+  // SAFETY: caught Effect failures may carry MangaDexSourceError fields
+  const payload = error as MangaDexAuthErrorPayload | undefined;
   return (
-    typeof shape === "object" &&
-    shape !== null &&
-    shape._tag === "MangaDexSourceError" &&
-    (shape.status === 401 || shape.status === 403)
+    typeof payload === "object" &&
+    payload !== null &&
+    payload._tag === "MangaDexSourceError" &&
+    (payload.status === 401 || payload.status === 403)
   );
 };
 

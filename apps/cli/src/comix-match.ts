@@ -99,12 +99,22 @@ export const isChallengeText = (value: string): boolean => {
     lowered.includes("_cf_chl_");
 };
 
-export const unwrapComixResult = (value: unknown): unknown => {
+/** Unwrapped Comix capture payload (the `r` field, or the value itself). */
+export type ComixCaptureBody =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly ComixCaptureBody[]
+  | { readonly [key: string]: ComixCaptureBody };
+
+export const unwrapComixResult = (value: unknown): ComixCaptureBody => {
   if (value !== null && typeof value === "object" && "r" in value) {
-    // SAFETY: test/double or boundary cast through unknown to { r: unknown }
-    return (value as { r: unknown }).r;
+    // SAFETY: Comix inject contract wraps payload as { r }; ComixCaptureBody is the domain target.
+    return (value as { r: ComixCaptureBody }).r;
   }
-  return value;
+  // SAFETY: bare capture bodies are already domain JSON at this boundary.
+  return value as ComixCaptureBody;
 };
 
 export const itemsFromCapture = (payload: unknown): readonly ComixSearchItem[] | undefined => {

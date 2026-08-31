@@ -83,12 +83,11 @@ const buildEntitiesForEntry = (
   sharedTabs: ReadonlyMap<string, LibraryTab>,
 ): GeneratedEntry => {
   const mangaId = registryRow?.id ?? `anilist:${entry.mediaId}`;
-  const additionalInfo: Record<string, string> = {
-    "Canonical ID": mangaId,
-    "Canonical provider": "anilist",
-    "Canonical provider ID": String(entry.mediaId),
-    "AniList ID": String(entry.mediaId),
-  };
+  const additionalInfo: Record<string, string> = {};
+  additionalInfo["Canonical ID"] = mangaId;
+  additionalInfo["Canonical provider"] = "anilist";
+  additionalInfo["Canonical provider ID"] = String(entry.mediaId);
+  additionalInfo["AniList ID"] = String(entry.mediaId);
   // Stamp a reading provider when the registry already has one so ManifoldSource
   // getChapters does not start provider-less and cache mangadex:0 empties.
   const mangadexId = registryRow?.providers.find((p) => p.provider === "mangadex")
@@ -328,7 +327,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
             return {
               entries: fetchedEntries,
               registry,
-              ...(baseEntities ? { base: baseEntities } : {}),
+              ...(baseEntities && { base: baseEntities }),
             };
           },
           catch: (cause) =>
@@ -379,11 +378,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
           }
         }
 
-        const entities: {
-          __LIBRARY_MANGA_V5: Record<string, LibraryManga>;
-          __SOURCE_MANGA_V5: Record<string, SourceManga>;
-          __MANGA_INFO_V5: Record<string, MangaInfo>;
-        } = {
+        const entities: Pas5Entities = {
           __LIBRARY_MANGA_V5: {},
           __SOURCE_MANGA_V5: {},
           __MANGA_INFO_V5: {},

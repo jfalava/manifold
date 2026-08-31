@@ -81,7 +81,7 @@ const scheduledAniListFetcher = async (
     url: String(input),
     method: init?.method ?? "GET",
     headers,
-    ...(typeof init?.body === "string" ? { body: init.body } : {}),
+    ...(typeof init?.body === "string" && { body: init.body }),
   });
   const body = Application.arrayBufferToUTF8String(bodyBuffer);
   const headerBag = {
@@ -93,15 +93,15 @@ const scheduledAniListFetcher = async (
       );
     },
   };
-  // SAFETY: HTTP value is the expected unknown, } as unknown as Response after the preceding check
+  // SAFETY: scheduleRequest surface is a partial Response used by AniList GraphQL client
   return {
     ok: response.status >= 200 && response.status < 300,
     status: response.status,
     headers: headerBag,
     text: async () => body,
-    // SAFETY: test/double or boundary cast through unknown to unknown
+    // SAFETY: JSON.parse result is validated by AniList response parsers
     json: async () => JSON.parse(body) as unknown,
-  } as unknown as Response;
+  } as Response;
 };
 
 export class ManifoldTrackerSource
@@ -201,14 +201,12 @@ export class ManifoldTrackerSource
           "Canonical ID": entry.id,
           "Canonical provider": "registry",
           // SAFETY: value is a string after the preceding runtime check
-          ...(aniLinkOf(stored) ? { "AniList ID": aniLinkOf(stored) as string } : {}),
-          ...(mdLink
-            ? {
+          ...(aniLinkOf(stored) && { "AniList ID": aniLinkOf(stored) as string }),
+          ...(mdLink && {
                 "manifold provider": "mangadex",
                 "manifold provider ID": mdLink.externalId,
-                ...(mdLink.title ? { "manifold provider title": mdLink.title } : {}),
-              }
-            : {}),
+                ...(mdLink.title && { "manifold provider title": mdLink.title }),
+              }),
         },
       },
     };
@@ -247,7 +245,7 @@ export class ManifoldTrackerSource
         sourceManga,
         langCode: "en",
         chapNum: progress.chapterNumber ?? 0,
-        ...(progress.volumeNumber === undefined ? {} : { volume: progress.volumeNumber }),
+        ...(!(progress.volumeNumber === undefined) && { volume: progress.volumeNumber }),
       };
 
       return {
@@ -491,13 +489,15 @@ class TrackerStatusForm extends Form {
   // changed-to-empty -> null (clears upstream), untouched -> omitted.
   private fieldChanges(): CanonicalListStateChange {
     const base = this.baseline;
-    const changes: {
+    // Mutable field bag before origin is attached for CanonicalListStateChange.
+    interface ListFieldDiff {
       score?: number | null;
       volumeProgress?: number | null;
       startedAt?: string | null;
       completedAt?: string | null;
       notes?: string | null;
-    } = {};
+    }
+    const changes: ListFieldDiff = {};
 
     const numberField = (
       pending: string | undefined,
@@ -575,15 +575,11 @@ class TrackerStatusForm extends Form {
       if (!this.anilistId) {throw new Error("This title has no AniList link to update");}
 
       await saveAniListFields(token, this.anilistId, {
-        ...(changes.score !== undefined ? { score: changes.score } : {}),
-        ...(changes.volumeProgress !== undefined
-          ? { volumeProgress: changes.volumeProgress }
-          : {}),
-        ...(changes.startedAt !== undefined ? { startedAt: changes.startedAt } : {}),
-        ...(changes.completedAt !== undefined
-          ? { completedAt: changes.completedAt }
-          : {}),
-        ...(changes.notes !== undefined ? { notes: changes.notes } : {}),
+        ...(changes.score !== undefined && { score: changes.score }),
+        ...(changes.volumeProgress !== undefined && { volumeProgress: changes.volumeProgress }),
+        ...(changes.startedAt !== undefined && { startedAt: changes.startedAt }),
+        ...(changes.completedAt !== undefined && { completedAt: changes.completedAt }),
+        ...(changes.notes !== undefined && { notes: changes.notes }),
       });
       this.lastError = undefined;
       await api
@@ -598,42 +594,30 @@ class TrackerStatusForm extends Form {
       this.baseline = {
         entryId: this.entryId,
         updatedAt: Date.now(),
-        ...(this.baseline?.status !== undefined ? { status: this.baseline.status } : {}),
-        ...(changes.score !== undefined
-          ? changes.score === null
-            ? {}
-            : { score: changes.score }
-          : this.baseline?.score !== undefined
-            ? { score: this.baseline.score }
-            : {}),
-        ...(changes.volumeProgress !== undefined
-          ? changes.volumeProgress === null
-            ? {}
-            : { volumeProgress: changes.volumeProgress }
-          : this.baseline?.volumeProgress !== undefined
-            ? { volumeProgress: this.baseline.volumeProgress }
-            : {}),
-        ...(changes.startedAt !== undefined
-          ? changes.startedAt === null
-            ? {}
-            : { startedAt: changes.startedAt }
-          : this.baseline?.startedAt !== undefined
-            ? { startedAt: this.baseline.startedAt }
-            : {}),
-        ...(changes.completedAt !== undefined
-          ? changes.completedAt === null
-            ? {}
-            : { completedAt: changes.completedAt }
-          : this.baseline?.completedAt !== undefined
-            ? { completedAt: this.baseline.completedAt }
-            : {}),
-        ...(changes.notes !== undefined
-          ? changes.notes === null
-            ? {}
-            : { notes: changes.notes }
-          : this.baseline?.notes !== undefined
-            ? { notes: this.baseline.notes }
-            : {}),
+        ...(this.baseline?.status !== undefined && { status: this.baseline.status }),
+        ...(changes.score != null && { score: changes.score }),
+        ...(changes.score === undefined &&
+          this.baseline?.score !== undefined && { score: this.baseline.score }),
+        ...(changes.volumeProgress != null && {
+          volumeProgress: changes.volumeProgress,
+        }),
+        ...(changes.volumeProgress === undefined &&
+          this.baseline?.volumeProgress !== undefined && {
+            volumeProgress: this.baseline.volumeProgress,
+          }),
+        ...(changes.startedAt != null && { startedAt: changes.startedAt }),
+        ...(changes.startedAt === undefined &&
+          this.baseline?.startedAt !== undefined && {
+            startedAt: this.baseline.startedAt,
+          }),
+        ...(changes.completedAt != null && { completedAt: changes.completedAt }),
+        ...(changes.completedAt === undefined &&
+          this.baseline?.completedAt !== undefined && {
+            completedAt: this.baseline.completedAt,
+          }),
+        ...(changes.notes != null && { notes: changes.notes }),
+        ...(changes.notes === undefined &&
+          this.baseline?.notes !== undefined && { notes: this.baseline.notes }),
       };
       console.log(`[ManifoldTracker] fields set:${this.anilistId}:${fieldKeys.join(",")}`);
     } catch (error) {

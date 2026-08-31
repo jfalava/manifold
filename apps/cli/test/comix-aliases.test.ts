@@ -1,14 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("@/anilist", () => ({
-  fetchAniListTitles: async () => [
-    "My Neighbor Furi-san is Scary",
-    "Tonari no Uchuubito ga Kowai",
-    "Tonari no Furi-san ga Tonikaku Kowai",
-  ],
-}));
+import { describe, expect, it } from "vitest";
 
 import { loadRegistrySearchTitles, providerIdOf, searchTitlesFor } from "../src/comix-aliases";
+
+const anilistFixtureTitles = async (): Promise<readonly string[]> => [
+  "My Neighbor Furi-san is Scary",
+  "Tonari no Uchuubito ga Kowai",
+  "Tonari no Furi-san ga Tonikaku Kowai",
+];
 
 describe("registry search aliases", () => {
   it("reads anilist and mangadex ids from the registry row", () => {
@@ -44,7 +42,7 @@ describe("registry search aliases", () => {
         title: "Tonari no Uchuubito ga Kowai",
         providers: [{ provider: "anilist", externalId: "123" }],
       },
-      { anilistToken: "token" },
+      { anilistToken: "token", anilistTitles: anilistFixtureTitles },
     );
     expect(titles).toEqual([
       "Tonari no Uchuubito ga Kowai",

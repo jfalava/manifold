@@ -3,10 +3,17 @@ import type {
   TrackedMangaChapterReadAction,
 } from "@paperback/types";
 
-import { errorMessage, type PersonalReadInput } from "@manifold/paperback-runtime";
+import {
+  errorMessage,
+  type PersonalReadInput,
+  type PersonalReadingProgress,
+} from "@manifold/paperback-runtime";
 
 export interface ReadQueueDeps {
-  readonly recordRead: (entryId: string, input: PersonalReadInput) => Promise<unknown>;
+  readonly recordRead: (
+    entryId: string,
+    input: PersonalReadInput,
+  ) => Promise<PersonalReadingProgress>;
   readonly pushProgress: (sourceManga: SourceManga, chapterNumber: number) => Promise<boolean>;
 }
 
@@ -55,7 +62,7 @@ export const processReadActions = async (
         provider: provenance.provider,
         sourceChapterId: provenance.upstreamChapterId,
         readAt: action.creationDate.getTime(),
-        ...(action.chapterVolume === undefined ? {} : { volumeNumber: action.chapterVolume }),
+        ...(!(action.chapterVolume === undefined) && { volumeNumber: action.chapterVolume }),
       });
       successfulItems.push(action.id);
       console.log(`[manifold] read queued:${sourceChapterId}`);

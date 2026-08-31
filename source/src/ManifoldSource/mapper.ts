@@ -82,13 +82,13 @@ export const toMangaDexChapters = (
     sourceManga,
     langCode: chapter.language,
     chapNum: chapter.chapterNumber ?? 0,
-    ...(chapter.title ? { title: chapter.title } : {}),
-    ...(chapter.volumeNumber === undefined ? {} : { volume: chapter.volumeNumber }),
-    ...(chapter.publishedAt === undefined ? {} : { publishDate: new Date(chapter.publishedAt) }),
+    ...(chapter.title && { title: chapter.title }),
+    ...(!(chapter.volumeNumber === undefined) && { volume: chapter.volumeNumber }),
+    ...(!(chapter.publishedAt === undefined) && { publishDate: new Date(chapter.publishedAt) }),
     additionalInfo: {
       "manifold provider": "mangadex",
       "manifold provider ID": chapter.id,
-      ...(chapter.externalUrl ? { "manifold external URL": chapter.externalUrl } : {}),
+      ...(chapter.externalUrl && { "manifold external URL": chapter.externalUrl }),
     },
   }));
 
@@ -133,7 +133,7 @@ export const buildMangaDexSourceManga = (
     contentRating: ContentRating.MATURE,
     status: manga.status,
     additionalInfo: {
-      ...(entryId ? { "Canonical ID": entryId } : {}),
+      ...(entryId && { "Canonical ID": entryId }),
       "manifold provider": "mangadex",
       "manifold provider ID": manga.id,
       "manifold provider title": manga.title,

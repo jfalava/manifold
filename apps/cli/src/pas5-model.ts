@@ -105,17 +105,22 @@ export const TAB_ORDER: readonly string[] = [
   "Planning",
 ];
 
-const STATUS_TO_TAB: Record<string, string> = {
+const STATUS_TO_TAB = {
   CURRENT: "Reading",
   REPEATING: "Reading",
   PAUSED: "Paused",
   DROPPED: "Dropped",
   COMPLETED: "Completed",
   PLANNING: "Planning",
-};
+} as const;
+
+type AniListStatusKey = keyof typeof STATUS_TO_TAB;
+
+const isAniListStatusKey = (status: string): status is AniListStatusKey =>
+  Object.hasOwn(STATUS_TO_TAB, status);
 
 export const tabForStatus = (status: string): string | undefined =>
-  STATUS_TO_TAB[status];
+  isAniListStatusKey(status) ? STATUS_TO_TAB[status] : undefined;
 
 /** AniList media status → Paperback MangaInfo status (unknown → RELEASING). */
 export const infoStatusFor = (

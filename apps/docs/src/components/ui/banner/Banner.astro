@@ -22,12 +22,12 @@ function sanitizeBannerHtml(value: string): string {
     .replace(/\s+(href|src)\s*=\s*(["'])\s*javascript:[\s\S]*?\2/gi, "");
 }
 
-const config: Record<string, { color: string; tint: string }> = {
+const config = {
   note: { color: "var(--nb-info)", tint: "var(--nb-info-muted)" },
   tip: { color: "var(--nb-success)", tint: "var(--nb-success-muted)" },
   caution: { color: "var(--nb-warning)", tint: "var(--nb-warning-muted)" },
   danger: { color: "var(--nb-danger)", tint: "var(--nb-danger-muted)" },
-};
+} as const;
 
 const c = config[variant] ?? config.note;
 const safeContent = sanitizeBannerHtml(content);
@@ -37,9 +37,7 @@ const safeContent = sanitizeBannerHtml(content);
   role={variant === "danger" || variant === "caution" ? "alert" : "status"}
   class={cn("banner-card my-4 flex w-full items-start gap-3 rounded-lg px-4 py-3 text-sm leading-normal text-foreground", className)}
   style={`--_c: ${c.color}; --_t: ${c.tint};`}
-  {...(dismissible
-    ? { "data-nb-banner-dismiss": dismissible.id, "data-nb-banner-days": dismissible.days }
-    : {})}
+  {...(dismissible && { "data-nb-banner-dismiss": dismissible.id, "data-nb-banner-days": dismissible.days })}
   {...attrs}
 >
   <div class="banner-card-body min-w-0 flex-1">

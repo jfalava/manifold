@@ -56,6 +56,15 @@ export interface MangaUpdatesClientOptions {
 
 type JsonRecord = Record<string, unknown>;
 
+/** Parsed JSON body from the MangaUpdates API. */
+type MangaUpdatesJson =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly MangaUpdatesJson[]
+  | { readonly [key: string]: MangaUpdatesJson };
+
 const defaultFetcher: MangaUpdatesFetcher = (input, init) => fetch(input, init);
 
 const isRecord = (value: unknown): value is JsonRecord =>
@@ -91,17 +100,13 @@ const seriesFromRecord = (value: unknown): MangaUpdatesSeries | undefined => {
     id,
     title,
     altTitles,
-    ...(stringValue(recordData?.description) ? { description: stringValue(recordData?.description) } : {}),
-    ...(url ? { imageUrl: url } : {}),
-    ...(stringValue(recordData?.status) ? { status: stringValue(recordData?.status) } : {}),
-    ...(numberValue(recordData?.year) !== undefined ? { year: numberValue(recordData?.year) } : {}),
-    ...(numberValue(recordData?.bayesian_rating) !== undefined
-      ? { bayesianRating: numberValue(recordData?.bayesian_rating) }
-      : {}),
-    ...(numberValue(recordData?.latest_chapter) !== undefined
-      ? { latestChapter: numberValue(recordData?.latest_chapter) }
-      : {}),
-    ...(stringValue(recordData?.type) ? { type: stringValue(recordData?.type) } : {}),
+    ...(stringValue(recordData?.description) && { description: stringValue(recordData?.description) }),
+    ...(url && { imageUrl: url }),
+    ...(stringValue(recordData?.status) && { status: stringValue(recordData?.status) }),
+    ...(numberValue(recordData?.year) !== undefined && { year: numberValue(recordData?.year) }),
+    ...(numberValue(recordData?.bayesian_rating) !== undefined && { bayesianRating: numberValue(recordData?.bayesian_rating) }),
+    ...(numberValue(recordData?.latest_chapter) !== undefined && { latestChapter: numberValue(recordData?.latest_chapter) }),
+    ...(stringValue(recordData?.type) && { type: stringValue(recordData?.type) }),
   };
 };
 
@@ -136,28 +141,34 @@ const releaseFromRecord = (value: unknown): MangaUpdatesRelease | undefined => {
     seriesId,
     title,
     // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-    ...(stringValue((recordData as Record<string, unknown>)?.chapter)
+    ...(stringValue((recordData as Record<string, unknown>)?.chapter) && {
       // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-      ? { chapter: stringValue((recordData as Record<string, unknown>)?.chapter) }
-      : {}),
+      chapter: stringValue((recordData as Record<string, unknown>)?.chapter),
+    }),
     // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-    ...(stringValue((recordData as Record<string, unknown>)?.volume)
+    ...(stringValue((recordData as Record<string, unknown>)?.volume) && {
       // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-      ? { volume: stringValue((recordData as Record<string, unknown>)?.volume) }
-      : {}),
-    ...(groups ? { groups } : {}),
+      volume: stringValue((recordData as Record<string, unknown>)?.volume),
+    }),
+    ...(groups && { groups }),
     // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-    ...(stringValue((recordData as Record<string, unknown>)?.release_date ?? (recordData as Record<string, unknown>)?.date)
+    ...(stringValue(
+      (recordData as Record<string, unknown>)?.release_date ??
+        (recordData as Record<string, unknown>)?.date,
+    ) && {
       // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-      ? { date: stringValue((recordData as Record<string, unknown>)?.release_date ?? (recordData as Record<string, unknown>)?.date) }
-      : {}),
+      date: stringValue(
+        (recordData as Record<string, unknown>)?.release_date ??
+          (recordData as Record<string, unknown>)?.date,
+      ),
+    }),
   };
 };
 
 const errorFrom = (cause: unknown, status?: number): MangaUpdatesSourceError => ({
   _tag: "MangaUpdatesSourceError",
   message: cause instanceof Error ? cause.message : "MangaUpdates request failed",
-  ...(status === undefined ? {} : { status }),
+  ...(!(status === undefined) && { status }),
 });
 
 const isSourceError = (value: unknown): value is MangaUpdatesSourceError =>
@@ -177,15 +188,17 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
   const endpoint = (options.endpoint ?? `${MANGAUPDATES_API_ORIGIN}/v1`).replace(/\/$/, "");
 
   const request = async (path: string, method = "GET", body?: unknown): Promise<Response> => {
-    const headers: Record<string, string> = {
-      accept: "application/json",
-      "user-agent": MANGAUPDATES_USER_AGENT,
-    };
-    if (body !== undefined) {headers["content-type"] = "application/json";}
+    // Accumulator: start empty so known literals are not widened into Record.
+    const headers: Record<string, string> = {};
+    headers.accept = "application/json";
+    headers["user-agent"] = MANGAUPDATES_USER_AGENT;
+    if (body !== undefined) {
+      headers["content-type"] = "application/json";
+    }
     const response = await fetcher(`${endpoint}${path}`, {
       method,
       headers,
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(!(body === undefined) && { body: JSON.stringify(body) }),
     });
     if (!response.ok) {
       throw errorFrom(`MangaUpdates returned HTTP ${response.status}`, response.status);
@@ -193,9 +206,13 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
     return response;
   };
 
-  const requestJson = async (path: string, method = "GET", body?: unknown): Promise<unknown> =>
-    // SAFETY: test/double or boundary cast through unknown to Promise<unknown>
-    (await request(path, method, body)).json() as Promise<unknown>;
+  const requestJson = async (
+    path: string,
+    method = "GET",
+    body?: unknown,
+  ): Promise<MangaUpdatesJson> =>
+    // SAFETY: Response.json() is untyped at the HTTP boundary; MangaUpdatesJson is the domain parse target.
+    (await request(path, method, body)).json() as Promise<MangaUpdatesJson>;
 
   return {
     search: (query) =>

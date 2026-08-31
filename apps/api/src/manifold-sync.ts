@@ -5,7 +5,9 @@ import {
   createMangaDexPasswordGrant,
   createMangaDexRefreshGrant,
   MANGADEX_TOKEN_ENDPOINT,
-  MANGADEX_USER_AGENT
+  MANGADEX_USER_AGENT,
+  type MangaDexChapter,
+  type MangaDexPaged,
 } from "@manifold/mangadex";
 import { readSecret } from "./read-secret";
 import {
@@ -161,7 +163,7 @@ export interface MangaDexEntryStat {
 async function mapWithConcurrency<T>(
   items: readonly T[],
   concurrency: number,
-  worker: (item: T) => Promise<unknown>,
+  worker: (item: T) => Promise<void>,
 ): Promise<void> {
   let cursor = 0;
   const runners = Array.from(
@@ -394,7 +396,7 @@ export class ManifoldSync extends DurableObject<Env> {
       headers: {
         accept: "application/json",
         "content-type": "application/x-www-form-urlencoded",
-        ...(provider === "mangadex" ? { "user-agent": MANGADEX_USER_AGENT } : {})
+        ...(provider === "mangadex" && { "user-agent": MANGADEX_USER_AGENT })
       },
       body: form
     });
@@ -890,8 +892,8 @@ export class ManifoldSync extends DurableObject<Env> {
         mangaDexId,
         status: statuses[mangaDexId] ?? "",
         entryId: links.get(mangaDexId) ?? seedById.get(mangaDexId)?.entryId ?? null,
-        ...(titles.has(mangaDexId) ? { title: titles.get(mangaDexId) } : {}),
-        ...(covers.has(mangaDexId) ? { coverUrl: covers.get(mangaDexId) } : {}),
+        ...(titles.has(mangaDexId) && { title: titles.get(mangaDexId) }),
+        ...(covers.has(mangaDexId) && { coverUrl: covers.get(mangaDexId) }),
       }));
       return attachRatings(base);
     };
@@ -939,7 +941,10 @@ export class ManifoldSync extends DurableObject<Env> {
     return data;
   }
 
-  async mangaDexFeed(limit: number, offset: number): Promise<unknown> {
+  async mangaDexFeed(
+    limit: number,
+    offset: number,
+  ): Promise<MangaDexPaged<MangaDexChapter>> {
     const accessToken = await this.getAuthAccessToken("mangadex");
     const client = createMangaDexClient({ accessToken });
     return Effect.runPromise(client.followedFeed({ limit, offset }));
@@ -1110,10 +1115,8 @@ export class ManifoldSync extends DurableObject<Env> {
           const state = this.readListState(row.id);
           results.push({
             ...entry,
-            ...(state ? { state } : {}),
-            ...(values.tombstoned_at !== null && values.tombstoned_at !== undefined
-              ? { tombstoned: true }
-              : {})
+            ...(state && { state }),
+            ...(values.tombstoned_at !== null && values.tombstoned_at !== undefined && { tombstoned: true })
           });
         }
         return results;
@@ -1277,13 +1280,13 @@ export class ManifoldSync extends DurableObject<Env> {
         payload: {
           entryId,
           anilistId,
-          ...(mediaListEntryId !== undefined ? { mediaListEntryId } : {}),
-          ...(nextStatus !== undefined ? { status: nextStatus } : {}),
-          ...(nextScore !== undefined ? { score: nextScore } : {}),
-          ...(nextNotes !== undefined ? { notes: nextNotes } : {}),
-          ...(nextStarted !== undefined ? { startedAt: nextStarted } : {}),
-          ...(nextCompleted !== undefined ? { completedAt: nextCompleted } : {}),
-          ...(nextVolumes !== undefined ? { volumeProgress: nextVolumes } : {})
+          ...(mediaListEntryId !== undefined && { mediaListEntryId }),
+          ...(nextStatus !== undefined && { status: nextStatus }),
+          ...(nextScore !== undefined && { score: nextScore }),
+          ...(nextNotes !== undefined && { notes: nextNotes }),
+          ...(nextStarted !== undefined && { startedAt: nextStarted }),
+          ...(nextCompleted !== undefined && { completedAt: nextCompleted }),
+          ...(nextVolumes !== undefined && { volumeProgress: nextVolumes })
         }
       });
     }
@@ -1319,9 +1322,9 @@ export class ManifoldSync extends DurableObject<Env> {
         payload: {
           entryId,
           anilistId,
-          ...(current?.mediaListEntryId !== undefined
-            ? { mediaListEntryId: current.mediaListEntryId }
-            : {})
+          ...(current?.mediaListEntryId !== undefined && {
+            mediaListEntryId: current.mediaListEntryId,
+          })
         }
       });
     }
@@ -1363,7 +1366,7 @@ export class ManifoldSync extends DurableObject<Env> {
           kind: row.kind,
           origin: row.origin,
           // SAFETY: test/double or boundary cast through unknown to Record<string, unknown> } : {}), cr
-          ...(row.detail ? { detail: JSON.parse(row.detail) as Record<string, unknown> } : {}),
+          ...(row.detail && { detail: JSON.parse(row.detail) as Record<string, unknown> }),
           createdAt: row.created_at
         }));
         return rows;
@@ -1697,7 +1700,7 @@ export class ManifoldSync extends DurableObject<Env> {
     return {
       provider,
       connected: true,
-      ...(expiresAt === null ? {} : { expiresAt }),
+      ...(!(expiresAt === null) && { expiresAt }),
       updatedAt: timestamp
     };
   }
@@ -1707,10 +1710,8 @@ export class ManifoldSync extends DurableObject<Env> {
     return {
       provider,
       connected: row !== undefined,
-      ...(row?.expires_at === null || row?.expires_at === undefined
-        ? {}
-        : { expiresAt: row.expires_at }),
-      ...(row ? { updatedAt: row.updated_at } : {})
+      ...(row?.expires_at != null && { expiresAt: row.expires_at }),
+      ...(row && { updatedAt: row.updated_at })
     };
   }
 
@@ -1968,7 +1969,9 @@ export class ManifoldSync extends DurableObject<Env> {
       // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>; } catch { pa
       payload = JSON.parse(row.payload) as Record<string, unknown>;
     } catch {
-      payload = { raw: row.payload };
+      // Keep the original string so ops UI can surface unparseable rows.
+      payload = {};
+      payload.raw = row.payload;
     }
     return {
       id: row.id,
@@ -1979,7 +1982,7 @@ export class ManifoldSync extends DurableObject<Env> {
       payload,
       state: row.state,
       attempts: row.attempts,
-      ...(row.last_error === null ? {} : { lastError: row.last_error }),
+      ...(!(row.last_error === null) && { lastError: row.last_error }),
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
@@ -1993,13 +1996,13 @@ export class ManifoldSync extends DurableObject<Env> {
     return {
       entryId: row.entry_id,
       // SAFETY: value matches "status"] }), ...(row.score at this call site
-      ...(row.status === null ? {} : { status: row.status as ListState["status"] }),
-      ...(row.score === null ? {} : { score: row.score }),
-      ...(row.notes === null ? {} : { notes: row.notes }),
-      ...(row.started_at === null ? {} : { startedAt: row.started_at }),
-      ...(row.completed_at === null ? {} : { completedAt: row.completed_at }),
-      ...(row.volume_progress === null ? {} : { volumeProgress: row.volume_progress }),
-      ...(row.media_list_entry_id === null ? {} : { mediaListEntryId: row.media_list_entry_id }),
+      ...(!(row.status === null) && { status: row.status as ListState["status"] }),
+      ...(!(row.score === null) && { score: row.score }),
+      ...(!(row.notes === null) && { notes: row.notes }),
+      ...(!(row.started_at === null) && { startedAt: row.started_at }),
+      ...(!(row.completed_at === null) && { completedAt: row.completed_at }),
+      ...(!(row.volume_progress === null) && { volumeProgress: row.volume_progress }),
+      ...(!(row.media_list_entry_id === null) && { mediaListEntryId: row.media_list_entry_id }),
       updatedAt: row.updated_at
     };
   }
@@ -2050,7 +2053,7 @@ export class ManifoldSync extends DurableObject<Env> {
       .map((provider) => ({
         provider: provider.provider,
         externalId: provider.external_id,
-        ...(provider.title === null ? {} : { title: provider.title }),
+        ...(!(provider.title === null) && { title: provider.title }),
         updatedAt: provider.updated_at
       }));
 
@@ -2076,10 +2079,10 @@ export class ManifoldSync extends DurableObject<Env> {
     return {
       entryId: row.entry_id,
       chapterKey: row.chapter_key,
-      ...(row.chapter_number === null ? {} : { chapterNumber: row.chapter_number }),
-      ...(row.volume_number === null ? {} : { volumeNumber: row.volume_number }),
-      ...(row.provider === null ? {} : { provider: row.provider }),
-      ...(row.source_chapter_id === null ? {} : { sourceChapterId: row.source_chapter_id }),
+      ...(!(row.chapter_number === null) && { chapterNumber: row.chapter_number }),
+      ...(!(row.volume_number === null) && { volumeNumber: row.volume_number }),
+      ...(!(row.provider === null) && { provider: row.provider }),
+      ...(!(row.source_chapter_id === null) && { sourceChapterId: row.source_chapter_id }),
       readAt: row.read_at,
       version: row.version
     };

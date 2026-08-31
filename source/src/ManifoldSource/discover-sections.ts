@@ -147,7 +147,7 @@ const toChapterUpdateItems = (
       imageUrl: manga.coverUrl ?? "",
       title: manga.title,
       subtitle: chapterSubtitle(chapter),
-      ...(chapter.publishedAt === undefined ? {} : { publishDate: new Date(chapter.publishedAt) }),
+      ...(!(chapter.publishedAt === undefined) && { publishDate: new Date(chapter.publishedAt) }),
       contentRating: ContentRating.MATURE,
     }];
   });
@@ -215,7 +215,7 @@ const chapterUpdateItem = (
   imageUrl: entry.coverUrl ?? "",
   title: entry.title,
   subtitle: card.subtitle,
-  ...(card.publishDate === undefined ? {} : { publishDate: card.publishDate }),
+  ...(!(card.publishDate === undefined) && { publishDate: card.publishDate }),
   contentRating: ContentRating.MATURE,
 });
 

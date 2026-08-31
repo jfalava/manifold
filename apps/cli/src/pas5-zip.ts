@@ -96,12 +96,17 @@ const findEocd = (buf: Buffer): number => {
   throw new Error("Not a zip archive (no end-of-central-directory record)");
 };
 
+/** Zip entry name → UTF-8 text contents. */
+export interface ZipTextEntries {
+  [name: string]: string;
+}
+
 /** Extracts all entries of a zip archive as UTF-8 text keyed by name. */
-export const readZipText = (buf: Buffer): Record<string, string> => {
+export const readZipText = (buf: Buffer): ZipTextEntries => {
   const eocd = findEocd(buf);
   const count = buf.readUInt16LE(eocd + 10);
   let ptr = buf.readUInt32LE(eocd + 16);
-  const out: Record<string, string> = {};
+  const out: ZipTextEntries = {};
   for (let i = 0; i < count; i++) {
     if (buf.readUInt32LE(ptr) !== 0x02014b50) {
       throw new Error(`Corrupt central directory at entry ${i}`);

@@ -104,13 +104,13 @@ export const parseComixCookie = (value: unknown): ComixCookie | undefined => {
   return {
     name,
     value: cookieValue,
-    ...(asString(value.domain) ? { domain: asString(value.domain) } : {}),
-    ...(asString(value.path) ? { path: asString(value.path) } : {}),
-    ...(asNumber(value.expires) !== undefined ? { expires: asNumber(value.expires) } : {}),
-    ...(asBoolean(value.httpOnly) !== undefined ? { httpOnly: asBoolean(value.httpOnly) } : {}),
-    ...(asBoolean(value.secure) !== undefined ? { secure: asBoolean(value.secure) } : {}),
-    ...(asString(value.sameSite) ? { sameSite: asString(value.sameSite) } : {}),
-    ...(asBoolean(value.session) !== undefined ? { session: asBoolean(value.session) } : {}),
+    ...(asString(value.domain) && { domain: asString(value.domain) }),
+    ...(asString(value.path) && { path: asString(value.path) }),
+    ...(asNumber(value.expires) !== undefined && { expires: asNumber(value.expires) }),
+    ...(asBoolean(value.httpOnly) !== undefined && { httpOnly: asBoolean(value.httpOnly) }),
+    ...(asBoolean(value.secure) !== undefined && { secure: asBoolean(value.secure) }),
+    ...(asString(value.sameSite) && { sameSite: asString(value.sameSite) }),
+    ...(asBoolean(value.session) !== undefined && { session: asBoolean(value.session) }),
   };
 };
 
@@ -130,7 +130,7 @@ export const parseStoredSession = (raw: string): StoredComixSession | undefined 
       version: 1,
       cookies,
       harvestedAt,
-      ...(asString(parsed.userAgent) ? { userAgent: asString(parsed.userAgent) } : {}),
+      ...(asString(parsed.userAgent) && { userAgent: asString(parsed.userAgent) }),
     };
   } catch {
     return undefined;
@@ -191,7 +191,7 @@ export const sessionFromCookies = (
   version: 1,
   cookies: [...cookies],
   harvestedAt,
-  ...(userAgent ? { userAgent } : {}),
+  ...(userAgent && { userAgent }),
 });
 
 export const cookiesFromCdp = (value: unknown): ComixCookie[] => {
@@ -221,11 +221,9 @@ export const toCdpCookie = (cookie: ComixCookie): CdpCookieParam => {
     value: cookie.value,
     domain: cookie.domain ?? "comix.to",
     path: cookie.path ?? "/",
-    ...(expires !== undefined && expires > 0
-      ? { expires: expires > 1_000_000_000_000 ? expires / 1000 : expires }
-      : {}),
-    ...(cookie.httpOnly !== undefined ? { httpOnly: cookie.httpOnly } : {}),
+    ...(expires !== undefined && expires > 0 && { expires: expires > 1_000_000_000_000 ? expires / 1000 : expires }),
+    ...(cookie.httpOnly !== undefined && { httpOnly: cookie.httpOnly }),
     secure: cookie.secure ?? true,
-    ...(cookie.sameSite ? { sameSite: cookie.sameSite } : {}),
+    ...(cookie.sameSite && { sameSite: cookie.sameSite }),
   };
 };

@@ -30,6 +30,15 @@ export interface MyAnimeListSourceOptions {
 
 type JsonRecord = Record<string, unknown>;
 
+/** Parsed JSON body from a canonical provider HTTP response. */
+export type CanonicalJson =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly CanonicalJson[]
+  | { readonly [key: string]: CanonicalJson };
+
 const defaultFetcher: CanonicalFetcher = (input, init) => fetch(input, init);
 
 const isRecord = (value: unknown): value is JsonRecord =>
@@ -98,7 +107,7 @@ const sourceError = (
   _tag: "CanonicalSourceError",
   provider,
   message,
-  ...(status === undefined ? {} : { status }),
+  ...(!(status === undefined) && { status }),
 });
 
 const isSourceError = (value: unknown): value is CanonicalSourceError =>
@@ -127,7 +136,7 @@ const requestJson = async (
   fetcher: CanonicalFetcher,
   input: RequestInfo | URL,
   init?: RequestInit,
-): Promise<unknown> => {
+): Promise<CanonicalJson> => {
   const response = await fetcher(input, init);
   if (!response.ok) {
     const responseBody = await response.text().catch(() => "");
@@ -147,8 +156,8 @@ const requestJson = async (
     console.error(`[Canonical:${provider}] ${message}`);
     throw sourceError(provider, message, response.status);
   }
-  // SAFETY: test/double or boundary cast through unknown to Promise<unknown>
-  return response.json() as Promise<unknown>;
+  // SAFETY: Response.json() is untyped at the HTTP boundary; CanonicalJson is the domain parse target.
+  return response.json() as Promise<CanonicalJson>;
 };
 
 const dateFromParts = (value: unknown): string | undefined => {
@@ -167,15 +176,13 @@ const dateFromParts = (value: unknown): string | undefined => {
 const metadata = (value: JsonRecord): CanonicalMetadata => {
   const cover = recordValue(value.coverImage);
   const result: CanonicalMetadata = {
-    ...(stringValue(value.description) ? { description: stringValue(value.description) } : {}),
-    ...(stringValue(cover?.extraLarge ?? cover?.large ?? cover?.medium)
-      ? { coverUrl: stringValue(cover?.extraLarge ?? cover?.large ?? cover?.medium) }
-      : {}),
-    ...(numberValue(value.chapters) === undefined ? {} : { chapters: numberValue(value.chapters) }),
-    ...(numberValue(value.volumes) === undefined ? {} : { volumes: numberValue(value.volumes) }),
-    ...(dateFromParts(value.startDate) ? { startDate: dateFromParts(value.startDate) } : {}),
-    ...(dateFromParts(value.endDate) ? { endDate: dateFromParts(value.endDate) } : {}),
-    ...(stringValue(value.status) ? { status: stringValue(value.status) } : {}),
+    ...(stringValue(value.description) && { description: stringValue(value.description) }),
+    ...(stringValue(cover?.extraLarge ?? cover?.large ?? cover?.medium) && { coverUrl: stringValue(cover?.extraLarge ?? cover?.large ?? cover?.medium) }),
+    ...(!(numberValue(value.chapters) === undefined) && { chapters: numberValue(value.chapters) }),
+    ...(!(numberValue(value.volumes) === undefined) && { volumes: numberValue(value.volumes) }),
+    ...(dateFromParts(value.startDate) && { startDate: dateFromParts(value.startDate) }),
+    ...(dateFromParts(value.endDate) && { endDate: dateFromParts(value.endDate) }),
+    ...(stringValue(value.status) && { status: stringValue(value.status) }),
   };
   return result;
 };
@@ -207,7 +214,7 @@ const makeEntry = (
     providerId,
     title,
     aliases,
-    ...(externalIds && Object.keys(externalIds).length > 0 ? { externalIds } : {}),
+    ...(externalIds && Object.keys(externalIds).length > 0 && { externalIds }),
     metadata: metadata(value),
     score,
   };
@@ -229,8 +236,8 @@ const anilistMedia = (value: unknown): CanonicalSearchResult | undefined => {
     averageScore === undefined ? 0 : averageScore / 100,
     {
       anilist: String(id),
-      ...(idMal === undefined ? {} : { mal: String(idMal) }),
-      ...(mangaDexId === undefined ? {} : { mangadex: mangaDexId }),
+      ...(!(idMal === undefined) && { mal: String(idMal) }),
+      ...(!(mangaDexId === undefined) && { mangadex: mangaDexId }),
     },
   );
 };
@@ -401,19 +408,13 @@ const malEntry = (value: unknown): CanonicalSearchResult | undefined => {
   ];
   const picture = recordValue(node?.main_picture);
   const resultMetadata: CanonicalMetadata = {
-    ...(stringValue(node?.synopsis) ? { description: stringValue(node?.synopsis) } : {}),
-    ...(stringValue(picture?.large ?? picture?.medium)
-      ? { coverUrl: stringValue(picture?.large ?? picture?.medium) }
-      : {}),
-    ...(numberValue(node?.num_chapters) === undefined
-      ? {}
-      : { chapters: numberValue(node?.num_chapters) }),
-    ...(numberValue(node?.num_volumes) === undefined
-      ? {}
-      : { volumes: numberValue(node?.num_volumes) }),
-    ...(dateValue(node?.start_date) ? { startDate: dateValue(node?.start_date) } : {}),
-    ...(dateValue(node?.end_date) ? { endDate: dateValue(node?.end_date) } : {}),
-    ...(stringValue(node?.status) ? { status: stringValue(node?.status) } : {}),
+    ...(stringValue(node?.synopsis) && { description: stringValue(node?.synopsis) }),
+    ...(stringValue(picture?.large ?? picture?.medium) && { coverUrl: stringValue(picture?.large ?? picture?.medium) }),
+    ...(!(numberValue(node?.num_chapters) === undefined) && { chapters: numberValue(node?.num_chapters) }),
+    ...(!(numberValue(node?.num_volumes) === undefined) && { volumes: numberValue(node?.num_volumes) }),
+    ...(dateValue(node?.start_date) && { startDate: dateValue(node?.start_date) }),
+    ...(dateValue(node?.end_date) && { endDate: dateValue(node?.end_date) }),
+    ...(stringValue(node?.status) && { status: stringValue(node?.status) }),
   };
   const mean = numberValue(node?.mean);
   return {

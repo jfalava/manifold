@@ -185,20 +185,18 @@ export const getSourceMangaInManagedCollection = async (
         secondaryTitles: [],
         contentRating: ContentRating.MATURE,
         additionalInfo: {
-          ...(uuid ? { "Canonical ID": uuid } : {}),
+          ...(uuid && { "Canonical ID": uuid }),
           "Canonical provider": "registry",
           "AniList ID": item.anilistId,
           // Stamp the verified reading provider so getChapters goes straight
           // to MangaDex for collection-added titles instead of falling into
           // the Comix path (whose Cloudflare challenge fails library
           // updates for titles that are on MangaDex).
-          ...(mdLink
-            ? {
+          ...(mdLink && {
                 "manifold provider": "mangadex",
                 "manifold provider ID": mdLink.externalId,
-                ...(mdLink.title ? { "manifold provider title": mdLink.title } : {}),
-              }
-            : {}),
+                ...(mdLink.title && { "manifold provider title": mdLink.title }),
+              }),
         },
       },
     };

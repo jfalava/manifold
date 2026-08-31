@@ -17,7 +17,7 @@ export type ButtonVariant =
   | "secondary-destructive"
   | "outline";
 export type ButtonSize = "xs" | "sm" | "base" | "lg";
-export type ButtonShape = "base" | "square" | "circle";
+export type ButtonAppearance = "base" | "square" | "circle";
 
 // `rounded-lg` is the default radius for every button; `circle` overrides
 // it to `rounded-full` (see `buttonVariants`), `square` keeps it.
@@ -37,7 +37,7 @@ export const buttonVariantClasses: Record<ButtonVariant, string> = {
     "bg-transparent text-foreground ring ring-border hover:ring-border-strong",
 };
 
-// Rectangular sizing (shape="base"). Radius comes from `buttonBase`.
+// Rectangular sizing (appearance="base"). Radius comes from `buttonBase`.
 export const buttonSizeText: Record<ButtonSize, string> = {
   xs: "gap-1 px-2 py-1 text-xs",
   sm: "gap-1 px-3 py-1.5 text-xs",
@@ -63,20 +63,20 @@ export const buttonIconSize: Record<ButtonSize, string> = {
 export interface ButtonVariantsOptions {
   variant?: ButtonVariant;
   size?: ButtonSize;
-  shape?: ButtonShape;
+  appearance?: ButtonAppearance;
 }
 
-/** Compose the base + variant + size/shape classes for a button-shaped element. */
+/** Compose the base + variant + size/appearance classes for a button-shaped element. */
 export function buttonVariants({
   variant = "secondary",
   size = "base",
-  shape = "base",
+  appearance = "base",
 }: ButtonVariantsOptions = {}): string {
   // base + square inherit `rounded-lg` from buttonBase; circle overrides it
   // to a full pill.
   const dims =
-    shape === "base"
+    appearance === "base"
       ? buttonSizeText[size]
-      : cn(buttonSizeCompact[size], "p-0", shape === "circle" && "rounded-full");
+      : cn(buttonSizeCompact[size], "p-0", appearance === "circle" && "rounded-full");
   return cn(buttonBase, buttonVariantClasses[variant], dims);
 }

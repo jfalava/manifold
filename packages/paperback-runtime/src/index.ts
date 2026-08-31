@@ -51,6 +51,7 @@ export {
   type AniListLibraryItem,
   type AniListViewer,
   type AniListFieldChange,
+  type FuzzyDateInput,
 } from "./anilist-graphql.js";
 
 export { drainAniListOps, maybeDrainAniListOps } from "./op-drain.js";

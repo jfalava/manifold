@@ -210,6 +210,15 @@ export interface MangaDexClientOptions {
 
 type JsonRecord = Record<string, unknown>;
 
+/** Parsed JSON body from the MangaDex API. */
+type MangaDexJson =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly MangaDexJson[]
+  | { readonly [key: string]: MangaDexJson };
+
 const defaultFetcher: MangaDexFetcher = (input, init) => fetch(input, init);
 
 const isRecord = (value: unknown): value is JsonRecord =>
@@ -274,14 +283,12 @@ const mangaFromResource = (value: unknown): MangaDexManga | undefined => {
     id,
     title,
     altTitles: uniqueStrings([title, ...altTitles]).slice(1),
-    ...(stringValue(links?.al) ? { anilistId: stringValue(links?.al) } : {}),
-    ...(stringValue(links?.mal) ? { myAnimeListId: stringValue(links?.mal) } : {}),
-    ...(preferredLocalizedValue(attributes.description)
-      ? { description: preferredLocalizedValue(attributes.description) }
-      : {}),
-    ...(coverFileName ? { coverUrl: `${MANGADEX_COVER_ORIGIN}/${id}/${coverFileName}.512.jpg` } : {}),
-    ...(stringValue(attributes.status) ? { status: stringValue(attributes.status) } : {}),
-    ...(numberValue(attributes.year) === undefined ? {} : { year: numberValue(attributes.year) }),
+    ...(stringValue(links?.al) && { anilistId: stringValue(links?.al) }),
+    ...(stringValue(links?.mal) && { myAnimeListId: stringValue(links?.mal) }),
+    ...(preferredLocalizedValue(attributes.description) && { description: preferredLocalizedValue(attributes.description) }),
+    ...(coverFileName && { coverUrl: `${MANGADEX_COVER_ORIGIN}/${id}/${coverFileName}.512.jpg` }),
+    ...(stringValue(attributes.status) && { status: stringValue(attributes.status) }),
+    ...(!(numberValue(attributes.year) === undefined) && { year: numberValue(attributes.year) }),
   };
 };
 
@@ -299,17 +306,13 @@ const chapterFromResource = (value: unknown): MangaDexChapter | undefined => {
   return {
     id,
     mangaId,
-    ...(numberValue(attributes.chapter) === undefined
-      ? {}
-      : { chapterNumber: numberValue(attributes.chapter) }),
-    ...(numberValue(attributes.volume) === undefined
-      ? {}
-      : { volumeNumber: numberValue(attributes.volume) }),
+    ...(!(numberValue(attributes.chapter) === undefined) && { chapterNumber: numberValue(attributes.chapter) }),
+    ...(!(numberValue(attributes.volume) === undefined) && { volumeNumber: numberValue(attributes.volume) }),
     language: stringValue(attributes.translatedLanguage) ?? "en",
-    ...(stringValue(attributes.title) ? { title: stringValue(attributes.title) } : {}),
-    ...(stringValue(attributes.externalUrl) ? { externalUrl: stringValue(attributes.externalUrl) } : {}),
-    ...(numberValue(attributes.pages) === undefined ? {} : { pageCount: numberValue(attributes.pages) }),
-    ...(timestamp === undefined || Number.isNaN(timestamp) ? {} : { publishedAt: timestamp }),
+    ...(stringValue(attributes.title) && { title: stringValue(attributes.title) }),
+    ...(stringValue(attributes.externalUrl) && { externalUrl: stringValue(attributes.externalUrl) }),
+    ...(!(numberValue(attributes.pages) === undefined) && { pageCount: numberValue(attributes.pages) }),
+    ...(!(timestamp === undefined || Number.isNaN(timestamp)) && { publishedAt: timestamp }),
   };
 };
 
@@ -326,8 +329,8 @@ const pageFromValue = (
     : `${baseUrl}/data/${hash}/${filename}`;
   return {
     url,
-    ...(numberValue(page?.width) === undefined ? {} : { width: numberValue(page?.width) }),
-    ...(numberValue(page?.height) === undefined ? {} : { height: numberValue(page?.height) }),
+    ...(!(numberValue(page?.width) === undefined) && { width: numberValue(page?.width) }),
+    ...(!(numberValue(page?.height) === undefined) && { height: numberValue(page?.height) }),
   };
 };
 
@@ -339,7 +342,7 @@ const errorFrom = (cause: unknown, status?: number): MangaDexSourceError => ({
       : cause instanceof Error
         ? cause.message
         : "MangaDex request failed",
-  ...(status === undefined ? {} : { status }),
+  ...(!(status === undefined) && { status }),
 });
 
 const isSourceError = (value: unknown): value is MangaDexSourceError =>
@@ -370,7 +373,7 @@ const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 const parseChaptersPage = async (
-  jsonPromise: Promise<unknown>,
+  jsonPromise: Promise<MangaDexJson>,
 ): Promise<{ chapters: readonly MangaDexChapter[]; total: number | undefined }> => {
   const body = record(await jsonPromise);
   const chapters = Array.isArray(body?.data)
@@ -409,18 +412,22 @@ export const createMangaDexClient = (
     body?: unknown,
     attempt = 1,
   ): Promise<Response> => {
-    const headers: Record<string, string> = {
-      accept: "application/json",
-      "user-agent": MANGADEX_USER_AGENT,
-    };
-    if (options.accessToken) {headers.authorization = `Bearer ${options.accessToken}`;}
-    if (body !== undefined) {headers["content-type"] = "application/json";}
+    // Accumulator: start empty so known literals are not widened into Record.
+    const headers: Record<string, string> = {};
+    headers.accept = "application/json";
+    headers["user-agent"] = MANGADEX_USER_AGENT;
+    if (options.accessToken) {
+      headers.authorization = `Bearer ${options.accessToken}`;
+    }
+    if (body !== undefined) {
+      headers["content-type"] = "application/json";
+    }
     let response: Response;
     try {
       response = await fetcher(`${endpoint}${path}`, {
         method,
         headers,
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        ...(!(body === undefined) && { body: JSON.stringify(body) }),
       });
     } catch (cause) {
       if (attempt < maxAttempts) {
@@ -446,9 +453,9 @@ export const createMangaDexClient = (
     return response;
   };
 
-  const requestJson = async (path: string): Promise<unknown> =>
-    // SAFETY: test/double or boundary cast through unknown to Promise<unknown>;
-    (await request(path)).json() as Promise<unknown>;
+  const requestJson = async (path: string): Promise<MangaDexJson> =>
+    // SAFETY: Response.json() is untyped at the HTTP boundary; MangaDexJson is the domain parse target.
+    (await request(path)).json() as Promise<MangaDexJson>;
 
   const getChaptersPage = async (
     mangaId: string,
@@ -664,7 +671,7 @@ export const createMangaDexClient = (
         const id = stringValue(data?.id);
         if (!id) {throw errorFrom("MangaDex returned no current user", 401);}
         const attributes = record(data?.attributes);
-        return { id, ...(stringValue(attributes?.username) ? { name: stringValue(attributes?.username) } : {}) };
+        return { id, ...(stringValue(attributes?.username) && { name: stringValue(attributes?.username) }) };
       }),
     readMarkers: (mangaId) =>
       withSourceError(async () => {

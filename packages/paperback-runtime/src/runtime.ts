@@ -15,7 +15,7 @@ export const scheduledPersonalRequester = async (
     url: request.url,
     method: request.method,
     headers: request.headers,
-    ...(request.body === undefined ? {} : { body: request.body }),
+    ...(!(request.body === undefined) && { body: request.body }),
   });
   const text = Application.arrayBufferToUTF8String(bodyBuffer);
   let body: unknown = text;

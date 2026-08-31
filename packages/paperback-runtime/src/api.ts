@@ -220,9 +220,9 @@ export const createPersonalApiClient = (
       headers: {
         accept: "application/json",
         authorization: `Bearer ${options.token}`,
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...(!(body === undefined) && { "content-type": "application/json" }),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(!(body === undefined) && { body: JSON.stringify(body) }),
     });
     if (response.status < 200 || response.status >= 300) {
       throw new PersonalApiError(asErrorMessage(response.body, response.status), response.status);

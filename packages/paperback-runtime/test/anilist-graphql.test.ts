@@ -5,6 +5,16 @@ interface ResponseLike {
   headers: Record<string, string>;
 }
 
+interface ApplicationHarness {
+  sleep: (seconds: number) => Promise<void>;
+  arrayBufferToUTF8String: (buffer: ArrayBuffer) => string;
+  scheduleRequest: () => Promise<[ResponseLike, ArrayBuffer]>;
+}
+
+interface GlobalWithApplication {
+  Application?: ApplicationHarness;
+}
+
 const jsonResponse = (payload: unknown): ArrayBuffer =>
   // SAFETY: Node runtime value is ArrayBuffer in this IAC/CLI context
   new TextEncoder().encode(JSON.stringify(payload)).buffer as ArrayBuffer;
@@ -17,8 +27,8 @@ const makeHarness = () => {
 
   const install = (respond: (index: number) => { status: number; headers?: Record<string, string>; body?: unknown }) => {
     let index = 0;
-    // SAFETY: test/double or boundary cast through unknown to { Application: Record<string, unknown> }
-    (globalThis as unknown as { Application: Record<string, unknown> }).Application = {
+    // SAFETY: vitest installs a Paperback Application stub on globalThis for this suite
+    (globalThis as GlobalWithApplication).Application = {
       sleep: async (seconds: number): Promise<void> => {
         sleeps.push(seconds);
       },
@@ -60,8 +70,8 @@ describe("aniListRequest throttling", () => {
   });
 
   afterEach(() => {
-    // SAFETY: test/double or boundary cast through unknown to { Application?: unknown }
-    delete (globalThis as unknown as { Application?: unknown }).Application;
+    // SAFETY: clear the Application stub installed for this suite
+    delete (globalThis as GlobalWithApplication).Application;
     vi.restoreAllMocks();
   });
 

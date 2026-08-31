@@ -1,17 +1,20 @@
 import type { SecretsStoreSecret } from "@cloudflare/workers-types";
 
-const secretBinding = (value: unknown): value is SecretsStoreSecret =>
+type SecretBindingValue = string | SecretsStoreSecret | undefined;
+
+const secretBinding = (
+  value: SecretBindingValue,
+): value is SecretsStoreSecret =>
   typeof value === "object" &&
   value !== null &&
-  // SAFETY: value matches SecretsStoreSecret at this call site
-  typeof (value as SecretsStoreSecret).get === "function";
+  typeof value.get === "function";
 
 /**
  * Like readSecret, but returns undefined for bindings that are absent or
  * empty instead of throwing — for secrets that are genuinely optional.
  */
 export const readSecretOptional = async (
-  value: string | SecretsStoreSecret | undefined,
+  value: SecretBindingValue,
   label: string
 ): Promise<string | undefined> => {
   if (typeof value === "string") {return value.length > 0 ? value : undefined;}
@@ -27,7 +30,7 @@ export const readSecretOptional = async (
  * Store secret whose value is fetched with `.get()`.
  */
 export const readSecret = async (
-  value: string | SecretsStoreSecret | undefined,
+  value: SecretBindingValue,
   label: string
 ): Promise<string> => {
   if (typeof value === "string") {

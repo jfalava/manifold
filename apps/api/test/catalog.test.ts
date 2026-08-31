@@ -2,24 +2,24 @@ import { describe, expect, it } from "vitest";
 import { catalogApp } from "../src/catalog";
 import type { Env } from "../src/types";
 
-const assets: Record<string, string> = {
-  "/ManifoldSource/index.js": "source-bundle",
-  "/ManifoldTracker/index.js": "tracker-bundle",
-  "/ManifoldSource/icon.png": "png",
-};
+const assets = new Map<string, string>([
+  ["/ManifoldSource/index.js", "source-bundle"],
+  ["/ManifoldTracker/index.js", "tracker-bundle"],
+  ["/ManifoldSource/icon.png", "png"],
+]);
 
-// SAFETY: test fixture supplies the Worker Env bindings under test
+// SAFETY: test fixture supplies only the Worker Env bindings catalog routes use
 const env = {
   ENVIRONMENT: "test",
   ASSETS: {
     fetch: async (input: Request | string) => {
       const pathname = new URL(typeof input === "string" ? input : input.url).pathname;
-      const body = assets[pathname];
+      const body = assets.get(pathname);
       if (body === undefined) {return new Response("missing", { status: 404 });}
       return new Response(body, { status: 200 });
     },
   },
-} as unknown as Env;
+} as Env;
 
 const get = (path: string) =>
   catalogApp.request(`https://manifold.jfa.dev${path}`, {}, env);

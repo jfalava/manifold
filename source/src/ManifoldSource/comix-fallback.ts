@@ -12,6 +12,15 @@ import { normalizeTitle } from "./mapper.js";
 
 type JsonObject = Record<string, unknown>;
 
+/** Parsed payload from a Comix WebView inject or site-bundle capture. */
+export type ComixCaptureBody =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly ComixCaptureBody[]
+  | { readonly [key: string]: ComixCaptureBody };
+
 export const COMIX_ORIGIN = "https://comix.to";
 export const COMIX_CHAPTER_PREFIX = "comix:";
 
@@ -138,12 +147,10 @@ export const toSyncComixChapters = (
       chapterId: `${COMIX_CHAPTER_PREFIX}${chapter.chapterId}`,
       additionalInfo: {
         ...chapter.additionalInfo,
-        ...(!chapter.additionalInfo?.["Comix chapter URL"]
-          ? {
-              "Comix chapter URL":
-                `${COMIX_ORIGIN}/chapter/${rawComixChapterIdSafe(chapter.chapterId)}`,
-            }
-          : {}),
+        ...(!chapter.additionalInfo?.["Comix chapter URL"] && {
+          "Comix chapter URL":
+            `${COMIX_ORIGIN}/chapter/${rawComixChapterIdSafe(chapter.chapterId)}`,
+        }),
       },
     }))
     .sort((a, b) => a.chapNum - b.chapNum);
@@ -259,14 +266,14 @@ const captureViaSiteBundle = async (
   session: ComixSession,
   pageUrl: string,
   bootstrap: string,
-): Promise<unknown> => {
+): Promise<ComixCaptureBody> => {
   // Inject contract copied from inkdex/general-extensions 0.9/stable Comix:
   // the bootstrap resolves window.__comixResult__ with {r: payload} on a
   // captured match, {r: null} on timeout, and the inject is a bare
   // `return window.__comixResult__` — that exact shape is proven to work on
   // this app version, while wrapper expressions can come back as
   // `result === undefined`.
-  const runOnce = async (): Promise<{ r?: unknown } | null | undefined> => {
+  const runOnce = async (): Promise<{ r?: ComixCaptureBody } | null | undefined> => {
     const html = await requestHtml(session, pageUrl);
     const headOpen = /<head[^>]*>/i.exec(html);
     const withBootstrap = headOpen !== null
@@ -285,14 +292,16 @@ const captureViaSiteBundle = async (
       storage: { cookies: [...session.cookies()] },
     });
     session.setCookies(execution.storage.cookies);
-    // SAFETY: test/double or boundary cast through unknown to { r?: unknown } | null | undefined;
-    return execution.result as { r?: unknown } | null | undefined;
+    // SAFETY: WebView inject result is untyped at the boundary; wrap shape is the Comix contract.
+    return execution.result as { r?: ComixCaptureBody } | null | undefined;
   };
 
-  const attempt = async (): Promise<{ r?: unknown } | null | undefined> =>
+  const attempt = async (): Promise<{ r?: ComixCaptureBody } | null | undefined> =>
     enqueueWebView(runOnce);
 
-  const hasPayload = (value: { r?: unknown } | null | undefined): value is { r: unknown } =>
+  const hasPayload = (
+    value: { r?: ComixCaptureBody } | null | undefined,
+  ): value is { r: ComixCaptureBody } =>
     value !== undefined && value !== null && value.r !== undefined && value.r !== null;
 
   let wrapped = await attempt();
@@ -519,7 +528,7 @@ const comixSourceManga = (mangaId: string, manga: DetailManga): SourceManga => {
       primaryTitle: asText(manga.title) || "Untitled",
       secondaryTitles: [...altTitlesOf(manga.altTitles)],
       contentRating: ContentRating.MATURE,
-      ...(asText(manga.status) ? { status: asText(manga.status) } : {}),
+      ...(asText(manga.status) && { status: asText(manga.status) }),
       additionalInfo: {
         "manifold provider": "comix",
         "manifold provider ID": hid,
@@ -717,7 +726,7 @@ export const createComixFallback = (session: ComixSession) => ({
     return {
       id,
       chapNum: numberLike(newest.number) ?? numberLike(newest.chapter) ?? 0,
-      ...(stampOf(newest) > 0 ? { publishedAt: new Date(stampOf(newest)) } : {}),
+      ...(stampOf(newest) > 0 && { publishedAt: new Date(stampOf(newest)) }),
     };
   },
 

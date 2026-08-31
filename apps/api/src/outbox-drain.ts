@@ -25,9 +25,14 @@ export interface DrainGroup<R extends OutboxRowLike = OutboxRowLike> {
   readonly rows: readonly R[];
 }
 
+export interface DrainBatch<R extends OutboxRowLike = OutboxRowLike> {
+  readonly groups: readonly DrainGroup<R>[];
+  readonly invalid: readonly R[];
+}
+
 export const groupOutboxForDrain = <R extends OutboxRowLike>(
   rows: readonly R[]
-): { groups: readonly DrainGroup<R>[]; invalid: readonly R[] } => {
+): DrainBatch<R> => {
   const byEntry = new Map<string, { chapters: string[]; rows: R[] }>();
   const invalid: R[] = [];
 
@@ -47,12 +52,13 @@ export const groupOutboxForDrain = <R extends OutboxRowLike>(
     }
   }
 
-  return {
-    groups: [...byEntry].map(([entryId, group]) => ({
+  const groups: DrainGroup<R>[] = [];
+  for (const [entryId, group] of byEntry) {
+    groups.push({
       entryId,
       chapters: group.chapters,
-      rows: group.rows
-    })),
-    invalid
-  };
+      rows: group.rows,
+    });
+  }
+  return { groups, invalid };
 };

@@ -44,21 +44,21 @@ export const agentIgnores = [
   ".windsurf/**",
 ];
 
-// Boundary anti-slop rules that require monorepo-wide parse-at-I/O redesign are
-// "warn" until that pass (memory: anti-slop boundary compliance). Mechanical
-// anti-slop stays "error".
+// Boundary anti-slop rules that require monorepo-wide parse-at-I/O redesign stay
+// "warn" (typeof, unknown-params, unsafe-dictionary). Everything else is "error"
+// (memory 1014: anti-slop warn→error).
 export const antiSlopRules: DummyRuleMap = {
-  "anti-slop/no-chained-type-assertions": "warn",
-  "anti-slop/no-conditional-empty-object-spread": "warn",
-  "anti-slop/no-known-value-widening": "warn",
-  "anti-slop/no-module-mocking": "warn",
+  "anti-slop/no-chained-type-assertions": "error",
+  "anti-slop/no-conditional-empty-object-spread": "error",
+  "anti-slop/no-known-value-widening": "error",
+  "anti-slop/no-module-mocking": "error",
   "anti-slop/no-object-parameters": "error",
   "anti-slop/no-reflect-apply": "error",
   "anti-slop/no-reflect-get": "error",
   "anti-slop/no-runtime-typeof": "warn",
-  "anti-slop/no-shape-in-symbol-names": "warn",
+  "anti-slop/no-shape-in-symbol-names": "error",
   "anti-slop/no-unknown-parameters": "warn",
-  "anti-slop/no-unknown-returns": "warn",
+  "anti-slop/no-unknown-returns": "error",
   "anti-slop/no-unknown-type-aliases": "error",
   "anti-slop/no-unsafe-dictionary-type": "warn",
   "anti-slop/no-widen-then-assert": "error",

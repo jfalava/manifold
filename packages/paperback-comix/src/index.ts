@@ -34,6 +34,7 @@ import {
   toChapterDetails,
   toSearchResult,
   toSourceManga,
+  type ComixCaptureBody,
 } from "./parser.js";
 import {
   chaptersFromWebView,
@@ -63,7 +64,7 @@ export const ComixInfo: ExtensionInfo = {
 
 type JsonRequest = {
   readonly url: string;
-  readonly body: unknown;
+  readonly body: ComixCaptureBody;
 };
 
 type HtmlRequest = {
@@ -101,8 +102,8 @@ const requestJson = async (url: string): Promise<JsonRequest> => {
   }
 
   try {
-    // SAFETY: test/double or boundary cast through unknown to unknown
-    return { url, body: JSON.parse(body) as unknown };
+    // SAFETY: Response body is untyped JSON at the HTTP boundary; ComixCaptureBody is the domain parse target.
+    return { url, body: JSON.parse(body) as ComixCaptureBody };
   } catch {
     throw new Error(`Comix returned a non-JSON response: ${url}`);
   }
@@ -210,7 +211,10 @@ export class ComixSource implements
     );
   }
 
-  private async executeComixWebView(url: string, inject: string): Promise<unknown> {
+  private async executeComixWebView(
+    url: string,
+    inject: string,
+  ): Promise<ComixCaptureBody> {
     const page = await requestHtml(url);
     const execution = await Application.executeInWebView({
       source: {
@@ -223,7 +227,8 @@ export class ComixSource implements
       storage: { cookies: [...this.cookieStorage.cookies] },
     });
     this.cookieStorage.cookies = execution.storage.cookies;
-    return execution.result;
+    // SAFETY: WebView inject result is untyped at the boundary; ComixCaptureBody is the domain parse target.
+    return execution.result as ComixCaptureBody;
   }
 
   async getSearchResults(

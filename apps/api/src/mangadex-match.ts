@@ -168,10 +168,8 @@ const decisionCandidate = (
   externalId: candidate.manga.id,
   title: candidate.manga.title,
   score: Number(candidate.score.toFixed(6)),
-  ...(candidate.manga.anilistId ? { anilistId: candidate.manga.anilistId } : {}),
-  ...(candidate.manga.myAnimeListId
-    ? { myAnimeListId: candidate.manga.myAnimeListId }
-    : {}),
+  ...(candidate.manga.anilistId && { anilistId: candidate.manga.anilistId }),
+  ...(candidate.manga.myAnimeListId && { myAnimeListId: candidate.manga.myAnimeListId }),
 });
 
 const resultForCandidates = (
@@ -277,7 +275,13 @@ export const rankEmbeddedCandidates = (
     }))
     .sort((left, right) => right.score - left.score);
 
-type VectorMetadata = Record<string, string | number | boolean | string[]>;
+/**
+ * Vectorize metadata bag for MangaDex title embeddings.
+ * Index signature matches VectorizeVector.metadata value contract.
+ */
+interface VectorMetadata {
+  [key: string]: string | number | boolean | string[];
+}
 
 const vectorCandidate = (
   id: string,
@@ -291,25 +295,23 @@ const vectorCandidate = (
     id: mangaId,
     title,
     altTitles: stringArray(metadata?.aliases),
-    ...(stringValue(metadata?.anilistId)
-      ? { anilistId: stringValue(metadata?.anilistId) }
-      : {}),
-    ...(stringValue(metadata?.malId)
-      ? { myAnimeListId: stringValue(metadata?.malId) }
-      : {}),
-    ...(year === undefined ? {} : { year }),
+    ...(stringValue(metadata?.anilistId) && { anilistId: stringValue(metadata?.anilistId) }),
+    ...(stringValue(metadata?.malId) && { myAnimeListId: stringValue(metadata?.malId) }),
+    ...(!(year === undefined) && { year }),
   };
 };
 
-const vectorMetadata = (manga: MangaDexManga): VectorMetadata => ({
-  provider: "mangadex",
-  mangaId: manga.id,
-  title: manga.title,
-  aliases: [...manga.altTitles],
-  ...(manga.anilistId ? { anilistId: manga.anilistId } : {}),
-  ...(manga.myAnimeListId ? { malId: manga.myAnimeListId } : {}),
-  ...(manga.year === undefined ? {} : { year: manga.year }),
-});
+const vectorMetadata = (manga: MangaDexManga): VectorMetadata => {
+  const metadata: VectorMetadata = {};
+  metadata.provider = "mangadex";
+  metadata.mangaId = manga.id;
+  metadata.title = manga.title;
+  metadata.aliases = [...manga.altTitles];
+  if (manga.anilistId) {metadata.anilistId = manga.anilistId;}
+  if (manga.myAnimeListId) {metadata.malId = manga.myAnimeListId;}
+  if (manga.year !== undefined) {metadata.year = manga.year;}
+  return metadata;
+};
 
 const uniqueManga = (values: readonly MangaDexManga[]): MangaDexManga[] => {
   const seen = new Set<string>();
@@ -415,7 +417,7 @@ const cachedResult = (
   status: "matched",
   candidates: [{ externalId, title: title ?? externalId, score: 1 }],
   externalId,
-  ...(title ? { title } : {}),
+  ...(title && { title }),
   method: "cached",
   score: 1,
   margin: 1,

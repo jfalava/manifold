@@ -215,23 +215,18 @@ export const fetchAniListRichEntries = async (
         mediaId: entry.mediaId,
         status,
         title: primary,
-        ...(media?.title?.romaji ? { romajiTitle: media.title.romaji } : {}),
-        ...(media?.title?.native ? { nativeTitle: media.title.native } : {}),
+        ...(media?.title?.romaji && { romajiTitle: media.title.romaji }),
+        ...(media?.title?.native && { nativeTitle: media.title.native }),
         synonyms: [...new Set(titles)].filter((t) => t !== primary),
-        ...(media?.description ? { description: media.description } : {}),
-        ...(media?.coverImage?.extraLarge || media?.coverImage?.large
-          ? {
-              coverUrl:
-                media.coverImage.extraLarge ?? media.coverImage.large,
-            }
-          : {}),
-        ...(media?.status ? { mediaStatus: media.status } : {}),
-        ...(typeof media?.averageScore === "number"
-          ? { averageScore: media.averageScore }
-          : {}),
-        ...(typeof entry.createdAt === "number" && entry.createdAt > 0
-          ? { createdAt: entry.createdAt }
-          : {})
+        ...(media?.description && { description: media.description }),
+        ...((media?.coverImage?.extraLarge || media?.coverImage?.large) && {
+          coverUrl: media.coverImage.extraLarge ?? media.coverImage.large,
+        }),
+        ...(media?.status && { mediaStatus: media.status }),
+        ...(typeof media?.averageScore === "number" && {
+          averageScore: media.averageScore,
+        }),
+        ...(typeof entry.createdAt === "number" && entry.createdAt > 0 && { createdAt: entry.createdAt })
       });
     }
   }
@@ -264,9 +259,7 @@ export const fetchAniListMangaEntries = async (
         mediaId: entry.mediaId,
         title,
         status,
-        ...(typeof entry.progress === "number" && entry.progress >= 1
-          ? { progress: Math.floor(entry.progress) }
-          : {})
+        ...(typeof entry.progress === "number" && entry.progress >= 1 && { progress: Math.floor(entry.progress) })
       });
     }
   }

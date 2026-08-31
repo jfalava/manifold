@@ -69,7 +69,7 @@ const searchSource = async (
       results: [],
       error: {
         message: failure.message,
-        ...(failure.status === undefined ? {} : { status: failure.status }),
+        ...(!(failure.status === undefined) && { status: failure.status }),
       },
     };
   }

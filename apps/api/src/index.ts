@@ -526,7 +526,7 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
     if (path[3] === "delete" && path.length === 4 && request.method === "POST") {
       const body = yield* parseJson(request).pipe(Effect.orElseSucceed(() => ({})));
       const state = yield* tryPromise(() => sync.nukeEntry(entryId, body));
-      return json({ ok: true, ...(state ? { state } : {}) });
+      return json({ ok: true, ...(state && { state }) });
     }
 
     return json({ error: "Not found" }, 404);

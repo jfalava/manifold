@@ -103,15 +103,15 @@ const scheduledFetchResponse = (
       return value ?? null;
     },
   };
-  // SAFETY: HTTP value is the expected unknown, } as unknown as Response after the preceding check
+  // SAFETY: scheduleRequest surface is a partial Response used by provider clients
   return {
     ok: response.status >= 200 && response.status < 300,
     status: response.status,
     headers,
     text: async () => body,
-    // SAFETY: test/double or boundary cast through unknown to unknown
+    // SAFETY: JSON.parse result is validated by provider response parsers
     json: async () => JSON.parse(body) as unknown,
-  } as unknown as Response;
+  } as Response;
 };
 
 const COMIX_ORIGIN = "https://comix.to";
@@ -167,7 +167,7 @@ const restorePersistedCfClearance = (): Cookie | undefined => {
       value: parsed.value,
       domain: typeof parsed.domain === "string" && parsed.domain.length > 0 ? parsed.domain : COMIX_ORIGIN_HOST,
       path: typeof parsed.path === "string" && parsed.path.length > 0 ? parsed.path : "/",
-      ...(expires ? { expires } : {}),
+      ...(expires && { expires }),
     };
   } catch {
     return undefined;
@@ -295,7 +295,7 @@ const scheduledAniListFetcher: CanonicalFetcher = async (input, init) => {
     url: String(input),
     method: init?.method ?? "GET",
     headers,
-    ...(typeof init?.body === "string" ? { body: init.body } : {}),
+    ...(typeof init?.body === "string" && { body: init.body }),
   });
   return scheduledFetchResponse(response, bodyBuffer);
 };
@@ -340,7 +340,7 @@ const cardFromCachedPayload = (
     mangaId: card.mangaId,
     chapterId: card.chapterId,
     subtitle: card.subtitle ?? "",
-    ...(card.publishDate ? { publishDate: new Date(card.publishDate) } : {}),
+    ...(card.publishDate && { publishDate: new Date(card.publishDate) }),
   };
 };
 
@@ -1006,9 +1006,7 @@ export class ManifoldSourceImpl implements
             mangaId: card.mangaId,
             chapterId: card.chapterId,
             subtitle: card.subtitle,
-            ...(card.publishDate
-              ? { publishDate: card.publishDate.toISOString() }
-              : {}),
+            ...(card.publishDate && { publishDate: card.publishDate.toISOString() }),
           },
         }),
         cacheKey,
@@ -1058,7 +1056,7 @@ export class ManifoldSourceImpl implements
       mangaId: entry.id,
       chapterId: newest.id,
       subtitle: `Ch. ${newest.chapterNumber ?? 0} · MangaDex`,
-      ...(newest.publishedAt === undefined ? {} : { publishDate: new Date(newest.publishedAt) }),
+      ...(!(newest.publishedAt === undefined) && { publishDate: new Date(newest.publishedAt) }),
     };
   }
 
@@ -1093,7 +1091,7 @@ export class ManifoldSourceImpl implements
         ) {
           return undefined;
         }
-        return { hid: parsed.hid, ...(typeof parsed.slug === "string" ? { slug: parsed.slug } : {}) };
+        return { hid: parsed.hid, ...(typeof parsed.slug === "string" && { slug: parsed.slug }) };
       } catch {
         return undefined;
       }
@@ -1101,7 +1099,7 @@ export class ManifoldSourceImpl implements
     const writeHidCache = (resolved: ComixResolvedHid): void => {
       if (!resolved.hid) {return;}
       Application.setState(
-        JSON.stringify({ t: Date.now(), hid: resolved.hid, ...(resolved.slug ? { slug: resolved.slug } : {}) }),
+        JSON.stringify({ t: Date.now(), hid: resolved.hid, ...(resolved.slug && { slug: resolved.slug }) }),
         hidKey,
       );
     };
@@ -1166,7 +1164,7 @@ export class ManifoldSourceImpl implements
       mangaId: slug ? `${hid}-${slug}` : hid,
       chapterId: `comix:${latest.id}`,
       subtitle: `Ch. ${latest.chapNum} · Comix`,
-      ...(latest.publishedAt ? { publishDate: latest.publishedAt } : {}),
+      ...(latest.publishedAt && { publishDate: latest.publishedAt }),
     };
   }
   getDiscoverSections(): Promise<DiscoverSection[]> {
@@ -1427,7 +1425,7 @@ export class ManifoldSourceImpl implements
           t: Date.now(),
           ttl: FAILED_RETRY_TTL_MS,
           n: 0,
-          ...(useComix && comixHid ? { h: comixHid } : {}),
+          ...(useComix && comixHid && { h: comixHid }),
         }),
         choiceKey,
       );
@@ -1447,7 +1445,7 @@ export class ManifoldSourceImpl implements
         t: Date.now(),
         ttl: ttlMs,
         n: best.length,
-        ...(useComix && comixHid ? { h: comixHid } : {}),
+        ...(useComix && comixHid && { h: comixHid }),
       }),
       choiceKey,
     );

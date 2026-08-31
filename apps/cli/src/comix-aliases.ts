@@ -29,6 +29,10 @@ export const loadRegistrySearchTitles = async (
   },
   options: {
     readonly anilistToken?: string;
+    readonly anilistTitles?: (
+      token: string,
+      mediaId: number,
+    ) => Promise<readonly string[]>;
     readonly mangaDexTitles?: (id: string) => Promise<readonly string[]>;
   } = {},
 ): Promise<readonly string[]> => {
@@ -38,7 +42,8 @@ export const loadRegistrySearchTitles = async (
     const parsed = Number(anilistId);
     if (Number.isInteger(parsed) && parsed > 0) {
       try {
-        titles.push(...(await fetchAniListTitles(options.anilistToken, parsed)));
+        const loadAniList = options.anilistTitles ?? fetchAniListTitles;
+        titles.push(...(await loadAniList(options.anilistToken, parsed)));
       } catch {
         // keep the registry title if AniList is down
       }

@@ -78,14 +78,12 @@ const executeOp = async (
     }
     case "anilist.fields": {
       await saveAniListFields(token, payload.anilistId, {
-        ...(payload.status === undefined ? {} : { status: statusOrNull(payload.status) }),
-        ...(payload.score === undefined ? {} : { score: payload.score }),
-        ...(payload.notes === undefined ? {} : { notes: payload.notes }),
-        ...(payload.startedAt === undefined ? {} : { startedAt: payload.startedAt }),
-        ...(payload.completedAt === undefined ? {} : { completedAt: payload.completedAt }),
-        ...(payload.volumeProgress === undefined
-          ? {}
-          : { volumeProgress: payload.volumeProgress }),
+        ...(!(payload.status === undefined) && { status: statusOrNull(payload.status) }),
+        ...(!(payload.score === undefined) && { score: payload.score }),
+        ...(!(payload.notes === undefined) && { notes: payload.notes }),
+        ...(!(payload.startedAt === undefined) && { startedAt: payload.startedAt }),
+        ...(!(payload.completedAt === undefined) && { completedAt: payload.completedAt }),
+        ...(!(payload.volumeProgress === undefined) && { volumeProgress: payload.volumeProgress }),
       });
       return payload.mediaListEntryId;
     }
@@ -135,7 +133,7 @@ export const drainAniListOps = async (): Promise<void> => {
   for (const op of ops) {
     try {
       const mediaListEntryId = await executeOp(token, op, mediaListEntryIds);
-      results.push({ opId: op.opId, ok: true, ...(mediaListEntryId !== undefined ? { mediaListEntryId } : {}) });
+      results.push({ opId: op.opId, ok: true, ...(mediaListEntryId !== undefined && { mediaListEntryId }) });
       
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -9,8 +9,14 @@ import type {
   ReadingProgress,
   SyncOp
 } from "./domain";
+import type { MangaDexChapter, MangaDexPaged } from "@manifold/mangadex";
 import type { Ai, SecretsStoreSecret, VectorizeIndex } from "@cloudflare/workers-types";
 import type { OAuthStart } from "./oauth";
+
+export type RegistryListEntry = CanonicalEntry & {
+  readonly state?: ListState;
+  readonly tombstoned?: boolean;
+};
 
 export interface ManifoldSyncStub {
   createOAuthSession(provider: OAuthProvider, redirectUri: string): Promise<OAuthStart>;
@@ -37,13 +43,13 @@ export interface ManifoldSyncStub {
   mangaDexLibrary(status?: string): Promise<readonly MangaDexLibraryItem[]>;
   mangaDexCurrentUser(): Promise<{ id: string; name?: string }>;
   mangaDexReadMarkers(mangaDexId: string): Promise<readonly string[]>;
-  mangaDexFeed(limit: number, offset: number): Promise<unknown>;
+  mangaDexFeed(limit: number, offset: number): Promise<MangaDexPaged<MangaDexChapter>>;
   mangaDexStats(mangaDexIds: readonly string[]): Promise<Record<string, unknown>>;
   setMangaDexStatus(mangaDexId: string, input: unknown): Promise<void>;
-  entryByProvider(provider: string, externalId: string): Promise<unknown>;
+  entryByProvider(provider: string, externalId: string): Promise<CanonicalEntry | undefined>;
   resolveEntry(input: unknown): Promise<CanonicalEntry>;
   resolveEntries(input: unknown): Promise<readonly CanonicalEntry[]>;
-  listRegistry(limit?: number, offset?: number): Promise<readonly unknown[]>;
+  listRegistry(limit?: number, offset?: number): Promise<readonly RegistryListEntry[]>;
   unlinkProvider(entryId: string, provider: string): Promise<CanonicalEntry>;
   setListState(entryId: string, input: unknown): Promise<ListState>;
   getListState(entryId: string): Promise<ListState | undefined>;

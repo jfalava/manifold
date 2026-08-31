@@ -125,18 +125,22 @@ const VALID_STATUSES: readonly MangaDexReadingStatus[] = [
   "completed",
 ];
 
-const DURATION_UNIT_MS: Record<string, number> = {
+const DURATION_UNIT_MS = {
   d: 86_400_000,
   w: 7 * 86_400_000,
   mo: 30 * 86_400_000,
   y: 365 * 86_400_000,
-};
+} as const;
 
 /** Accepts "90", "90d", "12w", "6mo", "2y" (bare numbers mean days). */
 export const parseDurationMs = (raw: string): number | undefined => {
   const match = /^(\d+)(d|w|mo|y)?$/i.exec(raw.trim());
   if (!match) {return undefined;}
-  return Number(match[1]) * DURATION_UNIT_MS[(match[2] ?? "d").toLowerCase()];
+  const unit = (match[2] ?? "d").toLowerCase();
+  if (unit !== "d" && unit !== "w" && unit !== "mo" && unit !== "y") {
+    return undefined;
+  }
+  return Number(match[1]) * DURATION_UNIT_MS[unit];
 };
 
 const optional = (name: string, description: string) =>
@@ -309,9 +313,10 @@ export const staleStatusCommand = Command.make(
                 const cached = await loadStaleCache();
                 // Cache verdicts are only used when the live sweep cannot
                 // finish; a completed sweep is always authoritative.
-                const knownUploads: Record<string, number> = {
-                  ...(cached.usable ? cached.entries : {}),
-                };
+                const knownUploads: Record<string, number> = {};
+                if (cached.usable) {
+                  Object.assign(knownUploads, cached.entries);
+                }
 
                 // Phase 1: one paginated sweep of the followed-manga feed
                 // since the cutoff; every manga that appears has fresh
@@ -420,10 +425,8 @@ export const staleStatusCommand = Command.make(
                     `(${requests} requests scanned${cached.usable ? `, cache from ${cached.savedAt}` : ""}).`,
                 );
 
-                const mergedUploads: Record<string, number> = {
-                  ...knownUploads,
-                  ...seenUploads,
-                };
+                const mergedUploads: Record<string, number> = {};
+                Object.assign(mergedUploads, knownUploads, seenUploads);
                 await saveStaleCache(mergedUploads);
 
                 const titles: Record<string, string> = {};

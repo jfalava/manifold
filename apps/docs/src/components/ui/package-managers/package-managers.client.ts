@@ -9,6 +9,12 @@ function cloneIcon(tpl: HTMLTemplateElement | null): Node {
   return tpl ? tpl.content.cloneNode(true) : document.createTextNode("");
 }
 
+interface CopyHandler {
+  btn: HTMLButtonElement;
+  handler: () => void;
+  timer?: number;
+}
+
 function initPackageManager(container: HTMLElement): () => void {
   const copyTpl = container.querySelector<HTMLTemplateElement>("[data-nb-pm-icon-copy]");
   const checkTpl = container.querySelector<HTMLTemplateElement>("[data-nb-pm-icon-check]");
@@ -21,10 +27,10 @@ function initPackageManager(container: HTMLElement): () => void {
     sync: { key: "ui-pm-tab", storage: "session" },
   });
 
-  const copyHandlers: Array<{ btn: HTMLButtonElement; handler: () => void; timer?: number }> = [];
+  const copyHandlers: CopyHandler[] = [];
 
   container.querySelectorAll<HTMLButtonElement>("[data-nb-pm-copy]").forEach((btn) => {
-    const handlerInfo: { btn: HTMLButtonElement; handler: () => void; timer?: number } = {
+    const handlerInfo: CopyHandler = {
       btn,
       handler: async () => {
         try {

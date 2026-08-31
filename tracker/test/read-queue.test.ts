@@ -23,14 +23,14 @@ const action = (
   chapterNum: number | undefined,
   mangaId = "anilist:141756",
 ): TrackedMangaChapterReadAction =>
-  // SAFETY: value matches unknown as TrackedMangaChapterReadAction at this call site
+  // SAFETY: test fixture supplies the TrackedMangaChapterReadAction fields processReadActions reads
   ({
     id,
     chapterId,
-    ...(chapterNum === undefined ? {} : { chapterNum }),
+    ...(!(chapterNum === undefined) && { chapterNum }),
     creationDate: new Date(0),
     sourceManga: manga(mangaId),
-  }) as unknown as TrackedMangaChapterReadAction;
+  }) as TrackedMangaChapterReadAction;
 
 describe("processReadActions", () => {
   it("records every read but pushes AniList once with the highest chapter", async () => {

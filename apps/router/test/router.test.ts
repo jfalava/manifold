@@ -49,8 +49,8 @@ function makeEnv(): TestEnv {
         throw new Error(`connect is not stubbed for ${binding}`);
       },
     };
-    // SAFETY: test double supplies the Fetcher surface the router actually calls.
-    return fetcher as unknown as Fetcher;
+    // SAFETY: test double supplies the Fetcher.fetch surface the router calls
+    return fetcher as Fetcher;
   };
 
   return {

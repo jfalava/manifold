@@ -272,9 +272,7 @@ export const fetchAniListLibrary = async (
           titleValue(titles?.english) ??
           titleValue(titles?.romaji) ??
           `AniList ${mediaId}`,
-        ...(titleValue(entry.media?.coverImage?.large)
-          ? { coverUrl: titleValue(entry.media?.coverImage?.large) }
-          : {}),
+        ...(titleValue(entry.media?.coverImage?.large) && { coverUrl: titleValue(entry.media?.coverImage?.large) }),
       });
     }
   }
@@ -313,10 +311,21 @@ export interface AniListFieldChange {
 
 const FMI_DATE = /\d{4}-\d{2}-\d{2}/;
 
-const fmiDate = (value: string | null | undefined): unknown =>
+/** AniList GraphQL FuzzyDateInput for startedAt / completedAt mutations. */
+export interface FuzzyDateInput {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+}
+
+const fmiDate = (value: string | null | undefined): FuzzyDateInput | undefined =>
   value == null || !FMI_DATE.test(value)
     ? undefined
-    : { year: Number(value.slice(0, 4)), month: Number(value.slice(5, 7)), day: Number(value.slice(8, 10)) };
+    : {
+        year: Number(value.slice(0, 4)),
+        month: Number(value.slice(5, 7)),
+        day: Number(value.slice(8, 10)),
+      };
 
 export const saveAniListFields = async (
   token: string,
@@ -339,14 +348,12 @@ export const saveAniListFields = async (
     }`,
     {
       mediaId,
-      ...(change.status === undefined
-        ? {}
-        : { status: change.status === null ? null : toAniListStatus(change.status) }),
-      ...(change.score === undefined ? {} : { score: change.score }),
-      ...(change.notes === undefined ? {} : { notes: change.notes }),
-      ...(change.startedAt === undefined ? {} : { startedAt: fmiDate(change.startedAt) }),
-      ...(change.completedAt === undefined ? {} : { completedAt: fmiDate(change.completedAt) }),
-      ...(change.volumeProgress === undefined ? {} : { progressVolumes: change.volumeProgress })
+      ...(!(change.status === undefined) && { status: change.status === null ? null : toAniListStatus(change.status) }),
+      ...(!(change.score === undefined) && { score: change.score }),
+      ...(!(change.notes === undefined) && { notes: change.notes }),
+      ...(!(change.startedAt === undefined) && { startedAt: fmiDate(change.startedAt) }),
+      ...(!(change.completedAt === undefined) && { completedAt: fmiDate(change.completedAt) }),
+      ...(!(change.volumeProgress === undefined) && { progressVolumes: change.volumeProgress })
     },
   );
 };

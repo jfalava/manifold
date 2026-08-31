@@ -15,14 +15,32 @@ import {
 
 const DEFAULT_API_ORIGIN = "https://manifold.jfa.dev/api";
 
-const ANILIST_TO_REGISTRY: Record<string, string> = {
+const ANILIST_TO_REGISTRY = {
   CURRENT: "reading",
   PLANNING: "plan_to_read",
   PAUSED: "on_hold",
   DROPPED: "dropped",
   COMPLETED: "completed",
-  REPEATING: "re_reading"
-};
+  REPEATING: "re_reading",
+} as const;
+
+type AniListRegistryStatus = keyof typeof ANILIST_TO_REGISTRY;
+
+const isAniListRegistryStatus = (
+  status: string,
+): status is AniListRegistryStatus => Object.hasOwn(ANILIST_TO_REGISTRY, status);
+
+const registryStatusFor = (anilistStatus: string): string =>
+  isAniListRegistryStatus(anilistStatus)
+    ? ANILIST_TO_REGISTRY[anilistStatus]
+    : anilistStatus.toLowerCase();
+
+const mappedRegistryStatus = (
+  anilistStatus: string,
+): (typeof ANILIST_TO_REGISTRY)[AniListRegistryStatus] | undefined =>
+  isAniListRegistryStatus(anilistStatus)
+    ? ANILIST_TO_REGISTRY[anilistStatus]
+    : undefined;
 
 export interface ApiConfig {
   readonly origin: string;
@@ -54,9 +72,9 @@ export const apiCall = async <A>(
     headers: {
       accept: "application/json",
       authorization: `Bearer ${config.token}`,
-      ...(body === undefined ? {} : { "content-type": "application/json" })
+      ...(!(body === undefined) && { "content-type": "application/json" })
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) })
+    ...(!(body === undefined) && { body: JSON.stringify(body) })
   });
   const text = await response.text();
   const parsed: unknown = text.length > 0 ? JSON.parse(text) : undefined;
@@ -220,7 +238,7 @@ export const reconcileCommand = Command.make("diff", {
           let drift = 0;
           let missing = 0;
           for (const entry of live) {
-            const status = ANILIST_TO_REGISTRY[entry.status] ?? entry.status.toLowerCase();
+            const status = registryStatusFor(entry.status);
             const key = String(entry.mediaId);
             const row = registry.get(key);
             if (!row) {
@@ -292,7 +310,7 @@ export const importCommand = Command.make("import", {
           for (let index = 0; index < live.length; index += 1) {
             const entry = live[index];
             const row = resolved.entries[index];
-            const status = entry ? ANILIST_TO_REGISTRY[entry.status] : undefined;
+            const status = entry ? mappedRegistryStatus(entry.status) : undefined;
             if (!entry || !row || !status) {continue;}
             await apiCall(
               config,
