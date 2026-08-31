@@ -163,6 +163,7 @@ const builtinRules: DummyRuleMap = {
 // the vendored anti-slop rules. Workspace configs spread this and add their
 // own jsPlugins registration and ignorePatterns.
 export default defineConfig({
+  jsPlugins: antiSlopJsPlugins("."),
   options: {
     typeAware: true,
     typeCheck: true,

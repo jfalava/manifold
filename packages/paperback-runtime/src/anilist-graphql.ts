@@ -288,13 +288,26 @@ export const fetchAniListLibrary = async (
   return [...items.values()];
 };
 
+const GRAPHQL_INT_MAX = 2_147_483_647;
+const ANILIST_ID = /^[1-9]\d*$/;
+
+const mediaIdOf = (anilistId: string): number => {
+  if (!ANILIST_ID.test(anilistId)) {
+    throw new Error(`Invalid AniList manga id: ${anilistId}`);
+  }
+  const mediaId = Number(anilistId);
+  if (!Number.isSafeInteger(mediaId) || mediaId > GRAPHQL_INT_MAX) {
+    throw new Error(`Invalid AniList manga id: ${anilistId}`);
+  }
+  return mediaId;
+};
+
 export const saveAniListStatus = async (
   token: string,
   anilistId: string,
   status: AniListReadingStatus | null,
 ): Promise<{ mediaListEntryId?: number }> => {
-  const mediaId = Number.parseInt(anilistId, 10);
-  if (!Number.isSafeInteger(mediaId)) {throw new Error(`Invalid AniList manga id: ${anilistId}`);}
+  const mediaId = mediaIdOf(anilistId);
   // Privacy policy: everything this source touches stays private.
   const data = await aniListRequest<{ SaveMediaListEntry?: { id?: number } }>(
     token,
@@ -318,7 +331,7 @@ export interface AniListFieldChange {
   readonly volumeProgress?: number | null;
 }
 
-const FMI_DATE = /\d{4}-\d{2}-\d{2}/;
+const FMI_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** AniList GraphQL FuzzyDateInput for startedAt / completedAt mutations. */
 export type FuzzyDateInput = {
@@ -327,22 +340,34 @@ export type FuzzyDateInput = {
   readonly day: number;
 };
 
-const fmiDate = (value: string | null | undefined): FuzzyDateInput | undefined =>
-  value == null || !FMI_DATE.test(value)
-    ? undefined
-    : {
-        year: Number(value.slice(0, 4)),
-        month: Number(value.slice(5, 7)),
-        day: Number(value.slice(8, 10)),
-      };
+const fmiDate = (value: string | null): FuzzyDateInput | null => {
+  if (value === null) {return null;}
+  if (!FMI_DATE.test(value)) {
+    throw new Error(`Invalid AniList date: ${value}; expected YYYY-MM-DD`);
+  }
+
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth =
+    month === 2
+      ? isLeapYear ? 29 : 28
+      : month === 4 || month === 6 || month === 9 || month === 11
+        ? 30
+        : 31;
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth) {
+    throw new Error(`Invalid AniList date: ${value}; expected a real calendar date`);
+  }
+  return { year, month, day };
+};
 
 export const saveAniListFields = async (
   token: string,
   anilistId: string,
   change: AniListFieldChange,
 ): Promise<void> => {
-  const mediaId = Number.parseInt(anilistId, 10);
-  if (!Number.isSafeInteger(mediaId)) {throw new Error(`Invalid AniList manga id: ${anilistId}`);}
+  const mediaId = mediaIdOf(anilistId);
   await aniListRequest(
     token,
     `mutation (
@@ -360,8 +385,8 @@ export const saveAniListFields = async (
       ...(!(change.status === undefined) && { status: change.status === null ? null : toAniListStatus(change.status) }),
       ...(!(change.score === undefined) && { score: change.score }),
       ...(!(change.notes === undefined) && { notes: change.notes }),
-      ...(!(change.startedAt === undefined) && { startedAt: fmiDate(change.startedAt) ?? null }),
-      ...(!(change.completedAt === undefined) && { completedAt: fmiDate(change.completedAt) ?? null }),
+      ...(!(change.startedAt === undefined) && { startedAt: fmiDate(change.startedAt) }),
+      ...(!(change.completedAt === undefined) && { completedAt: fmiDate(change.completedAt) }),
       ...(!(change.volumeProgress === undefined) && { progressVolumes: change.volumeProgress }),
     },
   );
@@ -372,6 +397,13 @@ export const deleteAniListEntry = async (
   token: string,
   mediaListEntryId: number,
 ): Promise<boolean> => {
+  if (
+    !Number.isSafeInteger(mediaListEntryId) ||
+    mediaListEntryId < 1 ||
+    mediaListEntryId > GRAPHQL_INT_MAX
+  ) {
+    throw new Error(`Invalid AniList list entry id: ${mediaListEntryId}`);
+  }
   const data = await aniListRequest<{ DeleteMediaListEntry?: { deleted?: boolean } }>(
     token,
     `mutation ($id: Int) {
@@ -419,8 +451,7 @@ export const saveAniListProgress = async (
   anilistId: string,
   progress: number,
 ): Promise<boolean> => {
-  const mediaId = Number.parseInt(anilistId, 10);
-  if (!Number.isSafeInteger(mediaId)) {throw new Error(`Invalid AniList manga id: ${anilistId}`);}
+  const mediaId = mediaIdOf(anilistId);
   // AniList tracks whole chapters only; fractional releases (e.g. 38.5)
   // normalize down to their integer part. Below 1 there is nothing to push.
   const chapters = Math.floor(progress);

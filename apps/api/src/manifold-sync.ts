@@ -45,6 +45,7 @@ import {
   type MangaDexEntryStat,
   type MdFeedStatsPayload,
 } from "./mangadex-stats";
+import { createAniListListStateOpPayload } from "./list-state-op";
 import {
   createAuthorizationUrl,
   createPkceChallenge,
@@ -1066,17 +1067,12 @@ export class ManifoldSync extends DurableObject<Env> {
         target: "anilist",
         kind: onlyStatus ? "anilist.status" : "anilist.fields",
         origin,
-        payload: {
+        payload: createAniListListStateOpPayload(
           entryId,
           anilistId,
-          ...(mediaListEntryId !== undefined && { mediaListEntryId }),
-          ...(nextStatus !== undefined && { status: nextStatus }),
-          ...(nextScore !== undefined && { score: nextScore }),
-          ...(nextNotes !== undefined && { notes: nextNotes }),
-          ...(nextStarted !== undefined && { startedAt: nextStarted }),
-          ...(nextCompleted !== undefined && { completedAt: nextCompleted }),
-          ...(nextVolumes !== undefined && { volumeProgress: nextVolumes }),
-        } satisfies JsonObject,
+          mediaListEntryId,
+          changes,
+        ),
       });
     }
 

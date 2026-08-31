@@ -2,7 +2,6 @@ import { isFiniteNumber, isString } from "@manifold/json";
 import {
   ANILIST_SESSION_KEY,
   ANILIST_VIEWER_ID_KEY,
-  type AniListReadingStatus,
 } from "./anilist-types.js";
 import { errorMessage } from "./errors.js";
 import {
@@ -13,6 +12,7 @@ import {
   saveAniListStatus,
 } from "./anilist-graphql.js";
 import type { PendingSyncOp } from "./api.js";
+import { parsePendingAniListOp } from "./op-payload.js";
 import { configuredPersonalApi } from "./runtime.js";
 
 // Remote mutations (admin panel, CLI, migration) land as pending anilist:*
@@ -26,19 +26,6 @@ const DRAIN_BATCH_LIMIT = 25;
 let lastDrainAt = 0;
 let drainInFlight: Promise<void> | undefined;
 
-interface DrainPayload {
-  readonly entryId?: string;
-  readonly anilistId?: string;
-  readonly mediaListEntryId?: number;
-  readonly status?: string | null;
-  readonly progress?: number;
-  readonly score?: number | null;
-  readonly notes?: string | null;
-  readonly startedAt?: string | null;
-  readonly completedAt?: string | null;
-  readonly volumeProgress?: number | null;
-}
-
 const aniListToken = (): string | undefined => {
   const token = Application.getSecureState(ANILIST_SESSION_KEY);
   return isString(token) && token.trim().length > 0 ? token.trim() : undefined;
@@ -51,56 +38,41 @@ const aniListUserId = (): number | undefined => {
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 };
 
-const statusOrNull = (value: string | null | undefined): AniListReadingStatus | null | undefined =>
-  // SAFETY: value matches AniListReadingStatus at this call site
-  value === undefined ? undefined : value === null ? null : (value as AniListReadingStatus);
-
 const executeOp = async (
   token: string,
   op: PendingSyncOp,
   mediaListEntryIds: Record<string, number> | undefined,
 ): Promise<number | undefined> => {
-  // SAFETY: value matches DrainPayload at this call site
-  const payload = op.payload as DrainPayload;
-  if (!payload.anilistId) {throw new Error(`op ${op.opId} has no anilistId`);}
+  const parsed = parsePendingAniListOp(op);
 
-  switch (op.kind) {
+  switch (parsed.kind) {
     case "anilist.status": {
       const result = await saveAniListStatus(
         token,
-        payload.anilistId,
-        statusOrNull(payload.status) ?? null,
+        parsed.anilistId,
+        parsed.status,
       );
       return result.mediaListEntryId;
     }
     case "anilist.progress": {
-      await saveAniListProgress(token, payload.anilistId, payload.progress ?? 0);
+      await saveAniListProgress(token, parsed.anilistId, parsed.progress);
       return undefined;
     }
     case "anilist.fields": {
-      await saveAniListFields(token, payload.anilistId, {
-        ...(!(payload.status === undefined) && { status: statusOrNull(payload.status) }),
-        ...(!(payload.score === undefined) && { score: payload.score }),
-        ...(!(payload.notes === undefined) && { notes: payload.notes }),
-        ...(!(payload.startedAt === undefined) && { startedAt: payload.startedAt }),
-        ...(!(payload.completedAt === undefined) && { completedAt: payload.completedAt }),
-        ...(!(payload.volumeProgress === undefined) && { volumeProgress: payload.volumeProgress }),
-      });
-      return payload.mediaListEntryId;
+      await saveAniListFields(token, parsed.anilistId, parsed.change);
+      return parsed.mediaListEntryId;
     }
     case "anilist.delete": {
-      let listEntryId = payload.mediaListEntryId;
+      let listEntryId = parsed.mediaListEntryId;
       if (listEntryId === undefined && mediaListEntryIds) {
-        listEntryId = mediaListEntryIds[payload.anilistId];
+        listEntryId = mediaListEntryIds[parsed.anilistId];
       }
       if (listEntryId === undefined) {
-        throw new Error(`op ${op.opId}: no mediaListEntryId for ${payload.anilistId}`);
+        throw new Error(`op ${parsed.opId}: no mediaListEntryId for ${parsed.anilistId}`);
       }
       await deleteAniListEntry(token, listEntryId);
       return listEntryId;
     }
-    default:
-      throw new Error(`op ${op.opId}: unknown kind ${op.kind}`);
   }
 };
 
@@ -135,7 +107,10 @@ export const drainAniListOps = async (): Promise<void> => {
     try {
       const mediaListEntryId = await executeOp(token, op, mediaListEntryIds);
       results.push({ opId: op.opId, ok: true, ...(mediaListEntryId !== undefined && { mediaListEntryId }) });
-      
+      const drainedAnilistId = op.payload["anilistId"];
+      console.info(
+        `[manifold] drained op:${op.kind}:${isString(drainedAnilistId) ? drainedAnilistId : ""}`,
+      );
     } catch (cause) {
       const message = errorMessage(cause);
       console.error(`[manifold] drain failed:${op.kind}:${message}`);

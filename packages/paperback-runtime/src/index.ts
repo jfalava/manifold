@@ -33,6 +33,7 @@ export {
   ANILIST_VIEWER_ID_KEY,
   ANILIST_STATUS_KEY,
   ANILIST_OAUTH_CLIENT_ID,
+  parseAniListReadingStatus,
   type AniListReadingStatus,
 } from "./anilist-types.js";
 

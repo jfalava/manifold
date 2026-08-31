@@ -5,7 +5,7 @@ import {
   type SourceManga,
 } from "@paperback/types";
 
-import { isFiniteNumber, isString } from "@manifold/json";
+import { isFiniteNumber, isJsonObject, isString } from "@manifold/json";
 import {
   ANILIST_SESSION_KEY,
   ANILIST_VIEWER_ID_KEY,
@@ -13,6 +13,7 @@ import {
   deleteAniListEntry,
   fetchAniListLibrary,
   fetchAniListMediaListEntryIds,
+  parseAniListReadingStatus,
   saveAniListProgress,
   saveAniListStatus,
   type AniListReadingStatus,
@@ -26,8 +27,6 @@ export const MANAGED_COLLECTIONS: ManagedCollection[] = [
   { id: "re_reading", title: "Re-reading" },
   { id: "completed", title: "Completed" },
 ];
-
-const COLLECTION_IDS = new Set(MANAGED_COLLECTIONS.map((collection) => collection.id));
 
 // Deletion on AniList is keyed by the numeric list-entry row, not the media
 // row. Saves return it; this cache bridges saves and later nukes within a
@@ -46,43 +45,75 @@ interface PendingNuke {
   readonly at: number;
 }
 
+interface PendingNukes {
+  [anilistId: string]: PendingNuke;
+}
+
 const PENDING_NUKES_KEY = "manifold.pending-nukes";
 const NUKE_QUIET_MS = 120_000;
 
-const readPendingNukes = (): Record<string, PendingNuke> => {
+const readPendingNukes = (): PendingNukes => {
   const raw = Application.getState(PENDING_NUKES_KEY);
   if (!isString(raw)) {return {};}
   try {
-    // SAFETY: parsed JSON matches Record<string, PendingNuke> for this trusted/test payload
-    return JSON.parse(raw) as Record<string, PendingNuke>;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isJsonObject(parsed)) {return {};}
+    const pending: PendingNukes = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (
+        !isJsonObject(value) ||
+        !isString(value["entryId"]) ||
+        !isString(value["anilistId"]) ||
+        key !== value["anilistId"] ||
+        !isString(value["collectionId"]) ||
+        parseAniListReadingStatus(value["collectionId"]) === undefined ||
+        !isFiniteNumber(value["at"]) ||
+        !Number.isSafeInteger(value["at"]) ||
+        value["at"] < 0
+      ) {
+        continue;
+      }
+      pending[key] = {
+        entryId: value["entryId"],
+        anilistId: value["anilistId"],
+        collectionId: value["collectionId"],
+        at: value["at"],
+      };
+    }
+    return pending;
   } catch {
     return {};
   }
 };
 
-const writePendingNukes = (pending: Record<string, PendingNuke>): void => {
+const writePendingNukes = (pending: PendingNukes): void => {
   Application.setState(JSON.stringify(pending), PENDING_NUKES_KEY);
 };
 
 const aniListToken = (): string => {
-  // SAFETY: Paperback secure/state store returns string | undefined for this key
-  const token = Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined;
-  if (!token) {
+  const token = Application.getSecureState(ANILIST_SESSION_KEY);
+  if (!isString(token) || token.trim().length === 0) {
     throw new Error("Connect AniList in the manifold: tracker settings first");
   }
-  return token;
+  return token.trim();
 };
 
 const aniListUserId = (): number => {
-  // SAFETY: Paperback secure/state store returns number | undefined for this key
-  const userId = Application.getState(ANILIST_VIEWER_ID_KEY) as number | undefined;
-  if (!userId) {throw new Error("AniList session is incomplete, reconnect in settings");}
+  const raw = Application.getState(ANILIST_VIEWER_ID_KEY);
+  if (!isString(raw) && !isFiniteNumber(raw)) {
+    throw new Error("AniList session is incomplete, reconnect in settings");
+  }
+  const userId = Number(raw);
+  if (!Number.isSafeInteger(userId) || userId < 1) {
+    throw new Error("AniList session is incomplete, reconnect in settings");
+  }
   return userId;
 };
 
-export const aniListSessionToken = (): string | undefined =>
-  // SAFETY: Paperback secure/state store returns string | undefined for this key
-  (Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined) ?? undefined;
+export const aniListSessionToken = (): string | undefined => {
+  const token = Application.getSecureState(ANILIST_SESSION_KEY);
+  return isString(token) && token.trim().length > 0 ? token.trim() : undefined;
+};
 
 const rememberListEntryId = (
   anilistId: string,
@@ -135,12 +166,13 @@ export const getManagedLibraryCollections = (): Promise<ManagedCollection[]> => 
 export const getSourceMangaInManagedCollection = async (
   managedCollection: ManagedCollection,
 ): Promise<SourceManga[]> => {
-  if (!COLLECTION_IDS.has(managedCollection.id)) {return [];}
+  const status = parseAniListReadingStatus(managedCollection.id);
+  if (status === undefined) {return [];}
   console.log(`[manifold] collection:fetch:${managedCollection.id}:start`);
 
   const token = aniListToken();
   const library = await fetchAniListLibrary(token, aniListUserId());
-  const items = library.filter((item) => item.status === managedCollection.id);
+  const items = library.filter((item) => item.status === status);
 
   // Registry first: every collection card carries the provider-neutral UUID
   // as its Paperback manga id so reads/collections bind to registry rows.
@@ -213,14 +245,13 @@ export const commitManagedCollectionChanges = async (
     `[manifold] collection:commit:${changeset.collection.id}:` +
       `add=[${addedIds.join(",")}]:del=[${deletedIds.join(",")}]`,
   );
-  if (!COLLECTION_IDS.has(changeset.collection.id)) {
+  const status = parseAniListReadingStatus(changeset.collection.id);
+  if (status === undefined) {
     throw new Error(`Unknown manifold collection: ${changeset.collection.id}`);
   }
 
   const token = aniListToken();
   const api = configuredPersonalApi();
-  // SAFETY: value matches AniListReadingStatus; at this call site
-  const status = changeset.collection.id as AniListReadingStatus;
   const pending = readPendingNukes();
 
   for (const addition of changeset.additions ?? []) {

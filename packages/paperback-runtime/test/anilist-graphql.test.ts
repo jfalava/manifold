@@ -6,10 +6,14 @@ interface ResponseLike {
   headers: Record<string, string>;
 }
 
+interface ScheduledRequestLike {
+  body?: string;
+}
+
 interface ApplicationHarness {
   sleep: (seconds: number) => Promise<void>;
   arrayBufferToUTF8String: (buffer: ArrayBuffer) => string;
-  scheduleRequest: () => Promise<[ResponseLike, ArrayBuffer]>;
+  scheduleRequest: (request: ScheduledRequestLike) => Promise<[ResponseLike, ArrayBuffer]>;
 }
 
 interface GlobalWithApplication {
@@ -35,11 +39,11 @@ const makeHarness = () => {
       },
       arrayBufferToUTF8String: (buffer: ArrayBuffer): string =>
         new TextDecoder().decode(buffer),
-      scheduleRequest: async (): Promise<[ResponseLike, ArrayBuffer]> => {
+      scheduleRequest: async (request: ScheduledRequestLike): Promise<[ResponseLike, ArrayBuffer]> => {
         const callIndex = index++;
         if (inFlight > 0) {overlapped = true;}
         inFlight += 1;
-        requests.push({ body: "" });
+        requests.push({ body: request.body ?? "" });
         try {
           await Promise.resolve();
           const outcome = respond(callIndex);
@@ -137,5 +141,56 @@ describe("aniListRequest throttling", () => {
 
     harness.install(() => ({ status: 200, body: { errors: [{ message: "Not Found" }] } }));
     await expect(aniListRequest("t", viewerQuery)).rejects.toThrow("AniList error: Not Found");
+  });
+});
+
+describe("AniList field dates", () => {
+  let harness: ReturnType<typeof makeHarness>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    harness = makeHarness();
+  });
+
+  afterEach(() => {
+    // SAFETY: clear the Application stub installed for this suite
+    delete (globalThis as GlobalWithApplication).Application;
+    vi.restoreAllMocks();
+  });
+
+  it.each(["2024-02-30", "prefix-2024-02-20", "2024-13-01"])(
+    "rejects invalid date %s instead of clearing the AniList field",
+    async (startedAt) => {
+      const getCallCount = harness.install(() => ({ status: 200 }));
+      const { saveAniListFields } = await harness.loadModule();
+
+      await expect(saveAniListFields("t", "42", { startedAt })).rejects.toThrow(
+        /Invalid AniList date/,
+      );
+      expect(getCallCount()).toBe(0);
+    },
+  );
+
+  it("distinguishes a valid date from an explicit clear", async () => {
+    harness.install(() => ({ status: 200 }));
+    const { saveAniListFields } = await harness.loadModule();
+
+    await saveAniListFields("t", "42", { startedAt: "2024-02-29" });
+    await saveAniListFields("t", "42", { completedAt: null });
+
+    expect(harness.requests[0]?.body).toContain(
+      '"startedAt":{"year":2024,"month":2,"day":29}',
+    );
+    expect(harness.requests[1]?.body).toContain('"completedAt":null');
+  });
+
+  it("rejects non-canonical AniList ids instead of mutating a numeric prefix", async () => {
+    const getCallCount = harness.install(() => ({ status: 200 }));
+    const { saveAniListFields } = await harness.loadModule();
+
+    await expect(
+      saveAniListFields("t", "42-not-the-id", { notes: "unsafe" }),
+    ).rejects.toThrow("Invalid AniList manga id");
+    expect(getCallCount()).toBe(0);
   });
 });
