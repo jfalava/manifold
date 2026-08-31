@@ -1,3 +1,4 @@
+import { ContentRating, type SourceManga } from "@paperback/types";
 import { describe, expect, it } from "vitest";
 import {
   isTitleMatch,
@@ -30,14 +31,15 @@ describe("manifold Paperback mapping", () => {
   });
 
   it("keeps MangaDex chapter IDs while retaining the canonical source manga", () => {
-    const sourceManga = {
+    const sourceManga: SourceManga = {
       mangaId: entry.id,
       mangaInfo: {
         thumbnailUrl: "",
         synopsis: "",
         primaryTitle: entry.title,
         secondaryTitles: [],
-        contentRating: "SAFE" as const,
+        contentRating: ContentRating.EVERYONE,
+        additionalInfo: {},
       },
     };
     const chapters = toMangaDexChapters(sourceManga, [{

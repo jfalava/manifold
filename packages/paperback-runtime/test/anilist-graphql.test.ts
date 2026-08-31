@@ -1,12 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
-type ScheduleRequestStub = (request: {
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  body: string;
-}) => Promise<[ResponseLike, ArrayBuffer]>;
-
 interface ResponseLike {
   status: number;
   headers: Record<string, string>;
@@ -31,7 +24,7 @@ const makeHarness = () => {
         new TextDecoder().decode(buffer),
       scheduleRequest: async (): Promise<[ResponseLike, ArrayBuffer]> => {
         const callIndex = index++;
-        if (inFlight > 0) overlapped = true;
+        if (inFlight > 0) {overlapped = true;}
         inFlight += 1;
         requests.push({ body: "" });
         try {

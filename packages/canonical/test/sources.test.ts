@@ -98,12 +98,25 @@ describe("AniList canonical source", () => {
         ),
     });
 
-    await expect(Effect.runPromise(source.search("One"))).rejects.toMatchObject({
+    const error: unknown = await Effect.runPromise(source.search("One")).then(
+      () => {
+        throw new Error("expected AniList search to reject");
+      },
+      (cause: unknown) => cause,
+    );
+    expect(error).toMatchObject({
       _tag: "CanonicalSourceError",
       provider: "anilist",
       status: 403,
-      message: expect.stringContaining("You have been manually blocked"),
     });
+    const message =
+      typeof error === "object" &&
+      error !== null &&
+      "message" in error &&
+      typeof error.message === "string"
+        ? error.message
+        : "";
+    expect(message).toContain("You have been manually blocked");
   });
 });
 

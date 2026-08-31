@@ -1,5 +1,4 @@
 import {
-  AdvancedSearchForm,
   ContentRating,
   FlowSection,
   Form,
@@ -75,7 +74,7 @@ const scheduledAniListFetcher = async (
   const headers: Record<string, string> = {};
   if (init?.headers && typeof init.headers === "object" && !Array.isArray(init.headers)) {
     for (const [key, value] of Object.entries(init.headers)) {
-      if (typeof value === "string") headers[key] = value;
+      if (typeof value === "string") {headers[key] = value;}
     }
   }
   const [response, bodyBuffer] = await Application.scheduleRequest({
@@ -128,7 +127,7 @@ export class ManifoldTrackerSource
     piggybackDrain();
     const title = typeof query?.title === "string" ? query.title.trim() : "";
     console.log(`[ManifoldTracker] search:${title || "<empty>"}`);
-    if (!title) return { items: [] };
+    if (!title) {return { items: [] };}
 
     let results;
     try {
@@ -161,7 +160,7 @@ export class ManifoldTrackerSource
       console.error(`[ManifoldTracker] registry resolve failed: ${errorMessage(error)}`);
     }
 
-    for (const entry of mapped) this.canonicalResults.set(entry.id, entry);
+    for (const entry of mapped) {this.canonicalResults.set(entry.id, entry);}
     return { items: mapped.map(toCanonicalSearchResult) };
   }
 
@@ -171,7 +170,7 @@ export class ManifoldTrackerSource
     let entry = this.canonicalResults.get(mangaId);
     if (!entry) {
       const stored = await personalApi.getEntry(mangaId);
-      if (!stored) throw new Error(`Registry entry not found: ${mangaId}`);
+      if (!stored) {throw new Error(`Registry entry not found: ${mangaId}`);}
       const aniLink = stored.providers.find((provider) => provider.provider === "anilist");
       entry = {
         id: stored.id,
@@ -234,7 +233,7 @@ export class ManifoldTrackerSource
   async getMangaProgress(sourceManga: SourceManga): Promise<MangaProgress | undefined> {
     try {
       const progress = await configuredPersonalApi().getProgress(sourceManga.mangaId);
-      if (!progress?.sourceChapterId) return undefined;
+      if (!progress?.sourceChapterId) {return undefined;}
 
       const lastReadChapterId =
         progress.provider === "comix"
@@ -294,7 +293,7 @@ const recordTrackerAniListProgress = async (
   chapterNumber: number | undefined,
 ): Promise<boolean> => {
   const token = Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined;
-  if (!token) return false;
+  if (!token) {return false;}
   if (typeof chapterNumber !== "number" || !Number.isFinite(chapterNumber) || chapterNumber < 0) {
     return false;
   }
@@ -304,39 +303,9 @@ const recordTrackerAniListProgress = async (
     const entry = await configuredPersonalApi().getEntry(sourceManga.mangaId).catch(() => undefined);
     anilistId = aniLinkOf(entry);
   }
-  if (!anilistId) return false;
+  if (!anilistId) {return false;}
   return saveAniListProgress(token, anilistId, chapterNumber);
 };
-
-const STATUS_ALIASES: Record<string, string> = {
-  reading: "reading",
-  read: "reading",
-  current: "reading",
-  on_hold: "on_hold",
-  "on hold": "on_hold",
-  "on-hold": "on_hold",
-  hold: "on_hold",
-  paused: "on_hold",
-  pause: "on_hold",
-  plan_to_read: "plan_to_read",
-  plan: "plan_to_read",
-  planned: "plan_to_read",
-  planning: "plan_to_read",
-  ptr: "plan_to_read",
-  dropped: "dropped",
-  drop: "dropped",
-  completed: "completed",
-  complete: "completed",
-  done: "completed",
-  re_reading: "re_reading",
-  rereading: "re_reading",
-  "re-reading": "re_reading",
-  reread: "re_reading",
-};
-
-const STATUS_LIST_TEXT = Object.keys(STATUS_ALIASES)
-  .filter((alias) => STATUS_ALIASES[alias] === alias)
-  .join(", ");
 
 /**
  * Per-title list-status editor. Paperback 0.9 never wires managed-collection
@@ -483,7 +452,7 @@ class TrackerStatusForm extends Form {
 
   readonly statusSelected = async (value: string[]): Promise<void> => {
     const status = value[0] as CanonicalListStatus | undefined;
-    if (!status) return;
+    if (!status) {return;}
     await this.applyStatus(status);
   };
 
@@ -524,15 +493,15 @@ class TrackerStatusForm extends Form {
       current: number | undefined,
       key: "score" | "volumeProgress",
     ): void => {
-      if (pending === undefined) return;
+      if (pending === undefined) {return;}
       const trimmed = pending.trim();
       if (trimmed === "") {
-        if (current !== undefined) changes[key] = null;
+        if (current !== undefined) {changes[key] = null;}
         return;
       }
       const parsed = Number(trimmed);
-      if (!Number.isFinite(parsed)) throw new Error(`${key} must be a number`);
-      if (parsed !== current) changes[key] = parsed;
+      if (!Number.isFinite(parsed)) {throw new Error(`${key} must be a number`);}
+      if (parsed !== current) {changes[key] = parsed;}
     };
 
     const dateField = (
@@ -540,16 +509,16 @@ class TrackerStatusForm extends Form {
       current: string | undefined,
       key: "startedAt" | "completedAt",
     ): void => {
-      if (pending === undefined) return;
+      if (pending === undefined) {return;}
       const trimmed = pending.trim();
       if (trimmed === "") {
-        if (current !== undefined) changes[key] = null;
+        if (current !== undefined) {changes[key] = null;}
         return;
       }
       if (!/\d{4}-\d{2}-\d{2}/.test(trimmed)) {
         throw new Error(`${key} must be YYYY-MM-DD`);
       }
-      if (trimmed !== current) changes[key] = trimmed;
+      if (trimmed !== current) {changes[key] = trimmed;}
     };
 
     numberField(this.pendingScore, base?.score, "score");
@@ -560,7 +529,7 @@ class TrackerStatusForm extends Form {
     if (this.pendingNotes !== undefined) {
       const trimmed = this.pendingNotes.trim();
       if (trimmed === "") {
-        if (base?.notes !== undefined) changes.notes = null;
+        if (base?.notes !== undefined) {changes.notes = null;}
       } else if (trimmed !== base?.notes) {
         changes.notes = trimmed;
       }
@@ -580,7 +549,7 @@ class TrackerStatusForm extends Form {
     }
 
     const fieldKeys = Object.keys(changes).filter((key) => key !== "origin" && key !== "appliedRemotely");
-    if (fieldKeys.length === 0) return;
+    if (fieldKeys.length === 0) {return;}
 
     try {
       const api = configuredPersonalApi();
@@ -589,8 +558,8 @@ class TrackerStatusForm extends Form {
         this.anilistId = aniLinkOf(stored);
       }
       const token = Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined;
-      if (!token) throw new Error("Connect AniList in the tracker settings first");
-      if (!this.anilistId) throw new Error("This title has no AniList link to update");
+      if (!token) {throw new Error("Connect AniList in the tracker settings first");}
+      if (!this.anilistId) {throw new Error("This title has no AniList link to update");}
 
       await saveAniListFields(token, this.anilistId, {
         ...(changes.score !== undefined ? { score: changes.score } : {}),
@@ -669,8 +638,8 @@ class TrackerStatusForm extends Form {
         this.anilistId = aniLinkOf(stored);
       }
       const token = Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined;
-      if (!token) throw new Error("Connect AniList in the tracker settings first");
-      if (!this.anilistId) throw new Error("This title has no AniList link to update");
+      if (!token) {throw new Error("Connect AniList in the tracker settings first");}
+      if (!this.anilistId) {throw new Error("This title has no AniList link to update");}
 
       const result = await saveAniListStatus(token, this.anilistId, status);
       this.statusText = status;
@@ -692,30 +661,6 @@ class TrackerStatusForm extends Form {
       console.error(`[ManifoldTracker] status set failed:${this.lastError}`);
     }
     this.reloadForm();
-  }
-}
-
-class TrackerAdvancedSearchForm extends AdvancedSearchForm {
-  getSections() {
-    return [
-      FlowSection(
-        {
-          id: "manifold-tracker-search",
-          header: "Search filters",
-          footer: "Leave filters unchanged to search AniList titles.",
-        },
-        [
-          LabelRow("manifold-tracker-search-info", {
-            title: "No additional filters",
-            value: "Searches the same registry the content source uses.",
-          }),
-        ],
-      ),
-    ];
-  }
-
-  getSearchQueryMetadata(): Metadata {
-    return {};
   }
 }
 
@@ -796,7 +741,7 @@ class TrackerSettingsForm extends Form {
     accessToken: string,
   ): Promise<void> => {
     const aniListToken = accessToken?.trim();
-    if (!aniListToken) return;
+    if (!aniListToken) {return;}
     try {
       const viewer = await aniListRequest<AniListViewer>(aniListToken, viewerQuery);
       Application.setSecureState(aniListToken, ANILIST_SESSION_KEY);

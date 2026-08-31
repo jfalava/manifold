@@ -1,5 +1,4 @@
-import type * as Effect from "effect/Effect";
-import * as EffectRuntime from "effect/Effect";
+import * as Effect from "effect/Effect";
 
 export const MANGADEX_TOKEN_ENDPOINT =
   "https://auth.mangadex.org/realms/mangadex/protocol/openid-connect/token";
@@ -223,8 +222,8 @@ const stringValue = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 
 const numberValue = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value !== "string" || value.trim().length === 0) return undefined;
+  if (typeof value === "number" && Number.isFinite(value)) {return value;}
+  if (typeof value !== "string" || value.trim().length === 0) {return undefined;}
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
@@ -239,9 +238,9 @@ const uniqueStrings = (values: readonly (string | undefined)[]): string[] => {
   const result: string[] = [];
   for (const value of values) {
     const normalized = value?.trim();
-    if (!normalized) continue;
+    if (!normalized) {continue;}
     const key = normalized.toLocaleLowerCase();
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {continue;}
     seen.add(key);
     result.push(normalized);
   }
@@ -250,7 +249,7 @@ const uniqueStrings = (values: readonly (string | undefined)[]): string[] => {
 
 const preferredLocalizedValue = (value: unknown): string | undefined => {
   const values = record(value);
-  if (!values) return stringValue(value);
+  if (!values) {return stringValue(value);}
   return [values.en, values["ja-ro"], values.ja, ...Object.values(values)]
     .map(stringValue)
     .find((item): item is string => item !== undefined);
@@ -260,7 +259,7 @@ const mangaFromResource = (value: unknown): MangaDexManga | undefined => {
   const resource = record(value);
   const id = stringValue(resource?.id);
   const attributes = record(resource?.attributes);
-  if (!id || !attributes) return undefined;
+  if (!id || !attributes) {return undefined;}
 
   const title = preferredLocalizedValue(attributes.title) ?? id;
   const links = record(attributes.links);
@@ -292,7 +291,7 @@ const chapterFromResource = (value: unknown): MangaDexChapter | undefined => {
   const id = stringValue(resource?.id);
   const relationships = objectValues(resource?.relationships);
   const mangaId = stringValue(relationships.find((item) => item.type === "manga")?.id);
-  if (!id || !attributes || !mangaId) return undefined;
+  if (!id || !attributes || !mangaId) {return undefined;}
 
   const publishedAt = stringValue(attributes.publishAt);
   const timestamp = publishedAt === undefined ? undefined : Date.parse(publishedAt);
@@ -321,7 +320,7 @@ const pageFromValue = (
 ): MangaDexPage | undefined => {
   const page = record(value);
   const filename = stringValue(page?.filename ?? value);
-  if (!filename) return undefined;
+  if (!filename) {return undefined;}
   const url = filename.startsWith("http")
     ? filename
     : `${baseUrl}/data/${hash}/${filename}`;
@@ -347,13 +346,13 @@ const isSourceError = (value: unknown): value is MangaDexSourceError =>
   isRecord(value) && value._tag === "MangaDexSourceError" && typeof value.message === "string";
 
 const withSourceError = <A>(action: () => Promise<A>): Effect.Effect<A, MangaDexSourceError> =>
-  EffectRuntime.tryPromise({
+  Effect.tryPromise({
     try: action,
     catch: (cause) => (isSourceError(cause) ? cause : errorFrom(cause)),
   });
 
 const normalizedLimit = (value: number | undefined, max = 100): number => {
-  if (value === undefined || !Number.isFinite(value)) return Math.min(100, max);
+  if (value === undefined || !Number.isFinite(value)) {return Math.min(100, max);}
   return Math.min(max, Math.max(1, Math.floor(value)));
 };
 
@@ -399,7 +398,7 @@ export const createMangaDexClient = (
   const retryWaitMs = (response: Response | undefined, attempt: number): number => {
     if (response) {
       const retryAfter = Number(response.headers.get("retry-after"));
-      if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter * 1000;
+      if (Number.isFinite(retryAfter) && retryAfter > 0) {return retryAfter * 1000;}
     }
     return retryDelayMs * 2 ** (attempt - 1);
   };
@@ -414,8 +413,8 @@ export const createMangaDexClient = (
       accept: "application/json",
       "user-agent": MANGADEX_USER_AGENT,
     };
-    if (options.accessToken) headers.authorization = `Bearer ${options.accessToken}`;
-    if (body !== undefined) headers["content-type"] = "application/json";
+    if (options.accessToken) {headers.authorization = `Bearer ${options.accessToken}`;}
+    if (body !== undefined) {headers["content-type"] = "application/json";}
     let response: Response;
     try {
       response = await fetcher(`${endpoint}${path}`, {
@@ -467,23 +466,23 @@ export const createMangaDexClient = (
 
   const chapterFeedPage = async (
     path: string,
-    options: MangaDexChapterFeedOptions,
+    feedOptions: MangaDexChapterFeedOptions,
   ): Promise<MangaDexPaged<MangaDexChapter>> => {
     // The followed-manga feed allows up to 500 per page.
-    const pageLimit = normalizedLimit(options.limit, 500);
+    const pageLimit = normalizedLimit(feedOptions.limit, 500);
     const params: Array<readonly [string, string]> = [
       ["limit", String(pageLimit)],
-      ["offset", String(options.offset ?? 0)],
+      ["offset", String(feedOptions.offset ?? 0)],
       ["order[readableAt]", "desc"],
-      ...(options.publishedAtSince
-        ? ([["publishAtSince", options.publishedAtSince]] as const)
+      ...(feedOptions.publishedAtSince
+        ? ([["publishAtSince", feedOptions.publishedAtSince]] as const)
         : []),
       // The API silently excludes pornographic titles from feeds unless all
       // ratings are requested explicitly.
-      ...(options.contentRating ?? MANGADEX_CONTENT_RATINGS).map(
+      ...(feedOptions.contentRating ?? MANGADEX_CONTENT_RATINGS).map(
         (rating) => ["contentRating[]", rating] as const,
       ),
-      ...(options.languages ?? languages).map(
+      ...(feedOptions.languages ?? languages).map(
         (language) => ["translatedLanguage[]", language] as const,
       ),
     ];
@@ -495,7 +494,7 @@ export const createMangaDexClient = (
     search: (query) =>
       withSourceError(async () => {
         const normalized = query.trim();
-        if (!normalized) throw errorFrom("MangaDex search query cannot be empty");
+        if (!normalized) {throw errorFrom("MangaDex search query cannot be empty");}
         // MangaDex defaults title search to safe+suggestive and silently
         // hides erotica/pornographic entries — which are exactly the ones
         // this private stack tracks. Ask for everything.
@@ -514,28 +513,28 @@ export const createMangaDexClient = (
             })
           : [];
       }),
-    listManga: (options) =>
+    listManga: (listOptions) =>
       withSourceError(async () => {
-        const pageLimit = normalizedLimit(options.limit);
+        const pageLimit = normalizedLimit(listOptions.limit);
         const params: Array<readonly [string, string]> = [
           ["limit", String(pageLimit)],
-          ["offset", String(options.offset ?? 0)],
+          ["offset", String(listOptions.offset ?? 0)],
           ["includes[]", "cover_art"],
-          ...(options.orderKey
-            ? ([[`order[${options.orderKey}]`, options.orderValue ?? "desc"]] as const)
+          ...(listOptions.orderKey
+            ? ([[`order[${listOptions.orderKey}]`, listOptions.orderValue ?? "desc"]] as const)
             : []),
-          ...(options.ids ?? []).map((id) => ["ids[]", id] as const),
-          ...(options.hasAvailableChapters
+          ...(listOptions.ids ?? []).map((id) => ["ids[]", id] as const),
+          ...(listOptions.hasAvailableChapters
             ? ([["hasAvailableChapters", "true"]] as const)
             : []),
-          ...(options.createdAtSince
-            ? ([["createdAtSince", options.createdAtSince]] as const)
+          ...(listOptions.createdAtSince
+            ? ([["createdAtSince", listOptions.createdAtSince]] as const)
             : []),
           // The API silently defaults to safe+suggestive and hides adult
           // titles even for ids[] lookups — always ask explicitly. Default
           // to the full rating set so callers never get invisible “untitled”
           // rows (the admin library hit this for erotica/pornographic titles).
-          ...((options.contentRating ?? MANGADEX_CONTENT_RATINGS) as readonly string[]).map(
+          ...((listOptions.contentRating ?? MANGADEX_CONTENT_RATINGS) as readonly string[]).map(
             (rating) => ["contentRating[]", rating] as const,
           ),
         ];
@@ -553,7 +552,7 @@ export const createMangaDexClient = (
         const path = queryPath(`/manga/${encodeURIComponent(mangaId)}`, [["includes[]", "cover_art"]]);
         const body = record(await requestJson(path));
         const manga = mangaFromResource(body?.data);
-        if (!manga) throw errorFrom(`MangaDex manga not found: ${mangaId}`, 404);
+        if (!manga) {throw errorFrom(`MangaDex manga not found: ${mangaId}`, 404);}
         return manga;
       }),
     getChapters: (mangaId) =>
@@ -567,20 +566,20 @@ export const createMangaDexClient = (
           }
         }
       }),
-    latestChapters: (options) =>
-      withSourceError(() => chapterFeedPage("/chapter", options)),
-    followedFeed: (options) =>
-      withSourceError(() => chapterFeedPage("/user/follows/manga/feed", options)),
-    feedChapters: (mangaId, options = {}) =>
+    latestChapters: (feedOptions) =>
+      withSourceError(() => chapterFeedPage("/chapter", feedOptions)),
+    followedFeed: (feedOptions) =>
+      withSourceError(() => chapterFeedPage("/user/follows/manga/feed", feedOptions)),
+    feedChapters: (mangaId, feedOptions = {}) =>
       withSourceError(() =>
-        chapterFeedPage(`/manga/${encodeURIComponent(mangaId)}/feed`, options),
+        chapterFeedPage(`/manga/${encodeURIComponent(mangaId)}/feed`, feedOptions),
       ),
-    followedManga: (options) =>
+    followedManga: (listOptions) =>
       withSourceError(async () => {
-        const pageLimit = normalizedLimit(options?.limit);
+        const pageLimit = normalizedLimit(listOptions?.limit);
         const params: Array<readonly [string, string]> = [
           ["limit", String(pageLimit)],
-          ["offset", String(options?.offset ?? 0)],
+          ["offset", String(listOptions?.offset ?? 0)],
         ];
         const body = record(await requestJson(queryPath("/user/follows/manga", params)));
         const items = Array.isArray(body?.data)
@@ -608,7 +607,7 @@ export const createMangaDexClient = (
         const chapter = record(body?.chapter);
         const baseUrl = stringValue(body?.baseUrl);
         const hash = stringValue(chapter?.hash);
-        if (!baseUrl || !hash) throw errorFrom(`MangaDex page server returned no hash: ${chapterId}`);
+        if (!baseUrl || !hash) {throw errorFrom(`MangaDex page server returned no hash: ${chapterId}`);}
         const filenames = Array.isArray(chapter?.data) ? chapter.data : [];
         const pages = filenames
           .map((value) => pageFromValue(value, baseUrl, hash))
@@ -618,19 +617,19 @@ export const createMangaDexClient = (
       }),
     markChaptersRead: (mangaId, chapterIds) =>
       withSourceError(async () => {
-        if (chapterIds.length === 0) return;
+        if (chapterIds.length === 0) {return;}
         await request(
           `/manga/${encodeURIComponent(mangaId)}/read`,
           "POST",
           { chapterIdsRead: [...chapterIds] },
         );
       }),
-    readingStatuses: (options) =>
+    readingStatuses: (statusOptions) =>
       withSourceError(async () => {
         const path =
-          options?.status === undefined
+          statusOptions?.status === undefined
             ? "/manga/status"
-            : queryPath("/manga/status", [["status", options.status]]);
+            : queryPath("/manga/status", [["status", statusOptions.status]]);
         const body = record(await requestJson(path));
         const statuses = record(body?.statuses);
         const result: Record<string, MangaDexReadingStatus> = {};
@@ -661,7 +660,7 @@ export const createMangaDexClient = (
         const body = record(await requestJson("/user/me"));
         const data = record(body?.data);
         const id = stringValue(data?.id);
-        if (!id) throw errorFrom("MangaDex returned no current user", 401);
+        if (!id) {throw errorFrom("MangaDex returned no current user", 401);}
         const attributes = record(data?.attributes);
         return { id, ...(stringValue(attributes?.username) ? { name: stringValue(attributes?.username) } : {}) };
       }),
@@ -704,21 +703,21 @@ export const createMangaDexClient = (
     getRatings: (mangaIds) =>
       withSourceError(async () => {
         const result: Record<string, MangaDexRating> = {};
-        if (mangaIds.length === 0) return result;
+        if (mangaIds.length === 0) {return result;}
         // MangaDex caps manga[] at 100 per request; response omits unrated keys.
         for (let index = 0; index < mangaIds.length; index += 100) {
           const chunk = mangaIds.slice(index, index + 100);
-          if (chunk.length === 0) continue;
-          const path = queryPath("/rating", [...chunk.map((id) => ["manga[]", id] as const)]);
+          if (chunk.length === 0) {continue;}
+          const path = queryPath("/rating", chunk.map((id) => ["manga[]", id] as const));
           const body = record(await requestJson(path));
           const ratings = record(body?.ratings);
           for (const [mangaId, value] of Object.entries(ratings ?? {})) {
             const entry = record(value);
             const rating = numberValue(entry?.rating);
             const createdAt = stringValue(entry?.createdAt);
-            if (rating === undefined || createdAt === undefined) continue;
+            if (rating === undefined || createdAt === undefined) {continue;}
             // Clamp to valid range; upstream already validates 1..10.
-            if (!Number.isFinite(rating) || rating < 1 || rating > 10) continue;
+            if (!Number.isFinite(rating) || rating < 1 || rating > 10) {continue;}
             result[mangaId] = { rating, createdAt };
           }
         }
@@ -733,7 +732,7 @@ export const createMangaDexClient = (
         try {
           await request(`/manga/${encodeURIComponent(mangaId)}/follow`, "DELETE");
         } catch (cause) {
-          if (isSourceError(cause) && cause.status === 404) return;
+          if (isSourceError(cause) && cause.status === 404) {return;}
           throw cause;
         }
       }),
@@ -743,7 +742,7 @@ export const createMangaDexClient = (
           await request(`/user/follows/manga/${encodeURIComponent(mangaId)}`);
           return true;
         } catch (cause) {
-          if (isSourceError(cause) && cause.status === 404) return false;
+          if (isSourceError(cause) && cause.status === 404) {return false;}
           throw cause;
         }
       }),

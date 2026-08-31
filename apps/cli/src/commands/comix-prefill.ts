@@ -113,7 +113,7 @@ export const comixPrefillCommand = Command.make("comix", {
         try: async () => {
           const config: ApiConfig = apiConfig(apiOrigin, apiToken);
           const statusFilter = parseStatusFilter(status);
-          if (refreshSession) await clearStoredSession(bunSecretStore);
+          if (refreshSession) {await clearStoredSession(bunSecretStore);}
           const seedCookies = cookiesFromFlags({
             cfClearance: resolveValue(
               cfClearance,
@@ -263,7 +263,7 @@ export const comixPrefillCommand = Command.make("comix", {
               });
 
               try {
-                if (total > 0) reporter.progress(0, total, counts());
+                if (total > 0) {reporter.progress(0, total, counts());}
                 let waitedForUser = false;
                 let persisted = false;
                 for (const row of ctx.unmatched) {
@@ -271,7 +271,7 @@ export const comixPrefillCommand = Command.make("comix", {
                   const searchTerms = searchTitlesFor(
                     await loadRegistrySearchTitles(row, { anilistToken: anilist }),
                   );
-                  let items: ComixSearchItem[] = [];
+                  const items: ComixSearchItem[] = [];
                   let challenged = false;
                   for (const term of searchTerms) {
                     let captured: readonly ComixSearchItem[] | "challenge" = await browser.search(term);
@@ -296,11 +296,11 @@ export const comixPrefillCommand = Command.make("comix", {
                     );
                     for (const item of captured) {
                       const hid = hidOf(item);
-                      if (hid !== undefined && seen.has(hid)) continue;
-                      if (hid !== undefined) seen.add(hid);
+                      if (hid !== undefined && seen.has(hid)) {continue;}
+                      if (hid !== undefined) {seen.add(hid);}
                       items.push(item);
                     }
-                    if (pickMatch(items, searchTerms)) break;
+                    if (pickMatch(items, searchTerms)) {break;}
                     await sleep(SEARCH_DELAY_MS);
                   }
                   if (challenged) {

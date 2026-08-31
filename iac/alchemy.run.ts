@@ -1,4 +1,3 @@
-import { adopt } from "alchemy/AdoptPolicy";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Output from "alchemy/Output";

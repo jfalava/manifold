@@ -87,7 +87,7 @@ export const runMigration = async (
   const unmatched: UnmatchedEntry[] = [];
 
   for (const [index, entry] of anilistEntries.entries()) {
-    if (index > 0) await sleep(MD_REQUEST_INTERVAL_MS);
+    if (index > 0) {await sleep(MD_REQUEST_INTERVAL_MS);}
     const mangadexStatus = ANILIST_TO_MANGADEX_STATUS[entry.status];
 
     try {
@@ -272,7 +272,7 @@ const matchMangaDex = async (
       toMatch({ id: manga.id, title: manga.title }, normalized),
     )
     .find((hit): hit is TitleMatch => hit !== undefined);
-  if (titleHit) return titleHit;
+  if (titleHit) {return titleHit;}
 
   // Retry once with the first three significant words when the full title
   // returned nothing useful.
@@ -294,7 +294,7 @@ const matchMangaDex = async (
         toMatch({ id: manga.id, title: manga.title }, normalized),
       )
       .find((hit): hit is TitleMatch => hit !== undefined);
-    if (retryHit) return retryHit;
+    if (retryHit) {return retryHit;}
   }
 
   return undefined;
@@ -316,7 +316,7 @@ export const chapterIdsUpTo = async (
   const ids: string[] = [];
   for (const chapter of numbered) {
     const number = chapter.chapterNumber as number;
-    if (number > progress) break;
+    if (number > progress) {break;}
     ids.push(chapter.id);
   }
   return ids;

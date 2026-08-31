@@ -49,12 +49,12 @@ export const parseCookieHeader = (header: string): ComixCookie[] => {
   const cookies: ComixCookie[] = [];
   for (const part of header.split(";")) {
     const trimmed = part.trim();
-    if (trimmed.length === 0) continue;
+    if (trimmed.length === 0) {continue;}
     const eq = trimmed.indexOf("=");
-    if (eq <= 0) continue;
+    if (eq <= 0) {continue;}
     const name = trimmed.slice(0, eq).trim();
     const value = trimmed.slice(eq + 1).trim();
-    if (name.length === 0 || value.length === 0) continue;
+    if (name.length === 0 || value.length === 0) {continue;}
     cookies.push({
       name,
       value,
@@ -97,10 +97,10 @@ export const cookiesFromFlags = (options: {
 };
 
 export const parseComixCookie = (value: unknown): ComixCookie | undefined => {
-  if (!isRecord(value)) return undefined;
+  if (!isRecord(value)) {return undefined;}
   const name = asString(value.name);
   const cookieValue = asString(value.value);
-  if (!name || !cookieValue) return undefined;
+  if (!name || !cookieValue) {return undefined;}
   return {
     name,
     value: cookieValue,
@@ -123,9 +123,9 @@ export const parseStoredSession = (raw: string): StoredComixSession | undefined 
     const cookies = parsed.cookies.map(parseComixCookie).filter(
       (cookie): cookie is ComixCookie => cookie !== undefined,
     );
-    if (cookies.length === 0) return undefined;
+    if (cookies.length === 0) {return undefined;}
     const harvestedAt = asNumber(parsed.harvestedAt);
-    if (harvestedAt === undefined) return undefined;
+    if (harvestedAt === undefined) {return undefined;}
     return {
       version: 1,
       cookies,
@@ -142,7 +142,7 @@ export const clearanceExpiresAtMs = (cookies: readonly ComixCookie[]): number | 
     .filter((cookie) => cookie.name === "cf_clearance" && typeof cookie.expires === "number" && cookie.expires > 0)
     .map((cookie) => cookie.expires as number)
     .map((expires) => (expires < 1_000_000_000_000 ? expires * 1000 : expires));
-  if (expiries.length === 0) return undefined;
+  if (expiries.length === 0) {return undefined;}
   return Math.min(...expiries);
 };
 
@@ -150,9 +150,9 @@ export const isSessionFresh = (session: StoredComixSession, now = Date.now()): b
   const clearance = session.cookies.filter(
     (cookie) => cookie.name === "cf_clearance" && cookie.value.length > 0,
   );
-  if (clearance.length === 0) return false;
+  if (clearance.length === 0) {return false;}
   const expiresAt = clearanceExpiresAtMs(session.cookies);
-  if (expiresAt === undefined) return true;
+  if (expiresAt === undefined) {return true;}
   return expiresAt > now + SESSION_SKEW_MS;
 };
 
@@ -161,7 +161,7 @@ export const loadStoredSession = async (
   now = Date.now(),
 ): Promise<StoredComixSession | undefined> => {
   const raw = await store.get(SECRETS_SERVICE, SECRETS_NAME);
-  if (!raw) return undefined;
+  if (!raw) {return undefined;}
   const parsed = parseStoredSession(raw);
   if (!parsed || !isSessionFresh(parsed, now)) {
     await store.delete(SECRETS_SERVICE, SECRETS_NAME);

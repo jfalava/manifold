@@ -67,8 +67,8 @@ const stringValue = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 
 const numberValue = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value !== "string" || value.trim().length === 0) return undefined;
+  if (typeof value === "number" && Number.isFinite(value)) {return value;}
+  if (typeof value !== "string" || value.trim().length === 0) {return undefined;}
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
@@ -78,11 +78,11 @@ const seriesFromRecord = (value: unknown): MangaUpdatesSeries | undefined => {
   const recordData = (rec?.record as JsonRecord | undefined) ?? rec;
   const id = numberValue(recordData?.series_id ?? rec?.series_id ?? rec?.id);
   const title = stringValue(recordData?.title ?? rec?.title);
-  if (id === undefined || !title) return undefined;
+  if (id === undefined || !title) {return undefined;}
   const associated = Array.isArray(recordData?.associated) ? recordData.associated : [];
   const altTitles = associated
     .map((a) => stringValue(record(a)?.title))
-    .filter((t): t is string => !!t);
+    .filter((t): t is string => Boolean(t));
   const image = record(recordData?.image);
   const urlObj = record(image?.url);
   const url = stringValue(urlObj?.original ?? record(image?.url)?.original);
@@ -115,7 +115,7 @@ const releaseFromRecord = (value: unknown): MangaUpdatesRelease | undefined => {
   );
   // The release title is in `title`, but for releases/search it's the manga title, not release title
   const title = stringValue((recordData as Record<string, unknown>)?.title ?? (rec as Record<string, unknown>)?.title);
-  if (seriesId === undefined || !title) return undefined;
+  if (seriesId === undefined || !title) {return undefined;}
   const groupsRaw = (recordData as Record<string, unknown>)?.groups;
   const groups = Array.isArray(groupsRaw)
     ? groupsRaw
@@ -123,7 +123,7 @@ const releaseFromRecord = (value: unknown): MangaUpdatesRelease | undefined => {
           const gr = record(g);
           return stringValue(gr?.name ?? g);
         })
-        .filter((n): n is string => !!n)
+        .filter((n): n is string => Boolean(n))
     : undefined;
   return {
     seriesId,
@@ -154,7 +154,7 @@ const withSourceError = async <A>(action: () => Promise<A>): Promise<A> => {
   try {
     return await action();
   } catch (cause: unknown) {
-    if (isSourceError(cause)) throw cause;
+    if (isSourceError(cause)) {throw cause;}
     throw errorFrom(cause);
   }
 };
@@ -168,7 +168,7 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
       accept: "application/json",
       "user-agent": MANGAUPDATES_USER_AGENT,
     };
-    if (body !== undefined) headers["content-type"] = "application/json";
+    if (body !== undefined) {headers["content-type"] = "application/json";}
     const response = await fetcher(`${endpoint}${path}`, {
       method,
       headers,
@@ -187,7 +187,7 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
     search: (query) =>
       withSourceError(async () => {
         const normalized = query.trim();
-        if (!normalized) throw errorFrom("MangaUpdates search query cannot be empty");
+        if (!normalized) {throw errorFrom("MangaUpdates search query cannot be empty");}
         const body = await requestJson("/series/search", "POST", {
           search: normalized,
           perpage: 25,
@@ -203,18 +203,18 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
       withSourceError(async () => {
         const body = await requestJson(`/series/${encodeURIComponent(String(id))}`, "GET");
         const series = seriesFromRecord(body);
-        if (!series) throw errorFrom(`MangaUpdates series not found: ${id}`, 404);
+        if (!series) {throw errorFrom(`MangaUpdates series not found: ${id}`, 404);}
         return series;
       }) as Promise<MangaUpdatesSeries>,
-    releases: (options) =>
+    releases: (releaseOptions) =>
       withSourceError(async () => {
-        const page = options.page ?? 1;
-        const perpage = options.perpage ?? 50;
+        const page = releaseOptions.page ?? 1;
+        const perpage = releaseOptions.perpage ?? 50;
         const body = await requestJson(`/releases/search`, "POST", {
-          search: options.search ?? "",
+          search: releaseOptions.search ?? "",
           page,
           perpage,
-          ...(options.orderby ? { orderby: options.orderby } : { orderby: "date" }),
+          ...(releaseOptions.orderby ? { orderby: releaseOptions.orderby } : { orderby: "date" }),
         });
         const rec = record(body);
         const results = Array.isArray(rec?.results) ? rec.results : [];

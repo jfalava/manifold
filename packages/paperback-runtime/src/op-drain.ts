@@ -57,7 +57,7 @@ const executeOp = async (
   mediaListEntryIds: Record<string, number> | undefined,
 ): Promise<number | undefined> => {
   const payload = op.payload as DrainPayload;
-  if (!payload.anilistId) throw new Error(`op ${op.opId} has no anilistId`);
+  if (!payload.anilistId) {throw new Error(`op ${op.opId} has no anilistId`);}
 
   switch (op.kind) {
     case "anilist.status": {
@@ -108,10 +108,10 @@ const executeOp = async (
  */
 export const drainAniListOps = async (): Promise<void> => {
   const token = aniListToken();
-  if (!token) return;
+  if (!token) {return;}
   const api = configuredPersonalApi();
   const ops = await api.pendingAniListOps(DRAIN_BATCH_LIMIT);
-  if (ops.length === 0) return;
+  if (ops.length === 0) {return;}
 
   const needsListEntryIds = ops.some(
     (op) => op.kind === "anilist.delete" && op.payload["mediaListEntryId"] === undefined,
@@ -132,7 +132,7 @@ export const drainAniListOps = async (): Promise<void> => {
     try {
       const mediaListEntryId = await executeOp(token, op, mediaListEntryIds);
       results.push({ opId: op.opId, ok: true, ...(mediaListEntryId !== undefined ? { mediaListEntryId } : {}) });
-      console.log(`[manifold] drained op:${op.kind}:${String(op.payload["anilistId"] ?? "")}`);
+      
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[manifold] drain failed:${op.kind}:${message}`);
@@ -153,10 +153,10 @@ export const drainAniListOps = async (): Promise<void> => {
 /** Throttled, fire-and-forget drain suitable for piggybacking on any request. */
 export const maybeDrainAniListOps = (): void => {
   const nowMs = Date.now();
-  if (nowMs - lastDrainAt < DRAIN_MIN_INTERVAL_MS) return;
-  if (!aniListToken()) return;
+  if (nowMs - lastDrainAt < DRAIN_MIN_INTERVAL_MS) {return;}
+  if (!aniListToken()) {return;}
   lastDrainAt = nowMs;
-  if (drainInFlight) return;
+  if (drainInFlight) {return;}
   drainInFlight = drainAniListOps()
     .catch((error) => {
       console.error(

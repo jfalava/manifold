@@ -71,7 +71,7 @@ export const catalogApp: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
   )
   .get(`${STABLE}/:id/info.json`, (c) => {
     const entry = byId(c.req.param("id"));
-    if (!entry) return c.json({ error: "Not found" }, 404);
+    if (!entry) {return c.json({ error: "Not found" }, 404);}
     return c.json(
       { ...entry.info, id: entry.id },
       200,

@@ -45,12 +45,16 @@ const mangadexCover: Handler<App> = async (c) => {
   return new Response(upstream.body, { status: upstream.status, headers });
 };
 
+const forwardBinding =
+  (binding: keyof Env): Handler<App> =>
+  async (c) => c.env[binding].fetch(c.req.raw);
+
 export default new Hono<App>()
   .all("/api", forwardStripped("/api", "SYNC_API"))
   .all("/api/*", forwardStripped("/api", "SYNC_API"))
   .get("/mangadex-cover/:mangaId/:filename", mangadexCover)
   .all("/paperback", forwardStripped("/paperback", "SYNC_API"))
   .all("/paperback/*", forwardStripped("/paperback", "SYNC_API"))
-  .all("/admin", (c) => c.env.ADMIN.fetch(c.req.raw))
-  .all("/admin/*", (c) => c.env.ADMIN.fetch(c.req.raw))
-  .all("*", (c) => c.env.DOCS_WORKER.fetch(c.req.raw));;
+  .all("/admin", forwardBinding("ADMIN"))
+  .all("/admin/*", forwardBinding("ADMIN"))
+  .all("*", forwardBinding("DOCS_WORKER"));

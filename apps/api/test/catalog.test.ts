@@ -14,7 +14,7 @@ const env = {
     fetch: async (input: Request | string) => {
       const pathname = new URL(typeof input === "string" ? input : input.url).pathname;
       const body = assets[pathname];
-      if (body === undefined) return new Response("missing", { status: 404 });
+      if (body === undefined) {return new Response("missing", { status: 404 });}
       return new Response(body, { status: 200 });
     },
   },

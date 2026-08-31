@@ -36,7 +36,7 @@ interface PersistedTokens {
 const loadPersistedTokens = async (
   cachePath: string | undefined,
 ): Promise<PersistedTokens> => {
-  if (!cachePath) return {};
+  if (!cachePath) {return {};}
   try {
     const raw = JSON.parse(await readFile(cachePath, "utf8")) as PersistedTokens;
     return typeof raw === "object" && raw !== null ? raw : {};
@@ -60,7 +60,7 @@ export const createMangaDexTokenManager = (
   let expiresAt = 0;
 
   const persistTokens = async (): Promise<void> => {
-    if (!options.cachePath) return;
+    if (!options.cachePath) {return;}
     const payload: PersistedTokens = { accessToken, refreshToken, expiresAt };
     await mkdir(dirname(options.cachePath), { recursive: true });
     await writeFile(options.cachePath, JSON.stringify(payload), { mode: 0o600 });
@@ -82,7 +82,7 @@ export const createMangaDexTokenManager = (
       );
     }
     const body = (await response.json()) as TokenResponse;
-    if (!body.access_token) throw new Error(`MangaDex ${label} returned no access_token`);
+    if (!body.access_token) {throw new Error(`MangaDex ${label} returned no access_token`);}
     accessToken = body.access_token;
     refreshToken = body.refresh_token ?? refreshToken;
     expiresAt =
@@ -94,13 +94,13 @@ export const createMangaDexTokenManager = (
   return {
     /** Returns a cached token, refreshing or re-authenticating when needed. */
     current: async (): Promise<string> => {
-      if (accessToken && Date.now() < expiresAt) return accessToken;
+      if (accessToken && Date.now() < expiresAt) {return accessToken;}
       if (!refreshToken && options.cachePath) {
         const stored = await persisted();
         accessToken = stored.accessToken;
         refreshToken = stored.refreshToken;
         expiresAt = Number.isFinite(stored.expiresAt) ? (stored.expiresAt as number) : 0;
-        if (accessToken && Date.now() < expiresAt) return accessToken;
+        if (accessToken && Date.now() < expiresAt) {return accessToken;}
       }
       if (refreshToken) {
         try {

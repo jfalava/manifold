@@ -5,9 +5,9 @@
     "outDir": "dist",
     "rootDir": ".",
     "resolveJsonModule": true,
-    "types": ["@cloudflare/workers-types"]
+    "types": ["@cloudflare/workers-types", "bun-types"]
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
   "references": [
     { "path": "../../packages/canonical" },
     { "path": "../../packages/mangadex" },

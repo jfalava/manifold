@@ -59,7 +59,7 @@ let lastRequestAt = 0;
 
 const throttle = async (): Promise<void> => {
   const wait = REQUEST_INTERVAL_MS - (Date.now() - lastRequestAt);
-  if (wait > 0) await sleep(wait);
+  if (wait > 0) {await sleep(wait);}
   lastRequestAt = Date.now();
 };
 
@@ -88,7 +88,7 @@ const gql = async <A>(
   if (body.errors?.length) {
     throw new Error(body.errors.map((e) => e.message ?? "?").join("; "));
   }
-  if (!response.ok) throw new Error(`AniList HTTP ${response.status}`);
+  if (!response.ok) {throw new Error(`AniList HTTP ${response.status}`);}
   return body.data as A;
 };
 
@@ -122,7 +122,7 @@ export const fetchAniListTitles = async (
 export const fetchAniListViewerId = async (token: string): Promise<number> => {
   const data = await gql<{ Viewer?: { id?: number } }>(token, VIEWER_QUERY);
   const id = data.Viewer?.id;
-  if (typeof id !== "number") throw new Error("AniList returned no Viewer id");
+  if (typeof id !== "number") {throw new Error("AniList returned no Viewer id");}
   return id;
 };
 
@@ -194,9 +194,9 @@ export const fetchAniListRichEntries = async (
   const entries: AniListRichEntry[] = [];
   for (const list of lists) {
     for (const entry of (list as { entries?: RichMediaList[] }).entries ?? []) {
-      if (!entry.mediaId || seen.has(entry.mediaId)) continue;
+      if (!entry.mediaId || seen.has(entry.mediaId)) {continue;}
       const status = entry.status ?? "";
-      if (!ANILIST_STATUSES.has(status)) continue;
+      if (!ANILIST_STATUSES.has(status)) {continue;}
       seen.add(entry.mediaId);
       const media = entry.media;
       const titles = [
@@ -249,9 +249,9 @@ export const fetchAniListMangaEntries = async (
   const entries: AniListEntry[] = [];
   for (const list of lists) {
     for (const entry of list.entries ?? []) {
-      if (!entry.mediaId || seen.has(entry.mediaId)) continue;
+      if (!entry.mediaId || seen.has(entry.mediaId)) {continue;}
       const status = entry.status ?? "";
-      if (!ANILIST_STATUSES.has(status)) continue;
+      if (!ANILIST_STATUSES.has(status)) {continue;}
       seen.add(entry.mediaId);
       const title =
         entry.media?.title?.english ??

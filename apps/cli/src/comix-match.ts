@@ -18,10 +18,10 @@ const tokenize = (value: string): readonly string[] =>
 // Longest-common-prefix stem match ("villains"/"villainess" share "villain"),
 // mirroring the source's pickComixMatch so CLI and device agree on a title.
 const tokensCompatible = (a: string, b: string): boolean => {
-  if (a === b) return true;
+  if (a === b) {return true;}
   const min = Math.min(a.length, b.length);
   let i = 0;
-  while (i < min && a.charCodeAt(i) === b.charCodeAt(i)) i += 1;
+  while (i < min && a.charCodeAt(i) === b.charCodeAt(i)) {i += 1;}
   return i >= 4;
 };
 
@@ -40,9 +40,9 @@ export const uniqueTitles = (titles: readonly string[]): readonly string[] => {
   const unique: string[] = [];
   for (const title of titles) {
     const trimmed = title.trim();
-    if (trimmed.length === 0) continue;
+    if (trimmed.length === 0) {continue;}
     const key = normalizeTitle(trimmed);
-    if (key.length === 0 || seen.has(key)) continue;
+    if (key.length === 0 || seen.has(key)) {continue;}
     seen.add(key);
     unique.push(trimmed);
   }
@@ -56,7 +56,7 @@ export const pickMatch = (
   const candidates = uniqueTitles(typeof titles === "string" ? [titles] : titles)
     .map(normalizeTitle)
     .filter(Boolean);
-  if (candidates.length === 0) return undefined;
+  if (candidates.length === 0) {return undefined;}
   let best: ComixSearchItem | undefined;
   let bestScore = 0;
   for (const item of items) {
@@ -66,12 +66,12 @@ export const pickMatch = (
       .filter(Boolean);
     for (const candidate of candidates) {
       for (const name of names) {
-        if (name === candidate) return item;
+        if (name === candidate) {return item;}
         const candidateTokens = tokenize(candidate);
-        if (candidateTokens.length === 0) continue;
+        if (candidateTokens.length === 0) {continue;}
         let hits = 0;
         for (const token of candidateTokens) {
-          if (name.split(" ").some((n) => tokensCompatible(n, token))) hits += 1;
+          if (name.split(" ").some((n) => tokensCompatible(n, token))) {hits += 1;}
         }
         const score = hits / candidateTokens.length;
         if (score >= 0.65 && score > bestScore) {
@@ -108,10 +108,11 @@ export const unwrapComixResult = (value: unknown): unknown => {
 
 export const itemsFromCapture = (payload: unknown): readonly ComixSearchItem[] | undefined => {
   const unwrapped = unwrapComixResult(payload);
-  if (unwrapped == null) return undefined;
+  if (unwrapped == null) {return undefined;}
   try {
-    const parsed = typeof unwrapped === "string" ? JSON.parse(unwrapped) : unwrapped;
-    if (parsed === null || typeof parsed !== "object") return undefined;
+    const parsed: unknown =
+      typeof unwrapped === "string" ? (JSON.parse(unwrapped) as unknown) : unwrapped;
+    if (parsed === null || typeof parsed !== "object") {return undefined;}
     const items = (parsed as { result?: { items?: unknown } }).result?.items;
     return Array.isArray(items) ? items as ComixSearchItem[] : undefined;
   } catch {

@@ -224,7 +224,7 @@ export const md2alCommand = Command.make(
                     {
                       title: "Fetch existing AniList progress",
                       enabled: () => !skipProgress && apply,
-                      task: async (subCtx, subTask) => {
+                      task: async (subCtx, _subTask) => {
                         subCtx.existingProgress =
                           await fetchExistingProgress(anilist);
                       },
@@ -237,7 +237,7 @@ export const md2alCommand = Command.make(
                           ctx.limited.map((e) => [e.mangaDexId, e]),
                         );
                         const markerEntries = ctx.matches.flatMap((m) => {
-                          if (!m.anilistId) return [];
+                          if (!m.anilistId) {return [];}
                           const e = entryByMdId.get(m.mangaDexId);
                           return e ? [e] : [];
                         });

@@ -80,7 +80,7 @@ const gql = async <A>(
   if (body.errors?.length) {
     throw new Error(body.errors.map((e) => e.message ?? "?").join("; "));
   }
-  if (!response.ok) throw new Error(`AniList HTTP ${response.status}`);
+  if (!response.ok) {throw new Error(`AniList HTTP ${response.status}`);}
   return body.data as A;
 };
 
@@ -99,7 +99,7 @@ const mdFetch = async <A>(mdToken: string, path: string): Promise<A> => {
     await sleep(Math.max(retryAfter, 5) * 1000);
     return mdFetch<A>(mdToken, path);
   }
-  if (!response.ok) throw new Error(`MangaDex HTTP ${response.status} for ${path}`);
+  if (!response.ok) {throw new Error(`MangaDex HTTP ${response.status} for ${path}`);}
   const body = (await response.json()) as { data: A };
   return body.data;
 };
@@ -125,7 +125,7 @@ const paths = (tmpDir: string) => ({
 
 export const loadSnapshot = (tmpDir: string): MdLibraryEntry[] | undefined => {
   const file = paths(tmpDir).snapshot;
-  if (!existsSync(file)) return undefined;
+  if (!existsSync(file)) {return undefined;}
   try {
     return JSON.parse(readFileSync(file, "utf8")) as MdLibraryEntry[];
   } catch {
@@ -135,7 +135,7 @@ export const loadSnapshot = (tmpDir: string): MdLibraryEntry[] | undefined => {
 
 export const loadMatches = (tmpDir: string): Map<string, MatchResult> => {
   const file = paths(tmpDir).matches;
-  if (!existsSync(file)) return new Map();
+  if (!existsSync(file)) {return new Map();}
   try {
     const parsed = JSON.parse(readFileSync(file, "utf8")) as MatchResult[];
     return new Map(parsed.map((m) => [m.mangaDexId, m]));
@@ -181,7 +181,7 @@ export const phaseExport = async (
   ]);
   const entries: MdLibraryEntry[] = [];
   for (const [id, rawStatus] of Object.entries(statusBody.statuses ?? {})) {
-    if (typeof rawStatus !== "string" || !validStatuses.has(rawStatus)) continue;
+    if (typeof rawStatus !== "string" || !validStatuses.has(rawStatus)) {continue;}
     entries.push({
       mangaDexId: id,
       status: rawStatus as MdStatus,
@@ -198,7 +198,7 @@ export const phaseExport = async (
     const batch = ids.slice(i, i + BATCH);
     const params = new URLSearchParams();
     params.set("limit", String(batch.length));
-    for (const id of batch) params.append("ids[]", id);
+    for (const id of batch) {params.append("ids[]", id);}
     const mangaList = await mdFetch<
       {
         id: string;
@@ -212,7 +212,7 @@ export const phaseExport = async (
 
     for (const m of mangaList) {
       const entry = idToEntry.get(m.id);
-      if (!entry) continue;
+      if (!entry) {continue;}
       const attrs = m.attributes;
       entry.title =
         attrs.title.en ??
@@ -247,7 +247,7 @@ export const loadProgress = (
   tmpDir: string,
 ): Map<string, number> | undefined => {
   const file = paths(tmpDir).progress;
-  if (!existsSync(file)) return undefined;
+  if (!existsSync(file)) {return undefined;}
   try {
     const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<
       string,
@@ -303,7 +303,7 @@ const searchAniListByTitle = async (
       m.title.english,
       m.title.romaji,
       ...(m.synonyms ?? []),
-    ].filter((t): t is string => !!t),
+    ].filter((t): t is string => Boolean(t)),
   }));
 };
 
@@ -323,12 +323,12 @@ export const phaseMatch = async (
 
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
-    if (!entry) continue;
+    if (!entry) {continue;}
     const cached = existing.get(entry.mangaDexId);
     if (cached && (cached.anilistId || options?.useCache)) {
       results.push(cached);
-      if (cached.anilistId) matched += 1;
-      else unmatched += 1;
+      if (cached.anilistId) {matched += 1;}
+      else {unmatched += 1;}
       skipped += 1;
       continue;
     }
@@ -369,12 +369,15 @@ export const phaseMatch = async (
     // 3) Title search across title + alt titles
     if (!result.anilistId) {
       const candidates = [entry.title, ...entry.altTitles].filter(Boolean);
-      outer: for (const candidate of candidates.slice(0, 6)) {
+      let foundExact = false;
+      for (const candidate of candidates.slice(0, 6)) {
+        if (foundExact) {break;}
         try {
           const media = await searchAniListByTitle(anilistToken, candidate);
           const normalizedCandidate = normalizeTitle(candidate);
-          if (!normalizedCandidate) continue;
+          if (!normalizedCandidate) {continue;}
           for (const item of media) {
+            if (foundExact) {break;}
             for (const title of item.titles) {
               if (normalizeTitle(title) === normalizedCandidate) {
                 result = {
@@ -382,19 +385,22 @@ export const phaseMatch = async (
                   anilistId: String(item.id),
                   method: "title-exact",
                 };
-                break outer;
+                foundExact = true;
+                break;
               }
             }
           }
-          await sleep(REQUEST_INTERVAL_MS);
+          if (!foundExact) {
+            await sleep(REQUEST_INTERVAL_MS);
+          }
         } catch {
           continue;
         }
       }
     }
 
-    if (result.anilistId) matched += 1;
-    else unmatched += 1;
+    if (result.anilistId) {matched += 1;}
+    else {unmatched += 1;}
     results.push(result);
 
     const done = index + 1;
@@ -437,7 +443,7 @@ export const collectProgress = async (
 
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
-    if (!entry) continue;
+    if (!entry) {continue;}
     if (cachedProgress?.has(entry.mangaDexId)) {
       progressByMdId.set(
         entry.mangaDexId,
@@ -456,7 +462,7 @@ export const collectProgress = async (
           },
         );
         if (!markerResponse.ok)
-          throw new Error(`HTTP ${markerResponse.status}`);
+          {throw new Error(`HTTP ${markerResponse.status}`);}
         const markerBody = (await markerResponse.json()) as {
           data?: string[];
         };
@@ -469,14 +475,14 @@ export const collectProgress = async (
             const batch = chapterIds.slice(i, i + 100);
             const params = new URLSearchParams();
             params.set("limit", String(batch.length));
-            for (const id of batch) params.append("ids[]", id);
+            for (const id of batch) {params.append("ids[]", id);}
             const chapters = await mdFetch<{ chapter?: string }[]>(
               mdToken,
               `/chapter?${params.toString()}`,
             );
             for (const c of chapters) {
               const num = Number.parseFloat(c.chapter ?? "");
-              if (Number.isFinite(num)) maxChapter = Math.max(maxChapter, num);
+              if (Number.isFinite(num)) {maxChapter = Math.max(maxChapter, num);}
             }
             await sleep(MD_REQUEST_INTERVAL_MS);
           }
@@ -499,7 +505,7 @@ export const collectProgress = async (
     }
     await sleep(MD_REQUEST_INTERVAL_MS);
   }
-  if (options?.tmpDir) saveProgress(options.tmpDir, progressByMdId);
+  if (options?.tmpDir) {saveProgress(options.tmpDir, progressByMdId);}
   report?.note(`Got progress for ${progressByMdId.size}/${entries.length} entries.`);
   return progressByMdId;
 };
@@ -514,7 +520,7 @@ export const fetchExistingProgress = async (
     `query { Viewer { id } }`,
   );
   const viewerId = viewer.Viewer?.id;
-  if (viewerId === undefined) throw new Error("Could not resolve AniList viewer id.");
+  if (viewerId === undefined) {throw new Error("Could not resolve AniList viewer id.");}
   const data = await gql<{ MediaListCollection?: { lists?: { entries?: { mediaId: number; progress?: number }[] }[] } }>(
     anilistToken,
     `query ($userId: Int) {
@@ -553,7 +559,7 @@ export const saveMatches = async (
 
   for (const match of pushable) {
     const anilistId = match.anilistId;
-    if (!anilistId) continue;
+    if (!anilistId) {continue;}
     const status = STATUS_TO_ANILIST[match.status];
     // With progress enabled, always send a number: max of what MangaDex
     // markers claim and what AniList already stores — so entries without
@@ -579,7 +585,7 @@ export const saveMatches = async (
         );
       }
       done += 1;
-      if (progress !== undefined) withProgress += 1;
+      if (progress !== undefined) {withProgress += 1;}
     } catch (error) {
       failed += 1;
       report?.problem(
@@ -595,7 +601,7 @@ export const saveMatches = async (
         ["prog", withProgress],
       ]);
     }
-    if (!options.dryRun) await sleep(REQUEST_INTERVAL_MS);
+    if (!options.dryRun) {await sleep(REQUEST_INTERVAL_MS);}
   }
   return { done, failed, withProgress };
 };

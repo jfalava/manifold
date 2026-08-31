@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SourceManga, TrackedMangaChapterReadAction } from "@paperback/types";
+import type { PersonalReadInput } from "@manifold/paperback-runtime";
 
 import { processReadActions } from "../src/ManifoldTracker/read-queue.js";
 
@@ -60,7 +61,7 @@ describe("processReadActions", () => {
   });
 
   it("failed personal API reads are reported and excluded from the AniList max", async () => {
-    const recordRead = vi.fn().mockImplementation((_entryId: string, input) =>
+    const recordRead = vi.fn().mockImplementation((_entryId: string, input: PersonalReadInput) =>
       input.eventId === "bad" ? Promise.reject(new Error("HTTP 502")) : Promise.resolve({}),
     );
     const pushProgress = vi.fn().mockResolvedValue(true);
@@ -127,7 +128,10 @@ describe("processReadActions", () => {
     });
     // AniList progress is keyed by the anilist-canonical manga either way.
     expect(pushProgress).toHaveBeenCalledTimes(1);
-    expect(pushProgress.mock.calls[0]?.[0]?.mangaId).toBe("anilist:141756");
-    expect(pushProgress.mock.calls[0]?.[1]).toBe(13);
+    const progressCall = pushProgress.mock.calls[0] as
+      | [SourceManga, number]
+      | undefined;
+    expect(progressCall?.[0]?.mangaId).toBe("anilist:141756");
+    expect(progressCall?.[1]).toBe(13);
   });
 });

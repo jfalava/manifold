@@ -53,6 +53,7 @@
         "@manifold/mangadex": "workspace:*",
         "@manifold/source": "workspace:*",
         "@manifold/tracker": "workspace:*",
+        "bun-types": "1.4.0",
         "effect": "catalog:effect",
         "hono": "catalog:cloudflare",
       },

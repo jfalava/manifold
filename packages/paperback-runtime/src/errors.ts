@@ -1,6 +1,6 @@
 export const errorMessage = (error: unknown): string => {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
+  if (error instanceof Error) {return error.message;}
+  if (typeof error === "string") {return error;}
   if (typeof error === "object" && error !== null) {
     const record = error as Record<string, unknown>;
     const props = Object.getOwnPropertyNames(error)

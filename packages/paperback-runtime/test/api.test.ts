@@ -54,7 +54,7 @@ describe("Paperback personal API client", () => {
     }> = [];
     const client = createPersonalApiClient(async (request) => {
       requests.push(request);
-      if (request.method === "GET") return { status: 200, body: { progress: null } };
+      if (request.method === "GET") {return { status: 200, body: { progress: null } };}
       return {
         status: 200,
         body: {

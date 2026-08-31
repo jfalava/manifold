@@ -10,7 +10,7 @@ const CRC32_TABLE = (() => {
   const table = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
     let c = i;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    for (let k = 0; k < 8; k++) {c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;}
     table[i] = c >>> 0;
   }
   return table;
@@ -88,16 +88,10 @@ export const buildZip = (entries: Record<string, string>): Buffer => {
   return Buffer.concat([...localChunks, centralBuf, eocd]);
 };
 
-interface ZipEntry {
-  readonly name: string;
-  readonly compressedSize: number;
-  readonly localOffset: number;
-}
-
 const findEocd = (buf: Buffer): number => {
   const min = Math.max(0, buf.length - 22 - 65_536);
   for (let i = buf.length - 22; i >= min; i--) {
-    if (buf.readUInt32LE(i) === 0x06054b50) return i;
+    if (buf.readUInt32LE(i) === 0x06054b50) {return i;}
   }
   throw new Error("Not a zip archive (no end-of-central-directory record)");
 };

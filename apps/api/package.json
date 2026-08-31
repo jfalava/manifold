@@ -10,22 +10,23 @@
     "test": "vitest run"
   },
   "dependencies": {
-      "@effect/platform-bun": "catalog:effect",
-      "@effect/platform-node": "catalog:effect",
-      "@manifold/canonical": "workspace:*",
-      "@manifold/comix": "workspace:*",
-      "@manifold/mangadex": "workspace:*",
-      "@manifold/source": "workspace:*",
-      "@manifold/tracker": "workspace:*",
-      "effect": "catalog:effect",
-      "hono": "catalog:cloudflare"
+    "@effect/platform-bun": "catalog:effect",
+    "@effect/platform-node": "catalog:effect",
+    "@manifold/canonical": "workspace:*",
+    "@manifold/comix": "workspace:*",
+    "@manifold/mangadex": "workspace:*",
+    "@manifold/source": "workspace:*",
+    "@manifold/tracker": "workspace:*",
+    "effect": "catalog:effect",
+    "hono": "catalog:cloudflare"
   },
   "devDependencies": {
-      "@cloudflare/workers-types": "catalog:cloudflare",
-      "oxlint": "catalog:build",
-      "oxlint-tsgolint": "catalog:build",
-      "typescript": "catalog:build",
-      "vite": "catalog:build",
-      "vitest": "catalog:build"
+    "@cloudflare/workers-types": "catalog:cloudflare",
+    "bun-types": "1.4.0",
+    "oxlint": "catalog:build",
+    "oxlint-tsgolint": "catalog:build",
+    "typescript": "catalog:build",
+    "vite": "catalog:build",
+    "vitest": "catalog:build"
   }
 }

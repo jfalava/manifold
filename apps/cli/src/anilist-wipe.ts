@@ -12,40 +12,6 @@ const API_URL = "https://graphql.anilist.co";
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-interface GqlErrorShape {
-  errors?: unknown[];
-}
-
-/** GraphQL POST with 429 Retry-After backoff (3 attempts). */
-const gqlRaw = async (
-  token: string,
-  body: { query: string; variables?: Record<string, unknown> },
-): Promise<{ status: number; json: () => Promise<any>; ok: boolean }> => {
-  let retryCount = 0;
-  for (;;) {
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Accept: "application/json"
-      },
-      body: JSON.stringify(body)
-    });
-    if (response.status === 429 && retryCount < 3) {
-      const retryAfter = Number(response.headers.get("retry-after") ?? "60");
-      await sleep(retryAfter * 1000 + retryCount * 30_000);
-      retryCount += 1;
-      continue;
-    }
-    return {
-      status: response.status,
-      ok: response.ok,
-      json: () => response.json()
-    };
-  }
-};
-
 export interface WipeListEntry {
   /** MediaListEntry id — the deletion target. */
   id: number;
@@ -65,12 +31,12 @@ export const fetchViewer = async (
     },
     body: JSON.stringify({ query: `query { Viewer { id name } }` })
   });
-  if (!response.ok) throw new Error(`Viewer query failed: HTTP ${response.status}`);
+  if (!response.ok) {throw new Error(`Viewer query failed: HTTP ${response.status}`);}
   const data = (await response.json()) as {
     data?: { Viewer?: { id: number; name: string } };
     errors?: unknown[];
   };
-  if (!data.data?.Viewer) throw new Error("AniList returned no Viewer");
+  if (!data.data?.Viewer) {throw new Error("AniList returned no Viewer");}
   return data.data.Viewer;
 };
 
@@ -94,7 +60,7 @@ export const fetchMangaEntries = async (
       variables: { userId }
     })
   });
-  if (!response.ok) throw new Error(`Manga list fetch failed: HTTP ${response.status}`);
+  if (!response.ok) {throw new Error(`Manga list fetch failed: HTTP ${response.status}`);}
   const data = (await response.json()) as {
     data?: {
       MediaListCollection?: {
@@ -112,7 +78,7 @@ export const fetchMangaEntries = async (
   const entries: WipeListEntry[] = [];
   for (const list of lists) {
     for (const entry of list.entries ?? []) {
-      if (seen.has(entry.id)) continue;
+      if (seen.has(entry.id)) {continue;}
       seen.add(entry.id);
       entries.push({
         id: entry.id,
@@ -141,7 +107,7 @@ export const deleteEntry = async (token: string, entryId: number): Promise<boole
     })
   });
   const data = (await response.json()) as { errors?: unknown[] };
-  if (data.errors) return false;
+  if (data.errors) {return false;}
   return true;
 };
 
@@ -181,7 +147,7 @@ const fetchActivitiesPage = async (
       variables: { userId, page }
     })
   });
-  if (!response.ok) throw new Error(`Activity page fetch failed: HTTP ${response.status}`);
+  if (!response.ok) {throw new Error(`Activity page fetch failed: HTTP ${response.status}`);}
   const data = (await response.json()) as {
     data?: {
       Page?: {
@@ -194,7 +160,7 @@ const fetchActivitiesPage = async (
   const activities: Activity[] = [];
   for (const item of raw) {
     const id = item.id;
-    if (typeof id !== "number") continue;
+    if (typeof id !== "number") {continue;}
     if (item.type === "MANGA_LIST") {
       const media = item.media as
         | { title?: { romaji?: string | null; english?: string | null } }
@@ -220,7 +186,7 @@ const MANGA_KEYWORDS = [
 ];
 
 const isMangaRelatedActivity = (activity: Activity): boolean => {
-  if (activity.type === "MANGA_LIST") return true;
+  if (activity.type === "MANGA_LIST") {return true;}
   if (activity.type === "TEXT") {
     const text = activity.text.toLowerCase();
     return MANGA_KEYWORDS.some((keyword) => text.includes(keyword));
@@ -239,7 +205,7 @@ export const fetchMangaActivities = async (
   while (hasNextPage) {
     const result = await fetchActivitiesPage(token, userId, page);
     for (const activity of result.activities) {
-      if (isMangaRelatedActivity(activity)) all.push(activity);
+      if (isMangaRelatedActivity(activity)) {all.push(activity);}
     }
     report?.detail(
       `page ${page}: ${result.activities.length} activities (${all.length} manga-related so far)`
@@ -278,7 +244,7 @@ export const deleteActivity = async (
       : { success: false, alreadyDeleted: false };
     return body;
   }
-  if (!response.ok) return { success: false, alreadyDeleted: false };
+  if (!response.ok) {return { success: false, alreadyDeleted: false };}
   return { success: true, alreadyDeleted: false };
 };
 
@@ -291,10 +257,10 @@ export const deleteEntriesWithProgress = async (
   let failed = 0;
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
-    if (!entry) continue;
+    if (!entry) {continue;}
     try {
-      if (await deleteEntry(token, entry.id)) ok += 1;
-      else failed += 1;
+      if (await deleteEntry(token, entry.id)) {ok += 1;}
+      else {failed += 1;}
     } catch {
       failed += 1;
     }
@@ -317,11 +283,11 @@ export const deleteActivitiesWithProgress = async (
   let skipped = 0;
   for (let index = 0; index < activities.length; index += 1) {
     const activity = activities[index];
-    if (!activity) continue;
+    if (!activity) {continue;}
     const result = await deleteActivity(token, activity.id);
-    if (result.alreadyDeleted) skipped += 1;
-    else if (result.success) ok += 1;
-    else failed += 1;
+    if (result.alreadyDeleted) {skipped += 1;}
+    else if (result.success) {ok += 1;}
+    else {failed += 1;}
     report?.progress(index + 1, activities.length, [
       ["ok", ok],
       ["fail", failed],

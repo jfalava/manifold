@@ -28,7 +28,6 @@ import {
 } from "@paperback/types";
 import {
   hashIdFromMangaId,
-  mangaIdFromItem,
   paginationFromPayload,
   resultItems,
   toChapter,
@@ -130,10 +129,10 @@ const requestHtml = async (url: string): Promise<HtmlRequest> => {
 };
 
 const pageFromMetadata = (metadata: Metadata | undefined): number => {
-  if (typeof metadata === "number" && Number.isFinite(metadata)) return metadata;
+  if (typeof metadata === "number" && Number.isFinite(metadata)) {return metadata;}
   if (typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)) {
     const page = (metadata as Record<string, unknown>).page;
-    if (typeof page === "number" && Number.isFinite(page)) return page;
+    if (typeof page === "number" && Number.isFinite(page)) {return page;}
   }
   return 1;
 };
@@ -255,7 +254,7 @@ export class ComixSource implements
         : undefined
     );
 
-    if (!item) throw new Error(`Comix manga not found: ${mangaId}`);
+    if (!item) {throw new Error(`Comix manga not found: ${mangaId}`);}
     return { ...toSourceManga(item), mangaId };
   }
 
@@ -265,7 +264,7 @@ export class ComixSource implements
       `${COMIX_ORIGIN}/api/v1/manga/${encodeURIComponent(hashId)}/chapters`,
     );
     const apiChapters = resultItems(response.body);
-    if (apiChapters.length > 0) return apiChapters.map((item) => toChapter(item, sourceManga));
+    if (apiChapters.length > 0) {return apiChapters.map((item) => toChapter(item, sourceManga));}
 
     const webViewResult = await this.executeComixWebView(
       `${COMIX_ORIGIN}/title/${encodeURIComponent(sourceManga.mangaId)}`,

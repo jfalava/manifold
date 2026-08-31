@@ -20,7 +20,7 @@ import {
 
 /** Muted slate matching opencode's chrome (pc.dim renders too faintly). */
 export const muted = (() => {
-  if (!pc.isColorSupported) return (text: string): string => text;
+  if (!pc.isColorSupported) {return (text: string): string => text;}
   const [r, g, b] = [100, 116, 139];
   return (text: string): string => `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`;
 })();
@@ -33,7 +33,7 @@ export const frameDetail = (text: string): void => {
 
 export const fmtDuration = (ms: number): string => {
   const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
+  if (s < 60) {return `${s}s`;}
   const m = Math.floor(s / 60);
   return `${m}m${String(s % 60).padStart(2, "0")}s`;
 };
@@ -108,8 +108,8 @@ class RailSpinner extends Spinner {
 /** Build a Listr run with our theme + non-TTY fallback baked in. */
 export const createRun = <Ctx extends RunContext>(
   tasks: RunTask<Ctx>[],
-): Listr<Ctx> =>
-  new Listr(tasks, {
+): Listr<Ctx, "default", "simple"> =>
+  new Listr<Ctx, "default", "simple">(tasks, {
     renderer: "default",
     fallbackRenderer: "simple",
     concurrent: false,

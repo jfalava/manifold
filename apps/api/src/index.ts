@@ -26,7 +26,7 @@ const parseJson = (request: Request): Effect.Effect<unknown, Error> =>
   });
 
 const toError = (cause: unknown): Error => {
-  if (cause instanceof Error) return cause;
+  if (cause instanceof Error) {return cause;}
   // Canonical source failures reject with plain { _tag, message } objects.
   if (typeof cause === "object" && cause !== null && "message" in cause) {
     return new Error(String((cause as { message: unknown }).message));
@@ -57,7 +57,7 @@ const routeId = (value: string): string => decodeURIComponent(value);
 
 const authorized = async (request: Request, env: Env): Promise<boolean> => {
   const authorization = request.headers.get("authorization");
-  if (!authorization?.startsWith("Bearer ")) return false;
+  if (!authorization?.startsWith("Bearer ")) {return false;}
 
   const expected = await readSecret(env.MANIFOLD_TOKEN, "MANIFOLD_TOKEN");
   const supplied = new TextEncoder().encode(authorization.slice("Bearer ".length));
@@ -75,24 +75,24 @@ const authorized = async (request: Request, env: Env): Promise<boolean> => {
 };
 
 const authProvider = (value: string | undefined): AuthProvider | undefined => {
-  if (value === "anilist" || value === "mal" || value === "mangadex") return value;
+  if (value === "anilist" || value === "mal" || value === "mangadex") {return value;}
   return undefined;
 };
 
 const oauthProvider = (value: string | undefined): OAuthProvider | undefined => {
-  if (value === "anilist" || value === "mal") return value;
+  if (value === "anilist" || value === "mal") {return value;}
   return undefined;
 };
 
 const canonicalProvider = (value: string | null): CanonicalProviderFilter | undefined => {
-  if (value === null || value === "all") return "all";
-  if (value === "anilist" || value === "mal") return value;
+  if (value === null || value === "all") {return "all";}
+  if (value === "anilist" || value === "mal") {return value;}
   return undefined;
 };
 
 const searchLimit = (value: string | null): number => {
   const parsed = value === null ? 20 : Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) return 20;
+  if (!Number.isFinite(parsed)) {return 20;}
   return Math.min(25, Math.max(1, parsed));
 };
 
@@ -134,9 +134,9 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
       request.method === "GET"
     ) {
       const query = url.searchParams.get("q")?.trim() ?? "";
-      if (!query) return json({ error: "Query parameter q is required" }, 400);
+      if (!query) {return json({ error: "Query parameter q is required" }, 400);}
       const provider = canonicalProvider(url.searchParams.get("provider"));
-      if (!provider) return json({ error: "provider must be all, anilist, or mal" }, 400);
+      if (!provider) {return json({ error: "provider must be all, anilist, or mal" }, 400);}
 
       const result = yield* tryPromise(() =>
         searchCanonical(env, query, provider, searchLimit(url.searchParams.get("limit")))
@@ -153,11 +153,11 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
       request.method === "GET"
     ) {
       const provider = canonicalProvider(path[2]);
-      if (!provider || provider === "all") return json({ error: "Unknown canonical provider" }, 404);
+      if (!provider || provider === "all") {return json({ error: "Unknown canonical provider" }, 404);}
       // Upstream provider failures (e.g. AniList blocking Worker egress)
       // must surface as 502 with the real message, not a bare 500.
       const outcome = yield* attempt(() => getCanonical(env, provider, routeId(path[3])));
-      if (!outcome.ok) return json({ error: outcome.error.message }, 502);
+      if (!outcome.ok) {return json({ error: outcome.error.message }, 502);}
       return outcome.value ? json(outcome.value) : json({ error: "Not found" }, 404);
     }
 
@@ -355,7 +355,7 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
         const ids = Array.isArray(candidate)
           ? candidate.filter((value): value is string => typeof value === "string").slice(0, 200)
           : [];
-        if (ids.length === 0) return json({ error: "No manga ids provided" }, 400);
+        if (ids.length === 0) {return json({ error: "No manga ids provided" }, 400);}
         return json({ stats: yield* tryPromise(() => sync.mangaDexStats(ids)) });
       }
       if (path.length === 3 && path[2] === "feed" && request.method === "GET") {
@@ -391,7 +391,7 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
       }
 
       const provider = authProvider(path[2]);
-      if (!provider) return json({ error: "Unknown auth provider" }, 404);
+      if (!provider) {return json({ error: "Unknown auth provider" }, 404);}
 
       const sync = env.MANIFOLD_SYNC.getByName("default");
       if (
@@ -444,7 +444,7 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
         }
 
         const code = url.searchParams.get("code");
-        if (!code) return json({ error: "OAuth callback is missing code" }, 400);
+        if (!code) {return json({ error: "OAuth callback is missing code" }, 400);}
         return json(
           yield* tryPromise(() => sync.completeOAuthSession(oauth, state, code))
         );
@@ -462,7 +462,7 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
       return json({ error: "Not found" }, 404);
     }
 
-    if (path[0] !== "v1" || path[1] !== "entries") return json({ error: "Not found" }, 404);
+    if (path[0] !== "v1" || path[1] !== "entries") {return json({ error: "Not found" }, 404);}
 
     const sync = env.MANIFOLD_SYNC.getByName("default");
 
@@ -475,7 +475,7 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
       return json(yield* tryPromise(() => sync.upsertEntry(body)), 201);
     }
 
-    if (path.length < 3) return json({ error: "Not found" }, 404);
+    if (path.length < 3) {return json({ error: "Not found" }, 404);}
     const entryId = routeId(path[2]);
 
     if (path.length === 3 && request.method === "GET") {

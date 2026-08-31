@@ -50,7 +50,7 @@ const NUKE_QUIET_MS = 120_000;
 
 const readPendingNukes = (): Record<string, PendingNuke> => {
   const raw = Application.getState(PENDING_NUKES_KEY);
-  if (typeof raw !== "string") return {};
+  if (typeof raw !== "string") {return {};}
   try {
     return JSON.parse(raw) as Record<string, PendingNuke>;
   } catch {
@@ -72,7 +72,7 @@ const aniListToken = (): string => {
 
 const aniListUserId = (): number => {
   const userId = Application.getState(ANILIST_VIEWER_ID_KEY) as number | undefined;
-  if (!userId) throw new Error("AniList session is incomplete, reconnect in settings");
+  if (!userId) {throw new Error("AniList session is incomplete, reconnect in settings");}
   return userId;
 };
 
@@ -83,7 +83,7 @@ const rememberListEntryId = (
   anilistId: string,
   mediaListEntryId: number | undefined,
 ): void => {
-  if (mediaListEntryId !== undefined) mediaListEntryIds.set(anilistId, mediaListEntryId);
+  if (mediaListEntryId !== undefined) {mediaListEntryIds.set(anilistId, mediaListEntryId);}
 };
 
 /**
@@ -95,7 +95,7 @@ const anilistIdOf = async (
 ): Promise<{ readonly entryId: string; readonly anilistId: string } | undefined> => {
   const entryId = sourceManga.mangaId;
   const stamped = sourceManga.mangaInfo.additionalInfo?.["AniList ID"];
-  if (stamped) return { entryId, anilistId: stamped };
+  if (stamped) {return { entryId, anilistId: stamped };}
   const entry = await configuredPersonalApi().getEntry(entryId);
   const anilistId = entry?.providers.find((provider) => provider.provider === "anilist")
     ?.externalId;
@@ -113,12 +113,12 @@ export const recordAniListProgress = async (
   chapterNumber: number | undefined,
 ): Promise<boolean> => {
   const token = aniListSessionToken();
-  if (!token) return false;
+  if (!token) {return false;}
   if (typeof chapterNumber !== "number" || !Number.isFinite(chapterNumber) || chapterNumber < 0) {
     return false;
   }
   const resolved = await anilistIdOf(sourceManga).catch(() => undefined);
-  if (!resolved) return false;
+  if (!resolved) {return false;}
   return await saveAniListProgress(token, resolved.anilistId, chapterNumber);
 };
 
@@ -130,7 +130,7 @@ export const getManagedLibraryCollections = (): Promise<ManagedCollection[]> => 
 export const getSourceMangaInManagedCollection = async (
   managedCollection: ManagedCollection,
 ): Promise<SourceManga[]> => {
-  if (!COLLECTION_IDS.has(managedCollection.id)) return [];
+  if (!COLLECTION_IDS.has(managedCollection.id)) {return [];}
   console.log(`[manifold] collection:fetch:${managedCollection.id}:start`);
 
   const token = aniListToken();
@@ -221,7 +221,7 @@ export const commitManagedCollectionChanges = async (
 
   for (const addition of changeset.additions ?? []) {
     const resolved = await anilistIdOf(addition);
-    if (!resolved) throw new Error(`No AniList link for ${addition.mangaId}`);
+    if (!resolved) {throw new Error(`No AniList link for ${addition.mangaId}`);}
     // An addition for a pending-nuked title means the deletion was one half
     // of a move — cancel the nuke.
     delete pending[resolved.anilistId];
@@ -243,7 +243,7 @@ export const commitManagedCollectionChanges = async (
 
   for (const deletion of changeset.deletions ?? []) {
     const resolved = await anilistIdOf(deletion);
-    if (!resolved) continue;
+    if (!resolved) {continue;}
     pending[resolved.anilistId] = {
       entryId: resolved.entryId,
       anilistId: resolved.anilistId,
@@ -266,10 +266,10 @@ export const flushPendingNukes = async (): Promise<number> => {
   const pending = readPendingNukes();
   const nowMs = Date.now();
   const due = Object.entries(pending).filter(([, nuke]) => nowMs - nuke.at >= NUKE_QUIET_MS);
-  if (due.length === 0) return 0;
+  if (due.length === 0) {return 0;}
 
   const token = aniListSessionToken();
-  if (!token) return 0;
+  if (!token) {return 0;}
   const api = configuredPersonalApi();
 
   let userId: number | undefined;

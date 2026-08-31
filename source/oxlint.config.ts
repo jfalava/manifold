@@ -21,5 +21,7 @@ export default defineConfig({
   rules: {
     ...base.rules,
     ...antiSlopEffectRules,
+    // Paperback extension console is the only on-device debug surface.
+    "no-console": ["error", { allow: ["log", "warn", "error", "info"] }],
   },
 });

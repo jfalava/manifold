@@ -12,8 +12,6 @@ import {
   type AuthConnection,
   type AuthProvider,
   type CanonicalEntry,
-  type CompleteOpsInput,
-  type LinkProviderInput,
   type ListEvent,
   type ListState,
   type OAuthProvider,
@@ -23,12 +21,9 @@ import {
   type OpTarget,
   type ProviderLink,
   type ReadingProgress,
-  type RecordReadInput,
   type ResolveEntryInput,
-  type SetListStateInput,
   type SyncOp,
   type MangaDexLibraryItem,
-  type UpsertEntryInput,
   CompleteOpsInput as CompleteOpsInputSchema,
   LinkProviderInput as LinkProviderInputSchema,
   RecordReadInput as RecordReadInputSchema,
@@ -73,16 +68,6 @@ interface ProgressRow extends Record<string, SqlStorageValue> {
   source_chapter_id: string | null;
   read_at: number;
   version: number;
-}
-
-interface OutboxRow extends Record<string, SqlStorageValue> {
-  id: number;
-  event_id: string;
-  target: "mangadex";
-  payload: string;
-  status: SyncOp["state"];
-  attempts: number;
-  created_at: number;
 }
 
 interface OpRow extends Record<string, SqlStorageValue> {
@@ -193,8 +178,8 @@ async function mapWithConcurrency<T>(
 }
 
 const errorMessage = (error: unknown): string => {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
+  if (error instanceof Error) {return error.message;}
+  if (typeof error === "string") {return error;}
   try {
     const serialized = JSON.stringify(error);
     return serialized === undefined ? String(error) : serialized;
@@ -205,7 +190,7 @@ const errorMessage = (error: unknown): string => {
 
 const toBase64Url = (bytes: Uint8Array): string => {
   let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
+  for (const byte of bytes) {binary += String.fromCharCode(byte);}
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 };
 
@@ -222,7 +207,7 @@ const fromBase64Url = (value: string): Uint8Array => {
 export class ManifoldSync extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    ctx.blockConcurrencyWhile(async () => {
+    void ctx.blockConcurrencyWhile(async () => {
       this.migrate();
     });
   }
@@ -270,7 +255,7 @@ export class ManifoldSync extends DurableObject<Env> {
       )
       .toArray()[0];
 
-    if (!session) throw new Error("OAuth session is invalid or expired");
+    if (!session) {throw new Error("OAuth session is invalid or expired");}
 
     // Consume the state before external I/O so a callback cannot be replayed.
     this.ctx.storage.sql.exec(
@@ -286,8 +271,8 @@ export class ManifoldSync extends DurableObject<Env> {
       client_id: config.clientId,
       redirect_uri: session.redirect_uri
     });
-    if (config.clientSecret) form.set("client_secret", config.clientSecret);
-    if (session.code_verifier) form.set("code_verifier", session.code_verifier);
+    if (config.clientSecret) {form.set("client_secret", config.clientSecret);}
+    if (session.code_verifier) {form.set("code_verifier", session.code_verifier);}
 
     const response = await fetch(config.tokenEndpoint, {
       method: "POST",
@@ -367,7 +352,7 @@ export class ManifoldSync extends DurableObject<Env> {
 
   async getAuthAccessToken(provider: AuthProvider): Promise<string> {
     const row = this.readAuthToken(provider);
-    if (!row) throw new Error(`Auth provider is not connected: ${provider}`);
+    if (!row) {throw new Error(`Auth provider is not connected: ${provider}`);}
 
     if (row.expires_at === null || row.expires_at > now() + 30_000) {
       return this.decryptToken(row.access_token);
@@ -396,7 +381,7 @@ export class ManifoldSync extends DurableObject<Env> {
               refresh_token: refreshToken,
               client_id: config.clientId
             });
-            if (config.clientSecret) refreshForm.set("client_secret", config.clientSecret);
+            if (config.clientSecret) {refreshForm.set("client_secret", config.clientSecret);}
             return refreshForm;
           })();
 
@@ -427,7 +412,7 @@ export class ManifoldSync extends DurableObject<Env> {
     const timestamp = now();
     const latest = this.readAuthToken(provider);
     if (!latest || latest.updated_at !== row.updated_at) {
-      if (!latest) throw new Error(`Auth provider disconnected during refresh: ${provider}`);
+      if (!latest) {throw new Error(`Auth provider disconnected during refresh: ${provider}`);}
       return this.decryptToken(latest.access_token);
     }
 
@@ -481,7 +466,7 @@ export class ManifoldSync extends DurableObject<Env> {
 
         return yield* Effect.sync(() => {
           const stored = self.readEntry(entry.id);
-          if (!stored) throw new Error(`Canonical entry not found after write: ${entry.id}`);
+          if (!stored) {throw new Error(`Canonical entry not found after write: ${entry.id}`);}
           return stored;
         });
       })
@@ -523,16 +508,19 @@ export class ManifoldSync extends DurableObject<Env> {
         const read = yield* Schema.decodeUnknownEffect(RecordReadInputSchema)(input);
         const eventId = read.eventId ?? crypto.randomUUID();
         const readAt = read.readAt ?? now();
+        // Resolved target may differ from the caller's entryId when a
+        // tombstoned row has a live successor — never reassign the param.
+        let targetEntryId = entryId;
 
         yield* Effect.sync(() => {
           const corpse = self.ctx.storage.sql
             .exec<{ tombstoned_at: number | null }>(
               "SELECT tombstoned_at FROM canonical_entries WHERE id = ?",
-              entryId
+              targetEntryId
             )
             .toArray()[0];
           if (!corpse) {
-            throw new Error(`Canonical entry not found: ${entryId}`);
+            throw new Error(`Canonical entry not found: ${targetEntryId}`);
           }
           if (corpse.tombstoned_at !== null) {
             // Reads are sacred: a stale library binding pointing at a nuked
@@ -546,23 +534,19 @@ export class ManifoldSync extends DurableObject<Env> {
                  JOIN canonical_entries ce ON ce.id = pl2.entry_id
                  WHERE pl.entry_id = ? AND pl2.entry_id <> ? AND ce.tombstoned_at IS NULL
                  LIMIT 1`,
-                entryId,
-                entryId
+                targetEntryId,
+                targetEntryId
               )
               .toArray()[0];
             if (successor) {
-              console.log(
-                `[ManifoldSync] read redirected:${entryId}->${successor.entry_id}`
-              );
-              entryId = successor.entry_id;
+              targetEntryId = successor.entry_id;
             } else {
               self.ctx.storage.sql.exec(
                 "UPDATE canonical_entries SET tombstoned_at = NULL, updated_at = ? WHERE id = ?",
                 now(),
-                entryId
+                targetEntryId
               );
-              self.appendEvent(entryId, "list.resurrect", "device", {});
-              console.log(`[ManifoldSync] read resurrected:${entryId}`);
+              self.appendEvent(targetEntryId, "list.resurrect", "device", {});
             }
           }
 
@@ -571,7 +555,7 @@ export class ManifoldSync extends DurableObject<Env> {
             .toArray()[0];
 
           if (existingEvent) {
-            if (existingEvent.entry_id !== entryId) {
+            if (existingEvent.entry_id !== targetEntryId) {
               throw new Error(`Read event ${eventId} belongs to another entry`);
             }
             return;
@@ -582,13 +566,13 @@ export class ManifoldSync extends DurableObject<Env> {
                (event_id, entry_id, chapter_key, read_at)
              VALUES (?, ?, ?, ?)`,
             eventId,
-            entryId,
+            targetEntryId,
             read.chapterKey,
             readAt
           );
 
           const current = self.ctx.storage.sql
-            .exec<{ version: number }>("SELECT version FROM progress_state WHERE entry_id = ?", entryId)
+            .exec<{ version: number }>("SELECT version FROM progress_state WHERE entry_id = ?", targetEntryId)
             .toArray()[0];
           const nextVersion = (current?.version ?? 0) + 1;
 
@@ -606,7 +590,7 @@ export class ManifoldSync extends DurableObject<Env> {
                read_at = excluded.read_at,
                version = excluded.version
              WHERE excluded.read_at >= progress_state.read_at`,
-            entryId,
+            targetEntryId,
             read.chapterKey,
             read.chapterNumber ?? null,
             read.volumeNumber ?? null,
@@ -622,7 +606,7 @@ export class ManifoldSync extends DurableObject<Env> {
               target: "mangadex",
               kind: "mangadex.read",
               origin: "device",
-              payload: { entryId, ...read, eventId, readAt }
+              payload: { entryId: targetEntryId, ...read, eventId, readAt }
             });
           }
 
@@ -634,7 +618,7 @@ export class ManifoldSync extends DurableObject<Env> {
           const mdLink = self.ctx.storage.sql
             .exec<{ external_id: string }>(
               "SELECT external_id FROM provider_links WHERE entry_id = ? AND provider = 'mangadex' LIMIT 1",
-              entryId
+              targetEntryId
             )
             .toArray()[0];
           if (mdLink) {
@@ -642,17 +626,17 @@ export class ManifoldSync extends DurableObject<Env> {
               `INSERT INTO md_status_queue (entry_id, created_at, attempts)
                VALUES (?, ?, 0)
                ON CONFLICT(entry_id) DO NOTHING`,
-              entryId,
+              targetEntryId,
               now()
             );
           }
         });
 
-        const progress = yield* Effect.sync(() => self.getProgressSync(entryId));
-        if (!progress) {
-          throw new Error(`Progress was not written for entry ${entryId}`);
+        const written = yield* Effect.sync(() => self.getProgressSync(targetEntryId));
+        if (!written) {
+          throw new Error(`Progress was not written for entry ${targetEntryId}`);
         }
-        return progress;
+        return written;
       })
     );
     try {
@@ -690,7 +674,7 @@ export class ManifoldSync extends DurableObject<Env> {
     const wanted = [...new Set(mangaDexIds)]
       .filter((id) => id.length > 0)
       .slice(0, 200);
-    if (wanted.length === 0) return {};
+    if (wanted.length === 0) {return {};}
 
     const accessToken = await this.getAuthAccessToken("mangadex");
     const client = createMangaDexClient({ accessToken });
@@ -710,7 +694,7 @@ export class ManifoldSync extends DurableObject<Env> {
         .toArray();
       const fresh = new Set<string>();
       for (const row of rows) {
-        if (row.computed_at < cutoff) continue;
+        if (row.computed_at < cutoff) {continue;}
         try {
           meta.set(row.manga_id, JSON.parse(row.payload) as MdFeedStatsPayload);
           fresh.add(row.manga_id);
@@ -719,7 +703,7 @@ export class ManifoldSync extends DurableObject<Env> {
         }
       }
       for (const mangaDexId of chunk) {
-        if (!fresh.has(mangaDexId)) staleIds.push(mangaDexId);
+        if (!fresh.has(mangaDexId)) {staleIds.push(mangaDexId);}
       }
     }
 
@@ -770,7 +754,7 @@ export class ManifoldSync extends DurableObject<Env> {
           readMarkers.set(mangaId, new Set(ids));
         }
       } catch {
-        for (const mangaId of chunk) markerFailures.add(mangaId);
+        for (const mangaId of chunk) {markerFailures.add(mangaId);}
       }
     }
 
@@ -787,7 +771,7 @@ export class ManifoldSync extends DurableObject<Env> {
         if (marks !== undefined && feed !== undefined) {
           for (const chapterId of marks) {
             const numberText = feed.numbersById[chapterId];
-            if (numberText === undefined) continue;
+            if (numberText === undefined) {continue;}
             readChapters += 1;
             const parsed = Number.parseFloat(numberText);
             if (Number.isFinite(parsed) && (lastRead === null || parsed > lastRead)) {
@@ -834,7 +818,7 @@ export class ManifoldSync extends DurableObject<Env> {
     const attachRatings = async (
       base: readonly MangaDexLibraryItem[],
     ): Promise<readonly MangaDexLibraryItem[]> => {
-      if (base.length === 0) return base;
+      if (base.length === 0) {return base;}
       const ids = base.map((row) => row.mangaDexId);
       try {
         const batch = await Effect.runPromise(client.getRatings(ids));
@@ -872,7 +856,7 @@ export class ManifoldSync extends DurableObject<Env> {
             ...chunk,
           )
           .toArray();
-        for (const row of rows) links.set(row.external_id, row.entry_id);
+        for (const row of rows) {links.set(row.external_id, row.entry_id);}
       }
       // Resolve titles + covers in batches so the admin UI shows names, not bare UUIDs.
       // Prefer seed/cache rows; listManga only for ids still missing a title or cover.
@@ -883,8 +867,8 @@ export class ManifoldSync extends DurableObject<Env> {
       const missingMeta: string[] = [];
       for (const mangaDexId of mangaDexIds) {
         const seeded = seedById.get(mangaDexId);
-        if (seeded?.title) titles.set(mangaDexId, seeded.title);
-        if (seeded?.coverUrl) covers.set(mangaDexId, seeded.coverUrl);
+        if (seeded?.title) {titles.set(mangaDexId, seeded.title);}
+        if (seeded?.coverUrl) {covers.set(mangaDexId, seeded.coverUrl);}
         if (!titles.has(mangaDexId) || !covers.has(mangaDexId)) {
           missingMeta.push(mangaDexId);
         }
@@ -894,8 +878,8 @@ export class ManifoldSync extends DurableObject<Env> {
         try {
           const page = await Effect.runPromise(client.listManga({ ids: chunk, limit: 100 }));
           for (const manga of page.items) {
-            if (manga.title) titles.set(manga.id, manga.title);
-            if (manga.coverUrl) covers.set(manga.id, manga.coverUrl);
+            if (manga.title) {titles.set(manga.id, manga.title);}
+            if (manga.coverUrl) {covers.set(manga.id, manga.coverUrl);}
           }
         } catch {
           // Titles are cosmetic here — a failed batch must not kill the list.
@@ -925,8 +909,8 @@ export class ManifoldSync extends DurableObject<Env> {
           at: this.mdLibraryCache.at,
           data: this.mdLibraryCache.data.map((row) => {
             const hydrated = byId.get(row.mangaDexId);
-            if (hydrated) return hydrated;
-            if ((row.status || "") === statusFilter) return { ...row, status: "" };
+            if (hydrated) {return hydrated;}
+            if ((row.status || "") === statusFilter) {return { ...row, status: "" };}
             return row;
           }),
         };
@@ -1068,7 +1052,7 @@ export class ManifoldSync extends DurableObject<Env> {
         request.title
       );
       const entry = this.readEntry(existing.entry_id, false);
-      if (!entry) throw new Error(`Registry row vanished for link: ${existing.entry_id}`);
+      if (!entry) {throw new Error(`Registry row vanished for link: ${existing.entry_id}`);}
       return entry;
     }
 
@@ -1092,9 +1076,9 @@ export class ManifoldSync extends DurableObject<Env> {
       request.title,
       timestamp
     );
-    console.log(`[ManifoldSync] registry minted:${request.provider}:${request.providerId}:${id}`);
+    
     const minted = this.readEntry(id);
-    if (!minted) throw new Error(`Registry row not found after mint: ${id}`);
+    if (!minted) {throw new Error(`Registry row not found after mint: ${id}`);}
     return minted;
   }
 
@@ -1117,7 +1101,7 @@ export class ManifoldSync extends DurableObject<Env> {
           )
           .toArray()) {
           const entry = this.readEntry(row.id, false);
-          if (!entry) continue;
+          if (!entry) {continue;}
           const values = row as Record<string, SqlStorageValue>;
           const state = this.readListState(row.id);
           results.push({
@@ -1158,9 +1142,7 @@ export class ManifoldSync extends DurableObject<Env> {
               stolen.entry_id,
               link.provider
             );
-            console.log(
-              `[ManifoldSync] registry rebind:${link.provider}:${link.externalId}:${stolen.entry_id}->${entryId}`
-            );
+            
           }
           self.ctx.storage.sql.exec(
             `INSERT INTO provider_links
@@ -1184,7 +1166,7 @@ export class ManifoldSync extends DurableObject<Env> {
 
         return yield* Effect.sync(() => {
           const stored = self.readEntry(entryId);
-          if (!stored) throw new Error(`Canonical entry not found after link: ${entryId}`);
+          if (!stored) {throw new Error(`Canonical entry not found after link: ${entryId}`);}
           return stored;
         });
       })
@@ -1302,7 +1284,7 @@ export class ManifoldSync extends DurableObject<Env> {
     }
 
     const stored = this.readListState(entryId);
-    if (!stored) throw new Error(`List state missing after write: ${entryId}`);
+    if (!stored) {throw new Error(`List state missing after write: ${entryId}`);}
     return stored;
   }
 
@@ -1347,7 +1329,7 @@ export class ManifoldSync extends DurableObject<Env> {
     );
     this.ctx.storage.sql.exec("DELETE FROM md_status_queue WHERE entry_id = ?", entryId);
     this.appendEvent(entryId, "list.nuke", origin, { anilistId });
-    console.log(`[ManifoldSync] registry nuked:${entryId}:${origin}`);
+    
     return this.readListState(entryId);
   }
 
@@ -1406,7 +1388,7 @@ export class ManifoldSync extends DurableObject<Env> {
       const row = this.ctx.storage.sql
         .exec<OpRow>("SELECT * FROM sync_ops WHERE op_id = ?", result.opId)
         .toArray()[0];
-      if (!row || row.state !== "pending") continue;
+      if (!row || row.state !== "pending") {continue;}
       if (result.ok) {
         this.ctx.storage.sql.exec(
           `UPDATE sync_ops SET state = 'completed', attempts = ?, updated_at = ?
@@ -1555,9 +1537,7 @@ export class ManifoldSync extends DurableObject<Env> {
             row.id
           );
         }
-        console.log(
-          `[ManifoldSync] MangaDex read synced:${group.entryId}:chapters=${group.chapters.length}`
-        );
+        
       } catch (error) {
         this.failOps(group.rows, error);
       }
@@ -1579,7 +1559,7 @@ export class ManifoldSync extends DurableObject<Env> {
          LIMIT ${MD_STATUS_DRAIN_LIMIT}`
       )
       .toArray();
-    if (pending.length === 0) return;
+    if (pending.length === 0) {return;}
 
     try {
       const accessToken = await this.getAuthAccessToken("mangadex");
@@ -1603,7 +1583,7 @@ export class ManifoldSync extends DurableObject<Env> {
           if (!known.has(mdLink.external_id)) {
             await Effect.runPromise(client.updateReadingStatus(mdLink.external_id, "reading"));
             known.add(mdLink.external_id);
-            console.log(`[ManifoldSync] MangaDex shelf mirrored:${row.entry_id}:${mdLink.external_id}:reading`);
+            
           }
           this.ctx.storage.sql.exec("DELETE FROM md_status_queue WHERE entry_id = ?", row.entry_id);
         } catch (error) {
@@ -1662,7 +1642,7 @@ export class ManifoldSync extends DurableObject<Env> {
     const shelfPending = this.ctx.storage.sql
       .exec<{ count: number }>("SELECT COUNT(*) AS count FROM md_status_queue")
       .toArray()[0]?.count ?? 0;
-    if (pending === 0 && shelfPending === 0) return;
+    if (pending === 0 && shelfPending === 0) {return;}
 
     const scheduledAt = now() + Math.max(0, delayMs);
     const currentAlarm = await this.ctx.storage.getAlarm();
@@ -1906,7 +1886,7 @@ export class ManifoldSync extends DurableObject<Env> {
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_outbox'"
       )
       .toArray()[0];
-    if (!legacy) return;
+    if (!legacy) {return;}
     const timestamp = now();
     this.ctx.storage.sql.exec(
       `INSERT OR IGNORE INTO sync_ops
@@ -2000,7 +1980,7 @@ export class ManifoldSync extends DurableObject<Env> {
     const row = this.ctx.storage.sql
       .exec<ListStateRow>("SELECT * FROM list_state WHERE entry_id = ?", entryId)
       .toArray()[0];
-    if (!row) return undefined;
+    if (!row) {return undefined;}
     return {
       entryId: row.entry_id,
       ...(row.status === null ? {} : { status: row.status as ListState["status"] }),
@@ -2047,7 +2027,7 @@ export class ManifoldSync extends DurableObject<Env> {
       .exec<EntryRow>("SELECT * FROM canonical_entries WHERE id = ?", entryId)
       .toArray()[0];
     if (!row) {
-      if (required) throw new Error(`Canonical entry not found: ${entryId}`);
+      if (required) {throw new Error(`Canonical entry not found: ${entryId}`);}
       return undefined;
     }
 

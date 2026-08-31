@@ -14,10 +14,10 @@ import {
   openFrame,
   type RunContext,
 } from "@/ui";
-import type { MangaDexReadingStatus } from "@manifold/mangadex";
 import {
   createMangaDexClient,
   MANGADEX_CONTENT_RATINGS,
+  type MangaDexReadingStatus,
 } from "@manifold/mangadex";
 
 interface StaleCtx extends RunContext {
@@ -52,7 +52,7 @@ const loadStaleCache = async (): Promise<{
     const raw = JSON.parse(
       await readFile(STALE_CACHE_PATH, "utf8"),
     ) as StaleCacheFile;
-    if (raw.version !== 1 || typeof raw.savedAt !== "string") return { usable: false, savedAt: undefined, entries: {} };
+    if (raw.version !== 1 || typeof raw.savedAt !== "string") {return { usable: false, savedAt: undefined, entries: {} };}
     const age = Date.now() - Date.parse(raw.savedAt);
     const entries: Record<string, number> = {};
     for (const [id, entry] of Object.entries(raw.entries ?? {})) {
@@ -133,7 +133,7 @@ const DURATION_UNIT_MS: Record<string, number> = {
 /** Accepts "90", "90d", "12w", "6mo", "2y" (bare numbers mean days). */
 export const parseDurationMs = (raw: string): number | undefined => {
   const match = /^(\d+)(d|w|mo|y)?$/i.exec(raw.trim());
-  if (!match) return undefined;
+  if (!match) {return undefined;}
   return Number(match[1]) * DURATION_UNIT_MS[(match[2] ?? "d").toLowerCase()];
 };
 
@@ -201,10 +201,10 @@ export const staleStatusCommand = Command.make(
         ...names: readonly string[]
       ): string | undefined => {
         const direct = Option.getOrUndefined(flagValue);
-        if (direct !== undefined) return direct;
+        if (direct !== undefined) {return direct;}
         for (const name of names) {
           const value = process.env[name];
-          if (value !== undefined && value !== "") return value;
+          if (value !== undefined && value !== "") {return value;}
         }
         return undefined;
       };
@@ -338,7 +338,7 @@ export const staleStatusCommand = Command.make(
                       ["fresh", fresh.size],
                       ["pages", requests],
                     ] as const);
-                    if (page.items.length === 0 || offset >= total) break;
+                    if (page.items.length === 0 || offset >= total) {break;}
                     requests += 1;
                     await sleep(READ_SPACING_MS);
                   }
@@ -362,13 +362,13 @@ export const staleStatusCommand = Command.make(
                     const page = await Effect.runPromise(
                       client.followedManga({ limit: 100, offset }),
                     );
-                    for (const manga of page.items) followed.add(manga.id);
+                    for (const manga of page.items) {followed.add(manga.id);}
                     offset += page.items.length;
                     const total = page.total ?? offset;
                     reporter.progress(followed.size, candidates.length, [
                       ["followed", followed.size],
                     ] as const);
-                    if (page.items.length === 0 || offset >= total) break;
+                    if (page.items.length === 0 || offset >= total) {break;}
                     await sleep(READ_SPACING_MS);
                   }
                 }
@@ -378,12 +378,12 @@ export const staleStatusCommand = Command.make(
                 const staleIds: string[] = [];
                 const unverified: string[] = [];
                 for (const id of candidates) {
-                  if (fresh.has(id)) continue;
+                  if (fresh.has(id)) {continue;}
                   const knownAt = knownUploads[id];
                   // A recent cache entry can settle it without any request…
                   if (!sweepComplete && knownAt !== undefined) {
-                    if (knownAt >= cutoffMs) fresh.add(id);
-                    else staleIds.push(id);
+                    if (knownAt >= cutoffMs) {fresh.add(id);}
+                    else {staleIds.push(id);}
                     continue;
                   }
                   // …otherwise follow-state decides after a complete sweep.
@@ -431,7 +431,7 @@ export const staleStatusCommand = Command.make(
                       limit: 100,
                     }),
                   );
-                  for (const manga of page.items) titles[manga.id] = manga.title;
+                  for (const manga of page.items) {titles[manga.id] = manga.title;}
                   await sleep(READ_SPACING_MS);
                 }
                 ctx.titles = titles;
@@ -502,7 +502,7 @@ export const staleStatusCommand = Command.make(
                             reporter.progress(done, ctx.staleIds.length, [
                               ["failed", failures.length],
                             ] as const);
-                            if (done < ctx.staleIds.length) await sleep(WRITE_SPACING_MS);
+                            if (done < ctx.staleIds.length) {await sleep(WRITE_SPACING_MS);}
                             continue;
                           } catch (retryCause) {
                             failures.push(
@@ -519,7 +519,7 @@ export const staleStatusCommand = Command.make(
                       reporter.progress(done, ctx.staleIds.length, [
                         ["failed", failures.length],
                       ] as const);
-                      if (done < ctx.staleIds.length) await sleep(WRITE_SPACING_MS);
+                      if (done < ctx.staleIds.length) {await sleep(WRITE_SPACING_MS);}
                     }
                     for (const failure of failures.slice(0, DETAIL_LINE_CAP)) {
                       reporter.problem(failure);
@@ -528,7 +528,7 @@ export const staleStatusCommand = Command.make(
                       reporter.problem(`…and ${failures.length - DETAIL_LINE_CAP} more failures`);
                     }
                     reporter.note(`❖ ${done - failures.length}/${done} updated.`);
-                    if (failures.length > 0) process.exitCode = 1;
+                    if (failures.length > 0) {process.exitCode = 1;}
                   },
                   rendererOptions: { outputBar: 1, persistentOutput: true },
                 }

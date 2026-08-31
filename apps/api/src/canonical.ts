@@ -79,7 +79,7 @@ const selectedSources = (
   provider: CanonicalProviderFilter,
 ): readonly CanonicalSearchSource[] => {
   const sources: CanonicalSearchSource[] = [];
-  if (provider === "all" || provider === "anilist") sources.push(createAniListSource());
+  if (provider === "all" || provider === "anilist") {sources.push(createAniListSource());}
   if (provider === "all" || provider === "mal") {
     sources.push(createMyAnimeListSource({ clientId: env.MAL_CLIENT_ID }));
   }
@@ -108,6 +108,6 @@ export const getCanonical = async (
   providerId: string,
 ): Promise<CanonicalEntry | undefined> => {
   const source = selectedSources(env, provider)[0];
-  if (!source) return undefined;
+  if (!source) {return undefined;}
   return Effect.runPromise(source.getById(providerId));
 };

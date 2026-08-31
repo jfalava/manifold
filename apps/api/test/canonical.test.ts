@@ -14,6 +14,9 @@ const environment = (): Env => ({
       throw new Error("ManifoldSync is not used by canonical search");
     },
   },
+  ASSETS: {
+    fetch: async () => new Response("not used", { status: 404 }),
+  },
   ENVIRONMENT: "test",
   MANIFOLD_TOKEN: "token",
   OAUTH_REDIRECT_BASE_URL: "https://example.test",
@@ -58,16 +61,14 @@ describe("personal canonical search", () => {
     const body = await searchCanonical(environment(), "example", "all", 3);
 
     expect(body.results[0]?.id).toBe("anilist:100");
-    expect(body.providers).toEqual(
-      expect.arrayContaining([
-        { provider: "anilist", results: expect.any(Array) },
-        {
-          provider: "mal",
-          results: [],
-          error: { message: "MyAnimeList client id is not configured" },
-        },
-      ])
-    );
+    const anilistProvider = body.providers.find((p) => p.provider === "anilist");
+    const malProvider = body.providers.find((p) => p.provider === "mal");
+    expect(anilistProvider?.results).toEqual(expect.any(Array) as unknown[]);
+    expect(malProvider).toEqual({
+      provider: "mal",
+      results: [],
+      error: { message: "MyAnimeList client id is not configured" },
+    });
   });
 
   it("returns a provider error when only an unavailable provider is requested", async () => {

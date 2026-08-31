@@ -13,12 +13,12 @@ export const readSecretOptional = async (
   value: string | SecretsStoreSecret | undefined,
   label: string
 ): Promise<string | undefined> => {
-  if (typeof value === "string") return value.length > 0 ? value : undefined;
+  if (typeof value === "string") {return value.length > 0 ? value : undefined;}
   if (secretBinding(value)) {
     const resolved = await value.get();
     return resolved ? resolved : undefined;
   }
-  if (value === undefined) return undefined;
+  if (value === undefined) {return undefined;}
   throw new Error(`Secret binding ${label} has invalid type`);
 };
 /**
@@ -30,12 +30,12 @@ export const readSecret = async (
   label: string
 ): Promise<string> => {
   if (typeof value === "string") {
-    if (value.length > 0) return value;
+    if (value.length > 0) {return value;}
     throw new Error(`Secret ${label} is empty`);
   }
   if (secretBinding(value)) {
     const resolved = await value.get();
-    if (resolved) return resolved;
+    if (resolved) {return resolved;}
     throw new Error(`Secret binding ${label} is empty`);
   }
   throw new Error(

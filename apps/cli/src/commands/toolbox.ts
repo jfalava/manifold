@@ -38,7 +38,7 @@ export const apiConfig = (
     "MANIFOLD_TOKEN",
     "ALCHEMY_SECRET_MANIFOLD_TOKEN"
   );
-  if (!token) throw new Error("Personal API token missing (MANIFOLD_TOKEN)");
+  if (!token) {throw new Error("Personal API token missing (MANIFOLD_TOKEN)");}
   const origin = resolveValue(originFlag, "MANIFOLD_API_ORIGIN") ?? DEFAULT_API_ORIGIN;
   return { origin: origin.replace(/\/$/, ""), token };
 };
@@ -96,7 +96,7 @@ export const registryByAnilistId = async (
   const map = new Map<string, RegistryRow>();
   for (const row of all) {
     const link = row.providers.find((provider) => provider.provider === "anilist");
-    if (link) map.set(link.externalId, row);
+    if (link) {map.set(link.externalId, row);}
   }
   return map;
 };
@@ -150,7 +150,7 @@ export const opsCommand = Command.make("ops").pipe(
                   frameDetail(
                     `  ${state.toUpperCase()} ${op.opId} ${op.kind} origin=${op.origin} attempts=${op.attempts}`,
                   );
-                  if (op.lastError) frameDetail(`    └ ${op.lastError}`);
+                  if (op.lastError) {frameDetail(`    └ ${op.lastError}`);}
                 }
                 total += body.ops.length;
               }
@@ -208,7 +208,7 @@ export const reconcileCommand = Command.make("diff", {
         openFrame("reconcile diff");
         try {
           const token = resolveValue(anilistToken, "ANILIST_TOKEN", "ALCHEMY_SECRET_ANILIST_TOKEN");
-          if (!token) throw new Error("AniList token missing (ANILIST_TOKEN)");
+          if (!token) {throw new Error("AniList token missing (ANILIST_TOKEN)");}
           const config = apiConfig(apiOrigin, apiToken);
 
           const live: readonly AniListEntry[] = await fetchAniListMangaEntries(token);
@@ -263,7 +263,7 @@ export const importCommand = Command.make("import", {
         openFrame("registry import");
         try {
           const token = resolveValue(anilistToken, "ANILIST_TOKEN", "ALCHEMY_SECRET_ANILIST_TOKEN");
-          if (!token) throw new Error("AniList token missing (ANILIST_TOKEN)");
+          if (!token) {throw new Error("AniList token missing (ANILIST_TOKEN)");}
           const config = apiConfig(apiOrigin, apiToken);
 
           const live = await fetchAniListMangaEntries(token);
@@ -290,7 +290,7 @@ export const importCommand = Command.make("import", {
             const entry = live[index];
             const row = resolved.entries[index];
             const status = entry ? ANILIST_TO_REGISTRY[entry.status] : undefined;
-            if (!entry || !row || !status) continue;
+            if (!entry || !row || !status) {continue;}
             await apiCall(
               config,
               `/v1/entries/${encodeURIComponent(row.id)}/list-state`,

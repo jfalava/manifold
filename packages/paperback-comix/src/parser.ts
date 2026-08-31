@@ -35,15 +35,15 @@ const asString = (value: unknown, fallback = ""): string =>
   typeof value === "string" || typeof value === "number" ? String(value) : fallback;
 
 const asNumber = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value !== "string") return undefined;
+  if (typeof value === "number" && Number.isFinite(value)) {return value;}
+  if (typeof value !== "string") {return undefined;}
   const parsed = Number.parseFloat(value.replace(/[^\d.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
 const asDate = (value: unknown): Date | undefined => {
-  if (value instanceof Date && !Number.isNaN(value.valueOf())) return value;
-  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  if (value instanceof Date && !Number.isNaN(value.valueOf())) {return value;}
+  if (typeof value !== "string" && typeof value !== "number") {return undefined;}
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? undefined : date;
 };
@@ -55,7 +55,7 @@ const titleFromUrl = (value: string): string => {
 
 export const mangaIdFromItem = (item: JsonObject): string => {
   const url = asString(item.url);
-  if (url) return titleFromUrl(url);
+  if (url) {return titleFromUrl(url);}
 
   const hashId = asString(first(item.hid, item.hash_id));
   const slug = asString(item.slug);
@@ -75,13 +75,13 @@ const contentRatingFromItem = (item: JsonObject): ContentRating => {
   if (item.is_nsfw === true || rating === "nsfw" || rating === "adult") {
     return ContentRating.ADULT;
   }
-  if (rating === "suggestive" || rating === "mature") return ContentRating.MATURE;
+  if (rating === "suggestive" || rating === "mature") {return ContentRating.MATURE;}
   return ContentRating.EVERYONE;
 };
 
 const joinedTitles = (value: unknown): string[] =>
   asArray(value).map((title) => {
-    if (typeof title === "string") return title;
+    if (typeof title === "string") {return title;}
     const object = asObject(title);
     return asString(first(object?.title, object?.name));
   }).filter(Boolean);
@@ -93,7 +93,7 @@ const joinedNames = (value: unknown): string | undefined => {
 
 const itemGenres = (item: JsonObject): string[] =>
   asArray(item.genres).map((genre) => {
-    if (typeof genre === "string") return genre;
+    if (typeof genre === "string") {return genre;}
     const object = asObject(genre);
     return asString(first(object?.title, object?.name));
   }).filter(Boolean);
@@ -167,7 +167,7 @@ export const paginationFromPayload = (payload: unknown): ComixPagination => {
 
 const chapterIdFromItem = (item: JsonObject): string => {
   const explicit = asString(first(item.id, item.chapter_id, item.hid));
-  if (explicit) return explicit;
+  if (explicit) {return explicit;}
   const url = asString(first(item.url, item.chapterUrl, item.chapter_url));
   return url ? url.split("/").at(-1)?.split("-")[0] ?? url : "";
 };
@@ -197,9 +197,9 @@ export const toChapter = (item: JsonObject, sourceManga: SourceManga): Chapter =
 });
 
 const pageFromItem = (value: unknown): ComixPage | undefined => {
-  if (typeof value === "string") return value ? { url: value } : undefined;
+  if (typeof value === "string") {return value ? { url: value } : undefined;}
   const item = asObject(value);
-  if (!item) return undefined;
+  if (!item) {return undefined;}
   const url = asString(first(item.url, item.src, item.image, item.path));
   return url
     ? { url, width: asNumber(item.width), height: asNumber(item.height) }

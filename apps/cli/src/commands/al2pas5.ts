@@ -8,7 +8,6 @@ import {
   fetchAniListRichEntries,
   type AniListRichEntry,
 } from "@/anilist";
-import { resolveValue } from "@/env-resolve";
 import {
   buildPas5Zip,
   parsePas5,
@@ -53,14 +52,14 @@ const DEFAULT_BASE_HINT =
 const parseTabsFlag = (
   value: string,
 ): readonly string[] | "none" | undefined => {
-  if (value === "auto") return undefined;
-  if (value === "none") return "none";
+  if (value === "auto") {return undefined;}
+  if (value === "none") {return "none";}
   const allowed = new Map(TAB_ORDER.map((name) => [name.toLowerCase(), name]));
   const names = value
     .split(",")
     .map((part) => part.trim().toLowerCase())
     .filter((part) => part.length > 0);
-  if (names.length === 0) throw new Error(`--tabs: no valid tab names in "${value}"`);
+  if (names.length === 0) {throw new Error(`--tabs: no valid tab names in "${value}"`);}
   for (const name of names) {
     if (!allowed.has(name)) {
       throw new Error(
@@ -110,7 +109,7 @@ const buildEntitiesForEntry = (
   if (entry.nativeTitle && entry.nativeTitle !== entry.title) {
     secondary.add(entry.nativeTitle);
   }
-  for (const synonym of entry.synonyms) secondary.add(synonym);
+  for (const synonym of entry.synonyms) {secondary.add(synonym);}
   secondary.delete(entry.title);
 
   const baseInfo: Omit<MangaInfo, never> = {
@@ -343,7 +342,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
         if (scan.base) {
           for (const lib of Object.values(scan.base.__LIBRARY_MANGA_V5)) {
             for (const tab of lib.libraryTabs ?? []) {
-              if (!baseTabs.has(tab.name)) baseTabs.set(tab.name, tab);
+              if (!baseTabs.has(tab.name)) {baseTabs.set(tab.name, tab);}
             }
           }
         }
@@ -369,7 +368,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
             const aniListId =
               info.additionalInfo?.["AniList ID"] ??
               info.additionalInfo?.["Canonical provider ID"];
-            if (aniListId !== undefined) existingAniListIds.add(aniListId);
+            if (aniListId !== undefined) {existingAniListIds.add(aniListId);}
           }
         }
 
@@ -409,7 +408,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
             skippedExisting++;
             continue;
           }
-          if (!registryRow) unresolvedUuid++;
+          if (!registryRow) {unresolvedUuid++;}
           // --tabs doubles as an import filter: titles whose status maps to
           // a collection you excluded are not imported at all ("none" keeps
           // everything, tab-less).
@@ -454,7 +453,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
           Option.getOrUndefined(out) ?? `Paperback-Generated.${stamp}.pas5`;
 
         if (!apply) {
-          for (const line of lines) frameDetail(line);
+          for (const line of lines) {frameDetail(line);}
           closeFrame(`Dry-run complete. Re-run with --apply to write ${outPath}`);
           return;
         }
@@ -481,7 +480,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
           ...entities.__MANGA_INFO_V5,
         });
 
-        for (const line of lines) frameDetail(line);
+        for (const line of lines) {frameDetail(line);}
         yield* Effect.tryPromise({
           try: async () => {
             const zip = buildPas5Zip(merged);

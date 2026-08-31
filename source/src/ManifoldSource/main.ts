@@ -128,7 +128,7 @@ const CF_CLEARANCE_PERSIST_KEY = "manifold-cf-clearance-v1";
 const COMIX_SESSION_ACTION_KEY = "manifold-comix-session-action-v1";
 const persistCfClearance = (cookies: readonly Cookie[]): void => {
   const hit = cookies.find((cookie) => cookie.name === "cf_clearance");
-  if (!hit) return;
+  if (!hit) {return;}
   try {
     Application.setState(
       JSON.stringify({
@@ -143,7 +143,7 @@ const persistCfClearance = (cookies: readonly Cookie[]): void => {
 };
 const restorePersistedCfClearance = (): Cookie | undefined => {
   const raw = Application.getState(CF_CLEARANCE_PERSIST_KEY);
-  if (typeof raw !== "string") return undefined;
+  if (typeof raw !== "string") {return undefined;}
   try {
     // JSON can only round-trip the ISO string written by persistCfClearance.
     const parsed = JSON.parse(raw) as {
@@ -153,11 +153,11 @@ const restorePersistedCfClearance = (): Cookie | undefined => {
       path?: unknown;
       expires?: unknown;
     };
-    if (parsed.name !== "cf_clearance" || typeof parsed.value !== "string") return undefined;
+    if (parsed.name !== "cf_clearance" || typeof parsed.value !== "string") {return undefined;}
     let expires: Date | undefined;
     if (typeof parsed.expires === "string") {
       expires = new Date(parsed.expires);
-      if (Number.isNaN(expires.getTime())) return undefined;
+      if (Number.isNaN(expires.getTime())) {return undefined;}
     }
     return {
       name: "cf_clearance",
@@ -204,7 +204,7 @@ class ManifoldComixInterceptor extends PaperbackInterceptor {
 
   override async interceptRequest(request: Request): Promise<Request> {
     const host = /^https?:\/\/([^/:?]+)/.exec(request.url)?.[1] ?? "";
-    if (!COMIX_IMAGE_HOST.test(host)) return request;
+    if (!COMIX_IMAGE_HOST.test(host)) {return request;}
     return {
       ...request,
       headers: {
@@ -247,7 +247,7 @@ class ManifoldMangaDexInterceptor extends PaperbackInterceptor {
   override async interceptRequest(request: Request): Promise<Request> {
     const host = /^https?:\/\/([^/:?]+)/.exec(request.url)?.[1] ?? "";
     const isMangaDex = host.endsWith("mangadex.org") || host.endsWith("mangadex.net");
-    if (!isMangaDex) return request;
+    if (!isMangaDex) {return request;}
     return {
       ...request,
       headers: {
@@ -270,7 +270,7 @@ const scheduledMangaDexFetcher: MangaDexFetcher = async (input, init) => {
   const headers: Record<string, string> = {};
   if (init?.headers && typeof init.headers === "object" && !Array.isArray(init.headers)) {
     for (const [key, value] of Object.entries(init.headers)) {
-      if (typeof value === "string") headers[key] = value;
+      if (typeof value === "string") {headers[key] = value;}
     }
   }
   const [response, bodyBuffer] = await Application.scheduleRequest({
@@ -285,7 +285,7 @@ const scheduledAniListFetcher: CanonicalFetcher = async (input, init) => {
   const headers: Record<string, string> = {};
   if (init?.headers && typeof init.headers === "object" && !Array.isArray(init.headers)) {
     for (const [key, value] of Object.entries(init.headers)) {
-      if (typeof value === "string") headers[key] = value;
+      if (typeof value === "string") {headers[key] = value;}
     }
   }
   const [response, bodyBuffer] = await Application.scheduleRequest({
@@ -331,7 +331,7 @@ interface CachedCardState {
 const cardFromCachedPayload = (
   card: NonNullable<CachedDiscoverCard["card"]>,
 ): UpdateCard | undefined => {
-  if (!card.mangaId || !card.chapterId) return undefined;
+  if (!card.mangaId || !card.chapterId) {return undefined;}
   return {
     source: card.source === "Comix" ? "Comix" : "MD",
     mangaId: card.mangaId,
@@ -343,14 +343,14 @@ const cardFromCachedPayload = (
 
 const readCachedCardState = (cacheKey: string): CachedCardState | undefined => {
   const raw = Application.getState(cacheKey);
-  if (typeof raw !== "string") return undefined;
+  if (typeof raw !== "string") {return undefined;}
   try {
     const parsed = JSON.parse(raw) as CachedDiscoverCard;
     if (typeof parsed.t !== "number" || typeof parsed.ttl !== "number" || !parsed.card) {
       return undefined;
     }
     const card = cardFromCachedPayload(parsed.card);
-    if (!card) return undefined;
+    if (!card) {return undefined;}
     return { card, fresh: Date.now() - parsed.t < parsed.ttl };
   } catch {
     return undefined;
@@ -397,7 +397,7 @@ class HostRateLimiter extends BasicRateLimiter {
     this.matches = matches;
   }
   override async interceptRequest(request: Request): Promise<Request> {
-    if (!this.matches(request.url)) return request;
+    if (!this.matches(request.url)) {return request;}
     return super.interceptRequest(request);
   }
 }
@@ -539,7 +539,7 @@ export class ManifoldSourceImpl implements
     }
 
     this.cookieStorage.cookies = resolved;
-    if (resolved.length > 0) persistCfClearance(resolved);
+    if (resolved.length > 0) {persistCfClearance(resolved);}
     resetComixCooldown();
     this.noteComixSessionAction(
       resolved.length > 0 ? `bypass complete:${resolved.length}` : "bypass complete: empty",
@@ -550,7 +550,7 @@ export class ManifoldSourceImpl implements
   private comixClearanceCookie(): Cookie | undefined {
     const now = Date.now();
     return this.cookieStorage.cookies.find((cookie) => {
-      if (cookie.name !== "cf_clearance" || !cookie.value) return false;
+      if (cookie.name !== "cf_clearance" || !cookie.value) {return false;}
       const domain = cookie.domain ?? COMIX_ORIGIN_HOST;
       if (domain !== COMIX_ORIGIN_HOST && !domain.endsWith(`.${COMIX_ORIGIN_HOST}`)) {
         return false;
@@ -664,7 +664,7 @@ export class ManifoldSourceImpl implements
     maybeDrainAniListOps();
     const title = typeof query?.title === "string" ? query.title.trim() : "";
     console.log(`[manifold] search:${title || "<empty>"}`);
-    if (!title) return { items: [] };
+    if (!title) {return { items: [] };}
 
     let results;
     try {
@@ -699,7 +699,7 @@ export class ManifoldSourceImpl implements
       console.error(`[manifold] registry resolve failed: ${errorMessage(error)}`);
     }
 
-    for (const entry of mapped) this.canonicalResults.set(entry.id, entry);
+    for (const entry of mapped) {this.canonicalResults.set(entry.id, entry);}
     return {
       items: mapped.map(toCanonicalSearchResult),
     };
@@ -730,7 +730,7 @@ export class ManifoldSourceImpl implements
       // Rehydrate from the registry, enriching with AniList metadata when an
       // anilist link exists (covers, descriptions).
       const stored = await personalApi.getEntry(mangaId);
-      if (!stored) throw new Error(`Registry entry not found: ${mangaId}`);
+      if (!stored) {throw new Error(`Registry entry not found: ${mangaId}`);}
       entry = await this.enrichFromStored(stored);
       this.canonicalResults.set(entry.id, entry);
     }
@@ -794,7 +794,7 @@ export class ManifoldSourceImpl implements
       score: 0,
     };
     const aniLink = stored.providers.find((provider) => provider.provider === "anilist");
-    if (!aniLink) return minimal;
+    if (!aniLink) {return minimal;}
     try {
       const canonical = await Effect.runPromise(this.aniList.getById(aniLink.externalId));
       return canonical ? { ...canonical, id: stored.id, score: 0 } : minimal;
@@ -831,11 +831,11 @@ export class ManifoldSourceImpl implements
   ): Promise<ManifoldLibraryEntry[]> {
     const token = Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined;
     const viewerId = Application.getState(ANILIST_VIEWER_ID_KEY) as string | number | undefined;
-    if (!token || !viewerId) return [];
+    if (!token || !viewerId) {return [];}
     try {
       const list = await fetchAniListLibrary(token, Number(viewerId));
       const filtered = list.filter((e) => allowed.has(e.status));
-      if (filtered.length === 0) return [];
+      if (filtered.length === 0) {return [];}
       let uuids = new Map<string, string>();
       try {
         const resolved = await configuredPersonalApi().resolveEntries(
@@ -890,11 +890,11 @@ export class ManifoldSourceImpl implements
       mangadexLatest: async (entry) => {
         const cacheKey = `md-latest:${entry.id}`;
         const cached = readCachedCardState(cacheKey);
-        if (cached?.fresh) return cached.card;
+        if (cached?.fresh) {return cached.card;}
         // Budget is decremented synchronously before the await so Promise.all
         // workers cannot stampede past MANGADEX_UPDATES_PROBE_BUDGET.
         if (mdBudget) {
-          if (mdBudget.remaining <= 0) return cached?.card;
+          if (mdBudget.remaining <= 0) {return cached?.card;}
           mdBudget.remaining -= 1;
         }
         return this.cachedLatestCard(
@@ -907,9 +907,9 @@ export class ManifoldSourceImpl implements
       comixLatest: async (entry) => {
         const cacheKey = `comix-latest:${entry.id}`;
         const cached = readCachedCardState(cacheKey);
-        if (cached?.fresh) return cached.card;
+        if (cached?.fresh) {return cached.card;}
         if (comixBudget) {
-          if (comixBudget.remaining <= 0) return cached?.card;
+          if (comixBudget.remaining <= 0) {return cached?.card;}
           comixBudget.remaining -= 1;
         }
         try {
@@ -920,7 +920,7 @@ export class ManifoldSourceImpl implements
             cached?.card ? { staleFallback: cached.card } : undefined,
           );
         } catch (error) {
-          if (!(error instanceof CloudflareError)) throw error;
+          if (!(error instanceof CloudflareError)) {throw error;}
           console.error(
             `[manifold] comix latest CF:${entry.title}:${error.message}`,
           );
@@ -931,7 +931,7 @@ export class ManifoldSourceImpl implements
             try {
               return await this.probeComixLatest(entry);
             } catch (retryError) {
-              if (!(retryError instanceof CloudflareError)) throw retryError;
+              if (!(retryError instanceof CloudflareError)) {throw retryError;}
               console.error(
                 `[manifold] comix latest CF after adopt:${entry.title}`,
               );
@@ -950,7 +950,7 @@ export class ManifoldSourceImpl implements
     options?: { readonly staleFallback?: UpdateCard },
   ): Promise<UpdateCard | undefined> {
     const cached = readCachedCard(cacheKey);
-    if (cached) return cached;
+    if (cached) {return cached;}
     // The globally-sorted MangaDex board re-probes the whole library for every
     // page request, so concurrent walks race before any cache entry exists.
     // Share one in-flight promise per key instead of stampeding the upstreams.
@@ -983,7 +983,7 @@ export class ManifoldSourceImpl implements
       const card = await probe();
       if (!card) {
         // Keep a still-usable stale card instead of wiping it with a miss TTL.
-        if (options?.staleFallback) return options.staleFallback;
+        if (options?.staleFallback) {return options.staleFallback;}
         writeFailure();
         return undefined;
       }
@@ -1007,9 +1007,9 @@ export class ManifoldSourceImpl implements
     } catch (error) {
       // Cloudflare challenges are a user-action gate, not a transient failure.
       // Surface the challenge instead of caching a failure and hiding the banner.
-      if (error instanceof CloudflareError) throw error;
+      if (error instanceof CloudflareError) {throw error;}
       console.error(`[manifold] ${label} latest failed:${errorMessage(error)}`);
-      if (options?.staleFallback) return options.staleFallback;
+      if (options?.staleFallback) {return options.staleFallback;}
       writeFailure();
       return undefined;
     }
@@ -1042,7 +1042,7 @@ export class ManifoldSourceImpl implements
       this.mangaDex.feedChapters(resolution.externalId, { limit: 5 }),
     );
     const newest = page.items[0];
-    if (!newest) return undefined;
+    if (!newest) {return undefined;}
     return {
       source: "MD",
       mangaId: entry.id,
@@ -1067,7 +1067,7 @@ export class ManifoldSourceImpl implements
     const HID_TTL_MS = 7 * 24 * 60 * 60 * 1000;
     const readHidCache = (): ComixResolvedHid | undefined => {
       const raw = Application.getState(hidKey);
-      if (typeof raw !== "string") return undefined;
+      if (typeof raw !== "string") {return undefined;}
       try {
         const parsed = JSON.parse(raw) as {
           t?: number;
@@ -1088,7 +1088,7 @@ export class ManifoldSourceImpl implements
       }
     };
     const writeHidCache = (resolved: ComixResolvedHid): void => {
-      if (!resolved.hid) return;
+      if (!resolved.hid) {return;}
       Application.setState(
         JSON.stringify({ t: Date.now(), hid: resolved.hid, ...(resolved.slug ? { slug: resolved.slug } : {}) }),
         hidKey,
@@ -1139,7 +1139,7 @@ export class ManifoldSourceImpl implements
       console.log(`[manifold] comix hid stale:${entry.title}:${hid}`);
       Application.setState("", hidKey);
       const refreshed = await resolveHid();
-      if (!refreshed.hid) return undefined;
+      if (!refreshed.hid) {return undefined;}
       hid = refreshed.hid;
       slug = refreshed.slug;
       writeHidCache(refreshed);
@@ -1220,7 +1220,7 @@ export class ManifoldSourceImpl implements
       | { p: "comix" | "mangadex"; t: number; ttl: number; n: number; h?: string }
       | undefined => {
       const raw = Application.getState(choiceKey);
-      if (typeof raw !== "string") return undefined;
+      if (typeof raw !== "string") {return undefined;}
       try {
         const parsed = JSON.parse(raw) as {
           p?: string;
@@ -1235,7 +1235,7 @@ export class ManifoldSourceImpl implements
         ) {
           // Entries written before tiered TTLs (<=v1.0.30) carry no ttl field;
           // treat them as expired so stuck titles re-compare on first open.
-          if (typeof parsed.ttl !== "number") return undefined;
+          if (typeof parsed.ttl !== "number") {return undefined;}
           return {
             p: parsed.p,
             t: parsed.t,
@@ -1279,7 +1279,7 @@ export class ManifoldSourceImpl implements
     }
 
     const loadMangadex = async (): Promise<Chapter[]> => {
-      if (provider?.provider !== "mangadex") return [];
+      if (provider?.provider !== "mangadex") {return [];}
       try {
         const chapters = await Effect.runPromise(this.mangaDex.getChapters(provider.externalId));
         return toMangaDexChapters(sourceManga, chapters);
@@ -1305,7 +1305,7 @@ export class ManifoldSourceImpl implements
       if (typeof rawHid === "string" && rawHid.length > 0) {
         try {
           const parsed = JSON.parse(rawHid) as { hid?: string };
-          if (typeof parsed.hid === "string" && parsed.hid.length > 0) return parsed.hid;
+          if (typeof parsed.hid === "string" && parsed.hid.length > 0) {return parsed.hid;}
         } catch {
           // fall through
         }
@@ -1314,14 +1314,14 @@ export class ManifoldSourceImpl implements
         .getEntry(sourceManga.mangaId)
         .catch(() => undefined);
       const link = stored?.providers.find((entry) => entry.provider === "comix");
-      if (link?.externalId) return link.externalId;
+      if (link?.externalId) {return link.externalId;}
       const resolved = await this.comix.resolveHid(titles);
       return resolved.hid;
     };
     const loadComix = async (): Promise<Chapter[]> => {
       try {
         const hid = await resolveComixHid();
-        if (!hid) return [];
+        if (!hid) {return [];}
         comixHid = hid;
         return await this.comix.fetchChaptersByHid(hid, sourceManga);
       } catch (error) {
@@ -1341,11 +1341,11 @@ export class ManifoldSourceImpl implements
       if (hid) {
         try {
           const chapters = await this.comix.fetchChaptersByHid(hid, sourceManga);
-          if (chapters.length > 0) return chapters;
+          if (chapters.length > 0) {return chapters;}
           console.log(`[manifold] comix cached hid empty, falling back to search:${sourceManga.mangaId}:${hid}`);
         } catch (error) {
           console.error(`[manifold] comix cached hid failed:${sourceManga.mangaId}:${errorMessage(error)}`);
-          if (error instanceof CloudflareError) throw error;
+          if (error instanceof CloudflareError) {throw error;}
         }
       }
       return loadComix();
@@ -1452,7 +1452,7 @@ export class ManifoldSourceImpl implements
       throw new Error("This chapter has no verified MangaDex provider link");
     }
     const externalUrl = chapter.additionalInfo?.["manifold external URL"];
-    if (externalUrl) return toMangaDexExternalChapterDetails(chapter, externalUrl);
+    if (externalUrl) {return toMangaDexExternalChapterDetails(chapter, externalUrl);}
     const details = await Effect.runPromise(this.mangaDex.getChapterDetails(chapter.chapterId));
     return toMangaDexChapterDetails(chapter, details);
   }

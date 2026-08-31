@@ -1,8 +1,8 @@
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 
-const root = resolve(import.meta.dir, "../../..");
-const destination = resolve(import.meta.dir, "../catalog-assets");
+const root = resolve(import.meta.dirname, "../../..");
+const destination = resolve(import.meta.dirname, "../catalog-assets");
 
 const plugins = [
   { packageName: "source", id: "ManifoldSource" },

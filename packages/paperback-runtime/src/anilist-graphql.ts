@@ -50,14 +50,14 @@ const enqueue = <T>(task: () => Promise<T>): Promise<T> => {
 
 const gate = async (): Promise<void> => {
   const waitMs = Math.max(nextSlotAt - Date.now(), cooldownUntil - Date.now(), 0);
-  if (waitMs > 0) await Application.sleep(Math.ceil(waitMs / 1000));
+  if (waitMs > 0) {await Application.sleep(Math.ceil(waitMs / 1000));}
   nextSlotAt = Math.max(Date.now(), nextSlotAt) + MIN_REQUEST_SPACING_MS;
 };
 
 const headerValue = (headers: Record<string, string>, name: string): string | undefined => {
   const target = name.toLowerCase();
   for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === target) return value;
+    if (key.toLowerCase() === target) {return value;}
   }
   return undefined;
 };
@@ -95,7 +95,7 @@ const rawAniListRequest = async <A>(
 };
 
 const isThrottled = <A>(outcome: RawOutcome<A>): boolean => {
-  if (outcome.status === 429) return true;
+  if (outcome.status === 429) {return true;}
   return (outcome.body?.errors ?? []).some(
     (error) =>
       error.status === 429 ||
@@ -143,7 +143,7 @@ export const aniListRequest = async <A>(
     for (let attempt = 1; ; attempt += 1) {
       await gate();
       const outcome = await rawAniListRequest<A>(token, query, variables);
-      if (!isThrottled(outcome)) return interpretOutcome(outcome);
+      if (!isThrottled(outcome)) {return interpretOutcome(outcome);}
       if (attempt > MAX_THROTTLED_RETRIES) {
         throw new Error("AniList kept rate limiting after repeated backoff");
       }
@@ -256,10 +256,10 @@ export const fetchAniListLibrary = async (
     for (const entry of list.entries ?? []) {
       const mediaId = entry.media?.id;
       const status = entry.status ? normalizeAniListStatus(entry.status) : undefined;
-      if (!mediaId || !status) continue;
+      if (!mediaId || !status) {continue;}
 
       const key = String(mediaId);
-      if (items.get(key)?.status === "re_reading") continue;
+      if (items.get(key)?.status === "re_reading") {continue;}
 
       const titles = entry.media?.title;
       items.set(key, {
@@ -285,7 +285,7 @@ export const saveAniListStatus = async (
   status: AniListReadingStatus | null,
 ): Promise<{ mediaListEntryId?: number }> => {
   const mediaId = Number.parseInt(anilistId, 10);
-  if (!Number.isSafeInteger(mediaId)) throw new Error(`Invalid AniList manga id: ${anilistId}`);
+  if (!Number.isSafeInteger(mediaId)) {throw new Error(`Invalid AniList manga id: ${anilistId}`);}
   // Privacy policy: everything this source touches stays private.
   const data = await aniListRequest<{ SaveMediaListEntry?: { id?: number } }>(
     token,
@@ -322,7 +322,7 @@ export const saveAniListFields = async (
   change: AniListFieldChange,
 ): Promise<void> => {
   const mediaId = Number.parseInt(anilistId, 10);
-  if (!Number.isSafeInteger(mediaId)) throw new Error(`Invalid AniList manga id: ${anilistId}`);
+  if (!Number.isSafeInteger(mediaId)) {throw new Error(`Invalid AniList manga id: ${anilistId}`);}
   await aniListRequest(
     token,
     `mutation (
@@ -402,11 +402,11 @@ export const saveAniListProgress = async (
   progress: number,
 ): Promise<boolean> => {
   const mediaId = Number.parseInt(anilistId, 10);
-  if (!Number.isSafeInteger(mediaId)) throw new Error(`Invalid AniList manga id: ${anilistId}`);
+  if (!Number.isSafeInteger(mediaId)) {throw new Error(`Invalid AniList manga id: ${anilistId}`);}
   // AniList tracks whole chapters only; fractional releases (e.g. 38.5)
   // normalize down to their integer part. Below 1 there is nothing to push.
   const chapters = Math.floor(progress);
-  if (!Number.isSafeInteger(chapters) || chapters < 1) return false;
+  if (!Number.isSafeInteger(chapters) || chapters < 1) {return false;}
   // Status is NEVER touched here — collections own status transitions.
   // Reading a DROPPED title bumps its progress and stays DROPPED; omitting
   // the field preserves whatever AniList already has (creating a private

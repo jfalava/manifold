@@ -40,7 +40,7 @@ export const parseDevToolsActivePort = (contents: string, host = "127.0.0.1"): s
   const [portLine, pathLine] = contents.split(/\r?\n/);
   const port = portLine?.trim();
   const path = pathLine?.trim();
-  if (!port || !/^\d+$/.test(port) || !path || path.length === 0) return undefined;
+  if (!port || !/^\d+$/.test(port) || !path || path.length === 0) {return undefined;}
   const suffix = path.startsWith("/") ? path : `/${path}`;
   return `ws://${host}:${port}${suffix}`;
 };
@@ -84,9 +84,9 @@ export const findChromeDevToolsUrl = (
 ): string | undefined => {
   for (const file of candidates) {
     const contents = readFile(file);
-    if (!contents) continue;
+    if (!contents) {continue;}
     const url = parseDevToolsActivePort(contents);
-    if (url) return url;
+    if (url) {return url;}
   }
   return undefined;
 };
@@ -94,7 +94,7 @@ export const findChromeDevToolsUrl = (
 export const parseChromeVersionEndpoint = (body: string): string | undefined => {
   try {
     const parsed: unknown = JSON.parse(body);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {return undefined;}
     const url = (parsed as { webSocketDebuggerUrl?: unknown }).webSocketDebuggerUrl;
     return typeof url === "string" && url.startsWith("ws://") ? url : undefined;
   } catch {
@@ -149,7 +149,7 @@ export const probeChromeDevToolsUrl = async (
   fetchVersion: (url: string) => Promise<string | undefined> = async (url) => {
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
-      if (!response.ok) return undefined;
+      if (!response.ok) {return undefined;}
       return await response.text();
     } catch {
       return undefined;
@@ -157,12 +157,12 @@ export const probeChromeDevToolsUrl = async (
   },
 ): Promise<string | undefined> => {
   const fromFile = findChromeDevToolsUrl();
-  if (fromFile) return fromFile;
+  if (fromFile) {return fromFile;}
   for (const port of ports) {
     const body = await fetchVersion(`http://127.0.0.1:${port}/json/version`);
-    if (!body) continue;
+    if (!body) {continue;}
     const url = parseChromeVersionEndpoint(body);
-    if (url) return url;
+    if (url) {return url;}
   }
   return undefined;
 };
@@ -182,8 +182,8 @@ export const waitForChromeDevToolsUrl = async (options: {
   const deadline = now() + timeoutMs;
   while (true) {
     const url = await probe();
-    if (url) return url;
-    if (now() >= deadline) return undefined;
+    if (url) {return url;}
+    if (now() >= deadline) {return undefined;}
     await sleep(intervalMs);
   }
 };
@@ -250,7 +250,7 @@ export const createComixBrowser = async (options: {
     let userAgent: string | undefined;
     try {
       const ua = await view.evaluate<string>("navigator.userAgent");
-      if (typeof ua === "string" && ua.length > 0) userAgent = ua;
+      if (typeof ua === "string" && ua.length > 0) {userAgent = ua;}
     } catch {
       // harvest cookies even if the tab is mid-navigation
     }
@@ -262,7 +262,7 @@ export const createComixBrowser = async (options: {
     const snapshot = await view.evaluate<{ title?: unknown; html?: unknown }>(SNAPSHOT_SCRIPT);
     const title = typeof snapshot?.title === "string" ? snapshot.title : view.title;
     const html = typeof snapshot?.html === "string" ? snapshot.html : "";
-    if (classifyPage(title, html) === "challenge") return "challenge";
+    if (classifyPage(title, html) === "challenge") {return "challenge";}
     const payload = await view.evaluate("window.__comixResult__");
     return itemsFromCapture(payload) ?? "challenge";
   };

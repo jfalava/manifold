@@ -413,7 +413,7 @@ describe("MangaDex client", () => {
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(String(input));
-        if (empty) return jsonResponse({ data: [] });
+        if (empty) {return jsonResponse({ data: [] });}
         return jsonResponse({
           data: { "manga-1": ["chapter-1", "chapter-2"], "manga-2": [] },
         });

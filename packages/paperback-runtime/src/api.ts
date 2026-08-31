@@ -198,7 +198,7 @@ const asErrorMessage = (body: unknown, status: number): string => {
 };
 
 const limitValue = (limit: number | undefined): number => {
-  if (limit === undefined || !Number.isFinite(limit)) return 20;
+  if (limit === undefined || !Number.isFinite(limit)) {return 20;}
   return Math.min(25, Math.max(1, Math.floor(limit)));
 };
 
@@ -250,7 +250,7 @@ export const createPersonalApiClient = (
           `/v1/canonical/${encodeURIComponent(provider)}/${encodeURIComponent(providerId)}`,
         );
       } catch (error) {
-        if (error instanceof PersonalApiError && error.status === 404) return undefined;
+        if (error instanceof PersonalApiError && error.status === 404) {return undefined;}
         throw error;
       }
     },
@@ -258,7 +258,7 @@ export const createPersonalApiClient = (
       try {
         return await request<PersonalEntry>(`/v1/entries/${encodeURIComponent(entryId)}`);
       } catch (error) {
-        if (error instanceof PersonalApiError && error.status === 404) return undefined;
+        if (error instanceof PersonalApiError && error.status === 404) {return undefined;}
         throw error;
       }
     },
@@ -301,14 +301,19 @@ export const createPersonalApiClient = (
       const body = await request<{ readonly library: readonly PersonalMangaDexLibraryItem[] }>(
         "/v1/mangadex/library",
       );
-      return Array.isArray(body.library) ? body.library : [];
+      // Array.isArray narrows to any[]; keep the request-typed library shape.
+      const library: readonly PersonalMangaDexLibraryItem[] = Array.isArray(body.library)
+        ? body.library
+        : [];
+      return library;
     },
     mangaDexFeed: async (limit, offset) => {
       const body = await request<{
         readonly items?: readonly PersonalFeedChapter[];
         readonly total?: number;
       }>(`/v1/mangadex/feed?limit=${limit}&offset=${offset}`);
-      const items = Array.isArray(body.items) ? body.items : [];
+      // Array.isArray narrows to any[]; restate the feed item type explicitly.
+      const items: readonly PersonalFeedChapter[] = Array.isArray(body.items) ? body.items : [];
       return {
         items: items.map((item) => ({ ...item, language: "en" })),
         total: body.total,
@@ -346,7 +351,9 @@ export const createPersonalApiClient = (
           title: input.title,
         })),
       );
-      return Array.isArray(body.entries) ? body.entries : [];
+      // Array.isArray narrows to any[]; keep the request-typed entries shape.
+      const entries: readonly PersonalEntry[] = Array.isArray(body.entries) ? body.entries : [];
+      return entries;
     },
     getListState: async (entryId) => {
       const body = await request<CanonicalListState | { readonly state: CanonicalListState | null }>(
@@ -372,7 +379,9 @@ export const createPersonalApiClient = (
       const body = await request<{ readonly ops: readonly PendingSyncOp[] }>(
         `/v1/ops/pending/anilist?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`,
       );
-      return Array.isArray(body.ops) ? body.ops : [];
+      // Array.isArray narrows to any[]; keep the request-typed ops shape.
+      const ops: readonly PendingSyncOp[] = Array.isArray(body.ops) ? body.ops : [];
+      return ops;
     },
     completeOps: (results) =>
       request<{ updated: number }>("/v1/ops/complete", "POST", { results }),

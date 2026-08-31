@@ -23,7 +23,7 @@ export const providerFromInfo = (
   const info = sourceManga.mangaInfo.additionalInfo;
   const provider = info?.["manifold provider"];
   const externalId = info?.["manifold provider ID"];
-  if ((provider !== "mangadex" && provider !== "comix") || !externalId) return undefined;
+  if ((provider !== "mangadex" && provider !== "comix") || !externalId) {return undefined;}
   return { provider, externalId };
 };
 

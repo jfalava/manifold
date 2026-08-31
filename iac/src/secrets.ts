@@ -10,6 +10,26 @@ type SecretResource = Cloudflare.SecretsStore.Secret;
 
 export type ManagedSecrets = Readonly<Record<string, SecretResource>>;
 
+// Workers ambient typings make bare `process` `any`. Reach the Node env map
+// through a narrow globalThis shape so type-aware lint stays honest.
+type ProcessEnvMap = Record<string, string | undefined>;
+type ProcessHost = { readonly env: ProcessEnvMap };
+
+const processHost = (): ProcessHost | undefined => {
+  const host = globalThis as { process?: ProcessHost };
+  return host.process;
+};
+
+const readProcessEnv = (key: string): string | undefined => processHost()?.env[key];
+
+const writeProcessEnv = (key: string, value: string): void => {
+  const host = processHost();
+  if (host === undefined || host.env[key] !== undefined) {
+    return;
+  }
+  host.env[key] = value;
+};
+
 const iacEnvFile = resolve(import.meta.dirname, "../.env");
 
 const readIacEnv = (): Map<string, string> => {
@@ -23,10 +43,10 @@ const readIacEnv = (): Map<string, string> => {
   const values = new Map<string, string>();
   for (const line of contents.split(/\r?\n/u)) {
     const match = line.match(/^\s*(?:export\s+)?([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/u);
-    if (!match) continue;
+    if (!match) {continue;}
 
     const [, key, rawValue] = match;
-    if (!key || rawValue === undefined) continue;
+    if (!key || rawValue === undefined) {continue;}
 
     const value =
       (rawValue.startsWith('"') && rawValue.endsWith('"')) ||
@@ -34,7 +54,7 @@ const readIacEnv = (): Map<string, string> => {
         ? rawValue.slice(1, -1)
         : rawValue.replace(/\s+#.*$/u, "").trim();
     values.set(key, value);
-    if (process.env[key] === undefined) process.env[key] = value;
+    writeProcessEnv(key, value);
   }
 
   return values;
@@ -43,7 +63,7 @@ const readIacEnv = (): Map<string, string> => {
 const iacEnv = readIacEnv();
 
 const managedSecretValue = (secretName: string): string | undefined =>
-  process.env[`ALCHEMY_SECRET_${secretName}`] ??
+  readProcessEnv(`ALCHEMY_SECRET_${secretName}`) ??
   iacEnv.get(`ALCHEMY_SECRET_${secretName}`);
 
 /**
@@ -78,7 +98,7 @@ export const defineManagedSecrets = Effect.fn("defineManagedSecrets")(
 
     for (const secretName of secretNames) {
       const value = managedSecretValue(secretName);
-      if (value === undefined || value === "") continue;
+      if (value === undefined || value === "") {continue;}
 
       managed[secretName] = yield* Cloudflare.SecretsStore.Secret(
         `ManagedSecret${secretName}`,

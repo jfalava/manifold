@@ -67,7 +67,7 @@ export const wipeAlCommand = Command.make("wipe-al", {
             },
             {
               title: "Fetch manga list entries",
-              task: async (ctx, task) => {
+              task: async (ctx, _task) => {
                 if (viewerId === undefined) {
                   throw new Error("Viewer lookup failed (is ANILIST_TOKEN set?)");
                 }

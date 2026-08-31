@@ -95,7 +95,7 @@ const orderedUniqueMangaIds = (chapters: readonly MangaDexChapter[]): string[] =
   const seen = new Set<string>();
   const ids: string[] = [];
   for (const chapter of chapters) {
-    if (seen.has(chapter.mangaId)) continue;
+    if (seen.has(chapter.mangaId)) {continue;}
     seen.add(chapter.mangaId);
     ids.push(chapter.mangaId);
   }
@@ -137,7 +137,7 @@ const toChapterUpdateItems = (
 ): DiscoverSectionItem[] =>
   chapters.flatMap((chapter) => {
     const manga = mangaById.get(chapter.mangaId);
-    if (!manga) return [];
+    if (!manga) {return [];}
     return [{
       type: "chapterUpdatesCarouselItem",
       mangaId: `mangadex:${chapter.mangaId}`,
@@ -232,7 +232,7 @@ const libraryUpdatesPage = async (
 ): Promise<PagedResults<DiscoverSectionItem>> => {
   const offset = offsetFromMetadata(metadata);
   const library = await getLibrary();
-  if (!library || library.length === 0) return { items: [], metadata: undefined };
+  if (!library || library.length === 0) {return { items: [], metadata: undefined };}
 
   const resolveCard = async (entry: ManifoldLibraryEntry): Promise<UpdateCard | undefined> => {
     try {
@@ -266,7 +266,7 @@ const libraryUpdatesPage = async (
     for (let index = 0; index < library.length; index += 1) {
       const entry = library[index];
       const card = cards[index];
-      if (!entry || !card) continue;
+      if (!entry || !card) {continue;}
       allItems.push(chapterUpdateItem(entry, card));
     }
     allItems.sort((a, b) => {
@@ -289,7 +289,7 @@ const libraryUpdatesPage = async (
   for (let index = 0; index < pageEntries.length; index += 1) {
     const entry = pageEntries[index];
     const card = cards[index];
-    if (!entry || !card) continue;
+    if (!entry || !card) {continue;}
     items.push(chapterUpdateItem(entry, card));
   }
   // Comix stays paginated (WebView cost), but still sort the visible page by

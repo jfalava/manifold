@@ -1,14 +1,11 @@
-import type {
-  Chapter,
-  ChapterDetails,
-  Cookie,
-  Request,
-  SourceManga,
-} from "@paperback/types";
-
 import {
   CloudflareError,
   ContentRating,
+  type Chapter,
+  type ChapterDetails,
+  type Cookie,
+  type Request,
+  type SourceManga,
 } from "@paperback/types";
 import { toChapter, toChapterDetails } from "@manifold/paperback-comix/parser";
 import { normalizeTitle } from "./mapper.js";
@@ -19,8 +16,6 @@ export const COMIX_ORIGIN = "https://comix.to";
 export const COMIX_CHAPTER_PREFIX = "comix:";
 
 const CAPTURE_TIMEOUT_MS = 15_000;
-const CHAPTERS_IDLE_MS = 8_000;
-const CHAPTERS_HARD_DEADLINE_MS = 45_000;
 
 export const isComixChapterId = (chapterId: string): boolean =>
   chapterId.startsWith(COMIX_CHAPTER_PREFIX);
@@ -35,15 +30,15 @@ const asText = (value: unknown): string =>
   typeof value === "string" || typeof value === "number" ? String(value) : "";
 
 const asDateValue = (value: unknown): Date | undefined => {
-  if (value instanceof Date && !Number.isNaN(value.valueOf())) return value;
-  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  if (value instanceof Date && !Number.isNaN(value.valueOf())) {return value;}
+  if (typeof value !== "string" && typeof value !== "number") {return undefined;}
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? undefined : date;
 };
 
 const numberLike = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value !== "string") return undefined;
+  if (typeof value === "number" && Number.isFinite(value)) {return value;}
+  if (typeof value !== "string") {return undefined;}
   const parsed = Number.parseFloat(value.replace(/[^\d.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : undefined;
 };
@@ -75,11 +70,11 @@ const tokenize = (value: string): readonly string[] =>
 
 // Prefix stemming: "villains"/"villainess" share the "villain" stem.
 const tokensCompatible = (a: string, b: string): boolean => {
-  if (a === b) return true;
+  if (a === b) {return true;}
   const lcp = (() => {
     let i = 0;
     const m = Math.min(a.length, b.length);
-    while (i < m && a.charCodeAt(i) === b.charCodeAt(i)) i += 1;
+    while (i < m && a.charCodeAt(i) === b.charCodeAt(i)) {i += 1;}
     return i;
   })();
   return lcp >= 4;
@@ -100,13 +95,13 @@ export const pickComixMatch = (
     ].filter(Boolean);
     for (const candidate of candidates) {
       for (const name of names) {
-        if (name === candidate) return item;
-        if (exactOnly) continue;
+        if (name === candidate) {return item;}
+        if (exactOnly) {continue;}
         const candidateTokens = tokenize(candidate);
-        if (candidateTokens.length === 0) continue;
+        if (candidateTokens.length === 0) {continue;}
         let hits = 0;
         for (const token of candidateTokens) {
-          if (name.split(" ").some((n) => tokensCompatible(n, token))) hits += 1;
+          if (name.split(" ").some((n) => tokensCompatible(n, token))) {hits += 1;}
         }
         const score = hits / candidateTokens.length;
         if (score >= 0.65 && score > bestScore) {
@@ -131,7 +126,7 @@ export const toSyncComixChapters = (
     .filter((chapter) => chapter.chapterId.length > 0)
     .filter((chapter) => {
       const key = `${chapter.langCode}:${chapter.chapNum}`;
-      if (seenNumbers.has(key)) return false;
+      if (seenNumbers.has(key)) {return false;}
       seenNumbers.add(key);
       return true;
     })
@@ -372,7 +367,7 @@ const recoverCookiesFromStore = async (session: ComixSession): Promise<boolean> 
         cookie.value.length > 0 &&
         !current.has(cookie.value),
     );
-    if (fresh.length === 0) return false;
+    if (fresh.length === 0) {return false;}
     session.setCookies([...session.cookies(), ...fresh]);
     console.log(`[manifold] comix session recovered:${fresh.length} clearance cookie(s)`);
     return true;
@@ -489,12 +484,12 @@ type DetailManga = JsonObject;
 
 const detailMangaFromHtml = (html: string): DetailManga | undefined => {
   const raw = INITIAL_DATA_SCRIPT.exec(html)?.[1];
-  if (!raw) return undefined;
+  if (!raw) {return undefined;}
   try {
     const queries = (JSON.parse(raw) as { queries?: Record<string, unknown> }).queries;
-    if (!queries) return undefined;
+    if (!queries) {return undefined;}
     const key = Object.keys(queries).find((candidate) => candidate.includes('"detail"'));
-    if (!key) return undefined;
+    if (!key) {return undefined;}
     const value = queries[key] as DetailManga & { result?: DetailManga };
     const manga = value?.result ?? value;
     return manga && manga.hid !== undefined ? manga : undefined;
@@ -505,7 +500,7 @@ const detailMangaFromHtml = (html: string): DetailManga | undefined => {
 
 const detailPosterUrl = (manga: DetailManga): string => {
   const poster = manga.poster;
-  if (typeof poster !== "object" || poster === null) return "";
+  if (typeof poster !== "object" || poster === null) {return "";}
   const record = poster as JsonObject;
   return asText(record.large) || asText(record.medium) || asText(record.small);
 };
@@ -566,7 +561,7 @@ export const createComixFallback = (session: ComixSession) => ({
     sourceManga: SourceManga,
   ): Promise<Chapter[]> {
     const { hid } = await this.resolveHid(titles);
-    if (!hid) return [];
+    if (!hid) {return [];}
     return this.fetchChaptersByHid(hid, sourceManga);
   },
 
@@ -584,8 +579,8 @@ export const createComixFallback = (session: ComixSession) => ({
     let attemptedTitles = 0;
     for (const title of titles) {
       const query = title.trim();
-      if (!query) continue;
-      if (++attemptedTitles > maxTitles) break;
+      if (!query) {continue;}
+      if (++attemptedTitles > maxTitles) {break;}
       for (let page = 1; page <= maxPages; page += 1) {
         const searchPage =
           `${COMIX_ORIGIN}/browse?page=${page}&keyword=${encodeURIComponent(query)}`;
@@ -634,7 +629,7 @@ export const createComixFallback = (session: ComixSession) => ({
       }
     }
     const matched = pickComixMatch(allItems, titles);
-    if (!matched) return {};
+    if (!matched) {return {};}
     const hid = asString(matched.hid) || asString(matched.hash_id);
     const slug = asString(matched.slug);
     const url = asString(matched.url);
@@ -646,7 +641,7 @@ export const createComixFallback = (session: ComixSession) => ({
     sourceManga: SourceManga,
   ): Promise<Chapter[]> {
     const trimmed = hid.trim();
-    if (!trimmed) return [];
+    if (!trimmed) {return [];}
     // hid may already contain slug (hid-slug) or be pure hid; normalize to hid
     const pureHid = trimmed.split("-")[0] ?? trimmed;
     // Try to reuse slug/url if we have it cached, but fallback to hid-only path
@@ -661,9 +656,9 @@ export const createComixFallback = (session: ComixSession) => ({
     // bare array as the list. Re-reading `.r` here emptied every capture
     // (WebView logged "chapter batch:20:…" then getChapters cached mangadex:0).
     const rawItems = chapterItemsFromCapture(captured);
-    if (rawItems.length === 0) return [];
+    if (rawItems.length === 0) {return [];}
     const mapped = toSyncComixChapters(rawItems, sourceManga);
-    if (mapped.length === 0) return [];
+    if (mapped.length === 0) {return [];}
     console.log(
       `[manifold] comix fallback:${sourceManga.mangaId}:${mapped.length}`,
     );
@@ -673,7 +668,7 @@ export const createComixFallback = (session: ComixSession) => ({
   async latestChapterByHid(hid: string): Promise<ComixLatestChapter | undefined> {
     const trimmed = hid.trim();
     const pureHid = trimmed.split("-")[0] ?? trimmed;
-    if (!pureHid) return undefined;
+    if (!pureHid) {return undefined;}
     const payloadText = await captureViaSiteBundle(
       session,
       `${COMIX_ORIGIN}/title/${pureHid}`,
@@ -691,20 +686,20 @@ export const createComixFallback = (session: ComixSession) => ({
     } catch {
       return undefined;
     }
-    if (items.length === 0) return undefined;
+    if (items.length === 0) {return undefined;}
     // The site lists newest first; sort defensively by timestamp when the
     // payloads carry one.
     const stampOf = (item: JsonObject): number => {
       for (const key of ["created_at", "createdAt", "published_at", "publishedAt"]) {
         const date = asDateValue(item[key]);
-        if (date) return date.valueOf();
+        if (date) {return date.valueOf();}
       }
       return 0;
     };
     const newest = [...items].sort((a, b) => stampOf(b) - stampOf(a))[0];
-    if (!newest) return undefined;
+    if (!newest) {return undefined;}
     const id = asText(newest.id) || asText(newest.chapter_id) || asText(newest.hid);
-    if (!id) return undefined;
+    if (!id) {return undefined;}
     return {
       id,
       chapNum: numberLike(newest.number) ?? numberLike(newest.chapter) ?? 0,
@@ -714,10 +709,10 @@ export const createComixFallback = (session: ComixSession) => ({
 
   async detailsByHid(mangaId: string): Promise<SourceManga> {
     const hid = mangaId.split("-")[0] ?? mangaId;
-    if (!hid) throw new Error(`Invalid Comix manga id: ${mangaId}`);
+    if (!hid) {throw new Error(`Invalid Comix manga id: ${mangaId}`);}
     const html = await requestHtml(session, `${COMIX_ORIGIN}/title/${hid}`);
     const manga = detailMangaFromHtml(html);
-    if (!manga) throw new Error(`Comix: could not find detail data for ${mangaId}`);
+    if (!manga) {throw new Error(`Comix: could not find detail data for ${mangaId}`);}
     return comixSourceManga(mangaId, manga);
   },
 
@@ -768,7 +763,7 @@ export const createComixFallback = (session: ComixSession) => ({
 });
 
 const pagesFromResult = (result: unknown): string[] => {
-  if (!Array.isArray(result)) return [];
+  if (!Array.isArray(result)) {return [];}
   return result
     .map((item) => (typeof item === "object" && item !== null
       ? String((item as Record<string, unknown>).src ?? "")
@@ -776,7 +771,7 @@ const pagesFromResult = (result: unknown): string[] => {
     .filter((url) => url.startsWith("http"));
 };
 
-function pagesInspectorScript(chapterUrl: string): string {
+function pagesInspectorScript(_chapterUrl: string): string {
   return `(function(){
     var urls=[];
     document.querySelectorAll("img").forEach(function(img){

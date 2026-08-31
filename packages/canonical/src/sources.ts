@@ -53,7 +53,7 @@ const stringsFrom = (value: unknown): string[] =>
     : [];
 
 const mangaDexIdFromUrl = (value: unknown): string | undefined => {
-  if (typeof value !== "string") return undefined;
+  if (typeof value !== "string") {return undefined;}
   try {
     const url = new URL(value);
     if (url.hostname !== "mangadex.org" && url.hostname !== "www.mangadex.org") {
@@ -67,11 +67,11 @@ const mangaDexIdFromUrl = (value: unknown): string | undefined => {
 };
 
 const mangaDexExternalId = (value: unknown): string | undefined => {
-  if (!Array.isArray(value)) return undefined;
+  if (!Array.isArray(value)) {return undefined;}
   for (const link of value) {
     const record = recordValue(link);
     const id = mangaDexIdFromUrl(record?.url);
-    if (id) return id;
+    if (id) {return id;}
   }
   return undefined;
 };
@@ -81,9 +81,9 @@ const uniqueStrings = (values: readonly (string | undefined)[]): string[] => {
   const result: string[] = [];
   for (const value of values) {
     const normalized = value?.trim();
-    if (!normalized) continue;
+    if (!normalized) {continue;}
     const key = normalized.toLocaleLowerCase();
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {continue;}
     seen.add(key);
     result.push(normalized);
   }
@@ -114,7 +114,7 @@ const withSourceError = <A>(
   Effect.tryPromise({
     try: action,
     catch: (cause) => {
-      if (isSourceError(cause)) return cause;
+      if (isSourceError(cause)) {return cause;}
       return sourceError(
         provider,
         cause instanceof Error ? cause.message : "Canonical provider request failed",
@@ -152,11 +152,11 @@ const requestJson = async (
 
 const dateFromParts = (value: unknown): string | undefined => {
   const parts = recordValue(value);
-  if (!parts) return undefined;
+  if (!parts) {return undefined;}
   const year = numberValue(parts.year);
   const month = numberValue(parts.month);
   const day = numberValue(parts.day);
-  if (year === undefined) return undefined;
+  if (year === undefined) {return undefined;}
   return [year, month, day]
     .filter((part): part is number => part !== undefined)
     .map((part, index) => (index === 0 ? String(part) : String(part).padStart(2, "0")))
@@ -181,7 +181,7 @@ const metadata = (value: JsonRecord): CanonicalMetadata => {
 
 const titleValues = (value: unknown): string[] => {
   const title = recordValue(value);
-  if (!title) return [];
+  if (!title) {return [];}
   return [
     stringValue(title.userPreferred),
     stringValue(title.english),
@@ -215,7 +215,7 @@ const makeEntry = (
 const anilistMedia = (value: unknown): CanonicalSearchResult | undefined => {
   const media = recordValue(value);
   const id = numberValue(media?.id);
-  if (id === undefined) return undefined;
+  if (id === undefined) {return undefined;}
   const idMal = numberValue(media?.idMal);
   const titles = [...titleValues(media?.title), ...stringsFrom(media?.synonyms)];
   const averageScore = numberValue(media?.averageScore);
@@ -288,13 +288,13 @@ const anilistGetByMalQuery = `
 
 const limitFrom = (options: CanonicalSearchOptions | undefined): number => {
   const limit = options?.limit ?? 20;
-  if (!Number.isFinite(limit)) return 20;
+  if (!Number.isFinite(limit)) {return 20;}
   return Math.min(25, Math.max(1, Math.floor(limit)));
 };
 
 const requireQuery = (query: string, provider: CanonicalSourceError["provider"]): string => {
   const normalized = query.trim();
-  if (!normalized) throw sourceError(provider, "Canonical search query cannot be empty");
+  if (!normalized) {throw sourceError(provider, "Canonical search query cannot be empty");}
   return normalized;
 };
 
@@ -327,7 +327,7 @@ export const createAniListSource = (
           perPage: limitFrom(searchOptions),
         });
         const graphQLError = anilistGraphQLError(body);
-        if (graphQLError) throw graphQLError;
+        if (graphQLError) {throw graphQLError;}
         const page = isRecord(isRecord(body) ? body.data : undefined)
           ? recordValue((body as JsonRecord).data)?.Page
           : undefined;
@@ -345,7 +345,7 @@ export const createAniListSource = (
         }
         const body = await request(anilistGetQuery, { id });
         const graphQLError = anilistGraphQLError(body);
-        if (graphQLError) throw graphQLError;
+        if (graphQLError) {throw graphQLError;}
         const data = recordValue(isRecord(body) ? body.data : undefined);
         return anilistMedia(data?.Media);
       }),
@@ -358,7 +358,7 @@ export const createAniListSource = (
         const body = await request(anilistGetByMalQuery, { idMal: id });
         const graphQLError = anilistGraphQLError(body);
         if (graphQLError) {
-          if (graphQLError.message.includes("Not Found")) return undefined;
+          if (graphQLError.message.includes("Not Found")) {return undefined;}
           throw graphQLError;
         }
         const data = recordValue(isRecord(body) ? body.data : undefined);
@@ -388,7 +388,7 @@ const malEntry = (value: unknown): CanonicalSearchResult | undefined => {
   const node = recordValue(value);
   const id = numberValue(node?.id);
   const title = stringValue(node?.title);
-  if (id === undefined || title === undefined) return undefined;
+  if (id === undefined || title === undefined) {return undefined;}
   const alternativeTitles = recordValue(node?.alternative_titles);
   const aliases = [
     title,

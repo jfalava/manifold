@@ -54,10 +54,10 @@ export const al2mdCommand = Command.make(
         ...names: readonly string[]
       ): string | undefined => {
         const direct = Option.getOrUndefined(flagValue);
-        if (direct !== undefined) return direct;
+        if (direct !== undefined) {return direct;}
         for (const name of names) {
           const value = process.env[name];
-          if (value !== undefined && value !== "") return value;
+          if (value !== undefined && value !== "") {return value;}
         }
         return undefined;
       };

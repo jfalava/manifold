@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { Fetcher } from "@cloudflare/workers-types";
 import router, { type Env } from "../src/index";
 
 interface RecordedRequest {
@@ -7,25 +8,47 @@ interface RecordedRequest {
   method: string;
 }
 
-function makeEnv() {
-  const calls: Record<string, RecordedRequest[]> = {
-    SYNC_API: [],
-    DOCS_WORKER: [],
-    ADMIN: [],
+type BindingName = keyof Env;
+
+interface TestEnv {
+  readonly calls: {
+    readonly SYNC_API: RecordedRequest[];
+    readonly DOCS_WORKER: RecordedRequest[];
+    readonly ADMIN: RecordedRequest[];
+  };
+  readonly env: Env;
+}
+
+function makeEnv(): TestEnv {
+  const calls = {
+    SYNC_API: [] as RecordedRequest[],
+    DOCS_WORKER: [] as RecordedRequest[],
+    ADMIN: [] as RecordedRequest[],
   };
 
-  const stub = (binding: keyof Env): Env[typeof binding] => ({
-    fetch: async (input: Request | string, init?: RequestInit) => {
-      const request = input instanceof Request ? input : new Request(input, init);
-      const url = new URL(request.url);
-      calls[binding].push({
-        pathname: url.pathname,
-        search: url.search,
-        method: request.method,
-      });
-      return new Response(`${binding}-ok`, { status: 200 });
-    },
-  });
+  const stub = (binding: BindingName): Fetcher => {
+    const fetcher = {
+      fetch: async (input: Request | URL | string, init?: RequestInit) => {
+        const request =
+          input instanceof Request
+            ? input
+            : new Request(input instanceof URL ? input.href : input, init);
+        const url = new URL(request.url);
+        calls[binding].push({
+          pathname: url.pathname,
+          search: url.search,
+          method: request.method,
+        });
+        return new Response(`${binding}-ok`, { status: 200 });
+      },
+      // Test double only implements fetch; connect is unused by the router.
+      connect: () => {
+        throw new Error(`connect is not stubbed for ${binding}`);
+      },
+    };
+    // SAFETY: test double supplies the Fetcher surface the router actually calls.
+    return fetcher as unknown as Fetcher;
+  };
 
   return {
     calls,
@@ -33,7 +56,7 @@ function makeEnv() {
       SYNC_API: stub("SYNC_API"),
       DOCS_WORKER: stub("DOCS_WORKER"),
       ADMIN: stub("ADMIN"),
-    } as Env,
+    },
   };
 }
 

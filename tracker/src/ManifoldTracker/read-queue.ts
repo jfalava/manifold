@@ -45,7 +45,7 @@ export const processReadActions = async (
   for (const action of actions) {
     try {
       const sourceChapterId = action.readChapter?.chapterId ?? action.chapterId;
-      if (!sourceChapterId) throw new Error("Chapter read action has no source chapter ID");
+      if (!sourceChapterId) {throw new Error("Chapter read action has no source chapter ID");}
 
       const provenance = chapterProvenance(sourceChapterId);
       await deps.recordRead(action.sourceManga.mangaId, {

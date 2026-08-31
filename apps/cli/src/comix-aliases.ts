@@ -45,9 +45,9 @@ export const loadRegistrySearchTitles = async (
     }
   }
   const unique = uniqueTitles(titles);
-  if (unique.length >= 2) return unique;
+  if (unique.length >= 2) {return unique;}
   const mangadexId = providerIdOf(row, "mangadex");
-  if (!mangadexId) return unique;
+  if (!mangadexId) {return unique;}
   const loadMangaDex = options.mangaDexTitles ?? (async (id: string) => {
     const manga = await Effect.runPromise(createMangaDexClient().getManga(id));
     return [manga.title, ...manga.altTitles];
