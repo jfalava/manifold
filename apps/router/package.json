@@ -1,6 +1,5 @@
 {
   "name": "@manifold/router",
-  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,13 +8,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-      "hono": "catalog:cloudflare"
+    "hono": "catalog:cloudflare"
   },
   "devDependencies": {
-      "@cloudflare/workers-types": "catalog:cloudflare",
-      "bun-types": "catalog:types",
-      "oxlint": "catalog:build",
-      "oxlint-tsgolint": "catalog:build",
-      "typescript": "catalog:build"
+    "@cloudflare/workers-types": "catalog:cloudflare",
+    "bun-types": "catalog:types",
+    "oxlint": "catalog:build",
+    "oxlint-tsgolint": "catalog:build",
+    "typescript": "catalog:build"
   }
 }

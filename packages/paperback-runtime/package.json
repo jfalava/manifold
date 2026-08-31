@@ -1,20 +1,19 @@
 {
   "name": "@manifold/paperback-runtime",
-  "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
-  "dependencies": {
-    "@manifold/canonical": "workspace:*",
-    "@manifold/json": "workspace:*",
-    "@paperback/types": "catalog:paperback"
-  },
   "scripts": {
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "@manifold/canonical": "workspace:*",
+    "@manifold/json": "workspace:*",
+    "@paperback/types": "catalog:paperback"
   },
   "devDependencies": {
     "oxlint": "catalog:build",

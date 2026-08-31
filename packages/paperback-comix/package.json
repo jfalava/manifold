@@ -1,6 +1,5 @@
 {
   "name": "@manifold/paperback-comix",
-  "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -8,19 +7,19 @@
     "./parser": "./src/parser.ts",
     "./webview": "./src/webview.ts"
   },
-  "dependencies": {
-      "@manifold/json": "workspace:*",
-      "@paperback/types": "catalog:paperback"
-  },
   "scripts": {
-      "lint": "oxlint",
-      "typecheck": "tsc --noEmit",
-      "test": "vitest run"
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@manifold/json": "workspace:*",
+    "@paperback/types": "catalog:paperback"
   },
   "devDependencies": {
-      "oxlint": "catalog:build",
-      "oxlint-tsgolint": "catalog:build",
-      "typescript": "catalog:build",
-      "vitest": "catalog:build"
+    "oxlint": "catalog:build",
+    "oxlint-tsgolint": "catalog:build",
+    "typescript": "catalog:build",
+    "vitest": "catalog:build"
   }
 }

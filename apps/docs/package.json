@@ -1,6 +1,5 @@
 {
-  "name": "docs",
-  "version": "0.0.1",
+  "name": "@manifold/docs",
   "private": true,
   "type": "module",
   "scripts": {
@@ -25,12 +24,12 @@
     "preview:cf": "wrangler dev"
   },
   "dependencies": {
-    "@manifold/json": "workspace:*",
     "@cloudflare/nimbus-docs": "catalog:docs",
     "@fontsource/google-sans-code": "catalog:fonts",
     "@fontsource/ibm-plex-sans": "catalog:fonts",
     "@fontsource/zilla-slab": "catalog:fonts",
     "@iconify-json/ph": "catalog:docs",
+    "@manifold/json": "workspace:*",
     "astro": "catalog:docs",
     "astro-icon": "1.2.0",
     "astro-og-canvas": "catalog:docs",
