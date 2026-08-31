@@ -127,8 +127,5 @@
     "realm": "catalog:paperback",
     "typescript": "catalog:build"
   },
-  "overrides": {
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0"
-  },
   "packageManager": "bun@1.4.0"
 }
