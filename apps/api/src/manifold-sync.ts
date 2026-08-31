@@ -882,7 +882,7 @@ export class ManifoldSync extends DurableObject<Env> {
       request.title,
       timestamp
     );
-    
+
     const minted = this.readEntry(id);
     if (!minted) {throw new Error(`Registry row not found after mint: ${id}`);}
     return minted;
@@ -908,13 +908,11 @@ export class ManifoldSync extends DurableObject<Env> {
           .toArray()) {
           const entry = this.readEntry(row.id, false);
           if (!entry) {continue;}
-          // SAFETY: value matches SqlStorageValue>; const stat at this call site
-          const values = row as Record<string, SqlStorageValue>;
           const state = this.readListState(row.id);
           results.push({
             ...entry,
             ...(state && { state }),
-            ...(values.tombstoned_at !== null && values.tombstoned_at !== undefined && { tombstoned: true })
+            ...(row.tombstoned_at !== null && { tombstoned: true })
           });
         }
         return results;
@@ -973,8 +971,9 @@ export class ManifoldSync extends DurableObject<Env> {
       provider
     );
     this.appendEvent(entryId, "link.remove", "admin", { provider });
-    // SAFETY: value matches CanonicalEntry; } // ---------- at this call site
-    return this.readEntry(entryId) as CanonicalEntry;
+    const stored = this.readEntry(entryId);
+    if (!stored) {throw new Error(`Canonical entry not found after unlink: ${entryId}`);}
+    return stored;
   }
 
   // ------------------------------------------------------------------
@@ -1327,7 +1326,7 @@ export class ManifoldSync extends DurableObject<Env> {
             row.id
           );
         }
-        
+
       } catch (error) {
         this.failOps(group.rows, error);
       }
@@ -1373,7 +1372,7 @@ export class ManifoldSync extends DurableObject<Env> {
           if (!known.has(mdLink.external_id)) {
             await Effect.runPromise(client.updateReadingStatus(mdLink.external_id, "reading"));
             known.add(mdLink.external_id);
-            
+
           }
           this.ctx.storage.sql.exec("DELETE FROM md_status_queue WHERE entry_id = ?", row.entry_id);
         } catch (error) {

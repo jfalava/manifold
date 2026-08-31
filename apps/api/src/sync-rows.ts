@@ -21,6 +21,7 @@ export interface EntryRow extends Record<string, SqlStorageValue> {
   title: string;
   created_at: number;
   updated_at: number;
+  tombstoned_at: number | null;
 }
 
 export interface ProviderRow extends Record<string, SqlStorageValue> {

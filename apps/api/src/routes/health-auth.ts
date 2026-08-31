@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import {
+  anilistDeviceRedirectUri,
   authProvider,
   json,
   oauthProvider,
@@ -80,7 +81,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
   Effect.gen(function* () {
     const { path, request, env, url } = ctx;
     if (path[0] === "v1" && path[1] === "auth" && path[2] === "anilist" && path[3] === "device") {
-      const redirectUri = `${env.OAUTH_REDIRECT_BASE_URL.replace(/\/$/, "")}/v1/auth/anilist/device`;
+      const redirectUri = anilistDeviceRedirectUri(env);
       const authorizeUrl =
         `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(env.ANILIST_CLIENT_ID)}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token`;

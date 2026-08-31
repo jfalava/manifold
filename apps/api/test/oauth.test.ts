@@ -4,6 +4,11 @@ import {
   createMangaDexRefreshGrant,
   MANGADEX_TOKEN_ENDPOINT
 } from "@manifold/mangadex";
+import {
+  anilistDeviceRedirectUri,
+  isPublicOAuthRoute,
+  oauthRedirectUri,
+} from "../src/http";
 import { createAuthorizationUrl, getOAuthClientConfig } from "../src/oauth";
 
 const environment = {
@@ -14,6 +19,29 @@ const environment = {
 };
 
 describe("OAuth provider configuration", () => {
+  it("builds public callback and device URLs behind the /api router mount", () => {
+    const bareOrigin = { OAUTH_REDIRECT_BASE_URL: "https://example.test/" };
+    const apiOrigin = { OAUTH_REDIRECT_BASE_URL: "https://example.test/api/" };
+
+    expect(oauthRedirectUri("mal", bareOrigin)).toBe(
+      "https://example.test/api/v1/auth/mal/callback",
+    );
+    expect(anilistDeviceRedirectUri(bareOrigin)).toBe(
+      "https://example.test/api/v1/auth/anilist/device",
+    );
+    expect(anilistDeviceRedirectUri(apiOrigin)).toBe(
+      "https://example.test/api/v1/auth/anilist/device",
+    );
+  });
+
+  it("only bypasses bearer auth for exact GET OAuth routes", () => {
+    expect(isPublicOAuthRoute("GET", ["v1", "auth", "anilist", "callback"])).toBe(true);
+    expect(isPublicOAuthRoute("GET", ["v1", "auth", "mal", "callback"])).toBe(true);
+    expect(isPublicOAuthRoute("GET", ["v1", "auth", "anilist", "device"])).toBe(true);
+    expect(isPublicOAuthRoute("POST", ["v1", "auth", "anilist", "callback"])).toBe(false);
+    expect(isPublicOAuthRoute("GET", ["other", "path", "anilist", "device"])).toBe(false);
+  });
+
   it("creates the MAL callback URL with its supported plain PKCE method", async () => {
     const url = createAuthorizationUrl(
       await getOAuthClientConfig("mal", environment),

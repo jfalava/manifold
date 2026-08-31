@@ -145,18 +145,36 @@ export const oauthProvider = (value: string | undefined): OAuthProvider | undefi
   return undefined;
 };
 
-export const oauthRedirectUri = (provider: OAuthProvider, env: Env): string => {
+const oauthApiBaseUrl = (env: Pick<Env, "OAUTH_REDIRECT_BASE_URL">): string => {
   const base = env.OAUTH_REDIRECT_BASE_URL.replace(/\/+$/, "");
   // Older deployments stored the bare origin; the router mounts SyncApi under /api.
   // NOTE: new URL() would discard the base's path for an absolute path arg — concatenate.
-  const normalized = base.endsWith("/api") ? base : `${base}/api`;
-  return `${normalized}/v1/auth/${provider}/callback`;
+  return base.endsWith("/api") ? base : `${base}/api`;
 };
 
-export const isOAuthCallback = (path: readonly string[]): boolean =>
-  (path.length === 4 &&
-    path[0] === "v1" &&
-    path[1] === "auth" &&
-    path[3] === "callback" &&
-    oauthProvider(path[2]) !== undefined) ||
-  (path.length === 4 && path[2] === "anilist" && path[3] === "device");
+export const oauthRedirectUri = (
+  provider: OAuthProvider,
+  env: Pick<Env, "OAUTH_REDIRECT_BASE_URL">,
+): string => `${oauthApiBaseUrl(env)}/v1/auth/${provider}/callback`;
+
+export const anilistDeviceRedirectUri = (
+  env: Pick<Env, "OAUTH_REDIRECT_BASE_URL">,
+): string => `${oauthApiBaseUrl(env)}/v1/auth/anilist/device`;
+
+export const isPublicOAuthRoute = (
+  method: string,
+  path: readonly string[],
+): boolean => {
+  if (
+    method !== "GET" ||
+    path.length !== 4 ||
+    path[0] !== "v1" ||
+    path[1] !== "auth"
+  ) {
+    return false;
+  }
+  return (
+    (path[3] === "callback" && oauthProvider(path[2]) !== undefined) ||
+    (path[2] === "anilist" && path[3] === "device")
+  );
+};

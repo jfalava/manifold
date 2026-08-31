@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect";
 import { catalogApp } from "./catalog";
 import {
   authorized,
-  isOAuthCallback,
+  isPublicOAuthRoute,
   json,
   tryPromise,
   type RouteContext,
@@ -30,7 +30,10 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
     const health = yield* handleHealth(ctx);
     if (health) {return health;}
 
-    if (!isOAuthCallback(path) && !(yield* tryPromise(() => authorized(request, env)))) {
+    if (
+      !isPublicOAuthRoute(request.method, path) &&
+      !(yield* tryPromise(() => authorized(request, env)))
+    ) {
       return json({ error: "Unauthorized" }, 401);
     }
 
