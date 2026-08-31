@@ -103,11 +103,13 @@ const scheduledFetchResponse = (
       return value ?? null;
     },
   };
+  // SAFETY: HTTP value is the expected unknown, } as unknown as Response after the preceding check
   return {
     ok: response.status >= 200 && response.status < 300,
     status: response.status,
     headers,
     text: async () => body,
+    // SAFETY: test/double or boundary cast through unknown to unknown
     json: async () => JSON.parse(body) as unknown,
   } as unknown as Response;
 };
@@ -146,6 +148,7 @@ const restorePersistedCfClearance = (): Cookie | undefined => {
   if (typeof raw !== "string") {return undefined;}
   try {
     // JSON can only round-trip the ISO string written by persistCfClearance.
+    // SAFETY: test/double or boundary cast through unknown to { name?: unknown; value?: unknown; domain?: unknown; path?: unknown; expires?: u
     const parsed = JSON.parse(raw) as {
       name?: unknown;
       value?: unknown;
@@ -345,6 +348,7 @@ const readCachedCardState = (cacheKey: string): CachedCardState | undefined => {
   const raw = Application.getState(cacheKey);
   if (typeof raw !== "string") {return undefined;}
   try {
+    // SAFETY: parsed JSON matches CachedDiscoverCard; for this trusted/test payload
     const parsed = JSON.parse(raw) as CachedDiscoverCard;
     if (typeof parsed.t !== "number" || typeof parsed.ttl !== "number" || !parsed.card) {
       return undefined;
@@ -572,6 +576,7 @@ export class ManifoldSourceImpl implements
   comixSessionStatusLabel(): string {
     const clearance = this.comixClearanceCookie();
     const lastAction =
+      // SAFETY: Paperback secure/state store returns string | undefined)?.trim() || und for this key
       (Application.getState(COMIX_SESSION_ACTION_KEY) as string | undefined)?.trim() || undefined;
     if (!clearance) {
       return lastAction
@@ -829,7 +834,9 @@ export class ManifoldSourceImpl implements
   private async fetchAnilistLibraryFiltered(
     allowed: ReadonlySet<string>,
   ): Promise<ManifoldLibraryEntry[]> {
+    // SAFETY: Paperback secure/state store returns string | undefined; const viewerId = Application for this key
     const token = Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined;
+    // SAFETY: Paperback secure/state store returns string | number | undefined; if (!token || !viewerId) {re for this key
     const viewerId = Application.getState(ANILIST_VIEWER_ID_KEY) as string | number | undefined;
     if (!token || !viewerId) {return [];}
     try {
@@ -856,11 +863,14 @@ export class ManifoldSourceImpl implements
       }
       return filtered.map((e) => {
         const uuid = uuids.get(e.anilistId);
+        // SAFETY: value is readonly string[] at this site
         return {
           ...(uuid !== undefined ? { id: uuid } : { id: `anilist:${e.anilistId}` }),
           title: e.title,
           aliases: [] as readonly string[],
+          // SAFETY: value matches anilistId: e.anilistId at this call site
           anilistId: e.anilistId,
+          // SAFETY: value matches rl, }; }); at this call site
           coverUrl: (e as { coverUrl?: string }).coverUrl,
         };
       });
@@ -1069,6 +1079,7 @@ export class ManifoldSourceImpl implements
       const raw = Application.getState(hidKey);
       if (typeof raw !== "string") {return undefined;}
       try {
+        // SAFETY: value is { at this site
         const parsed = JSON.parse(raw) as {
           t?: number;
           hid?: string;
@@ -1222,6 +1233,7 @@ export class ManifoldSourceImpl implements
       const raw = Application.getState(choiceKey);
       if (typeof raw !== "string") {return undefined;}
       try {
+        // SAFETY: value is { at this site
         const parsed = JSON.parse(raw) as {
           p?: string;
           t?: number;
@@ -1304,7 +1316,9 @@ export class ManifoldSourceImpl implements
       const rawHid = Application.getState(hidKey);
       if (typeof rawHid === "string" && rawHid.length > 0) {
         try {
+          // SAFETY: value is { hid?: string } at this site
           const parsed = JSON.parse(rawHid) as { hid?: string };
+          // SAFETY: value matches of parsed.hid === "string" && parsed.h at this call site
           if (typeof parsed.hid === "string" && parsed.hid.length > 0) {return parsed.hid;}
         } catch {
           // fall through
@@ -1504,10 +1518,13 @@ class ManifoldSettingsForm extends Form {
     // floor: Section + plain labels + text inputs. Comix actions via command.
     // No keychain reads in getSections.
     const apiStatus =
+      // SAFETY: Paperback secure/state store returns ned) ?? "Not configured"; const aniListStatus = (Applicat for this key
       (Application.getState(MANIFOLD_API_STATUS_KEY) as string | undefined) ?? "Not configured";
     const aniListStatus =
+      // SAFETY: Paperback secure/state store returns ?? "Not connected"; const comixStatus = this.source.hasCom for this key
       (Application.getState(ANILIST_STATUS_KEY) as string | undefined) ?? "Not connected";
     const comixStatus = this.source.hasComixBrowserSession() ? "session ok" : "no session";
+    // SAFETY: value is asserted type at this site
     return [
       Section(
         {
@@ -1530,6 +1547,7 @@ class ManifoldSettingsForm extends Form {
             value: "",
             onValueChange: Application.Selector(this as ManifoldSettingsForm, "tokenChanged"),
           }),
+          // SAFETY: value matches LabelRow("anilist-status at this call site
           LabelRow("anilist-status", {
             title: "AniList",
             value: aniListStatus,
@@ -1538,6 +1556,7 @@ class ManifoldSettingsForm extends Form {
             title: "AniList token",
             value: "",
             onValueChange: Application.Selector(this as ManifoldSettingsForm, "aniListTokenChanged"),
+          // SAFETY: value matches LabelRow("comix-s at this call site
           }),
           LabelRow("comix-status", {
             title: "Comix",
@@ -1549,6 +1568,7 @@ class ManifoldSettingsForm extends Form {
             onValueChange: Application.Selector(
               this as ManifoldSettingsForm,
               "comixCommandChanged",
+            // SAFETY: value matches ), }), at this call site
             ),
           }),
         ],

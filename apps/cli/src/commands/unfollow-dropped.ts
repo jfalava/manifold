@@ -107,6 +107,7 @@ export const unfollowDroppedCommand = Command.make(
 
       const targetStatuses = parseList(status);
       const invalid = targetStatuses.filter(
+        // SAFETY: value matches MangaDexReadingStatus at this call site
         (s) => !VALID_STATUSES.includes(s as MangaDexReadingStatus),
       );
       if (invalid.length > 0) {
@@ -227,7 +228,9 @@ export const unfollowDroppedCommand = Command.make(
                         } catch (cause) {
                           const msg = cause instanceof Error ? cause.message : String(cause);
                           const isAuth =
+                            // SAFETY: optional field is s { status?: number })?.stat when present at this call site
                             typeof (cause as { status?: number })?.status === "number" &&
+                            // SAFETY: optional field is s { status?: number }).statu when present at this call site
                             (cause as { status?: number }).status === 401;
                           if (isAuth) {
                             try {
@@ -300,10 +303,12 @@ export const unfollowDroppedCommand = Command.make(
           }
         },
         catch: (cause) => {
+          // SAFETY: value is { message: unknown }).message) at this site
           const message =
             cause instanceof Error
               ? cause.message
               : typeof cause === "object" && cause !== null && "message" in cause
+                // SAFETY: test/double or boundary cast through unknown to unknown }).message)
                 ? String((cause as { message: unknown }).message)
                 : String(cause);
           return new Error(message);

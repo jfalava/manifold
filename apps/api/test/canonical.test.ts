@@ -4,7 +4,9 @@ import { searchCanonical } from "../src/canonical";
 import type { Env } from "../src/types";
 
 const environment = (): Env => ({
+  // SAFETY: test/double or boundary cast through unknown to Ai
   AI: { run: async () => ({ data: [] }) } as unknown as Ai,
+  // SAFETY: value matches unknown as VectorizeIndex at this call site
   MANGADEX_INDEX: {
     query: async () => ({ matches: [], count: 0 }),
     upsert: async () => ({ mutationId: "test" }),
@@ -63,6 +65,7 @@ describe("personal canonical search", () => {
     expect(body.results[0]?.id).toBe("anilist:100");
     const anilistProvider = body.providers.find((p) => p.provider === "anilist");
     const malProvider = body.providers.find((p) => p.provider === "mal");
+    // SAFETY: test/double or boundary cast through unknown to unknown[]
     expect(anilistProvider?.results).toEqual(expect.any(Array) as unknown[]);
     expect(malProvider).toEqual({
       provider: "mal",

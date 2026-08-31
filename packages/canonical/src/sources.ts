@@ -147,6 +147,7 @@ const requestJson = async (
     console.error(`[Canonical:${provider}] ${message}`);
     throw sourceError(provider, message, response.status);
   }
+  // SAFETY: test/double or boundary cast through unknown to Promise<unknown>
   return response.json() as Promise<unknown>;
 };
 
@@ -328,7 +329,9 @@ export const createAniListSource = (
         });
         const graphQLError = anilistGraphQLError(body);
         if (graphQLError) {throw graphQLError;}
+        // SAFETY: value is JsonRecord).data)?.Page at this site
         const page = isRecord(isRecord(body) ? body.data : undefined)
+          // SAFETY: value matches JsonRecord at this call site
           ? recordValue((body as JsonRecord).data)?.Page
           : undefined;
         const media = isRecord(page) && Array.isArray(page.media) ? page.media : [];

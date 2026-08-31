@@ -67,6 +67,7 @@ const parseTabsFlag = (
       );
     }
   }
+  // SAFETY: value matches string); at this call site
   return [...new Set(names)].map((name) => allowed.get(name) as string);
 };
 
@@ -156,8 +157,10 @@ const buildEntitiesForEntry = (
     mangaInfo: infoIds[index],
   }));
   const tabName = tabForStatus(entry.status);
+  // SAFETY: value is LibraryTab] at this site
   const libraryTabs =
     tabName !== undefined && sharedTabs.has(tabName)
+      // SAFETY: value matches LibraryTab] at this call site
       ? [sharedTabs.get(tabName) as LibraryTab]
       : [];
 
@@ -261,7 +264,9 @@ export const al2Pas5Command = Command.make("al2pas5", {
             let fetchedEntries: readonly AniListRichEntry[] = [];
             let registry = new Map<string, RegistryRow>();
             let baseEntities: Pas5Entities | undefined;
+            // SAFETY: value is asserted type at this site
             const run = createRun<Record<string, unknown>>([
+              // SAFETY: value matches ApiConfig; registry = await registryByAnilistId(config); makePhaseReporter(task) at this call site
               {
                 title: "Fetch AniList manga list",
                 task: async (_, task) => {
@@ -274,6 +279,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
               {
                 title: "Resolve registry UUIDs",
                 task: async (_, task) => {
+                  // SAFETY: value matches ApiConfig; at this call site
                   const config = apiConfig(apiOrigin, apiToken) as ApiConfig;
                   registry = await registryByAnilistId(config);
                   makePhaseReporter(task).note(
@@ -291,6 +297,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
                   title: "Read base archive",
                   task: async (_, task) => {
                     const parsed = await parsePas5(readFileSync(basePath));
+                    // SAFETY: parsePas5 plus empty-map defaults is a complete Pas5Entities.
                     baseEntities = {
                       ...parsed,
                       __LIBRARY_MANGA_V5: parsed.__LIBRARY_MANGA_V5 ?? {},
@@ -392,6 +399,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
           if (
             limit !== undefined &&
             Option.getOrUndefined(limit) !== undefined &&
+            // SAFETY: value matches number) at this call site
             totalGenerated >= (Option.getOrUndefined(limit) as number)
           ) {
             break;

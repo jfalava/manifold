@@ -55,6 +55,7 @@ export const provider: SearchProvider = {
     if (pagefind) return;
     const baseUrl = new URL(import.meta.env.BASE_URL ?? "/", window.location.origin);
     const pagefindUrl = new URL("pagefind/pagefind.js", baseUrl);
+    // SAFETY: value matches PagefindApi; at this call site
     pagefind = (await import(/* @vite-ignore */ pagefindUrl.href)) as PagefindApi;
     await pagefind.init();
   },

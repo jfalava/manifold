@@ -173,6 +173,7 @@ function initToc(root: HTMLElement): () => void {
   const spy = new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
+        // SAFETY: DOM query returns the expected element type in this document
         const i = indexOfEl.get(entry.target as HTMLElement);
         if (i === undefined) continue;
         if (entry.isIntersecting) inBand.add(i);
@@ -261,6 +262,7 @@ function initToc(root: HTMLElement): () => void {
     "click",
     (e) => {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      // SAFETY: DOM query returns the expected element type in this document
       const link = (e.target as Element).closest<HTMLElement>("[data-nb-toc-link]");
       if (!link) return;
       const i = slugs.indexOf(link.dataset.nbSlug!);

@@ -75,6 +75,7 @@ const numberValue = (value: unknown): number | undefined => {
 
 const seriesFromRecord = (value: unknown): MangaUpdatesSeries | undefined => {
   const rec = record(value);
+  // SAFETY: optional field is JsonRecord | undefined when present at this call site
   const recordData = (rec?.record as JsonRecord | undefined) ?? rec;
   const id = numberValue(recordData?.series_id ?? rec?.series_id ?? rec?.id);
   const title = stringValue(recordData?.title ?? rec?.title);
@@ -106,16 +107,22 @@ const seriesFromRecord = (value: unknown): MangaUpdatesSeries | undefined => {
 
 const releaseFromRecord = (value: unknown): MangaUpdatesRelease | undefined => {
   const rec = record(value);
+  // SAFETY: optional field is JsonRecord | undefined when present at this call site
   const recordData = (rec?.record as JsonRecord | undefined) ?? rec;
   // releases/search returns record.series_id as `series_id` inside `record`, but some firehose returns `id` as release id and `series_id` separate
   const seriesId = numberValue(
+    // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
     (recordData as Record<string, unknown>)?.series_id ??
+      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
       (rec as Record<string, unknown>)?.series_id ??
+      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
       (recordData as Record<string, unknown>)?.series_id,
   );
   // The release title is in `title`, but for releases/search it's the manga title, not release title
+  // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
   const title = stringValue((recordData as Record<string, unknown>)?.title ?? (rec as Record<string, unknown>)?.title);
   if (seriesId === undefined || !title) {return undefined;}
+  // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
   const groupsRaw = (recordData as Record<string, unknown>)?.groups;
   const groups = Array.isArray(groupsRaw)
     ? groupsRaw
@@ -128,14 +135,20 @@ const releaseFromRecord = (value: unknown): MangaUpdatesRelease | undefined => {
   return {
     seriesId,
     title,
+    // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
     ...(stringValue((recordData as Record<string, unknown>)?.chapter)
+      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
       ? { chapter: stringValue((recordData as Record<string, unknown>)?.chapter) }
       : {}),
+    // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
     ...(stringValue((recordData as Record<string, unknown>)?.volume)
+      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
       ? { volume: stringValue((recordData as Record<string, unknown>)?.volume) }
       : {}),
     ...(groups ? { groups } : {}),
+    // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
     ...(stringValue((recordData as Record<string, unknown>)?.release_date ?? (recordData as Record<string, unknown>)?.date)
+      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
       ? { date: stringValue((recordData as Record<string, unknown>)?.release_date ?? (recordData as Record<string, unknown>)?.date) }
       : {}),
   };
@@ -181,10 +194,12 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
   };
 
   const requestJson = async (path: string, method = "GET", body?: unknown): Promise<unknown> =>
+    // SAFETY: test/double or boundary cast through unknown to Promise<unknown>
     (await request(path, method, body)).json() as Promise<unknown>;
 
   return {
     search: (query) =>
+      // SAFETY: value matches Promise<readonly MangaUpdatesSeries[]> at this call site
       withSourceError(async () => {
         const normalized = query.trim();
         if (!normalized) {throw errorFrom("MangaUpdates search query cannot be empty");}
@@ -200,6 +215,7 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
           .filter((m): m is MangaUpdatesSeries => m !== undefined);
       }) as Promise<readonly MangaUpdatesSeries[]>,
     getSeries: (id) =>
+      // SAFETY: value matches Promise<MangaUpdatesSeries> at this call site
       withSourceError(async () => {
         const body = await requestJson(`/series/${encodeURIComponent(String(id))}`, "GET");
         const series = seriesFromRecord(body);
@@ -207,6 +223,7 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
         return series;
       }) as Promise<MangaUpdatesSeries>,
     releases: (releaseOptions) =>
+      // SAFETY: value matches Promise<MangaUpdatesPaged<MangaUpdatesRelease>> at this call site
       withSourceError(async () => {
         const page = releaseOptions.page ?? 1;
         const perpage = releaseOptions.perpage ?? 50;

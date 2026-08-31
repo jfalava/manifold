@@ -8,6 +8,7 @@ const assets: Record<string, string> = {
   "/ManifoldSource/icon.png": "png",
 };
 
+// SAFETY: test fixture supplies the Worker Env bindings under test
 const env = {
   ENVIRONMENT: "test",
   ASSETS: {
@@ -28,6 +29,7 @@ describe("Paperback catalog routes", () => {
     const response = await get("/extensions/0.9/stable/versioning.json");
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
+    // SAFETY: parsed JSON matches { sources: readonly { id: string; version: string }[]; } for this trusted/test payload
     const body = (await response.json()) as {
       sources: readonly { id: string; version: string }[];
     };
@@ -40,6 +42,7 @@ describe("Paperback catalog routes", () => {
   it("serves info.json from pbconfig", async () => {
     const response = await get("/extensions/0.9/stable/ManifoldSource/info.json");
     expect(response.status).toBe(200);
+    // SAFETY: parsed JSON matches { id: string; name: string } for this trusted/test payload
     const body = (await response.json()) as { id: string; name: string };
     expect(body.id).toBe("ManifoldSource");
     expect(body.name).toBe("manifold: source");

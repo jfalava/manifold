@@ -61,12 +61,15 @@ export const apiCall = async <A>(
   const text = await response.text();
   const parsed: unknown = text.length > 0 ? JSON.parse(text) : undefined;
   if (!response.ok) {
+    // SAFETY: value is { error: unknown }).error) at this site
     const message =
       typeof parsed === "object" && parsed !== null && "error" in parsed
+        // SAFETY: test/double or boundary cast through unknown to { error: unknown }
         ? String((parsed as { error: unknown }).error)
         : `HTTP ${response.status}`;
     throw new Error(message);
   }
+  // SAFETY: value matches A at this call site
   return parsed as A;
 };
 

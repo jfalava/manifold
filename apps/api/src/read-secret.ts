@@ -3,6 +3,7 @@ import type { SecretsStoreSecret } from "@cloudflare/workers-types";
 const secretBinding = (value: unknown): value is SecretsStoreSecret =>
   typeof value === "object" &&
   value !== null &&
+  // SAFETY: value matches SecretsStoreSecret at this call site
   typeof (value as SecretsStoreSecret).get === "function";
 
 /**

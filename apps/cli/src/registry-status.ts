@@ -59,5 +59,6 @@ export const matchesStatusFilter = (
 ): boolean => {
   if (filter === undefined) {return true;}
   if (status === undefined) {return false;}
+  // SAFETY: value matches RegistryStatus at this call site
   return filter.has(status as RegistryStatus);
 };

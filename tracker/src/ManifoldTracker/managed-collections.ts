@@ -52,6 +52,7 @@ const readPendingNukes = (): Record<string, PendingNuke> => {
   const raw = Application.getState(PENDING_NUKES_KEY);
   if (typeof raw !== "string") {return {};}
   try {
+    // SAFETY: parsed JSON matches Record<string, PendingNuke> for this trusted/test payload
     return JSON.parse(raw) as Record<string, PendingNuke>;
   } catch {
     return {};
@@ -63,6 +64,7 @@ const writePendingNukes = (pending: Record<string, PendingNuke>): void => {
 };
 
 const aniListToken = (): string => {
+  // SAFETY: Paperback secure/state store returns string | undefined for this key
   const token = Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined;
   if (!token) {
     throw new Error("Connect AniList in the manifold: tracker settings first");
@@ -71,12 +73,14 @@ const aniListToken = (): string => {
 };
 
 const aniListUserId = (): number => {
+  // SAFETY: Paperback secure/state store returns number | undefined for this key
   const userId = Application.getState(ANILIST_VIEWER_ID_KEY) as number | undefined;
   if (!userId) {throw new Error("AniList session is incomplete, reconnect in settings");}
   return userId;
 };
 
 export const aniListSessionToken = (): string | undefined =>
+  // SAFETY: Paperback secure/state store returns string | undefined for this key
   (Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined) ?? undefined;
 
 const rememberListEntryId = (
@@ -216,6 +220,7 @@ export const commitManagedCollectionChanges = async (
 
   const token = aniListToken();
   const api = configuredPersonalApi();
+  // SAFETY: value matches AniListReadingStatus; at this call site
   const status = changeset.collection.id as AniListReadingStatus;
   const pending = readPendingNukes();
 

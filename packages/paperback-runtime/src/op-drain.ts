@@ -38,17 +38,20 @@ interface DrainPayload {
 }
 
 const aniListToken = (): string | undefined => {
+  // SAFETY: Paperback secure/state store returns string | undefined for this key
   const token = Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined;
   return typeof token === "string" && token.trim().length > 0 ? token.trim() : undefined;
 };
 
 const aniListUserId = (): number | undefined => {
+  // SAFETY: Paperback secure/state store returns string | number | undefined for this key
   const raw = Application.getState(ANILIST_VIEWER_ID_KEY) as string | number | undefined;
   const parsed = raw === undefined ? Number.NaN : Number(raw);
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 };
 
 const statusOrNull = (value: string | null | undefined): AniListReadingStatus | null | undefined =>
+  // SAFETY: value matches AniListReadingStatus at this call site
   value === undefined ? undefined : value === null ? null : (value as AniListReadingStatus);
 
 const executeOp = async (
@@ -56,6 +59,7 @@ const executeOp = async (
   op: PendingSyncOp,
   mediaListEntryIds: Record<string, number> | undefined,
 ): Promise<number | undefined> => {
+  // SAFETY: value matches DrainPayload at this call site
   const payload = op.payload as DrainPayload;
   if (!payload.anilistId) {throw new Error(`op ${op.opId} has no anilistId`);}
 

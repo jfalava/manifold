@@ -49,6 +49,7 @@ const loadStaleCache = async (): Promise<{
   entries: Record<string, number>;
 }> => {
   try {
+    // SAFETY: parsed JSON matches StaleCacheFile; for this trusted/test payload
     const raw = JSON.parse(
       await readFile(STALE_CACHE_PATH, "utf8"),
     ) as StaleCacheFile;
@@ -107,6 +108,7 @@ const saveStalePlan = async (plan: StalePlanFile): Promise<void> => {
 
 const loadStalePlan = async (): Promise<StalePlanFile | undefined> => {
   try {
+    // SAFETY: parsed JSON matches StalePlanFile; for this trusted/test payload
     const raw = JSON.parse(await readFile(PLAN_PATH, "utf8")) as StalePlanFile;
     return raw.version === 1 && Array.isArray(raw.staleIds) ? raw : undefined;
   } catch {
@@ -236,6 +238,7 @@ export const staleStatusCommand = Command.make(
           new Error(`Invalid --older-than "${olderThan}". Use forms like 90, 90d, 12w, 6mo, 2y.`),
         );
       }
+      // SAFETY: value matches MangaDexReadingStatus)) at this call site
       if (!VALID_STATUSES.includes(to as MangaDexReadingStatus)) {
         return yield* Effect.fail(
           new Error(`Invalid --to "${to}". Choose one of: ${VALID_STATUSES.join(", ")}.`),
@@ -243,6 +246,7 @@ export const staleStatusCommand = Command.make(
       }
       const fromStatuses = parseList(from);
       const invalidFrom = fromStatuses.filter(
+        // SAFETY: value matches MangaDexReadingStatus), at this call site
         (status) => !VALID_STATUSES.includes(status as MangaDexReadingStatus),
       );
       if (invalidFrom.length > 0) {
@@ -253,6 +257,7 @@ export const staleStatusCommand = Command.make(
         );
       }
       const cutoffIso = new Date(Date.now() - olderThanMs).toISOString();
+      // SAFETY: value matches MangaDexReadingStatus; at this call site
       const targetStatus = to as MangaDexReadingStatus;
 
       yield* Effect.tryPromise({
@@ -492,7 +497,9 @@ export const staleStatusCommand = Command.make(
                       } catch (cause) {
                         const msg = cause instanceof Error ? cause.message : String(cause);
                         const isAuth =
+                          // SAFETY: optional field is : number })?.status === "num when present at this call site
                           typeof (cause as { status?: number })?.status === "number" &&
+                          // SAFETY: value matches : number }).status === 401; at this call site
                           (cause as { status?: number }).status === 401;
                         if (isAuth) {
                           try {
@@ -559,10 +566,12 @@ export const staleStatusCommand = Command.make(
           }
         },
         catch: (cause) => {
+          // SAFETY: value is { message: unknown }).message) at this site
           const message =
             cause instanceof Error
               ? cause.message
               : typeof cause === "object" && cause !== null && "message" in cause
+                // SAFETY: value matches .message) : S at this call site
                 ? String((cause as { message: unknown }).message)
                 : String(cause);
           return new Error(message);

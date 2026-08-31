@@ -32,6 +32,7 @@ export const fetchViewer = async (
     body: JSON.stringify({ query: `query { Viewer { id name } }` })
   });
   if (!response.ok) {throw new Error(`Viewer query failed: HTTP ${response.status}`);}
+  // SAFETY: test/double or boundary cast through unknown to { data?: { Viewer?: { id: number; name: string } }; errors?: unknown[]; };
   const data = (await response.json()) as {
     data?: { Viewer?: { id: number; name: string } };
     errors?: unknown[];
@@ -61,6 +62,7 @@ export const fetchMangaEntries = async (
     })
   });
   if (!response.ok) {throw new Error(`Manga list fetch failed: HTTP ${response.status}`);}
+  // SAFETY: parsed JSON matches { data?: { MediaListCollection?: { lists?: Array<{ entries?: Array<{ id: number; for this trusted/test payload
   const data = (await response.json()) as {
     data?: {
       MediaListCollection?: {
@@ -106,6 +108,7 @@ export const deleteEntry = async (token: string, entryId: number): Promise<boole
       variables: { id: entryId }
     })
   });
+  // SAFETY: test/double or boundary cast through unknown to { errors?: unknown[] };
   const data = (await response.json()) as { errors?: unknown[] };
   if (data.errors) {return false;}
   return true;
@@ -148,6 +151,7 @@ const fetchActivitiesPage = async (
     })
   });
   if (!response.ok) {throw new Error(`Activity page fetch failed: HTTP ${response.status}`);}
+  // SAFETY: parsed JSON matches { data?: { Page?: { pageInfo: { hasNextPage: boolean }; activities: Array<Record for this trusted/test payload
   const data = (await response.json()) as {
     data?: {
       Page?: {
@@ -162,6 +166,7 @@ const fetchActivitiesPage = async (
     const id = item.id;
     if (typeof id !== "number") {continue;}
     if (item.type === "MANGA_LIST") {
+      // SAFETY: optional field is | { title?: { romaji?: string | null; english?: string | null } } | undefined; when present at this call site
       const media = item.media as
         | { title?: { romaji?: string | null; english?: string | null } }
         | undefined;

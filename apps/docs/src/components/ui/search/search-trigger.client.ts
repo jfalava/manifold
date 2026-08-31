@@ -3,6 +3,7 @@
 import { mount } from "@cloudflare/nimbus-docs/client";
 
 mount("[data-search-trigger]", (btn) => {
+  // SAFETY: optional field is Navigator & { userAgentData?: { platform?: string } }; when present at this call site
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
   const platform = nav.userAgentData?.platform ?? "";
   const isMac = platform

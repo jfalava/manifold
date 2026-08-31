@@ -21,8 +21,11 @@ interface TestEnv {
 
 function makeEnv(): TestEnv {
   const calls = {
+    // SAFETY: HTTP value is the expected RecordedRequest[] after the preceding check
     SYNC_API: [] as RecordedRequest[],
+    // SAFETY: HTTP value is the expected RecordedRequest[] after the preceding check
     DOCS_WORKER: [] as RecordedRequest[],
+    // SAFETY: HTTP value is the expected RecordedRequest[] after the preceding check
     ADMIN: [] as RecordedRequest[],
   };
 

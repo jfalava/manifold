@@ -42,6 +42,7 @@ const sourceError = (
     "message" in error &&
     typeof error.message === "string"
   ) {
+    // SAFETY: caught value narrowed to CanonicalSourceError at this site
     return error as CanonicalSourceError;
   }
   return {

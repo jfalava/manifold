@@ -16,6 +16,7 @@ type ProcessEnvMap = Record<string, string | undefined>;
 type ProcessHost = { readonly env: ProcessEnvMap };
 
 const processHost = (): ProcessHost | undefined => {
+  // SAFETY: optional field is { process?: ProcessHost } when present at this call site
   const host = globalThis as { process?: ProcessHost };
   return host.process;
 };

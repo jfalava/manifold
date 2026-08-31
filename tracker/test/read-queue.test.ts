@@ -11,6 +11,7 @@ const manga = (id: string): SourceManga => ({
     synopsis: "",
     primaryTitle: id,
     secondaryTitles: [],
+    // SAFETY: intentional never-widen for exhaustive/test placeholder
     contentRating: "SAFE" as never,
     additionalInfo: {},
   },
@@ -22,6 +23,7 @@ const action = (
   chapterNum: number | undefined,
   mangaId = "anilist:141756",
 ): TrackedMangaChapterReadAction =>
+  // SAFETY: value matches unknown as TrackedMangaChapterReadAction at this call site
   ({
     id,
     chapterId,
@@ -128,6 +130,7 @@ describe("processReadActions", () => {
     });
     // AniList progress is keyed by the anilist-canonical manga either way.
     expect(pushProgress).toHaveBeenCalledTimes(1);
+    // SAFETY: optional field is | [SourceManga, number] | undefined when present at this call site
     const progressCall = pushProgress.mock.calls[0] as
       | [SourceManga, number]
       | undefined;

@@ -31,6 +31,7 @@ class FakeView implements ComixView {
   async evaluate<T = unknown>(script: string): Promise<T> {
     const page = this.pages.get(this.url);
     if (script.includes("document.title")) {
+      // SAFETY: value matches T at this call site
       return {
         title: page?.title ?? this.title,
         html: page?.html ?? "",
@@ -38,9 +39,11 @@ class FakeView implements ComixView {
       } as T;
     }
     if (script.includes("navigator.userAgent")) {
+      // SAFETY: value matches T at this call site
       return "Mozilla/5.0 Chrome/126" as T;
     }
     if (script.includes("__comixResult__")) {
+      // SAFETY: value matches T at this call site
       return page?.payload as T;
     }
     throw new Error(`unexpected evaluate: ${script}`);
@@ -50,12 +53,16 @@ class FakeView implements ComixView {
     this.cdpCalls.push({ method, params });
     if (method === "Network.setCookies") {
       const cookies = Array.isArray(params?.cookies) ? params.cookies : [];
+      // SAFETY: value matches ComixCookie[] at this call site
       this.cookies = cookies as ComixCookie[];
+      // SAFETY: value matches T at this call site
       return {} as T;
     }
     if (method === "Network.getCookies") {
+      // SAFETY: value matches T at this call site
       return { cookies: this.cookies } as T;
     }
+    // SAFETY: value matches T at this call site
     return {} as T;
   }
 

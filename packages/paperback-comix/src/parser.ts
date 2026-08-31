@@ -20,8 +20,10 @@ export type ComixPage = {
   readonly height?: number;
 };
 
+// SAFETY: value is JsonObject) at this site
 const asObject = (value: unknown): JsonObject | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value)
+    // SAFETY: value matches JsonObject at this call site
     ? (value as JsonObject)
     : undefined;
 

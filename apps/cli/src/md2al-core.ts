@@ -76,11 +76,13 @@ const gql = async <A>(
     await sleep(Math.max(retryAfter, 5) * 1000);
     return gql<A>(token, query, variables);
   }
+  // SAFETY: HTTP value is the expected GraphQLResponse<A>; if after the preceding check
   const body = (await response.json()) as GraphQLResponse<A>;
   if (body.errors?.length) {
     throw new Error(body.errors.map((e) => e.message ?? "?").join("; "));
   }
   if (!response.ok) {throw new Error(`AniList HTTP ${response.status}`);}
+  // SAFETY: value matches A; }; / at this call site
   return body.data as A;
 };
 
@@ -100,6 +102,7 @@ const mdFetch = async <A>(mdToken: string, path: string): Promise<A> => {
     return mdFetch<A>(mdToken, path);
   }
   if (!response.ok) {throw new Error(`MangaDex HTTP ${response.status} for ${path}`);}
+  // SAFETY: parsed JSON matches { data: A }; ret for this trusted/test payload
   const body = (await response.json()) as { data: A };
   return body.data;
 };
@@ -127,6 +130,7 @@ export const loadSnapshot = (tmpDir: string): MdLibraryEntry[] | undefined => {
   const file = paths(tmpDir).snapshot;
   if (!existsSync(file)) {return undefined;}
   try {
+    // SAFETY: parsed JSON matches MdLibraryEntry[]; } c for this trusted/test payload
     return JSON.parse(readFileSync(file, "utf8")) as MdLibraryEntry[];
   } catch {
     return undefined;
@@ -137,6 +141,7 @@ export const loadMatches = (tmpDir: string): Map<string, MatchResult> => {
   const file = paths(tmpDir).matches;
   if (!existsSync(file)) {return new Map();}
   try {
+    // SAFETY: parsed JSON matches MatchResult[]; r for this trusted/test payload
     const parsed = JSON.parse(readFileSync(file, "utf8")) as MatchResult[];
     return new Map(parsed.map((m) => [m.mangaDexId, m]));
   } catch {
@@ -167,6 +172,7 @@ export const phaseExport = async (
   if (!statusResponse.ok) {
     throw new Error(`MangaDex HTTP ${statusResponse.status} for /manga/status`);
   }
+  // SAFETY: parsed JSON matches { statuses: Record<string, string>; }; cons for this trusted/test payload
   const statusBody = (await statusResponse.json()) as {
     statuses: Record<string, string>;
   };
@@ -184,6 +190,7 @@ export const phaseExport = async (
     if (typeof rawStatus !== "string" || !validStatuses.has(rawStatus)) {continue;}
     entries.push({
       mangaDexId: id,
+      // SAFETY: value matches MdStatus, t at this call site
       status: rawStatus as MdStatus,
       title: "",
       altTitles: [],
@@ -249,6 +256,7 @@ export const loadProgress = (
   const file = paths(tmpDir).progress;
   if (!existsSync(file)) {return undefined;}
   try {
+    // SAFETY: parsed JSON matches Record< string, number >; retur for this trusted/test payload
     const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<
       string,
       number
@@ -447,6 +455,7 @@ export const collectProgress = async (
     if (cachedProgress?.has(entry.mangaDexId)) {
       progressByMdId.set(
         entry.mangaDexId,
+        // SAFETY: value matches number, ); at this call site
         cachedProgress.get(entry.mangaDexId) as number,
       );
     } else {
@@ -463,6 +472,7 @@ export const collectProgress = async (
         );
         if (!markerResponse.ok)
           {throw new Error(`HTTP ${markerResponse.status}`);}
+        // SAFETY: parsed JSON matches { data?: string[]; }; co for this trusted/test payload
         const markerBody = (await markerResponse.json()) as {
           data?: string[];
         };

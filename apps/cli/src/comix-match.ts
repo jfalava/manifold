@@ -101,6 +101,7 @@ export const isChallengeText = (value: string): boolean => {
 
 export const unwrapComixResult = (value: unknown): unknown => {
   if (value !== null && typeof value === "object" && "r" in value) {
+    // SAFETY: test/double or boundary cast through unknown to { r: unknown }
     return (value as { r: unknown }).r;
   }
   return value;
@@ -111,9 +112,12 @@ export const itemsFromCapture = (payload: unknown): readonly ComixSearchItem[] |
   if (unwrapped == null) {return undefined;}
   try {
     const parsed: unknown =
+      // SAFETY: test/double or boundary cast through unknown to unknown
       typeof unwrapped === "string" ? (JSON.parse(unwrapped) as unknown) : unwrapped;
     if (parsed === null || typeof parsed !== "object") {return undefined;}
+    // SAFETY: test/double or boundary cast through unknown to { result?: { items?: unknown } }
     const items = (parsed as { result?: { items?: unknown } }).result?.items;
+    // SAFETY: value matches ComixSearchItem[] at this call site
     return Array.isArray(items) ? items as ComixSearchItem[] : undefined;
   } catch {
     return undefined;

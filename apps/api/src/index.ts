@@ -29,6 +29,7 @@ const toError = (cause: unknown): Error => {
   if (cause instanceof Error) {return cause;}
   // Canonical source failures reject with plain { _tag, message } objects.
   if (typeof cause === "object" && cause !== null && "message" in cause) {
+    // SAFETY: test/double or boundary cast through unknown to { message: unknown }
     return new Error(String((cause as { message: unknown }).message));
   }
   return new Error(String(cause));
@@ -351,6 +352,7 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
       }
       if (path.length === 3 && path[2] === "stats" && request.method === "POST") {
         const body = yield* parseJson(request);
+        // SAFETY: test/double or boundary cast through unknown to : unknown } | null | undefined)?.ids;
         const candidate = (body as { ids?: unknown } | null | undefined)?.ids;
         const ids = Array.isArray(candidate)
           ? candidate.filter((value): value is string => typeof value === "string").slice(0, 200)

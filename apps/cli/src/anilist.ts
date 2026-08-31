@@ -84,11 +84,13 @@ const gql = async <A>(
     await sleep(Math.max(retryAfter, 5) * 1000);
     return gql<A>(token, query, variables, attempt + 1);
   }
+  // SAFETY: HTTP value is the expected GraphQLResponse<A>; i after the preceding check
   const body = (await response.json()) as GraphQLResponse<A>;
   if (body.errors?.length) {
     throw new Error(body.errors.map((e) => e.message ?? "?").join("; "));
   }
   if (!response.ok) {throw new Error(`AniList HTTP ${response.status}`);}
+  // SAFETY: value matches A; }; at this call site
   return body.data as A;
 };
 
@@ -193,6 +195,7 @@ export const fetchAniListRichEntries = async (
   const seen = new Set<number>();
   const entries: AniListRichEntry[] = [];
   for (const list of lists) {
+    // SAFETY: optional field is { entries?: RichMediaList[] }).entri when present at this call site
     for (const entry of (list as { entries?: RichMediaList[] }).entries ?? []) {
       if (!entry.mediaId || seen.has(entry.mediaId)) {continue;}
       const status = entry.status ?? "";

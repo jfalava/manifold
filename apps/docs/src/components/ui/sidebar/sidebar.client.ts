@@ -188,6 +188,7 @@ function initPersistence(root: HTMLElement): (() => void) | null {
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "/") return;
+    // SAFETY: DOM query returns the expected element type in this document
     const active = document.activeElement as HTMLElement | null;
     if (
       active &&

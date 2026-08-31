@@ -172,6 +172,7 @@ interface SourceErrorShape {
 }
 
 const isAuthFailure = (error: unknown): boolean => {
+  // SAFETY: caught value narrowed to SourceErrorShape | undefined; at this site
   const shape = error as SourceErrorShape | undefined;
   return (
     typeof shape === "object" &&
@@ -315,6 +316,7 @@ export const chapterIdsUpTo = async (
     .sort((a, b) => (a.chapterNumber ?? 0) - (b.chapterNumber ?? 0));
   const ids: string[] = [];
   for (const chapter of numbered) {
+    // SAFETY: value matches number; at this call site
     const number = chapter.chapterNumber as number;
     if (number > progress) {break;}
     ids.push(chapter.id);

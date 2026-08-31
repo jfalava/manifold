@@ -95,6 +95,7 @@ export const parseChromeVersionEndpoint = (body: string): string | undefined => 
   try {
     const parsed: unknown = JSON.parse(body);
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {return undefined;}
+    // SAFETY: test/double or boundary cast through unknown to { webSocketDebuggerUrl?: unknown }
     const url = (parsed as { webSocketDebuggerUrl?: unknown }).webSocketDebuggerUrl;
     return typeof url === "string" && url.startsWith("ws://") ? url : undefined;
   } catch {

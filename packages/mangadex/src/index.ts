@@ -447,6 +447,7 @@ export const createMangaDexClient = (
   };
 
   const requestJson = async (path: string): Promise<unknown> =>
+    // SAFETY: test/double or boundary cast through unknown to Promise<unknown>;
     (await request(path)).json() as Promise<unknown>;
 
   const getChaptersPage = async (
@@ -534,6 +535,7 @@ export const createMangaDexClient = (
           // titles even for ids[] lookups — always ask explicitly. Default
           // to the full rating set so callers never get invisible “untitled”
           // rows (the admin library hit this for erotica/pornographic titles).
+          // SAFETY: value matches readonly string[]).map( at this call site
           ...((listOptions.contentRating ?? MANGADEX_CONTENT_RATINGS) as readonly string[]).map(
             (rating) => ["contentRating[]", rating] as const,
           ),

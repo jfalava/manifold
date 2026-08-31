@@ -16,6 +16,7 @@ export interface Pas5Entities {
 /** Parses a `.pas5` archive buffer into its entity records. */
 export const parsePas5 = async (buf: Buffer): Promise<Pas5Entities> => {
   const files = readZipText(buf);
+  // SAFETY: value matches Pas5Entities at this call site
   return Object.fromEntries(
     Object.entries(files).map(([name, text]) => [name, JSON.parse(text)]),
   ) as Pas5Entities;

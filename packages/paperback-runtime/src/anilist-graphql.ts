@@ -84,6 +84,7 @@ const rawAniListRequest = async <A>(
     body: JSON.stringify({ query, variables }),
   });
   try {
+    // SAFETY: HTTP value is the expected GraphQLResponse<A> after the preceding check
     const body = JSON.parse(
       Application.arrayBufferToUTF8String(bodyBuffer),
     ) as GraphQLResponse<A>;
@@ -129,6 +130,7 @@ const interpretOutcome = <A>(outcome: RawOutcome<A>): A => {
   if (outcome.status < 200 || outcome.status >= 300) {
     throw new Error(`AniList request failed with HTTP ${outcome.status}`);
   }
+  // SAFETY: value matches A at this call site
   return outcome.body.data as A;
 };
 

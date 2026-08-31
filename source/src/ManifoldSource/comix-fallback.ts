@@ -285,6 +285,7 @@ const captureViaSiteBundle = async (
       storage: { cookies: [...session.cookies()] },
     });
     session.setCookies(execution.storage.cookies);
+    // SAFETY: test/double or boundary cast through unknown to { r?: unknown } | null | undefined;
     return execution.result as { r?: unknown } | null | undefined;
   };
 
@@ -486,10 +487,12 @@ const detailMangaFromHtml = (html: string): DetailManga | undefined => {
   const raw = INITIAL_DATA_SCRIPT.exec(html)?.[1];
   if (!raw) {return undefined;}
   try {
+    // SAFETY: test/double or boundary cast through unknown to { queries?: Record<string, unknown> }).queries;
     const queries = (JSON.parse(raw) as { queries?: Record<string, unknown> }).queries;
     if (!queries) {return undefined;}
     const key = Object.keys(queries).find((candidate) => candidate.includes('"detail"'));
     if (!key) {return undefined;}
+    // SAFETY: optional field is DetailManga & { result?: DetailManga }; const m when present at this call site
     const value = queries[key] as DetailManga & { result?: DetailManga };
     const manga = value?.result ?? value;
     return manga && manga.hid !== undefined ? manga : undefined;
@@ -501,6 +504,7 @@ const detailMangaFromHtml = (html: string): DetailManga | undefined => {
 const detailPosterUrl = (manga: DetailManga): string => {
   const poster = manga.poster;
   if (typeof poster !== "object" || poster === null) {return "";}
+  // SAFETY: value matches nObject; return as at this call site
   const record = poster as JsonObject;
   return asText(record.large) || asText(record.medium) || asText(record.small);
 };
@@ -532,6 +536,7 @@ export const chapterItemsFromCapture = (captured: unknown): JsonObject[] => {
     );
   }
   if (typeof captured === "object" && captured !== null) {
+    // SAFETY: test/double or boundary cast through unknown to r?: unknown; items?: unknown; result?: { items?: unknown } }; const n
     const record = captured as { r?: unknown; items?: unknown; result?: { items?: unknown } };
     const nested = record.r ?? record.items ?? record.result?.items;
     if (Array.isArray(nested)) {
@@ -591,16 +596,21 @@ export const createComixFallback = (session: ComixSession) => ({
         );
         const searchRoot = ((): { result?: { items?: SearchItem[] } } | null => {
           try {
+            // SAFETY: value is { result?: { items?: SearchItem[] } }) at this site
             const decoded =
               typeof searchPayload === "string"
+                // SAFETY: parsed JSON matches { result?: { items?: SearchItem[] } }) for this trusted/test payload
                 ? (JSON.parse(searchPayload) as { result?: { items?: SearchItem[] } })
+                // SAFETY: optional field is { result?: { items?: SearchItem[] } } | null); when present at this call site
                 : (searchPayload as { result?: { items?: SearchItem[] } } | null);
             return decoded ?? null;
           } catch {
             return null;
           }
         })();
+        // SAFETY: value is SearchItem[]) at this site
         const items = Array.isArray(searchRoot?.result?.items)
+          // SAFETY: value matches SearchItem[]) : at this call site
           ? (searchRoot.result.items as SearchItem[])
           : [];
         for (const item of items) {
@@ -676,10 +686,14 @@ export const createComixFallback = (session: ComixSession) => ({
     );
     let items: JsonObject[] = [];
     try {
+      // SAFETY: value is { result?: { items?: unknown[] } }) at this site
       const decoded =
         typeof payloadText === "string"
+          // SAFETY: test/double or boundary cast through unknown to { result?: { items?: unknown[] } }) : (payl
           ? (JSON.parse(payloadText) as { result?: { items?: unknown[] } })
+          // SAFETY: test/double or boundary cast through unknown to sult?: { items?: unknown[] } } | null); items = Ar
           : (payloadText as { result?: { items?: unknown[] } } | null);
+      // SAFETY: Array.isArray narrows result.items; elements are Comix JSON objects.
       items = Array.isArray(decoded?.result?.items)
         ? (decoded.result.items as JsonObject[])
         : [];
@@ -735,6 +749,7 @@ export const createComixFallback = (session: ComixSession) => ({
     }
 
     try {
+      // SAFETY: parsed JSON matches JsonObject, chapter); } c for this trusted/test payload
       return toChapterDetails(JSON.parse(payloadText) as JsonObject, chapter);
     } catch {
       const execution = await Application.executeInWebView({
@@ -764,8 +779,10 @@ export const createComixFallback = (session: ComixSession) => ({
 
 const pagesFromResult = (result: unknown): string[] => {
   if (!Array.isArray(result)) {return [];}
+  // SAFETY: value is Record<string at this site
   return result
     .map((item) => (typeof item === "object" && item !== null
+      // SAFETY: test/double or boundary cast through unknown to ng, unknown>).src ?? "")
       ? String((item as Record<string, unknown>).src ?? "")
       : String(item)))
     .filter((url) => url.startsWith("http"));

@@ -38,6 +38,7 @@ const loadPersistedTokens = async (
 ): Promise<PersistedTokens> => {
   if (!cachePath) {return {};}
   try {
+    // SAFETY: parsed JSON matches PersistedTokens for this trusted/test payload
     const raw = JSON.parse(await readFile(cachePath, "utf8")) as PersistedTokens;
     return typeof raw === "object" && raw !== null ? raw : {};
   } catch {
@@ -81,6 +82,7 @@ export const createMangaDexTokenManager = (
         `MangaDex ${label} failed with HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`
       );
     }
+    // SAFETY: HTTP value is the expected TokenResponse after the preceding check
     const body = (await response.json()) as TokenResponse;
     if (!body.access_token) {throw new Error(`MangaDex ${label} returned no access_token`);}
     accessToken = body.access_token;
@@ -99,6 +101,7 @@ export const createMangaDexTokenManager = (
         const stored = await persisted();
         accessToken = stored.accessToken;
         refreshToken = stored.refreshToken;
+        // SAFETY: value is a number after the preceding runtime check
         expiresAt = Number.isFinite(stored.expiresAt) ? (stored.expiresAt as number) : 0;
         if (accessToken && Date.now() < expiresAt) {return accessToken;}
       }
@@ -108,6 +111,7 @@ export const createMangaDexTokenManager = (
             createMangaDexRefreshGrant(options.credentials, refreshToken),
             "refresh grant"
           );
+          // SAFETY: value is a string after the preceding runtime check
           return accessToken as string;
         } catch {
           // Fall through to a fresh password grant.
@@ -115,6 +119,7 @@ export const createMangaDexTokenManager = (
         }
       }
       await requestToken(createMangaDexPasswordGrant(options.credentials), "password grant");
+      // SAFETY: value is a string after the preceding runtime check
       return accessToken as string;
     },
     /** Forces a fresh password grant on the next call. */

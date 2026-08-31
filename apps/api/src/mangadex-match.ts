@@ -345,6 +345,7 @@ const indexedCandidates = (
   matches: Awaited<ReturnType<VectorizeIndex["query"]>>["matches"],
 ): readonly RankedMangaDexCandidate[] =>
   matches.flatMap((match) => {
+    // SAFETY: optional field is VectorMetadata | undefined when present at this call site
     const manga = vectorCandidate(match.id, match.metadata as VectorMetadata | undefined);
     return manga ? [{ manga, score: match.score }] : [];
   });

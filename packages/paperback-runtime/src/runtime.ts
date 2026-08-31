@@ -20,6 +20,7 @@ export const scheduledPersonalRequester = async (
   const text = Application.arrayBufferToUTF8String(bodyBuffer);
   let body: unknown = text;
   try {
+    // SAFETY: test/double or boundary cast through unknown to unknown
     body = JSON.parse(text) as unknown;
   } catch {
     // The typed API error below still includes the HTTP status.

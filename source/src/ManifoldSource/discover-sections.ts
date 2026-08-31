@@ -76,8 +76,10 @@ export const DISCOVER_SECTIONS = [
 ] as const;
 
 const offsetFromMetadata = (metadata: Metadata | undefined): number => {
+  // SAFETY: value is { readonly offset?: unknown }) at this site
   const record =
     typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)
+      // SAFETY: test/double or boundary cast through unknown to { readonly offset?: unknown })
       ? (metadata as { readonly offset?: unknown })
       : undefined;
   const value = record?.offset;
@@ -270,7 +272,9 @@ const libraryUpdatesPage = async (
       allItems.push(chapterUpdateItem(entry, card));
     }
     allItems.sort((a, b) => {
+      // SAFETY: optional field is blishDate?: Date }).publish when present at this call site
       const aTime = (a as { publishDate?: Date }).publishDate?.getTime() ?? 0;
+      // SAFETY: optional field is blishDate?: Date }).publish when present at this call site
       const bTime = (b as { publishDate?: Date }).publishDate?.getTime() ?? 0;
       return bTime - aTime;
     });
@@ -295,7 +299,9 @@ const libraryUpdatesPage = async (
   // Comix stays paginated (WebView cost), but still sort the visible page by
   // publishDate so the window feels recency-ordered.
   items.sort((a, b) => {
+    // SAFETY: optional field is blishDate?: Date }).publish when present at this call site
     const aTime = (a as { publishDate?: Date }).publishDate?.getTime() ?? 0;
+    // SAFETY: optional field is blishDate?: Date }).publish when present at this call site
     const bTime = (b as { publishDate?: Date }).publishDate?.getTime() ?? 0;
     return bTime - aTime;
   });
@@ -330,6 +336,7 @@ export const getDiscoverSectionItems = async (
       context,
       metadata,
       () =>
+        // SAFETY: optional field is Promise<readonly ManifoldLibraryEntry[] | undefined>, ( when present at this call site
         (context.getAnilistLibraryForMangadex?.() ??
           context.getAnilistLibrary?.() ??
           Promise.resolve(undefined)) as Promise<readonly ManifoldLibraryEntry[] | undefined>,
@@ -344,6 +351,7 @@ export const getDiscoverSectionItems = async (
       context,
       metadata,
       () =>
+        // SAFETY: optional field is Promise<readonly ManifoldLibraryEntry[] | undefined>, ( when present at this call site
         (context.getAnilistLibrary?.() ??
           Promise.resolve(undefined)) as Promise<readonly ManifoldLibraryEntry[] | undefined>,
       (entry) =>

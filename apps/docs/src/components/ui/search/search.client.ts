@@ -89,6 +89,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
     }
 
     option.addEventListener("click", (event) => {
+      // SAFETY: DOM query returns the expected element type in this document
       if ((event.target as Element | null)?.closest("a")) return;
       link.click();
     });
@@ -229,6 +230,7 @@ function bindGlobals() {
   globalsBound = true;
 
   document.addEventListener("click", (event) => {
+    // SAFETY: DOM query returns the expected element type in this document
     const trigger = (event.target as Element | null)?.closest("[data-search-trigger]");
     if (!trigger) return;
     primaryDialog()?.__openSearchDialog?.();
@@ -248,6 +250,7 @@ function bindGlobals() {
 // on astro:before-swap. Replaces the hand-rolled data-search-ready init loop;
 // data-search-ready is now just the "wired" marker primaryDialog() selects on.
 mount("[data-search-dialog]", (root) => {
+  // SAFETY: DOM query returns the expected element type in this document
   const dialog = root as SearchDialogElement;
   dialog.setAttribute("data-search-ready", "true");
 

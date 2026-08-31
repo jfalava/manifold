@@ -16,6 +16,7 @@ const sourceManga: SourceManga = {
     synopsis: "",
     primaryTitle: "A Couple of Cuckoos",
     secondaryTitles: [],
+    // SAFETY: intentional never-widen for exhaustive/test placeholder
     contentRating: "SAFE" as never,
     additionalInfo: {},
   },

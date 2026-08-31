@@ -185,8 +185,10 @@ export class PersonalApiError extends Error {
   }
 }
 
+// SAFETY: value is Record<string at this site
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value)
+    // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
     ? (value as Record<string, unknown>)
     : undefined;
 
@@ -225,6 +227,7 @@ export const createPersonalApiClient = (
     if (response.status < 200 || response.status >= 300) {
       throw new PersonalApiError(asErrorMessage(response.body, response.status), response.status);
     }
+    // SAFETY: value matches A at this call site
     return response.body as A;
   };
 
@@ -286,10 +289,13 @@ export const createPersonalApiClient = (
       );
       const record = asRecord(body);
       if (record && "progress" in record) {
+        // SAFETY: value is PersonalReadingProgress at this site
         return record.progress === null
           ? undefined
+          // SAFETY: value matches PersonalReadingProgress at this call site
           : record.progress as PersonalReadingProgress;
       }
+      // SAFETY: value matches PersonalReadingProgress at this call site
       return body as PersonalReadingProgress;
     },
     recordRead: (entryId, input) => request<PersonalReadingProgress>(
@@ -330,9 +336,12 @@ export const createPersonalApiClient = (
       const body = await request<CanonicalEntry | { readonly entry: CanonicalEntry | null }>(
         `/v1/canonical/by-provider/mangadex/${encodeURIComponent(mangaDexId)}`,
       );
+      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
       if (body && "entry" in (body as Record<string, unknown>)) {
+        // SAFETY: optional field is { entry: CanonicalEntry | null } when present at this call site
         return (body as { entry: CanonicalEntry | null }).entry ?? undefined;
       }
+      // SAFETY: value matches CanonicalEntry at this call site
       return body as CanonicalEntry;
     },
     resolveEntry: (input) =>
@@ -359,9 +368,12 @@ export const createPersonalApiClient = (
       const body = await request<CanonicalListState | { readonly state: CanonicalListState | null }>(
         `/v1/entries/${encodeURIComponent(entryId)}/list-state`,
       );
+      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
       if (body && "state" in (body as Record<string, unknown>)) {
+        // SAFETY: optional field is { state: CanonicalListState | null } when present at this call site
         return (body as { state: CanonicalListState | null }).state ?? undefined;
       }
+      // SAFETY: value matches CanonicalListState at this call site
       return body as CanonicalListState;
     },
     setListState: (entryId, change) =>

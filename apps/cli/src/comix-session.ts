@@ -138,8 +138,10 @@ export const parseStoredSession = (raw: string): StoredComixSession | undefined 
 };
 
 export const clearanceExpiresAtMs = (cookies: readonly ComixCookie[]): number | undefined => {
+  // SAFETY: value is number) at this site
   const expiries = cookies
     .filter((cookie) => cookie.name === "cf_clearance" && typeof cookie.expires === "number" && cookie.expires > 0)
+    // SAFETY: value is a number after the preceding runtime check
     .map((cookie) => cookie.expires as number)
     .map((expires) => (expires < 1_000_000_000_000 ? expires * 1000 : expires));
   if (expiries.length === 0) {return undefined;}

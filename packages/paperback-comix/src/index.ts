@@ -101,6 +101,7 @@ const requestJson = async (url: string): Promise<JsonRequest> => {
   }
 
   try {
+    // SAFETY: test/double or boundary cast through unknown to unknown
     return { url, body: JSON.parse(body) as unknown };
   } catch {
     throw new Error(`Comix returned a non-JSON response: ${url}`);
@@ -131,6 +132,7 @@ const requestHtml = async (url: string): Promise<HtmlRequest> => {
 const pageFromMetadata = (metadata: Metadata | undefined): number => {
   if (typeof metadata === "number" && Number.isFinite(metadata)) {return metadata;}
   if (typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)) {
+    // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
     const page = (metadata as Record<string, unknown>).page;
     if (typeof page === "number" && Number.isFinite(page)) {return page;}
   }
@@ -248,8 +250,10 @@ export class ComixSource implements
     const hashId = hashIdFromMangaId(mangaId);
     const response = await requestJson(`${COMIX_ORIGIN}/api/v1/manga/${encodeURIComponent(hashId)}`);
     const items = resultItems(response.body);
+    // SAFETY: value is Record<string at this site
     const item = items[0] ?? (
       typeof response.body === "object" && response.body !== null
+        // SAFETY: test/double or boundary cast through unknown to Record<string, unknown> | undefined
         ? ((response.body as Record<string, unknown>).result as Record<string, unknown> | undefined)
         : undefined
     );
@@ -336,7 +340,9 @@ class ComixSettingsForm extends Form {
                 Accept: "text/html,application/xhtml+xml",
               },
             },
+            // SAFETY: value matches ComixSettingsForm at this call site
             onComplete: Application.Selector(this as ComixSettingsForm, "webViewCompleted"),
+            // SAFETY: value matches ComixSettingsForm at this call site
             onCancel: Application.Selector(this as ComixSettingsForm, "webViewCancelled"),
           }),
         ],

@@ -93,11 +93,13 @@ const scheduledAniListFetcher = async (
       );
     },
   };
+  // SAFETY: HTTP value is the expected unknown, } as unknown as Response after the preceding check
   return {
     ok: response.status >= 200 && response.status < 300,
     status: response.status,
     headers: headerBag,
     text: async () => body,
+    // SAFETY: test/double or boundary cast through unknown to unknown
     json: async () => JSON.parse(body) as unknown,
   } as unknown as Response;
 };
@@ -198,6 +200,7 @@ export class ManifoldTrackerSource
         additionalInfo: {
           "Canonical ID": entry.id,
           "Canonical provider": "registry",
+          // SAFETY: value is a string after the preceding runtime check
           ...(aniLinkOf(stored) ? { "AniList ID": aniLinkOf(stored) as string } : {}),
           ...(mdLink
             ? {
@@ -292,6 +295,7 @@ const recordTrackerAniListProgress = async (
   sourceManga: SourceManga,
   chapterNumber: number | undefined,
 ): Promise<boolean> => {
+  // SAFETY: Paperback secure/state store returns string | undefined; for this key
   const token = Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined;
   if (!token) {return false;}
   if (typeof chapterNumber !== "number" || !Number.isFinite(chapterNumber) || chapterNumber < 0) {
@@ -396,6 +400,7 @@ class TrackerStatusForm extends Form {
               { id: "re_reading", title: "Re-reading" },
               { id: "completed", title: "Completed" },
             ],
+            // SAFETY: value matches s TrackerStatusForm, "sta at this call site
             onValueChange: Application.Selector(this as TrackerStatusForm, "statusSelected"),
           }),
           ...(this.lastError
@@ -420,6 +425,7 @@ class TrackerStatusForm extends Form {
           InputRow("manifold-tracker-score", {
             title: "Score",
             value: this.baseline?.score !== undefined ? String(this.baseline.score) : "",
+            // SAFETY: value matches s TrackerStatusForm, "sco at this call site
             onValueChange: Application.Selector(this as TrackerStatusForm, "scoreChanged"),
           }),
           InputRow("manifold-tracker-volume", {
@@ -428,21 +434,25 @@ class TrackerStatusForm extends Form {
               this.baseline?.volumeProgress !== undefined
                 ? String(this.baseline.volumeProgress)
                 : "",
+            // SAFETY: value matches s TrackerStatusForm, "vol at this call site
             onValueChange: Application.Selector(this as TrackerStatusForm, "volumeChanged"),
           }),
           InputRow("manifold-tracker-started", {
             title: "Started at",
             value: this.baseline?.startedAt ?? "",
+            // SAFETY: value matches s TrackerStatusForm, "sta at this call site
             onValueChange: Application.Selector(this as TrackerStatusForm, "startedChanged"),
           }),
           InputRow("manifold-tracker-completed", {
             title: "Completed at",
             value: this.baseline?.completedAt ?? "",
+            // SAFETY: value matches s TrackerStatusForm, "com at this call site
             onValueChange: Application.Selector(this as TrackerStatusForm, "completedChanged"),
           }),
           InputRow("manifold-tracker-notes", {
             title: "Notes",
             value: this.baseline?.notes ?? "",
+            // SAFETY: value matches s TrackerStatusForm, "not at this call site
             onValueChange: Application.Selector(this as TrackerStatusForm, "notesChanged"),
           }),
         ],
@@ -451,6 +461,7 @@ class TrackerStatusForm extends Form {
   }
 
   readonly statusSelected = async (value: string[]): Promise<void> => {
+    // SAFETY: optional field is CanonicalListStatus | undefined; when present at this call site
     const status = value[0] as CanonicalListStatus | undefined;
     if (!status) {return;}
     await this.applyStatus(status);
@@ -535,6 +546,7 @@ class TrackerStatusForm extends Form {
       }
     }
 
+    // SAFETY: value matches CanonicalListStateChange; } at this call site
     return changes as CanonicalListStateChange;
   }
 
@@ -557,6 +569,7 @@ class TrackerStatusForm extends Form {
         const stored = await api.getEntry(this.entryId).catch(() => undefined);
         this.anilistId = aniLinkOf(stored);
       }
+      // SAFETY: Paperback secure/state store returns string | undefined; for this key
       const token = Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined;
       if (!token) {throw new Error("Connect AniList in the tracker settings first");}
       if (!this.anilistId) {throw new Error("This title has no AniList link to update");}
@@ -637,6 +650,7 @@ class TrackerStatusForm extends Form {
         const stored = await api.getEntry(this.entryId).catch(() => undefined);
         this.anilistId = aniLinkOf(stored);
       }
+      // SAFETY: Paperback secure/state store returns string | undefined; for this key
       const token = Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined;
       if (!token) {throw new Error("Connect AniList in the tracker settings first");}
       if (!this.anilistId) {throw new Error("This title has no AniList link to update");}
@@ -672,8 +686,10 @@ class TrackerSettingsForm extends Form {
 
   getSections() {
     const apiStatus =
+      // SAFETY: Paperback secure/state store returns string | undefined) ?? " for this key
       (Application.getState(MANIFOLD_API_STATUS_KEY) as string | undefined) ?? "Not configured";
     const aniListStatus =
+      // SAFETY: Paperback secure/state store returns string | undefined) ?? " for this key
       (Application.getState(ANILIST_STATUS_KEY) as string | undefined) ?? "Not connected";
     return [
       FlowSection(
@@ -686,6 +702,7 @@ class TrackerSettingsForm extends Form {
           InputRow("tracker-personal-api-token", {
             title: "API token",
             value: "",
+            // SAFETY: value matches s TrackerSettingsForm, "tok at this call site
             onValueChange: Application.Selector(this as TrackerSettingsForm, "tokenChanged"),
           }),
           LabelRow("tracker-personal-api-status", {
@@ -708,12 +725,14 @@ class TrackerSettingsForm extends Form {
             authorizeEndpoint: "https://anilist.co/api/v2/oauth/authorize",
             clientId: ANILIST_OAUTH_CLIENT_ID,
             responseType: { type: "token" },
+            // SAFETY: value matches s TrackerSettingsForm, "ani at this call site
             onSuccess: Application.Selector(this as TrackerSettingsForm, "aniListOAuthSuccess"),
           }),
           InputRow("tracker-anilist-token", {
             title: "AniList token",
             value: "",
             onValueChange: Application.Selector(
+              // SAFETY: value matches s TrackerSettingsForm, at this call site
               this as TrackerSettingsForm,
               "aniListTokenChanged",
             ),

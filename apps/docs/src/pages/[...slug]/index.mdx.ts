@@ -36,6 +36,7 @@ export async function getStaticPaths() {
       params: {
         slug: item.entry.id === "index" ? undefined : item.entry.id,
       },
+      // SAFETY: value matches SlugProps, at this call site
       props: { item } as SlugProps,
     }));
 }
@@ -43,6 +44,7 @@ export async function getStaticPaths() {
 export async function GET({ props }: { props: SlugProps }) {
   const { item } = props;
   const { entry, title, description, version } = item;
+  // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>; co
   const data = (entry.data ?? {}) as Record<string, unknown>;
   const rawImage = data.socialImage;
   const socialImage =

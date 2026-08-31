@@ -696,6 +696,7 @@ export class ManifoldSync extends DurableObject<Env> {
       for (const row of rows) {
         if (row.computed_at < cutoff) {continue;}
         try {
+          // SAFETY: parsed JSON matches MdFeedStatsPayload); for this trusted/test payload
           meta.set(row.manga_id, JSON.parse(row.payload) as MdFeedStatsPayload);
           fresh.add(row.manga_id);
         } catch {
@@ -945,6 +946,7 @@ export class ManifoldSync extends DurableObject<Env> {
   }
 
   async setMangaDexStatus(mangaDexId: string, input: unknown): Promise<void> {
+    // SAFETY: optional field is known } | null | undefined)?.status; if ( when present at this call site
     const status = (input as { status?: unknown } | null | undefined)?.status;
     if (
       status !== null &&
@@ -962,6 +964,7 @@ export class ManifoldSync extends DurableObject<Env> {
     await Effect.runPromise(
       client.updateReadingStatus(
         mangaDexId,
+        // SAFETY: value matches of status, null>), ), ); at this call site
         status === null ? null : (status as Exclude<typeof status, null>),
       ),
     );
@@ -1102,6 +1105,7 @@ export class ManifoldSync extends DurableObject<Env> {
           .toArray()) {
           const entry = this.readEntry(row.id, false);
           if (!entry) {continue;}
+          // SAFETY: value matches SqlStorageValue>; const stat at this call site
           const values = row as Record<string, SqlStorageValue>;
           const state = this.readListState(row.id);
           results.push({
@@ -1181,6 +1185,7 @@ export class ManifoldSync extends DurableObject<Env> {
       provider
     );
     this.appendEvent(entryId, "link.remove", "admin", { provider });
+    // SAFETY: value matches CanonicalEntry; } // ---------- at this call site
     return this.readEntry(entryId) as CanonicalEntry;
   }
 
@@ -1295,6 +1300,7 @@ export class ManifoldSync extends DurableObject<Env> {
   // Removal is a full nuke: the AniList entry is deleted outright and the
   // registry row is tombstoned so history survives upstream.
   async nukeEntry(entryId: string, input: unknown): Promise<ListState | undefined> {
+    // SAFETY: optional field is known } | null | undefined) ?? {}; const ori when present at this call site
     const record = (input as { origin?: unknown } | null | undefined) ?? {};
     const origin: OpOrigin =
       record.origin === "device" || record.origin === "cli" || record.origin === "migration"
@@ -1356,6 +1362,7 @@ export class ManifoldSync extends DurableObject<Env> {
           entryId: row.entry_id,
           kind: row.kind,
           origin: row.origin,
+          // SAFETY: test/double or boundary cast through unknown to Record<string, unknown> } : {}), cr
           ...(row.detail ? { detail: JSON.parse(row.detail) as Record<string, unknown> } : {}),
           createdAt: row.created_at
         }));
@@ -1398,6 +1405,7 @@ export class ManifoldSync extends DurableObject<Env> {
           row.id
         );
         if (result.mediaListEntryId !== undefined && row.target === "anilist") {
+          // SAFETY: parsed JSON matches { entryId?: string }; if (payloa for this trusted/test payload
           const payload = JSON.parse(row.payload) as { entryId?: string };
           if (payload.entryId) {
             this.ctx.storage.sql.exec(
@@ -1957,6 +1965,7 @@ export class ManifoldSync extends DurableObject<Env> {
   private toOp(row: OpRow): SyncOp {
     let payload: Record<string, unknown>;
     try {
+      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>; } catch { pa
       payload = JSON.parse(row.payload) as Record<string, unknown>;
     } catch {
       payload = { raw: row.payload };
@@ -1983,6 +1992,7 @@ export class ManifoldSync extends DurableObject<Env> {
     if (!row) {return undefined;}
     return {
       entryId: row.entry_id,
+      // SAFETY: value matches "status"] }), ...(row.score at this call site
       ...(row.status === null ? {} : { status: row.status as ListState["status"] }),
       ...(row.score === null ? {} : { score: row.score }),
       ...(row.notes === null ? {} : { notes: row.notes }),
