@@ -6,8 +6,7 @@
  */
 import { createHash } from "node:crypto";
 import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
-import { getTabs } from "@cloudflare/nimbus-docs/lib/pkgm";
-import type { CommandType, CommandOptions } from "@cloudflare/nimbus-docs/lib/pkgm";
+import { getTabs, type CommandOptions, type CommandType } from "@cloudflare/nimbus-docs/lib/pkgm";
 import { LayerCard, LayerCardHeader } from "@/components/ui/layer-card";
 
 interface Props extends CommandOptions {
@@ -20,12 +19,14 @@ const tabs = getTabs(type, pkg, { args, dev, comment });
 // Prop hash + a per-page counter (on Astro.locals) so two blocks with
 // identical props still get distinct ids. Counter order is stable within a
 // render, so incremental/warm builds match cold — unlike crypto.randomUUID().
-// SAFETY: test/double or boundary cast through unknown to Record<string, unknown>; co
-const localsAny = Astro.locals as Record<string, unknown>;
+interface NbLocals {
+  __nbCounters?: Map<string, number>;
+}
+
+// SAFETY: this component owns __nbCounters on Astro.locals for the request
+const locals = Astro.locals as NbLocals;
 const counters =
-  // SAFETY: optional field is Map<string, number>) ?? when present at this call site
-  (localsAny.__nbCounters as Map<string, number>) ??
-  (localsAny.__nbCounters = new Map<string, number>());
+  locals.__nbCounters ?? (locals.__nbCounters = new Map<string, number>());
 const n = (counters.get("package-managers") ?? 0) + 1;
 counters.set("package-managers", n);
 const uid =
@@ -45,25 +46,25 @@ const uid =
       class extends HTMLElement {
         connectedCallback() {
           const card = this.closest("[data-nb-pm]");
-          if (!card) return;
+          if (!card) {return;}
           let saved;
           try {
             saved = sessionStorage.getItem("ui-pm-tab");
           } catch {
             return;
           }
-          if (!saved) return;
+          if (!saved) {return;}
           const tabs = card.querySelectorAll("[data-nb-pm-tab]");
           let idx = -1;
-          tabs.forEach(function (t, i) {
-            if (t.textContent.trim() === saved) idx = i;
+          tabs.forEach((t, i) => {
+            if (t.textContent.trim() === saved) {idx = i;}
           });
-          if (idx < 1) return;
-          tabs.forEach(function (t, i) {
+          if (idx < 1) {return;}
+          tabs.forEach((t, i) => {
             t.setAttribute("aria-selected", String(i === idx));
           });
           // SAFETY: DOM query returns the expected element type in this document
-          (card.querySelectorAll("[data-nb-pm-panel]") as NodeListOf<HTMLElement>).forEach(function (p, i) {
+          (card.querySelectorAll("[data-nb-pm-panel]") as NodeListOf<HTMLElement>).forEach((p, i) => {
             p.hidden = i !== idx;
           });
         }

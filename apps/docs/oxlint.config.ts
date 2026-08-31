@@ -1,11 +1,18 @@
 import { defineConfig } from "oxlint";
 
-import { antiSlopJsPlugins, antiSlopRules } from "../../oxlint.config.ts";
+import base, { agentIgnores, antiSlopJsPlugins } from "../../oxlint.config.ts";
 
-// Docs are Astro + MDX, so they deliberately skip the strict application
-// base (type-aware built-ins) and lint only the vendored anti-slop rules.
+// Object spread instead of oxlint `extends`: extends-based inheritance drops
+// env/globals/overrides from the parent config.
 // No direct `effect` dependency — generic anti-slop only.
 export default defineConfig({
+  ...base,
   jsPlugins: antiSlopJsPlugins("../.."),
-  rules: antiSlopRules,
+  ignorePatterns: [...agentIgnores, "*.d.ts", "**/*.d.ts", "dist/**", ".astro/**"],
+  env: { node: true, browser: true, es2022: true },
+  globals: {
+    ...base.globals,
+    Astro: "readonly",
+    Fragment: "readonly",
+  },
 });

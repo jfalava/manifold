@@ -12,11 +12,15 @@
 import { getCollection, getEntry, render } from "astro:content";
 import { components } from "../components";
 
+interface PartialParams {
+  readonly [name: string]: string;
+}
+
 interface Props {
   /** Partial ID — path relative to src/content/partials/ without extension. */
   file: string;
   /** Parameters passed to the partial as props. */
-  params?: Record<string, unknown>;
+  params?: PartialParams;
 }
 
 const { file, params } = Astro.props;
@@ -75,19 +79,19 @@ const { Content } = await render(partial);
 
 /** Levenshtein distance — inlined to keep this component dep-free. */
 function distance(a: string, b: string): number {
-  if (a === b) return 0;
-  if (!a.length) return b.length;
-  if (!b.length) return a.length;
-  const v0 = new Array<number>(b.length + 1);
-  const v1 = new Array<number>(b.length + 1);
-  for (let i = 0; i <= b.length; i++) v0[i] = i;
+  if (a === b) {return 0;}
+  if (!a.length) {return b.length;}
+  if (!b.length) {return a.length;}
+  const v0 = Array.from({ length: b.length + 1 }, () => 0);
+  const v1 = Array.from({ length: b.length + 1 }, () => 0);
+  for (let i = 0; i <= b.length; i++) {v0[i] = i;}
   for (let i = 0; i < a.length; i++) {
     v1[0] = i + 1;
     for (let j = 0; j < b.length; j++) {
       const cost = a[i] === b[j] ? 0 : 1;
       v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
     }
-    for (let j = 0; j <= b.length; j++) v0[j] = v1[j];
+    for (let j = 0; j <= b.length; j++) {v0[j] = v1[j];}
   }
   return v1[b.length];
 }
@@ -97,7 +101,7 @@ function closest(target: string, candidates: string[], maxDist = 3): string | nu
   let best: { name: string; dist: number } | null = null;
   for (const c of candidates) {
     const d = distance(t, c.toLowerCase());
-    if (d <= maxDist && (!best || d < best.dist)) best = { name: c, dist: d };
+    if (d <= maxDist && (!best || d < best.dist)) {best = { name: c, dist: d };}
   }
   return best?.name ?? null;
 }

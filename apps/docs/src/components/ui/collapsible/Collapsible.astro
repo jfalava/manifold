@@ -8,12 +8,12 @@ interface Props extends HTMLAttributes<"div"> {
   open?: boolean;
 }
 
-const { open = false, class: className, ...attrs } = Astro.props;
+const { open: startsOpen = false, class: className, ...attrs } = Astro.props;
 ---
 
 <div
   data-nb-collapsible
-  data-nb-default-open={open ? "true" : undefined}
+  data-nb-default-open={startsOpen ? "true" : undefined}
   class={cn(className)}
   {...attrs}
 >

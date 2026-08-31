@@ -18,49 +18,49 @@
  *     `shadow-lg`, etc. as color names — they collide with built-ins)
  * ============================================================ */
 
-/* ---- Light mode (default) ---- */
+/* ---- Light mode (default) — tokens from jfa.dev branding ---- */
 :root {
 	color-scheme: light;
 
 	/* Surfaces (paired with foregrounds for contrast) */
-	--nb-background: oklch(0.99 0 0);
-	--nb-foreground: oklch(0.21 0 0);
+	--nb-background: oklch(1 0 0);
+	--nb-foreground: oklch(0.205 0 0);
 
 	--nb-card: oklch(1 0 0);
 	--nb-card-foreground: var(--nb-foreground);
 
-	--nb-muted: oklch(0.967 0 0);
-	--nb-muted-foreground: oklch(0.556 0 0);
+	--nb-muted: oklch(0.97 0 0);
+	--nb-muted-foreground: oklch(0.45 0 0);
 
-	--nb-accent: oklch(0.967 0 0);
+	--nb-accent: oklch(0.97 0 0);
 	--nb-accent-foreground: var(--nb-foreground);
 
-	/* Primary action / brand */
-	--nb-primary: oklch(0.145 0 0);
-	--nb-primary-foreground: oklch(0.97 0 0);
-	--nb-primary-hover: oklch(0.371 0 0);
+	/* Primary action / brand (violet) */
+	--nb-primary: oklch(0.511 0.262 276.966);
+	--nb-primary-foreground: oklch(0.985 0 0);
+	--nb-primary-hover: oklch(0.45 0.24 276.966);
 
 	/* Borders / focus */
-	--nb-border: oklch(0.935 0 0);
+	--nb-border: oklch(0.925 0 0);
 	--nb-border-strong: oklch(0.87 0 0);
 	--nb-selected: oklch(0.89 0 0);
-	--nb-ring: oklch(0.145 0 0 / 0.35);
+	--nb-ring: oklch(0.55 0 0);
 
 	/* Status colors — paired (saturated for text/border + muted for bg) */
 	--nb-info: oklch(0.45 0.18 255);
 	--nb-info-foreground: oklch(0.45 0.18 255);
 	--nb-info-muted: oklch(0.965 0.015 255);
 
-	--nb-success: oklch(0.42 0.14 152);
-	--nb-success-foreground: oklch(0.42 0.14 152);
-	--nb-success-muted: oklch(0.965 0.015 152);
+	--nb-success: oklch(0.596 0.145 163.225);
+	--nb-success-foreground: oklch(0.596 0.145 163.225);
+	--nb-success-muted: oklch(0.965 0.015 163);
 
 	--nb-warning: oklch(0.48 0.15 65);
 	--nb-warning-foreground: oklch(0.48 0.15 65);
 	--nb-warning-muted: oklch(0.97 0.02 70);
 
-	--nb-danger: oklch(0.47 0.18 25);
-	--nb-danger-foreground: oklch(0.47 0.18 25);
+	--nb-danger: oklch(0.577 0.245 27.325);
+	--nb-danger-foreground: oklch(0.577 0.245 27.325);
 	--nb-danger-muted: oklch(0.965 0.015 25);
 
 	/* Layout */
@@ -68,28 +68,42 @@
 	--nb-toc-width: 18rem;
 	--nb-content-max: 43.5rem;
 
-	/* Typography — self-hosted via @fontsource-variable in BaseLayout.astro */
+	/* Typography — IBM Plex Sans / Zilla Slab / Google Sans Code (jfa.dev) */
 	--nb-font-sans:
-		"Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
-		sans-serif;
+		"IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+		"Segoe UI", sans-serif;
+	--nb-font-serif: "Zilla Slab", ui-serif, Georgia, Cambria, "Times New Roman", serif;
 	--nb-font-mono:
-		"JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code",
-		"Source Code Pro", Menlo, Consolas, monospace;
-	--nb-h1-size: 2.1875rem;
+		"Google Sans Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+		"Liberation Mono", "Courier New", monospace;
+	/* Heading branding — IBM Plex, uppercase, tracking-tighter (jfa.dev Section) */
+	--nb-h1-size: 2.25rem;
 	--nb-h1-weight: 600;
-	--nb-h1-tracking: -0.025em;
-	--nb-h2-size: 1.3rem;
-	--nb-h2-weight: 650;
-	--nb-h2-tracking: -0.015em;
-	--nb-h3-size: 1.1rem;
+	--nb-h1-tracking: -0.05em;
+	--nb-h1-transform: uppercase;
+	--nb-h1-leading: 0.95;
+	--nb-h2-size: 1.5rem;
+	--nb-h2-weight: 600;
+	--nb-h2-tracking: -0.04em;
+	--nb-h2-transform: uppercase;
+	--nb-h2-leading: 0.95;
+	--nb-h3-size: 1.125rem;
 	--nb-h3-weight: 600;
-	--nb-h3-tracking: -0.01em;
+	--nb-h3-tracking: -0.02em;
 	--nb-h4-weight: 600;
 
 	/* Shadows */
 	--nb-shadow-sm: 0 1px 2px oklch(0 0 0 / 0.04);
 	--nb-shadow: 0 1px 3px oklch(0 0 0 / 0.06), 0 1px 2px oklch(0 0 0 / 0.04);
 	--nb-shadow-lg: 0 4px 12px oklch(0 0 0 / 0.08), 0 2px 4px oklch(0 0 0 / 0.04);
+}
+
+/* Heading scale up — closer to jfa.dev Section titles on wider canvases */
+@media (min-width: 640px) {
+	:root {
+		--nb-h1-size: 3rem;
+		--nb-h2-size: 1.75rem;
+	}
 }
 
 /* Wider content area on large displays (e.g. MacBook Pro 16″) */
@@ -99,45 +113,45 @@
 	}
 }
 
-/* ---- Dark mode ---- */
+/* ---- Dark mode — tokens from jfa.dev branding ---- */
 [data-mode="dark"] {
 	color-scheme: dark;
 
-	--nb-background: oklch(0.085 0 0);
-	--nb-foreground: oklch(0.97 0 0);
+	--nb-background: oklch(0.15 0 0);
+	--nb-foreground: oklch(0.985 0 0);
 
-	--nb-card: #0F0F0F;
+	--nb-card: oklch(0.18 0 0);
 	--nb-card-foreground: var(--nb-foreground);
 
-	--nb-muted: #060606;
-	--nb-muted-foreground: oklch(0.556 0 0);
+	--nb-muted: oklch(0.25 0 0);
+	--nb-muted-foreground: oklch(0.7 0 0);
 
-	--nb-accent: oklch(0.269 0 0);
+	--nb-accent: oklch(0.25 0 0);
 	--nb-accent-foreground: var(--nb-foreground);
 
-	--nb-primary: oklch(0.9 0 0);
-	--nb-primary-foreground: oklch(0.085 0 0);
-	--nb-primary-hover: oklch(0.7 0 0);
+	--nb-primary: oklch(0.673 0.182 276.935);
+	--nb-primary-foreground: oklch(0.15 0 0);
+	--nb-primary-hover: oklch(0.74 0.16 276.935);
 
-	--nb-border: oklch(0.269 0 0);
-	--nb-border-strong: oklch(0.371 0 0);
-	--nb-selected: oklch(0.371 0 0);
-	--nb-ring: oklch(0.9 0 0 / 0.35);
+	--nb-border: oklch(1 0 0 / 12%);
+	--nb-border-strong: oklch(1 0 0 / 20%);
+	--nb-selected: oklch(0.3 0 0);
+	--nb-ring: oklch(0.7 0 0);
 
 	--nb-info: oklch(0.75 0.12 255);
 	--nb-info-foreground: oklch(0.75 0.12 255);
 	--nb-info-muted: oklch(0.17 0.03 260);
 
-	--nb-success: oklch(0.72 0.12 150);
-	--nb-success-foreground: oklch(0.72 0.12 150);
-	--nb-success-muted: oklch(0.17 0.025 153);
+	--nb-success: oklch(0.696 0.17 162.48);
+	--nb-success-foreground: oklch(0.696 0.17 162.48);
+	--nb-success-muted: oklch(0.17 0.025 163);
 
 	--nb-warning: oklch(0.78 0.11 80);
 	--nb-warning-foreground: oklch(0.78 0.11 80);
 	--nb-warning-muted: oklch(0.19 0.03 70);
 
-	--nb-danger: oklch(0.72 0.14 25);
-	--nb-danger-foreground: oklch(0.72 0.14 25);
+	--nb-danger: oklch(0.704 0.191 22.216);
+	--nb-danger-foreground: oklch(0.704 0.191 22.216);
 	--nb-danger-muted: oklch(0.17 0.03 25);
 
 	--nb-shadow-sm: 0 1px 2px oklch(0 0 0 / 0.2);
@@ -188,6 +202,7 @@
 	--color-danger-muted: var(--nb-danger-muted);
 
 	--font-sans: var(--nb-font-sans);
+	--font-serif: var(--nb-font-serif);
 	--font-mono: var(--nb-font-mono);
 
 	--shadow-sm: var(--nb-shadow-sm);
@@ -198,7 +213,6 @@
 /* ---- Minimal overrides the plugin doesn't cover ---- */
 html {
 	font-family: var(--nb-font-sans);
-	font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
 body {

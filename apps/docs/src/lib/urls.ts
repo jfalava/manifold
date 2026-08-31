@@ -43,11 +43,11 @@ export function withBasePrevNext(value: PrevNext): PrevNext {
 }
 
 export function withBaseInText(value: string, site: string, paths: string[]): string {
-  if (basePrefix === "") return value;
+  if (basePrefix === "") {return value;}
 
-  const origin = new URL(site).origin;
+  const siteOrigin = new URL(site).origin;
   return paths.reduce(
-    (text, path) => text.replaceAll(`${origin}${path}`, `${origin}${withBase(path)}`),
+    (text, path) => text.replaceAll(`${siteOrigin}${path}`, `${siteOrigin}${withBase(path)}`),
     value,
   );
 }

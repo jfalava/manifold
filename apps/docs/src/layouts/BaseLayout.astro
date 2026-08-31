@@ -1,6 +1,16 @@
 ---
-import "@fontsource-variable/inter";
-import "@fontsource-variable/jetbrains-mono";
+import "@fontsource/ibm-plex-sans/400.css";
+import "@fontsource/ibm-plex-sans/500.css";
+import "@fontsource/ibm-plex-sans/600.css";
+import "@fontsource/ibm-plex-sans/700.css";
+import "@fontsource/zilla-slab/400.css";
+import "@fontsource/zilla-slab/500.css";
+import "@fontsource/zilla-slab/600.css";
+import "@fontsource/zilla-slab/700.css";
+import "@fontsource/google-sans-code/400.css";
+import "@fontsource/google-sans-code/500.css";
+import "@fontsource/google-sans-code/600.css";
+import "@fontsource/google-sans-code/700.css";
 import "../styles/globals.css";
 import "../styles/prose.css";
 import { config } from "virtual:nimbus/config";
@@ -67,8 +77,8 @@ const llmsUrl = Astro.site
         const applyTheme = () => {
           const root = document.documentElement;
           const mode = resolveMode();
-          if (mode === "dark") root.setAttribute("data-mode", "dark");
-          else root.removeAttribute("data-mode");
+          if (mode === "dark") {root.setAttribute("data-mode", "dark");}
+          else {root.removeAttribute("data-mode");}
           root.style.colorScheme = mode;
           document.querySelectorAll("[data-nb-theme-toggle]").forEach((b) => {
             b.setAttribute("data-nb-state", mode);
@@ -77,10 +87,10 @@ const llmsUrl = Astro.site
 
         applyTheme();
         media.addEventListener("change", () => {
-          if (!readPref()) applyTheme();
+          if (!readPref()) {applyTheme();}
         });
         window.addEventListener("storage", (e) => {
-          if (e.key === KEY) applyTheme();
+          if (e.key === KEY) {applyTheme();}
         });
 
         window.__nbApplyTheme = applyTheme;

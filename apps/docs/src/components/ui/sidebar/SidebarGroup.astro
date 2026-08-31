@@ -50,8 +50,8 @@ const {
   ...attrs
 } = Astro.props;
 
-function hasActiveDescendant(items: SidebarItem[]): boolean {
-  return items.some((item) =>
+function hasActiveDescendant(nodes: SidebarItem[]): boolean {
+  return nodes.some((item) =>
     item.type === "link"
       ? Boolean(item.isCurrent)
       : item.type === "group"

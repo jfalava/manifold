@@ -5,20 +5,29 @@ import { tableScroll } from "@cloudflare/nimbus-docs/markdown";
 
 const nimbusConfig = defineNimbusConfig({
   site: "https://manifold.jfa.dev",
-  title: "Manga Sync",
-  description: "Production documentation for the personal Manga Sync stack and its Paperback source.",
+  title: "MANIFOLD",
+  description: "Production documentation for Manifold and its Paperback source.",
   locale: "en",
-  homeLabel: "Manga Sync",
+  homeLabel: "Manifold",
   github: null,
   sidebar: {
     scope: "full",
     items: [
-      { label: "Start here", items: ["get-started"] },
-      { label: "Workers", autogenerate: { directory: "workers" } },
-      { label: "Paperback", items: ["source-repository"] },
+      {
+        label: "CLI",
+        items: [
+          "cli",
+          { label: "migrate", autogenerate: { directory: "cli/migrate" } },
+          { label: "ops", autogenerate: { directory: "cli/ops" } },
+          { label: "registry", autogenerate: { directory: "cli/registry" } },
+          "cli/reconcile-diff",
+          "cli/stale-status",
+          "cli/unfollow-dropped",
+        ],
+      },
     ],
   },
-  socialImageAlt: "Manga Sync documentation preview",
+  socialImageAlt: "Manifold documentation preview",
 });
 
 export default defineConfig({

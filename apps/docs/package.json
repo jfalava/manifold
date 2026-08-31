@@ -6,7 +6,7 @@
   "scripts": {
     "build": "bun scripts/build.ts",
     "typecheck": "astro check",
-    "lint": "bun run lint:oxlint && bun run lint:docs",
+    "lint": "bun run lint:oxlint && bun run lint:astro && bun run lint:docs",
     "lint:docs": "nimbus-docs lint",
     "lint:docs:fix": "nimbus-docs lint --fix",
     "lint:oxlint": "oxlint src",
@@ -25,10 +25,11 @@
     "preview:cf": "wrangler dev"
   },
   "dependencies": {
+    "@manifold/json": "workspace:*",
     "@cloudflare/nimbus-docs": "catalog:docs",
-    "@fontsource-variable/inter": "catalog:fonts",
-    "@fontsource-variable/jetbrains-mono": "catalog:fonts",
-    "@fontsource/google-sans-code": "5.3.0",
+    "@fontsource/google-sans-code": "catalog:fonts",
+    "@fontsource/ibm-plex-sans": "catalog:fonts",
+    "@fontsource/zilla-slab": "catalog:fonts",
     "@iconify-json/ph": "catalog:docs",
     "astro": "catalog:docs",
     "astro-icon": "1.2.0",
