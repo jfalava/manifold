@@ -12,7 +12,7 @@ bun run manifold migrate anilist-to-mangadex [flags]
 
 Also registered as `manifold migrate migrate` (Effect command name). The historical `al2md` script name in `apps/cli` is not the CLI path.
 
-Fetches your AniList manga list, matches titles on MangaDex, then sets reading status and optionally marks chapters up to AniList progress.
+Fetches your AniList manga list, matches titles on MangaDex, then sets reading status and optionally marks chapters up to AniList progress. Runs entirely locally because AniList blocks Cloudflare Worker IPs.
 
 ## Flags
 
@@ -23,6 +23,27 @@ Fetches your AniList manga list, matches titles on MangaDex, then sets reading s
 | `--skip-progress` | `false` | Skip chapter read-marker backfill |
 | `--mangadex-client-id` / `--secret` / `--username` / `--password` | env | **Required** (password grant only — no personal-token path) |
 
+## Matching and status map
+
+Per AniList entry:
+
+1. MangaDex `links.al` direct hit
+2. Normalized title search
+
+AniList → MangaDex status mapping:
+
+| AniList | MangaDex |
+| --- | --- |
+| CURRENT | `reading` |
+| REPEATING | `re_reading` |
+| PAUSED | `on_hold` |
+| PLANNING | `plan_to_read` |
+| COMPLETED | `completed` |
+| DROPPED | `dropped` |
+
+Chapter backfill marks read every chapter numbered up to the AniList progress
+value (unless `--skip-progress`).
+
 ## Workflow
 
 ```text
@@ -30,7 +51,7 @@ bun run manifold migrate anilist-to-mangadex
 bun run manifold migrate anilist-to-mangadex --apply
 ```
 
-Unmatched titles and per-title failures leave a non-zero exit code. Prefer a dry-run first on a large list.
+Unmatched titles and per-title failures leave a non-zero exit code. Prefer a dry-run first on a large list. Secrets live in `iac/.env` — see `iac/.env.example`.
 
 <Aside type="caution" title="Credentials">
   Unlike `md2al`, this path does not accept a MangaDex personal token. You need the OAuth client + username/password grant env vars.

@@ -1,0 +1,54 @@
+---
+title: Architecture
+description: How Manifold is deployed — Workers, paths, and the production-only stack.
+audience: human
+sidebar:
+  order: 1
+---
+
+Manifold is personal-first synchronization for a unified Paperback source. One
+public hostname serves documentation, the sync API, and the Paperback catalog.
+
+## Production surface
+
+There is **no** separate development stack or `workers.dev` endpoint.
+Deployments go through Alchemy (`iac/`).
+
+| Worker | Role |
+| --- | --- |
+| `ManifoldRouter` | Owns `manifold.jfa.dev`; routes by path |
+| `SyncApi` | HTTP API, personal Durable Object, Paperback catalog |
+| `ManifoldDocs` | Static Nimbus documentation site |
+
+The router mounts:
+
+| Path | Upstream |
+| --- | --- |
+| `/` | Documentation (`ManifoldDocs`) |
+| `/api/*` | Sync API (`SyncApi`) |
+| `/paperback/*` | Paperback catalog / extension artifacts (`SyncApi`) |
+
+Provider cookies for Comix stay on the device inside Paperback's in-app browser.
+They are never sent through the sync API.
+
+## Workspace layout
+
+```text
+iac/                      Alchemy stack and production deployment
+apps/router/              Path router and Worker service bindings
+apps/api/                 Sync API, ManifoldSync DO, Paperback catalog
+apps/cli/                 manifold CLI
+apps/docs/                This documentation site
+apps/admin/               Internal admin panel
+packages/canonical/       AniList/MAL identity and progress contracts
+packages/mangadex/        MangaDex API adapter
+packages/comix/           Comix browser-backed adapter
+packages/paperback-*/     Shared Paperback plugin runtime pieces
+source/                   ManifoldSource content extension
+tracker/                  ManifoldTracker tracker extension
+```
+
+Only `iac` owns production deployment. `plan` and `deploy` rebuild the
+Paperback catalog first — bundle outputs are gitignored, so Alchemy's build
+cache alone cannot detect extension changes. Non-interactive deploys need
+`bun run deploy -- --yes`.

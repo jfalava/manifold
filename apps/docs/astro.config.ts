@@ -14,6 +14,10 @@ const nimbusConfig = defineNimbusConfig({
     scope: "full",
     items: [
       {
+        label: "Guides",
+        items: ["architecture", "auth", "paperback", "development"],
+      },
+      {
         label: "CLI",
         items: [
           "cli",

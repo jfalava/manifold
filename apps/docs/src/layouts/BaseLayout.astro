@@ -57,8 +57,11 @@ const llmsUrl = Astro.site
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-    <script>
+    {/*
+      Must be is:inline + first in <head>. A bundled <script> is deferred as a
+      module and paints light :root before data-mode is set (FOUC on every nav).
+    */}
+    <script is:inline>
       (() => {
         const KEY = "ui-mode";
         const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -77,9 +80,11 @@ const llmsUrl = Astro.site
         const applyTheme = () => {
           const root = document.documentElement;
           const mode = resolveMode();
-          if (mode === "dark") {root.setAttribute("data-mode", "dark");}
-          else {root.removeAttribute("data-mode");}
+          if (mode === "dark") root.setAttribute("data-mode", "dark");
+          else root.removeAttribute("data-mode");
           root.style.colorScheme = mode;
+          // Bridge the gap before CSS tokens paint (nav hard-loads).
+          root.style.backgroundColor = mode === "dark" ? "oklch(0.15 0 0)" : "oklch(1 0 0)";
           document.querySelectorAll("[data-nb-theme-toggle]").forEach((b) => {
             b.setAttribute("data-nb-state", mode);
           });
@@ -87,10 +92,10 @@ const llmsUrl = Astro.site
 
         applyTheme();
         media.addEventListener("change", () => {
-          if (!readPref()) {applyTheme();}
+          if (!readPref()) applyTheme();
         });
         window.addEventListener("storage", (e) => {
-          if (e.key === KEY) {applyTheme();}
+          if (e.key === KEY) applyTheme();
         });
 
         window.__nbApplyTheme = applyTheme;

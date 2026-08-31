@@ -10,7 +10,10 @@ sidebar:
 bun run manifold migrate wipe-al [flags]
 ```
 
-**Destructive.** Scans your AniList profile, then deletes **all** manga list entries and **all** manga-related activities. Anime is never touched.
+**Destructive.** Port of the AniList manga bulk-delete approach: scans your
+AniList profile, then deletes **all** manga list entries and **all**
+manga-related activities (list updates and text posts matching manga keywords).
+Anime is never touched.
 
 There is no dry-run mode: the command scans, prompts, then deletes. Pass `--yes` only when you intend to skip the interactive confirms.
 

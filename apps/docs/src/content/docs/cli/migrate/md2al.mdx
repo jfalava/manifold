@@ -25,10 +25,22 @@ Exports your MangaDex library, matches each title to AniList (external links, ti
 | `--phase` | `all` | `all` \| `export` \| `match` \| `push` |
 | `--mangadex-client-id` / `--secret` / `--username` / `--password` | env | Password-grant fallback when no personal token |
 
+## Matching
+
+Per title, matching prefers:
+
+1. AniList external link (`links.al`)
+2. MAL external link (`links.mal`)
+3. Title search
+4. Vectorize embeddings (Workers AI) when candidates remain ambiguous
+
+Exact title matches can bypass the embedding acceptance bar. AniList writes are
+spaced (~1.2–2.5 s) with 429 backoff on library-wide passes.
+
 ## Workflow
 
 1. **Export** — MangaDex library + read markers into `.tmp`
-2. **Match** — AniList candidates via links, titles, embeddings
+2. **Match** — cascade above into AniList candidates
 3. **Push** — `SaveMediaListEntry` as private (+ optional progress)
 
 Phases are resumable. Delete the CLI `.tmp` directory to force a fresh pass. Long MangaDex runs refresh the token about every 15 minutes.
@@ -36,8 +48,12 @@ Phases are resumable. Delete the CLI `.tmp` directory to force a fresh pass. Lon
 ```text
 bun run manifold migrate md2al              # dry-run
 bun run manifold migrate md2al --apply
+bun run manifold migrate md2al --skip-progress --apply
 bun run manifold migrate md2al --phase match --use-cache
 ```
+
+MangaDex auth falls back to password-grant credentials in `iac/.env`, or pass
+`--mangadex-token` with a personal token that has `manga.read` scope.
 
 <Aside type="note" title="Local AniList writes">
   AniList blocks Cloudflare Worker IPs. This command always runs on your machine.

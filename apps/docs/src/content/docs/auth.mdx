@@ -1,0 +1,42 @@
+---
+title: Authentication
+description: AniList, MyAnimeList, MangaDex, and device-local Comix access.
+audience: human
+sidebar:
+  order: 2
+---
+
+Manifold keeps upstream credentials on the personal Durable Object. Tokens are
+encrypted before storage. Comix never uses Worker-side cookies.
+
+## Supported providers
+
+| Provider | How you authenticate |
+| --- | --- |
+| AniList | Browser OAuth (device / PIN flows for CLI) |
+| MyAnimeList | Browser OAuth |
+| MangaDex | Personal-client (password grant or personal token) |
+| Comix | Paperback in-app browser on the device |
+
+## Sync API tokens
+
+The Paperback source and CLI talk to the personal API with `MANIFOLD_TOKEN`
+(Alchemy secret `ALCHEMY_SECRET_MANIFOLD_TOKEN`). That token authorizes access
+to your Durable Object — it is not an upstream AniList/MangaDex password.
+
+Upstream OAuth tokens (AniList, MAL, MangaDex) are obtained through the API's
+auth routes and stored encrypted on the DO. Worker egress cannot call AniList
+reliably (IP blocks), which is why AniList **writes** from migrations and
+`anilist:*` ops run on your machine or device.
+
+## Comix is device-local
+
+Comix access is established inside Paperback's in-app browser (Turnstile /
+Cloudflare clearance). Those cookies stay on the device. The CLI Comix prefill
+uses a local headed Chrome session for the same reason — it does not paste
+`cf_clearance` into Worker `fetch`.
+
+<Aside type="caution" title="Do not copy cookies into the Worker">
+  Comix session cookies must not be uploaded to the personal API or canonical
+  database. Keep them on the device that solved the check.
+</Aside>

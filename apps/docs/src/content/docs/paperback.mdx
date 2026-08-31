@@ -1,0 +1,54 @@
+---
+title: Paperback
+description: Install the Manifold source repository and complete first-run setup.
+audience: human
+sidebar:
+  order: 3
+---
+
+## Source repository
+
+Add this URL in Paperback under **Settings → Extensions → Add repository**:
+
+```text
+https://manifold.jfa.dev/paperback/extensions/0.9/stable/
+```
+
+The repository publishes the unified Manifold source (MangaDex, then Comix).
+Manifest:
+
+```text
+https://manifold.jfa.dev/paperback/extensions/0.9/stable/versioning.json
+```
+
+## First-run setup
+
+1. Install the source from the repository above.
+2. Open its settings and set **`MANIFOLD_TOKEN`** from the production Alchemy
+   environment. The source stores it in Paperback secure state and uses it only
+   for the personal API.
+3. Search and open titles as usual. Opening a result creates the personal entry
+   if needed, then links MangaDex when available; Comix is used when MangaDex
+   has no match.
+
+## Comix Cloudflare check
+
+When Comix presents a challenge, use **Open Comix** in the source settings and
+complete it in Paperback's in-app browser. Cookies remain on the device.
+
+## Surfaces
+
+| Surface | URL |
+| --- | --- |
+| Documentation | `https://manifold.jfa.dev/` |
+| Sync API | `https://manifold.jfa.dev/api/v1/` |
+| Health | `https://manifold.jfa.dev/api/health` |
+| Repository | `https://manifold.jfa.dev/paperback/extensions/0.9/stable/` |
+
+Read progress syncs through the source: finish a chapter on a library title and
+the source queues the read to the personal API
+
+```text
+Paperback → POST /api/v1/entries/:entryId/read
+         → Durable Object outbox → MangaDex POST /manga/:mangaId/read
+```
