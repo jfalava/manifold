@@ -1,9 +1,3 @@
 [install]
-minimumReleaseAgeExcludes = [
-  "@types/node",
-  "effect",
-  "@effect/*",
-  "@cloudflare/workers-types",
-  "@alchemy.run",
-]
+minimumReleaseAgeExcludes = ["@types/node", "effect", "@effect/*", "@cloudflare/workers-types"]
 minimumReleaseAge = 86400
