@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { JsonObject, JsonValue } from "@manifold/json";
+
 import {
   chromeLaunchArgs,
   classifyPage,
@@ -11,16 +13,16 @@ import {
   waitForChromeDevToolsUrl,
   type ComixView,
 } from "../src/comix-capture";
-import type { ComixCookie } from "../src/comix-session";
+import { cookiesFromCdp, type ComixCookie } from "../src/comix-session";
 
 class FakeView implements ComixView {
   title = "";
   url = "";
   navigations: string[] = [];
-  cdpCalls: { method: string; params?: Record<string, unknown> }[] = [];
+  cdpCalls: { method: string; params?: JsonObject }[] = [];
   cookies: ComixCookie[] = [];
   closed = false;
-  pages = new Map<string, { title: string; html: string; payload: unknown }>();
+  pages = new Map<string, { title: string; html: string; payload: JsonValue }>();
 
   async navigate(next: string): Promise<void> {
     this.navigations.push(next);
@@ -28,7 +30,7 @@ class FakeView implements ComixView {
     this.title = this.pages.get(next)?.title ?? "";
   }
 
-  async evaluate<T = unknown>(script: string): Promise<T> {
+  async evaluate<T = JsonValue>(script: string): Promise<T> {
     const page = this.pages.get(this.url);
     if (script.includes("document.title")) {
       // SAFETY: value matches T at this call site
@@ -49,12 +51,10 @@ class FakeView implements ComixView {
     throw new Error(`unexpected evaluate: ${script}`);
   }
 
-  async cdp<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
+  async cdp<T = JsonValue>(method: string, params?: JsonObject): Promise<T> {
     this.cdpCalls.push({ method, params });
     if (method === "Network.setCookies") {
-      const cookies = Array.isArray(params?.cookies) ? params.cookies : [];
-      // SAFETY: value matches ComixCookie[] at this call site
-      this.cookies = cookies as ComixCookie[];
+      this.cookies = params === undefined ? [] : cookiesFromCdp(params);
       // SAFETY: value matches T at this call site
       return {} as T;
     }

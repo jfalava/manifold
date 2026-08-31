@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
+import { errorMessage, isJsonObject, type JsonValue } from "@manifold/json";
 
 import {
   fetchAniListMangaEntries,
@@ -65,7 +66,7 @@ export const apiCall = async <A>(
   config: ApiConfig,
   path: string,
   method = "GET",
-  body?: unknown
+  body?: JsonValue
 ): Promise<A> => {
   const response = await fetch(`${config.origin}${path}`, {
     method,
@@ -77,13 +78,12 @@ export const apiCall = async <A>(
     ...(!(body === undefined) && { body: JSON.stringify(body) })
   });
   const text = await response.text();
+  // SAFETY: API JSON body is decoded via isJsonObject below, then asserted to A
   const parsed: unknown = text.length > 0 ? JSON.parse(text) : undefined;
   if (!response.ok) {
-    // SAFETY: value is { error: unknown }).error) at this site
     const message =
-      typeof parsed === "object" && parsed !== null && "error" in parsed
-        // SAFETY: test/double or boundary cast through unknown to { error: unknown }
-        ? String((parsed as { error: unknown }).error)
+      isJsonObject(parsed) && parsed.error !== undefined
+        ? errorMessage(parsed.error)
         : `HTTP ${response.status}`;
     throw new Error(message);
   }
@@ -181,7 +181,7 @@ export const opsCommand = Command.make("ops").pipe(
               throw error;
             }
           },
-          catch: (cause) => new Error(cause instanceof Error ? cause.message : String(cause)),
+          catch: (cause) => new Error(errorMessage(cause)),
         }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
       ),
     ),
@@ -204,7 +204,7 @@ export const opsCommand = Command.make("ops").pipe(
               throw error;
             }
           },
-          catch: (cause) => new Error(cause instanceof Error ? cause.message : String(cause)),
+          catch: (cause) => new Error(errorMessage(cause)),
         }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
       ),
     ),
@@ -261,7 +261,7 @@ export const reconcileCommand = Command.make("diff", {
           throw error;
         }
       },
-      catch: (cause) => new Error(cause instanceof Error ? cause.message : String(cause)),
+      catch: (cause) => new Error(errorMessage(cause)),
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),
 );
@@ -326,7 +326,7 @@ export const importCommand = Command.make("import", {
           throw error;
         }
       },
-      catch: (cause) => new Error(cause instanceof Error ? cause.message : String(cause)),
+      catch: (cause) => new Error(errorMessage(cause)),
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),
 );

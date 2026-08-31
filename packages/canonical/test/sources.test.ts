@@ -1,11 +1,19 @@
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 import {
+  isJsonObject,
+  isJsonValue,
+  isString,
+  requestHref,
+  requestInitText,
+  type JsonValue,
+} from "@manifold/json";
+import {
   createAniListSource,
   createMyAnimeListSource,
 } from "../src/sources";
 
-const jsonResponse = (body: unknown, status = 200): Response =>
+const jsonResponse = (body: JsonValue, status = 200): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/json" },
@@ -13,10 +21,14 @@ const jsonResponse = (body: unknown, status = 200): Response =>
 
 describe("AniList canonical source", () => {
   it("searches manga and normalizes stable ids, aliases, metadata, and external links", async () => {
-    let requestBody: unknown;
+    let requestBody: JsonValue | undefined;
     const source = createAniListSource({
       fetcher: async (_input, init) => {
-        requestBody = JSON.parse(String(init?.body));
+        const bodyText = requestInitText(init);
+        if (bodyText !== undefined) {
+          const parsed: unknown = JSON.parse(bodyText);
+          requestBody = isJsonValue(parsed) ? parsed : undefined;
+        }
         return jsonResponse({
           data: {
             Page: {
@@ -110,12 +122,7 @@ describe("AniList canonical source", () => {
       status: 403,
     });
     const message =
-      typeof error === "object" &&
-      error !== null &&
-      "message" in error &&
-      typeof error.message === "string"
-        ? error.message
-        : "";
+      isJsonObject(error) && isString(error.message) ? error.message : "";
     expect(message).toContain("You have been manually blocked");
   });
 });
@@ -127,7 +134,7 @@ describe("MyAnimeList canonical source", () => {
     const source = createMyAnimeListSource({
       clientId: "mal-client",
       fetcher: async (input, init) => {
-        requestUrl = new URL(input.toString());
+        requestUrl = new URL(requestHref(input));
         requestHeaders = new Headers(init?.headers);
         return jsonResponse({
           data: [

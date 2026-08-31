@@ -71,9 +71,8 @@ export const waitForEnterInFrame = async (message: string): Promise<void> => {
 
 // ---------- run factory ----------
 
-export interface RunContext {
-  [key: string]: unknown;
-}
+/** Listr context bag; command modules extend this with their own fields. */
+export interface RunContext {}
 
 type RunTask<Ctx extends RunContext = RunContext> = ListrTask<Ctx>;
 

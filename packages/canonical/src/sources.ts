@@ -1,5 +1,16 @@
 import * as Effect from "effect/Effect";
 import {
+  arrayField,
+  isJsonArray,
+  isJsonObject,
+  isString,
+  numberField,
+  objectField,
+  stringField,
+  type JsonObject,
+  type JsonValue,
+} from "@manifold/json";
+import {
   canonicalId,
   type CanonicalEntry,
   type CanonicalMetadata,
@@ -28,41 +39,24 @@ export interface MyAnimeListSourceOptions {
   readonly endpoint?: string;
 }
 
-type JsonRecord = Record<string, unknown>;
-
 /** Parsed JSON body from a canonical provider HTTP response. */
-export type CanonicalJson =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly CanonicalJson[]
-  | { readonly [key: string]: CanonicalJson };
+export type CanonicalJson = JsonValue;
 
 const defaultFetcher: CanonicalFetcher = (input, init) => fetch(input, init);
 
-const isRecord = (value: unknown): value is JsonRecord =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+const stringValue = (value: JsonValue | undefined): string | undefined =>
+  isString(value) && value.trim().length > 0 ? value.trim() : undefined;
 
-const stringValue = (value: unknown): string | undefined =>
-  typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-
-const numberValue = (value: unknown): number | undefined =>
-  typeof value === "number" && Number.isFinite(value) ? value : undefined;
-
-const recordValue = (value: unknown): JsonRecord | undefined =>
-  isRecord(value) ? value : undefined;
-
-const stringsFrom = (value: unknown): string[] =>
-  Array.isArray(value)
+const stringsFrom = (value: JsonValue | undefined): string[] =>
+  isJsonArray(value)
     ? value.flatMap((item) => {
         const result = stringValue(item);
-        return result ? [result] : [];
+        return result === undefined ? [] : [result];
       })
     : [];
 
-const mangaDexIdFromUrl = (value: unknown): string | undefined => {
-  if (typeof value !== "string") {return undefined;}
+const mangaDexIdFromUrl = (value: JsonValue | undefined): string | undefined => {
+  if (!isString(value)) {return undefined;}
   try {
     const url = new URL(value);
     if (url.hostname !== "mangadex.org" && url.hostname !== "www.mangadex.org") {
@@ -75,12 +69,12 @@ const mangaDexIdFromUrl = (value: unknown): string | undefined => {
   }
 };
 
-const mangaDexExternalId = (value: unknown): string | undefined => {
-  if (!Array.isArray(value)) {return undefined;}
+const mangaDexExternalId = (value: JsonValue | undefined): string | undefined => {
+  if (!isJsonArray(value)) {return undefined;}
   for (const link of value) {
-    const record = recordValue(link);
-    const id = mangaDexIdFromUrl(record?.url);
-    if (id) {return id;}
+    if (!isJsonObject(link)) {continue;}
+    const id = mangaDexIdFromUrl(link.url);
+    if (id !== undefined) {return id;}
   }
   return undefined;
 };
@@ -107,14 +101,14 @@ const sourceError = (
   _tag: "CanonicalSourceError",
   provider,
   message,
-  ...(!(status === undefined) && { status }),
+  ...(status !== undefined && { status }),
 });
 
 const isSourceError = (value: unknown): value is CanonicalSourceError =>
-  isRecord(value) &&
+  isJsonObject(value) &&
   value._tag === "CanonicalSourceError" &&
   (value.provider === "anilist" || value.provider === "mal") &&
-  typeof value.message === "string";
+  isString(value.message);
 
 const withSourceError = <A>(
   provider: CanonicalSourceError["provider"],
@@ -136,7 +130,7 @@ const requestJson = async (
   fetcher: CanonicalFetcher,
   input: RequestInfo | URL,
   init?: RequestInit,
-): Promise<CanonicalJson> => {
+): Promise<JsonObject> => {
   const response = await fetcher(input, init);
   if (!response.ok) {
     const responseBody = await response.text().catch(() => "");
@@ -156,16 +150,18 @@ const requestJson = async (
     console.error(`[Canonical:${provider}] ${message}`);
     throw sourceError(provider, message, response.status);
   }
-  // SAFETY: Response.json() is untyped at the HTTP boundary; CanonicalJson is the domain parse target.
-  return response.json() as Promise<CanonicalJson>;
+  const body: unknown = await response.json();
+  if (!isJsonObject(body)) {
+    throw sourceError(provider, "Canonical provider returned a non-object JSON body");
+  }
+  return body;
 };
 
-const dateFromParts = (value: unknown): string | undefined => {
-  const parts = recordValue(value);
-  if (!parts) {return undefined;}
-  const year = numberValue(parts.year);
-  const month = numberValue(parts.month);
-  const day = numberValue(parts.day);
+const dateFromParts = (value: JsonValue | undefined): string | undefined => {
+  if (value === undefined || !isJsonObject(value)) {return undefined;}
+  const year = numberField(value, "year");
+  const month = numberField(value, "month");
+  const day = numberField(value, "day");
   if (year === undefined) {return undefined;}
   return [year, month, day]
     .filter((part): part is number => part !== undefined)
@@ -173,28 +169,38 @@ const dateFromParts = (value: unknown): string | undefined => {
     .join("-");
 };
 
-const metadata = (value: JsonRecord): CanonicalMetadata => {
-  const cover = recordValue(value.coverImage);
-  const result: CanonicalMetadata = {
-    ...(stringValue(value.description) && { description: stringValue(value.description) }),
-    ...(stringValue(cover?.extraLarge ?? cover?.large ?? cover?.medium) && { coverUrl: stringValue(cover?.extraLarge ?? cover?.large ?? cover?.medium) }),
-    ...(!(numberValue(value.chapters) === undefined) && { chapters: numberValue(value.chapters) }),
-    ...(!(numberValue(value.volumes) === undefined) && { volumes: numberValue(value.volumes) }),
-    ...(dateFromParts(value.startDate) && { startDate: dateFromParts(value.startDate) }),
-    ...(dateFromParts(value.endDate) && { endDate: dateFromParts(value.endDate) }),
-    ...(stringValue(value.status) && { status: stringValue(value.status) }),
+const metadata = (value: JsonObject): CanonicalMetadata => {
+  const cover = objectField(value, "coverImage");
+  const description = stringField(value, "description");
+  const coverUrl =
+    cover === undefined
+      ? undefined
+      : stringField(cover, "extraLarge") ??
+        stringField(cover, "large") ??
+        stringField(cover, "medium");
+  const chapters = numberField(value, "chapters");
+  const volumes = numberField(value, "volumes");
+  const startDate = dateFromParts(value.startDate);
+  const endDate = dateFromParts(value.endDate);
+  const status = stringField(value, "status");
+  return {
+    ...(description !== undefined && { description }),
+    ...(coverUrl !== undefined && { coverUrl }),
+    ...(chapters !== undefined && { chapters }),
+    ...(volumes !== undefined && { volumes }),
+    ...(startDate !== undefined && { startDate }),
+    ...(endDate !== undefined && { endDate }),
+    ...(status !== undefined && { status }),
   };
-  return result;
 };
 
-const titleValues = (value: unknown): string[] => {
-  const title = recordValue(value);
-  if (!title) {return [];}
+const titleValues = (value: JsonValue | undefined): string[] => {
+  if (value === undefined || !isJsonObject(value)) {return [];}
   return [
-    stringValue(title.userPreferred),
-    stringValue(title.english),
-    stringValue(title.romaji),
-    stringValue(title.native),
+    stringField(value, "userPreferred"),
+    stringField(value, "english"),
+    stringField(value, "romaji"),
+    stringField(value, "native"),
   ].filter((item): item is string => item !== undefined);
 };
 
@@ -202,7 +208,7 @@ const makeEntry = (
   provider: CanonicalEntry["provider"],
   providerId: string,
   titleCandidates: readonly string[],
-  value: JsonRecord,
+  value: JsonObject,
   score: number,
   externalIds: CanonicalEntry["externalIds"],
 ): CanonicalSearchResult => {
@@ -220,33 +226,34 @@ const makeEntry = (
   };
 };
 
-const anilistMedia = (value: unknown): CanonicalSearchResult | undefined => {
-  const media = recordValue(value);
-  const id = numberValue(media?.id);
+const anilistMedia = (value: JsonValue | undefined): CanonicalSearchResult | undefined => {
+  if (value === undefined || !isJsonObject(value)) {return undefined;}
+  const id = numberField(value, "id");
   if (id === undefined) {return undefined;}
-  const idMal = numberValue(media?.idMal);
-  const titles = [...titleValues(media?.title), ...stringsFrom(media?.synonyms)];
-  const averageScore = numberValue(media?.averageScore);
-  const mangaDexId = mangaDexExternalId(media?.externalLinks);
+  const idMal = numberField(value, "idMal");
+  const titles = [...titleValues(value.title), ...stringsFrom(value.synonyms)];
+  const averageScore = numberField(value, "averageScore");
+  const mangaDexId = mangaDexExternalId(value.externalLinks);
   return makeEntry(
     "anilist",
     String(id),
     titles,
-    media ?? {},
+    value,
     averageScore === undefined ? 0 : averageScore / 100,
     {
       anilist: String(id),
-      ...(!(idMal === undefined) && { mal: String(idMal) }),
-      ...(!(mangaDexId === undefined) && { mangadex: mangaDexId }),
+      ...(idMal !== undefined && { mal: String(idMal) }),
+      ...(mangaDexId !== undefined && { mangadex: mangaDexId }),
     },
   );
 };
 
-const anilistGraphQLError = (body: unknown): CanonicalSourceError | undefined => {
-  const errors = isRecord(body) && Array.isArray(body.errors) ? body.errors : [];
+const anilistGraphQLError = (body: JsonObject): CanonicalSourceError | undefined => {
+  const errors = arrayField(body, "errors") ?? [];
   const messages = errors.flatMap((error) => {
-    const message = isRecord(error) ? stringValue(error.message) : undefined;
-    return message ? [message] : [];
+    if (!isJsonObject(error)) {return [];}
+    const message = stringField(error, "message");
+    return message === undefined ? [] : [message];
   });
   return messages.length > 0 ? sourceError("anilist", messages.join("; ")) : undefined;
 };
@@ -314,7 +321,7 @@ export const createAniListSource = (
   const fetcher = options.fetcher ?? defaultFetcher;
   const endpoint = options.endpoint ?? ANILIST_GRAPHQL_ENDPOINT;
 
-  const request = (query: string, variables: JsonRecord) =>
+  const request = (query: string, variables: JsonObject) =>
     requestJson("anilist", fetcher, endpoint, {
       method: "POST",
       headers: {
@@ -336,15 +343,12 @@ export const createAniListSource = (
         });
         const graphQLError = anilistGraphQLError(body);
         if (graphQLError) {throw graphQLError;}
-        // SAFETY: value is JsonRecord).data)?.Page at this site
-        const page = isRecord(isRecord(body) ? body.data : undefined)
-          // SAFETY: value matches JsonRecord at this call site
-          ? recordValue((body as JsonRecord).data)?.Page
-          : undefined;
-        const media = isRecord(page) && Array.isArray(page.media) ? page.media : [];
-        return media.flatMap((item) => {
+        const data = objectField(body, "data");
+        const page = data === undefined ? undefined : objectField(data, "Page");
+        const media = page === undefined ? undefined : arrayField(page, "media");
+        return (media ?? []).flatMap((item) => {
           const result = anilistMedia(item);
-          return result ? [result] : [];
+          return result === undefined ? [] : [result];
         });
       }),
     getById: (providerId) =>
@@ -356,8 +360,8 @@ export const createAniListSource = (
         const body = await request(anilistGetQuery, { id });
         const graphQLError = anilistGraphQLError(body);
         if (graphQLError) {throw graphQLError;}
-        const data = recordValue(isRecord(body) ? body.data : undefined);
-        return anilistMedia(data?.Media);
+        const data = objectField(body, "data");
+        return anilistMedia(data === undefined ? undefined : objectField(data, "Media"));
       }),
     getByIdMal: (idMal) =>
       withSourceError("anilist", async () => {
@@ -371,8 +375,8 @@ export const createAniListSource = (
           if (graphQLError.message.includes("Not Found")) {return undefined;}
           throw graphQLError;
         }
-        const data = recordValue(isRecord(body) ? body.data : undefined);
-        return anilistMedia(data?.Media);
+        const data = objectField(body, "data");
+        return anilistMedia(data === undefined ? undefined : objectField(data, "Media"));
       }),
   };
 };
@@ -392,31 +396,39 @@ const malFields = [
   "synopsis",
 ].join(",");
 
-const dateValue = (value: unknown): string | undefined => stringValue(value);
-
-const malEntry = (value: unknown): CanonicalSearchResult | undefined => {
-  const node = recordValue(value);
-  const id = numberValue(node?.id);
-  const title = stringValue(node?.title);
+const malEntry = (value: JsonValue | undefined): CanonicalSearchResult | undefined => {
+  if (value === undefined || !isJsonObject(value)) {return undefined;}
+  const id = numberField(value, "id");
+  const title = stringField(value, "title");
   if (id === undefined || title === undefined) {return undefined;}
-  const alternativeTitles = recordValue(node?.alternative_titles);
+  const alternativeTitles = objectField(value, "alternative_titles");
   const aliases = [
     title,
-    stringValue(alternativeTitles?.en),
-    stringValue(alternativeTitles?.ja),
+    alternativeTitles === undefined ? undefined : stringField(alternativeTitles, "en"),
+    alternativeTitles === undefined ? undefined : stringField(alternativeTitles, "ja"),
     ...stringsFrom(alternativeTitles?.synonyms),
   ];
-  const picture = recordValue(node?.main_picture);
+  const picture = objectField(value, "main_picture");
+  const description = stringField(value, "synopsis");
+  const coverUrl =
+    picture === undefined
+      ? undefined
+      : stringField(picture, "large") ?? stringField(picture, "medium");
+  const chapters = numberField(value, "num_chapters");
+  const volumes = numberField(value, "num_volumes");
+  const startDate = stringField(value, "start_date");
+  const endDate = stringField(value, "end_date");
+  const status = stringField(value, "status");
   const resultMetadata: CanonicalMetadata = {
-    ...(stringValue(node?.synopsis) && { description: stringValue(node?.synopsis) }),
-    ...(stringValue(picture?.large ?? picture?.medium) && { coverUrl: stringValue(picture?.large ?? picture?.medium) }),
-    ...(!(numberValue(node?.num_chapters) === undefined) && { chapters: numberValue(node?.num_chapters) }),
-    ...(!(numberValue(node?.num_volumes) === undefined) && { volumes: numberValue(node?.num_volumes) }),
-    ...(dateValue(node?.start_date) && { startDate: dateValue(node?.start_date) }),
-    ...(dateValue(node?.end_date) && { endDate: dateValue(node?.end_date) }),
-    ...(stringValue(node?.status) && { status: stringValue(node?.status) }),
+    ...(description !== undefined && { description }),
+    ...(coverUrl !== undefined && { coverUrl }),
+    ...(chapters !== undefined && { chapters }),
+    ...(volumes !== undefined && { volumes }),
+    ...(startDate !== undefined && { startDate }),
+    ...(endDate !== undefined && { endDate }),
+    ...(status !== undefined && { status }),
   };
-  const mean = numberValue(node?.mean);
+  const mean = numberField(value, "mean");
   return {
     id: canonicalId("mal", String(id)),
     provider: "mal",
@@ -458,10 +470,10 @@ export const createMyAnimeListSource = (
         url.searchParams.set("limit", String(limitFrom(searchOptions)));
         url.searchParams.set("fields", malFields);
         const body = await request(url);
-        const data = isRecord(body) && Array.isArray(body.data) ? body.data : [];
+        const data = arrayField(body, "data") ?? [];
         return data.flatMap((item) => {
-          const result = malEntry(isRecord(item) ? item.node : undefined);
-          return result ? [result] : [];
+          const result = malEntry(isJsonObject(item) ? objectField(item, "node") : undefined);
+          return result === undefined ? [] : [result];
         });
       }),
     getById: (providerId) =>

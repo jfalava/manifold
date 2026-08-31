@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
+import { errorMessage } from "@manifold/json";
 
 import { createMangaDexTokenManager } from "@/mangadex-token";
 import {
@@ -139,7 +140,7 @@ export const md2alCommand = Command.make(
           try: () => manager.current(),
           catch: (cause) =>
             new Error(
-              `MangaDex token mint failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+              `MangaDex token mint failed: ${errorMessage(cause)}`,
             ),
         });
       }
@@ -278,10 +279,7 @@ export const md2alCommand = Command.make(
             throw error;
           }
         },
-        catch: (cause) =>
-          new Error(
-            cause instanceof Error ? cause.message : String(cause),
-          ),
+        catch: (cause) => new Error(errorMessage(cause)),
       });
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
 ).pipe(

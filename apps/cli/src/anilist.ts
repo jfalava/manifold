@@ -1,4 +1,9 @@
 import { ANILIST_GRAPHQL_ENDPOINT } from "@manifold/canonical/sources";
+import {
+  isFiniteNumber,
+  isString,
+  type JsonObject,
+} from "@manifold/json";
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -66,7 +71,7 @@ const throttle = async (): Promise<void> => {
 const gql = async <A>(
   token: string,
   query: string,
-  variables: Record<string, unknown> = {},
+  variables: JsonObject = {},
   attempt = 0,
 ): Promise<A> => {
   await throttle();
@@ -117,14 +122,14 @@ export const fetchAniListTitles = async (
     media?.title?.romaji,
     media?.title?.native,
     ...(media?.synonyms ?? []),
-  ].filter((title): title is string => typeof title === "string" && title.trim().length > 0);
+  ].filter((title): title is string => isString(title) && title.trim().length > 0);
 };
 
 /** Resolves the token owner's AniList user id. */
 export const fetchAniListViewerId = async (token: string): Promise<number> => {
   const data = await gql<{ Viewer?: { id?: number } }>(token, VIEWER_QUERY);
   const id = data.Viewer?.id;
-  if (typeof id !== "number") {throw new Error("AniList returned no Viewer id");}
+  if (!isFiniteNumber(id)) {throw new Error("AniList returned no Viewer id");}
   return id;
 };
 
@@ -206,7 +211,7 @@ export const fetchAniListRichEntries = async (
         media?.title?.english,
         media?.title?.romaji,
         ...(media?.synonyms ?? []),
-      ].filter((t): t is string => typeof t === "string" && t.length > 0);
+      ].filter((t): t is string => isString(t) && t.length > 0);
       const primary =
         media?.title?.english ??
         media?.title?.romaji ??
@@ -223,10 +228,10 @@ export const fetchAniListRichEntries = async (
           coverUrl: media.coverImage.extraLarge ?? media.coverImage.large,
         }),
         ...(media?.status && { mediaStatus: media.status }),
-        ...(typeof media?.averageScore === "number" && {
+        ...(isFiniteNumber(media?.averageScore) && {
           averageScore: media.averageScore,
         }),
-        ...(typeof entry.createdAt === "number" && entry.createdAt > 0 && { createdAt: entry.createdAt })
+        ...(isFiniteNumber(entry.createdAt) && entry.createdAt > 0 && { createdAt: entry.createdAt })
       });
     }
   }
@@ -259,7 +264,7 @@ export const fetchAniListMangaEntries = async (
         mediaId: entry.mediaId,
         title,
         status,
-        ...(typeof entry.progress === "number" && entry.progress >= 1 && { progress: Math.floor(entry.progress) })
+        ...(isFiniteNumber(entry.progress) && entry.progress >= 1 && { progress: Math.floor(entry.progress) })
       });
     }
   }

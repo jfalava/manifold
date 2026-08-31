@@ -29,6 +29,13 @@ import type {
   CanonicalListStatus,
   CanonicalSearchResult,
 } from "@manifold/canonical";
+import {
+  isFiniteNumber,
+  isJsonObject,
+  isString,
+  requestHref,
+  requestInitText,
+} from "@manifold/json";
 import * as Effect from "effect/Effect";
 import { createAniListSource, type CanonicalFetcher } from "@manifold/canonical/sources";
 import {
@@ -60,9 +67,9 @@ import { processReadActions } from "./read-queue.js";
 
 const piggybackDrain = (): void => {
   maybeDrainAniListOps();
-  void flushPendingNukes().catch((error: unknown) => {
+  void flushPendingNukes().catch((cause) => {
     console.error(
-      `[ManifoldTracker] pending nuke flush failed:${error instanceof Error ? error.message : String(error)}`,
+      `[ManifoldTracker] pending nuke flush failed:${errorMessage(cause)}`,
     );
   });
 };
@@ -72,16 +79,17 @@ const scheduledAniListFetcher = async (
   init?: Parameters<CanonicalFetcher>[1],
 ): Promise<Response> => {
   const headers: Record<string, string> = {};
-  if (init?.headers && typeof init.headers === "object" && !Array.isArray(init.headers)) {
+  if (isJsonObject(init?.headers)) {
     for (const [key, value] of Object.entries(init.headers)) {
-      if (typeof value === "string") {headers[key] = value;}
+      if (isString(value)) {headers[key] = value;}
     }
   }
+  const requestBody = requestInitText(init);
   const [response, bodyBuffer] = await Application.scheduleRequest({
-    url: String(input),
+    url: requestHref(input),
     method: init?.method ?? "GET",
     headers,
-    ...(typeof init?.body === "string" && { body: init.body }),
+    ...(requestBody !== undefined && { body: requestBody }),
   });
   const body = Application.arrayBufferToUTF8String(bodyBuffer);
   const headerBag = {
@@ -127,7 +135,7 @@ export class ManifoldTrackerSource
     _sortingOption: SortingOption | undefined,
   ): Promise<PagedResults<SearchResultItem>> {
     piggybackDrain();
-    const title = typeof query?.title === "string" ? query.title.trim() : "";
+    const title = query.title.trim();
     console.log(`[ManifoldTracker] search:${title || "<empty>"}`);
     if (!title) {return { items: [] };}
 
@@ -296,7 +304,7 @@ const recordTrackerAniListProgress = async (
   // SAFETY: Paperback secure/state store returns string | undefined; for this key
   const token = Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined;
   if (!token) {return false;}
-  if (typeof chapterNumber !== "number" || !Number.isFinite(chapterNumber) || chapterNumber < 0) {
+  if (!isFiniteNumber(chapterNumber) || chapterNumber < 0) {
     return false;
   }
   let anilistId =

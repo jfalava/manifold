@@ -7,19 +7,21 @@ import {
   type Request,
   type SourceManga,
 } from "@paperback/types";
+import {
+  errorMessage,
+  isFiniteNumber,
+  isJsonArray,
+  isJsonObject,
+  isJsonValue,
+  isString,
+  type JsonObject,
+  type JsonValue,
+} from "@manifold/json";
 import { toChapter, toChapterDetails } from "@manifold/paperback-comix/parser";
 import { normalizeTitle } from "./mapper.js";
 
-type JsonObject = Record<string, unknown>;
-
 /** Parsed payload from a Comix WebView inject or site-bundle capture. */
-export type ComixCaptureBody =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly ComixCaptureBody[]
-  | { readonly [key: string]: ComixCaptureBody };
+export type ComixCaptureBody = JsonValue;
 
 export const COMIX_ORIGIN = "https://comix.to";
 export const COMIX_CHAPTER_PREFIX = "comix:";
@@ -32,24 +34,33 @@ export const isComixChapterId = (chapterId: string): boolean =>
 export const rawComixChapterId = (chapterId: string): string =>
   chapterId.slice(COMIX_CHAPTER_PREFIX.length);
 
-const asString = (value: unknown): string =>
-  typeof value === "string" ? value : "";
+const asString = (value: JsonValue | undefined): string =>
+  isString(value) ? value : "";
 
-const asText = (value: unknown): string =>
-  typeof value === "string" || typeof value === "number" ? String(value) : "";
+const asText = (value: JsonValue | undefined): string =>
+  isString(value) ? value : isFiniteNumber(value) ? String(value) : "";
 
-const asDateValue = (value: unknown): Date | undefined => {
-  if (value instanceof Date && !Number.isNaN(value.valueOf())) {return value;}
-  if (typeof value !== "string" && typeof value !== "number") {return undefined;}
+const asDateValue = (value: JsonValue | undefined): Date | undefined => {
+  if (!isString(value) && !isFiniteNumber(value)) {return undefined;}
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? undefined : date;
 };
 
-const numberLike = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) {return value;}
-  if (typeof value !== "string") {return undefined;}
+const numberLike = (value: JsonValue | undefined): number | undefined => {
+  if (isFiniteNumber(value)) {return value;}
+  if (!isString(value)) {return undefined;}
   const parsed = Number.parseFloat(value.replace(/[^\d.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const parseJsonValue = (raw: string): JsonValue | undefined => {
+  try {
+    // SAFETY: I/O JSON.parse of a captured Comix site-bundle payload string.
+    const parsed: unknown = JSON.parse(raw);
+    return isJsonValue(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 };
 
 const isChallenge = (body: string): boolean => {
@@ -60,19 +71,10 @@ const isChallenge = (body: string): boolean => {
     normalized.includes("_cf_chl_");
 };
 
-interface SearchItem extends JsonObject {
-  readonly title?: unknown;
-  readonly altTitles?: unknown;
-  readonly hid?: unknown;
-  readonly hash_id?: unknown;
-  readonly slug?: unknown;
-  readonly url?: unknown;
-}
+type SearchItem = JsonObject;
 
-const altTitlesOf = (value: unknown): readonly string[] =>
-  Array.isArray(value)
-    ? value.filter((title): title is string => typeof title === "string")
-    : [];
+const altTitlesOf = (value: JsonValue | undefined): readonly string[] =>
+  isJsonArray(value) ? value.filter(isString) : [];
 
 const tokenize = (value: string): readonly string[] =>
   value.split(" ").filter(Boolean);
@@ -273,7 +275,7 @@ const captureViaSiteBundle = async (
   // `return window.__comixResult__` — that exact shape is proven to work on
   // this app version, while wrapper expressions can come back as
   // `result === undefined`.
-  const runOnce = async (): Promise<{ r?: ComixCaptureBody } | null | undefined> => {
+  const runOnce = async (): Promise<JsonObject | null | undefined> => {
     const html = await requestHtml(session, pageUrl);
     const headOpen = /<head[^>]*>/i.exec(html);
     const withBootstrap = headOpen !== null
@@ -292,16 +294,17 @@ const captureViaSiteBundle = async (
       storage: { cookies: [...session.cookies()] },
     });
     session.setCookies(execution.storage.cookies);
-    // SAFETY: WebView inject result is untyped at the boundary; wrap shape is the Comix contract.
-    return execution.result as { r?: ComixCaptureBody } | null | undefined;
+    const captured: unknown = execution.result;
+    if (captured === undefined || captured === null) {return captured;}
+    return isJsonObject(captured) ? captured : undefined;
   };
 
-  const attempt = async (): Promise<{ r?: ComixCaptureBody } | null | undefined> =>
+  const attempt = async (): Promise<JsonObject | null | undefined> =>
     enqueueWebView(runOnce);
 
   const hasPayload = (
-    value: { r?: ComixCaptureBody } | null | undefined,
-  ): value is { r: ComixCaptureBody } =>
+    value: JsonObject | null | undefined,
+  ): value is JsonObject & { readonly r: ComixCaptureBody } =>
     value !== undefined && value !== null && value.r !== undefined && value.r !== null;
 
   let wrapped = await attempt();
@@ -381,9 +384,9 @@ const recoverCookiesFromStore = async (session: ComixSession): Promise<boolean> 
     session.setCookies([...session.cookies(), ...fresh]);
     console.log(`[manifold] comix session recovered:${fresh.length} clearance cookie(s)`);
     return true;
-  } catch (error) {
+  } catch (cause) {
     console.error(
-      `[manifold] comix session recovery failed:${error instanceof Error ? error.message : String(error)}`,
+      `[manifold] comix session recovery failed:${errorMessage(cause)}`,
     );
     return false;
   }
@@ -496,15 +499,16 @@ const detailMangaFromHtml = (html: string): DetailManga | undefined => {
   const raw = INITIAL_DATA_SCRIPT.exec(html)?.[1];
   if (!raw) {return undefined;}
   try {
-    // SAFETY: test/double or boundary cast through unknown to { queries?: Record<string, unknown> }).queries;
-    const queries = (JSON.parse(raw) as { queries?: Record<string, unknown> }).queries;
-    if (!queries) {return undefined;}
+    // SAFETY: I/O JSON.parse of Comix <script id="initial-data"> at the HTML boundary.
+    const parsed: unknown = JSON.parse(raw);
+    if (!isJsonObject(parsed)) {return undefined;}
+    const queries = parsed.queries;
+    if (!isJsonObject(queries)) {return undefined;}
     const key = Object.keys(queries).find((candidate) => candidate.includes('"detail"'));
     if (!key) {return undefined;}
-    // SAFETY: optional field is DetailManga & { result?: DetailManga }; const m when present at this call site
-    const value = queries[key] as DetailManga & { result?: DetailManga };
-    const manga = value?.result ?? value;
-    return manga && manga.hid !== undefined ? manga : undefined;
+    const value = queries[key];
+    const manga = isJsonObject(value) && isJsonObject(value.result) ? value.result : value;
+    return isJsonObject(manga) && manga.hid !== undefined ? manga : undefined;
   } catch {
     return undefined;
   }
@@ -512,10 +516,8 @@ const detailMangaFromHtml = (html: string): DetailManga | undefined => {
 
 const detailPosterUrl = (manga: DetailManga): string => {
   const poster = manga.poster;
-  if (typeof poster !== "object" || poster === null) {return "";}
-  // SAFETY: value matches nObject; return as at this call site
-  const record = poster as JsonObject;
-  return asText(record.large) || asText(record.medium) || asText(record.small);
+  if (!isJsonObject(poster)) {return "";}
+  return asText(poster.large) || asText(poster.medium) || asText(poster.small);
 };
 
 const comixSourceManga = (mangaId: string, manga: DetailManga): SourceManga => {
@@ -538,21 +540,14 @@ const comixSourceManga = (mangaId: string, manga: DetailManga): SourceManga => {
 };
 
 /** Normalize CHAPTERS_BOOTSTRAP / captureViaSiteBundle output to chapter rows. */
-export const chapterItemsFromCapture = (captured: unknown): JsonObject[] => {
-  if (Array.isArray(captured)) {
-    return captured.filter(
-      (item): item is JsonObject => typeof item === "object" && item !== null,
-    );
+export const chapterItemsFromCapture = (captured: JsonValue | undefined): JsonObject[] => {
+  if (isJsonArray(captured)) {
+    return captured.filter(isJsonObject);
   }
-  if (typeof captured === "object" && captured !== null) {
-    // SAFETY: test/double or boundary cast through unknown to r?: unknown; items?: unknown; result?: { items?: unknown } }; const n
-    const record = captured as { r?: unknown; items?: unknown; result?: { items?: unknown } };
-    const nested = record.r ?? record.items ?? record.result?.items;
-    if (Array.isArray(nested)) {
-      return nested.filter(
-        (item): item is JsonObject => typeof item === "object" && item !== null,
-      );
-    }
+  if (isJsonObject(captured)) {
+    const result = isJsonObject(captured.result) ? captured.result : undefined;
+    const nested = captured.r ?? captured.items ?? result?.items;
+    return isJsonArray(nested) ? nested.filter(isJsonObject) : [];
   }
   return [];
 };
@@ -603,25 +598,12 @@ export const createComixFallback = (session: ComixSession) => ({
           searchPage,
           captureBootstrap(SEARCH_MATCHER),
         );
-        const searchRoot = ((): { result?: { items?: SearchItem[] } } | null => {
-          try {
-            // SAFETY: value is { result?: { items?: SearchItem[] } }) at this site
-            const decoded =
-              typeof searchPayload === "string"
-                // SAFETY: parsed JSON matches { result?: { items?: SearchItem[] } }) for this trusted/test payload
-                ? (JSON.parse(searchPayload) as { result?: { items?: SearchItem[] } })
-                // SAFETY: optional field is { result?: { items?: SearchItem[] } } | null); when present at this call site
-                : (searchPayload as { result?: { items?: SearchItem[] } } | null);
-            return decoded ?? null;
-          } catch {
-            return null;
-          }
-        })();
-        // SAFETY: value is SearchItem[]) at this site
-        const items = Array.isArray(searchRoot?.result?.items)
-          // SAFETY: value matches SearchItem[]) : at this call site
-          ? (searchRoot.result.items as SearchItem[])
-          : [];
+        const decoded = isString(searchPayload)
+          ? parseJsonValue(searchPayload)
+          : searchPayload;
+        const searchRoot = isJsonObject(decoded) ? decoded : undefined;
+        const result = isJsonObject(searchRoot?.result) ? searchRoot.result : undefined;
+        const items = isJsonArray(result?.items) ? result.items.filter(isJsonObject) : [];
         for (const item of items) {
           const hid = asString(item.hid) || asString(item.hash_id);
           if (hid && !seenHids.has(hid)) {
@@ -693,22 +675,9 @@ export const createComixFallback = (session: ComixSession) => ({
       `${COMIX_ORIGIN}/title/${pureHid}`,
       captureBootstrap(LATEST_MATCHER),
     );
-    let items: JsonObject[] = [];
-    try {
-      // SAFETY: value is { result?: { items?: unknown[] } }) at this site
-      const decoded =
-        typeof payloadText === "string"
-          // SAFETY: test/double or boundary cast through unknown to { result?: { items?: unknown[] } }) : (payl
-          ? (JSON.parse(payloadText) as { result?: { items?: unknown[] } })
-          // SAFETY: test/double or boundary cast through unknown to sult?: { items?: unknown[] } } | null); items = Ar
-          : (payloadText as { result?: { items?: unknown[] } } | null);
-      // SAFETY: Array.isArray narrows result.items; elements are Comix JSON objects.
-      items = Array.isArray(decoded?.result?.items)
-        ? (decoded.result.items as JsonObject[])
-        : [];
-    } catch {
-      return undefined;
-    }
+    const decoded = isString(payloadText) ? parseJsonValue(payloadText) : payloadText;
+    const result = isJsonObject(decoded) && isJsonObject(decoded.result) ? decoded.result : undefined;
+    const items = isJsonArray(result?.items) ? result.items.filter(isJsonObject) : [];
     if (items.length === 0) {return undefined;}
     // The site lists newest first; sort defensively by timestamp when the
     // payloads carry one.
@@ -753,13 +722,16 @@ export const createComixFallback = (session: ComixSession) => ({
       `${COMIX_ORIGIN}${path}`,
       captureBootstrap(PAGES_MATCHER),
     );
-    if (typeof payloadText !== "string" || payloadText.length === 0) {
+    if (!isString(payloadText) || payloadText.length === 0) {
       throw new Error(`Comix returned no readable pages for chapter ${raw}`);
     }
 
     try {
-      // SAFETY: parsed JSON matches JsonObject, chapter); } c for this trusted/test payload
-      return toChapterDetails(JSON.parse(payloadText) as JsonObject, chapter);
+      const parsed = parseJsonValue(payloadText);
+      if (parsed === undefined) {
+        throw new Error(`Comix returned a non-JSON page payload for chapter ${raw}`);
+      }
+      return toChapterDetails(parsed, chapter);
     } catch {
       const execution = await Application.executeInWebView({
         source: {
@@ -772,7 +744,8 @@ export const createComixFallback = (session: ComixSession) => ({
         storage: { cookies: [...session.cookies()] },
       });
       session.setCookies(execution.storage.cookies);
-      const pages = pagesFromResult(execution.result);
+      const captured: unknown = execution.result;
+      const pages = isJsonValue(captured) ? pagesFromResult(captured) : [];
       if (pages.length === 0) {
         throw new Error(`Comix did not expose readable pages for chapter ${raw}`);
       }
@@ -786,14 +759,14 @@ export const createComixFallback = (session: ComixSession) => ({
   },
 });
 
-const pagesFromResult = (result: unknown): string[] => {
-  if (!Array.isArray(result)) {return [];}
-  // SAFETY: value is Record<string at this site
+const pagesFromResult = (result: JsonValue): string[] => {
+  if (!isJsonArray(result)) {return [];}
   return result
-    .map((item) => (typeof item === "object" && item !== null
-      // SAFETY: test/double or boundary cast through unknown to ng, unknown>).src ?? "")
-      ? String((item as Record<string, unknown>).src ?? "")
-      : String(item)))
+    .map((item) => {
+      if (isString(item)) {return item;}
+      if (isJsonObject(item) && isString(item.src)) {return item.src;}
+      return "";
+    })
     .filter((url) => url.startsWith("http"));
 };
 

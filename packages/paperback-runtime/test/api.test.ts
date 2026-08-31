@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createPersonalApiClient, PersonalApiError } from "../src/api";
+import { createPersonalApiClient, PersonalApiError, type PersonalApiResponse } from "../src/api";
 
 describe("Paperback personal API client", () => {
   it("adds the secure bearer token and normalizes canonical search", async () => {
@@ -52,7 +52,7 @@ describe("Paperback personal API client", () => {
       headers: Record<string, string>;
       body?: string;
     }> = [];
-    const client = createPersonalApiClient(async (request) => {
+    const client = createPersonalApiClient(async (request): Promise<PersonalApiResponse> => {
       requests.push(request);
       if (request.method === "GET") {return { status: 200, body: { progress: null } };}
       return {

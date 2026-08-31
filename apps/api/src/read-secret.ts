@@ -1,3 +1,4 @@
+import { isString } from "@manifold/json";
 import type { SecretsStoreSecret } from "@cloudflare/workers-types";
 
 type SecretBindingValue = string | SecretsStoreSecret | undefined;
@@ -17,7 +18,7 @@ export const readSecretOptional = async (
   value: SecretBindingValue,
   label: string
 ): Promise<string | undefined> => {
-  if (typeof value === "string") {return value.length > 0 ? value : undefined;}
+  if (isString(value)) {return value.length > 0 ? value : undefined;}
   if (secretBinding(value)) {
     const resolved = await value.get();
     return resolved ? resolved : undefined;
@@ -33,7 +34,7 @@ export const readSecret = async (
   value: SecretBindingValue,
   label: string
 ): Promise<string> => {
-  if (typeof value === "string") {
+  if (isString(value)) {
     if (value.length > 0) {return value;}
     throw new Error(`Secret ${label} is empty`);
   }

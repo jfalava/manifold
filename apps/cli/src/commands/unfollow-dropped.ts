@@ -1,6 +1,7 @@
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import type { ListrTask } from "listr2";
+import { errorMessage, isJsonObject, numberField } from "@manifold/json";
 
 import { createMangaDexTokenManager } from "@/mangadex-token";
 import {
@@ -226,12 +227,8 @@ export const unfollowDroppedCommand = Command.make(
                         try {
                           await Effect.runPromise(client.unfollowManga(mangaId));
                         } catch (cause) {
-                          const msg = cause instanceof Error ? cause.message : String(cause);
-                          const isAuth =
-                            // SAFETY: optional field is s { status?: number })?.stat when present at this call site
-                            typeof (cause as { status?: number })?.status === "number" &&
-                            // SAFETY: optional field is s { status?: number }).statu when present at this call site
-                            (cause as { status?: number }).status === 401;
+                          const msg = errorMessage(cause);
+                          const isAuth = isJsonObject(cause) && numberField(cause, "status") === 401;
                           if (isAuth) {
                             try {
                               await refreshClient();
@@ -244,9 +241,7 @@ export const unfollowDroppedCommand = Command.make(
                               continue;
                             } catch (retryCause) {
                               failures.push(
-                                `${ctx.titles[mangaId] ?? mangaId}: ${
-                                  retryCause instanceof Error ? retryCause.message : String(retryCause)
-                                }`,
+                                `${ctx.titles[mangaId] ?? mangaId}: ${errorMessage(retryCause)}`,
                               );
                             }
                           } else {
@@ -302,17 +297,7 @@ export const unfollowDroppedCommand = Command.make(
             throw error;
           }
         },
-        catch: (cause) => {
-          // SAFETY: value is { message: unknown }).message) at this site
-          const message =
-            cause instanceof Error
-              ? cause.message
-              : typeof cause === "object" && cause !== null && "message" in cause
-                // SAFETY: test/double or boundary cast through unknown to unknown }).message)
-                ? String((cause as { message: unknown }).message)
-                : String(cause);
-          return new Error(message);
-        },
+        catch: (cause) => new Error(errorMessage(cause)),
       }).pipe(Effect.onError(() => Effect.sync(abortFrame)));
     }),
 ).pipe(

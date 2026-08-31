@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import type { JsonObject } from "@manifold/json";
 
 export const CanonicalProvider = Schema.Literals(["anilist", "mal", "local"]);
 export type CanonicalProvider = Schema.Schema.Type<typeof CanonicalProvider>;
@@ -53,7 +54,7 @@ export interface ListEvent {
   readonly entryId: string;
   readonly kind: string;
   readonly origin: OpOrigin;
-  readonly detail?: Record<string, unknown>;
+  readonly detail?: JsonObject;
   readonly createdAt: number;
 }
 
@@ -150,7 +151,7 @@ export interface SyncOp {
   readonly target: OpTarget;
   readonly kind: OpKind;
   readonly origin: OpOrigin;
-  readonly payload: Record<string, unknown>;
+  readonly payload: JsonObject;
   readonly state: OpState;
   readonly attempts: number;
   readonly lastError?: string;
@@ -167,6 +168,16 @@ export const CompleteOpsInput = Schema.Struct({
   }))
 });
 export type CompleteOpsInput = Schema.Schema.Type<typeof CompleteOpsInput>;
+
+export const SetMangaDexStatusInput = Schema.Struct({
+  status: Schema.NullOr(ListStatus),
+});
+export type SetMangaDexStatusInput = Schema.Schema.Type<typeof SetMangaDexStatusInput>;
+
+export const NukeEntryInput = Schema.Struct({
+  origin: Schema.optional(OpOrigin),
+});
+export type NukeEntryInput = Schema.Schema.Type<typeof NukeEntryInput>;
 
 export interface MangaDexLibraryItem {
   readonly mangaDexId: string;

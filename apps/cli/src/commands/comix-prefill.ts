@@ -1,6 +1,7 @@
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import type { ListrTask } from "listr2";
+import { errorMessage } from "@manifold/json";
 import {
   createComixBrowser,
   findChromeExecutable,
@@ -331,7 +332,7 @@ export const comixPrefillCommand = Command.make("comix", {
                         { provider: "comix", externalId: hid, title: row.title },
                       );
                     }
-                    const slug = typeof match?.slug === "string" ? `-${match.slug.slice(0, 12)}` : "";
+                    const slug = match?.slug !== undefined ? `-${match.slug.slice(0, 12)}` : "";
                     task.title = `${baseTitle} — ${formatTitle(row.title, ` → ${hid.slice(0, 8)}…${slug}`)}`;
                   }
                   reporter.progress(done(), total, counts());
@@ -362,7 +363,7 @@ export const comixPrefillCommand = Command.make("comix", {
           // left to do once the report is printed.
           process.exit(0);
         },
-        catch: (cause) => new Error(cause instanceof Error ? cause.message : String(cause)),
+        catch: (cause) => new Error(errorMessage(cause)),
       }),
   ),
 );

@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@manifold/canonical": "workspace:*",
+    "@manifold/json": "workspace:*",
     "@manifold/mangadex": "workspace:*",
     "@manifold/paperback-comix": "workspace:*",
     "@manifold/paperback-runtime": "workspace:*",

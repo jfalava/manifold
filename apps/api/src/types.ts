@@ -2,15 +2,24 @@ import type {
   AuthConnection,
   AuthProvider,
   CanonicalEntry,
+  CompleteOpsInput,
+  LinkProviderInput,
   ListEvent,
   ListState,
   MangaDexLibraryItem,
+  NukeEntryInput,
   OAuthProvider,
   ReadingProgress,
-  SyncOp
+  RecordReadInput,
+  ResolveEntryInput,
+  SetListStateInput,
+  SetMangaDexStatusInput,
+  SyncOp,
+  UpsertEntryInput,
 } from "./domain";
 import type { MangaDexChapter, MangaDexPaged } from "@manifold/mangadex";
 import type { Ai, SecretsStoreSecret, VectorizeIndex } from "@cloudflare/workers-types";
+import type { MangaDexEntryStat } from "./mangadex-stats";
 import type { OAuthStart } from "./oauth";
 
 export type RegistryListEntry = CanonicalEntry & {
@@ -31,12 +40,12 @@ export interface ManifoldSyncStub {
   getAuthConnection(provider: AuthProvider): Promise<AuthConnection>;
   disconnectAuth(provider: AuthProvider): Promise<void>;
   getAuthAccessToken(provider: AuthProvider): Promise<string>;
-  upsertEntry(input: unknown): Promise<CanonicalEntry>;
+  upsertEntry(input: UpsertEntryInput): Promise<CanonicalEntry>;
   listEntries(): Promise<readonly CanonicalEntry[]>;
   getEntry(entryId: string): Promise<CanonicalEntry | undefined>;
-  linkProvider(entryId: string, input: unknown): Promise<CanonicalEntry>;
+  linkProvider(entryId: string, input: LinkProviderInput): Promise<CanonicalEntry>;
   getProgress(entryId: string): Promise<ReadingProgress | undefined>;
-  recordRead(entryId: string, input: unknown): Promise<ReadingProgress>;
+  recordRead(entryId: string, input: RecordReadInput): Promise<ReadingProgress>;
   listPendingSync(): Promise<readonly SyncOp[]>;
   retryFailedSync(): Promise<{ retried: number }>;
   backfillMangaDexShelf(): Promise<{ enqueued: number }>;
@@ -44,19 +53,21 @@ export interface ManifoldSyncStub {
   mangaDexCurrentUser(): Promise<{ id: string; name?: string }>;
   mangaDexReadMarkers(mangaDexId: string): Promise<readonly string[]>;
   mangaDexFeed(limit: number, offset: number): Promise<MangaDexPaged<MangaDexChapter>>;
-  mangaDexStats(mangaDexIds: readonly string[]): Promise<Record<string, unknown>>;
-  setMangaDexStatus(mangaDexId: string, input: unknown): Promise<void>;
+  mangaDexStats(mangaDexIds: readonly string[]): Promise<Record<string, MangaDexEntryStat>>;
+  setMangaDexStatus(mangaDexId: string, input: SetMangaDexStatusInput): Promise<void>;
   entryByProvider(provider: string, externalId: string): Promise<CanonicalEntry | undefined>;
-  resolveEntry(input: unknown): Promise<CanonicalEntry>;
-  resolveEntries(input: unknown): Promise<readonly CanonicalEntry[]>;
+  resolveEntry(input: ResolveEntryInput): Promise<CanonicalEntry>;
+  resolveEntries(
+    input: readonly ResolveEntryInput[] | ResolveEntryInput,
+  ): Promise<readonly CanonicalEntry[]>;
   listRegistry(limit?: number, offset?: number): Promise<readonly RegistryListEntry[]>;
   unlinkProvider(entryId: string, provider: string): Promise<CanonicalEntry>;
-  setListState(entryId: string, input: unknown): Promise<ListState>;
+  setListState(entryId: string, input: SetListStateInput): Promise<ListState>;
   getListState(entryId: string): Promise<ListState | undefined>;
-  nukeEntry(entryId: string, input: unknown): Promise<ListState | undefined>;
+  nukeEntry(entryId: string, input: NukeEntryInput): Promise<ListState | undefined>;
   listEvents(entryId: string | undefined, limit?: number): Promise<readonly ListEvent[]>;
   pendingAniListOps(limit?: number): Promise<readonly SyncOp[]>;
-  completeOps(input: unknown): Promise<{ updated: number }>;
+  completeOps(input: CompleteOpsInput): Promise<{ updated: number }>;
   retryOp(opId: string): Promise<SyncOp | undefined>;
   listOps(state?: string, target?: string, limit?: number): Promise<readonly SyncOp[]>;
 }

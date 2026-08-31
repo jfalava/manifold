@@ -5,12 +5,6 @@ export interface Pas5Entities {
   readonly __LIBRARY_MANGA_V5: Record<string, LibraryManga>;
   readonly __SOURCE_MANGA_V5: Record<string, SourceManga>;
   readonly __MANGA_INFO_V5: Record<string, MangaInfo>;
-  readonly [entityFile: string]:
-    | Record<string, LibraryManga>
-    | Record<string, SourceManga>
-    | Record<string, MangaInfo>
-    | Record<string, unknown>
-    | unknown;
 }
 
 /** Parses a `.pas5` archive buffer into its entity records. */

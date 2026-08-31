@@ -64,7 +64,10 @@ if (!existsSync(filePath)) {
 }
 
 function redactUrl(value) {
-  if (typeof value !== "string") return value;
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: inspector JS has no type predicates; only strings are credentialed URLs
+  if (typeof value !== "string") {
+    return value;
+  }
 
   try {
     const url = new URL(value);

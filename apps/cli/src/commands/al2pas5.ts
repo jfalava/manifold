@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
+import { errorMessage, isFiniteNumber, type JsonObject } from "@manifold/json";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -124,7 +125,7 @@ const buildEntitiesForEntry = (
     thumbnailUrl: entry.coverUrl ?? "",
     contentRating: "SAFE",
     rating:
-      typeof entry.averageScore === "number" ? entry.averageScore / 100 : 0,
+      isFiniteNumber(entry.averageScore) ? entry.averageScore / 100 : 0,
     secondaryTitles: [...secondary],
   };
   // Tracker half stays AniList-identity only; content half carries the reading
@@ -249,7 +250,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
         const tabFilter = yield* Effect.try({
           try: () => parseTabsFlag(tabs),
           catch: (cause) =>
-            new Error(cause instanceof Error ? cause.message : String(cause)),
+            new Error(errorMessage(cause)),
         });
 
         interface ScanCtx extends RunContext {
@@ -264,7 +265,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
             let registry = new Map<string, RegistryRow>();
             let baseEntities: Pas5Entities | undefined;
             // SAFETY: value is asserted type at this site
-            const run = createRun<Record<string, unknown>>([
+            const run = createRun<JsonObject>([
               // SAFETY: value matches ApiConfig; registry = await registryByAnilistId(config); makePhaseReporter(task) at this call site
               {
                 title: "Fetch AniList manga list",
@@ -286,11 +287,11 @@ export const al2Pas5Command = Command.make("al2pas5", {
                   );
                 },
               },
-            ] as Parameters<typeof createRun<Record<string, unknown>>>[0]);
+            ] as Parameters<typeof createRun<JsonObject>>[0]);
             const basePath = Option.getOrUndefined(base);
             if (basePath !== undefined) {
               const baseTasks: Parameters<
-                typeof createRun<Record<string, unknown>>
+                typeof createRun<JsonObject>
               >[0] = [
                 {
                   title: "Read base archive",
@@ -310,7 +311,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
                 },
               ];
               const baseRun =
-                createRun<Record<string, unknown>>(baseTasks);
+                createRun<JsonObject>(baseTasks);
               try {
                 await baseRun.run();
               } catch (error) {
@@ -331,7 +332,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
             };
           },
           catch: (cause) =>
-            new Error(cause instanceof Error ? cause.message : String(cause)),
+            new Error(errorMessage(cause)),
         });
 
         const allowedTabs =
@@ -492,7 +493,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
             closeFrame(`Wrote ${outPath}`);
           },
           catch: (cause) =>
-            new Error(cause instanceof Error ? cause.message : String(cause)),
+            new Error(errorMessage(cause)),
         });
       }).pipe(Effect.onError(() => Effect.sync(abortFrame)));
     },

@@ -1,0 +1,35 @@
+---
+title: al2pas5
+description: Generate a Paperback .pas5 backup from the AniList manga list.
+audience: human
+sidebar:
+  order: 4
+---
+
+```text
+bun run manifold migrate al2pas5 [flags]
+```
+
+Builds a Paperback `.pas5` archive with **ManifoldSource** and **ManifoldTracker** per title. When the personal registry already has MangaDex or Comix links, those provider IDs are stamped into the backup. Unresolved titles fall back to `anilist:<id>`.
+
+## Flags
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--apply` | `false` | Write the `.pas5` zip. Dry-run report without it. |
+| `--tabs` | `auto` | `auto` \| `none` \| comma-list: `reading,paused,dropped,completed,planning` |
+| `--base` | — | Seed / merge from an existing `.pas5` export |
+| `--out` | `Paperback-Generated.<date>.<time>.pas5` | Output path |
+| `--limit` | — | Only the first N titles (canary) |
+| `--anilist-token` | env | AniList list fetch |
+| `--api-token` / `--api-origin` | env | Registry UUID + provider resolution |
+
+## Usage
+
+```text
+bun run manifold migrate al2pas5
+bun run manifold migrate al2pas5 --apply
+bun run manifold migrate al2pas5 --apply --base ./Paperback-Backup.pas5 --tabs reading,completed
+```
+
+`--tabs` filters which AniList statuses become library tabs. With `--base`, existing tab IDs are reused when possible; restoring the generated archive on a device may **replace** the on-device library — keep a copy of the original backup.

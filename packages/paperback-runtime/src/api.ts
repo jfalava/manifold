@@ -4,6 +4,12 @@ import type {
   CanonicalListStateChange,
   CanonicalSearchResult
 } from "@manifold/canonical";
+import {
+  isJsonObject,
+  isString,
+  type JsonObject,
+  type JsonValue,
+} from "@manifold/json";
 
 export const MANIFOLD_API_ORIGIN = "https://manifold.jfa.dev/api";
 export const MANIFOLD_API_TOKEN_KEY = "manifold.api-token";
@@ -18,7 +24,7 @@ export type PersonalApiRequest = {
 
 export type PersonalApiResponse = {
   readonly status: number;
-  readonly body: unknown;
+  readonly body: JsonValue;
 };
 
 export type PersonalApiRequester = (
@@ -42,7 +48,7 @@ export interface PendingSyncOp {
   readonly opId: string;
   readonly kind: string;
   readonly origin: string;
-  readonly payload: Record<string, unknown>;
+  readonly payload: JsonObject;
   readonly attempts: number;
 }
 
@@ -175,6 +181,12 @@ export interface PersonalApiClient {
   ) => Promise<{ updated: number }>;
 }
 
+type PersonalApiPostBody =
+  | JsonValue
+  | CanonicalEntry
+  | PersonalReadInput
+  | CanonicalListStateChange;
+
 export class PersonalApiError extends Error {
   readonly status: number;
 
@@ -185,18 +197,9 @@ export class PersonalApiError extends Error {
   }
 }
 
-// SAFETY: value is Record<string at this site
-const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-    ? (value as Record<string, unknown>)
-    : undefined;
-
-const asErrorMessage = (body: unknown, status: number): string => {
-  const record = asRecord(body);
-  return typeof record?.error === "string"
-    ? record.error
-    : `Personal API returned HTTP ${status}`;
+const asErrorMessage = (body: JsonValue, status: number): string => {
+  const error = isJsonObject(body) ? body.error : undefined;
+  return isString(error) ? error : `Personal API returned HTTP ${status}`;
 };
 
 const limitValue = (limit: number | undefined): number => {
@@ -212,7 +215,7 @@ export const createPersonalApiClient = (
   const request = async <A>(
     path: string,
     method = "GET",
-    body?: unknown,
+    body?: PersonalApiPostBody,
   ): Promise<A> => {
     const response = await requester({
       url: `${origin}${path}`,
@@ -287,13 +290,10 @@ export const createPersonalApiClient = (
       const body = await request<PersonalReadingProgress | { readonly progress: PersonalReadingProgress | null }>(
         `/v1/entries/${encodeURIComponent(entryId)}/progress`,
       );
-      const record = asRecord(body);
-      if (record && "progress" in record) {
-        // SAFETY: value is PersonalReadingProgress at this site
-        return record.progress === null
-          ? undefined
-          // SAFETY: value matches PersonalReadingProgress at this call site
-          : record.progress as PersonalReadingProgress;
+      if (isJsonObject(body) && "progress" in body) {
+        if (body.progress === null) {return undefined;}
+        // SAFETY: value matches PersonalReadingProgress at this call site
+        return body.progress as PersonalReadingProgress;
       }
       // SAFETY: value matches PersonalReadingProgress at this call site
       return body as PersonalReadingProgress;
@@ -336,8 +336,7 @@ export const createPersonalApiClient = (
       const body = await request<CanonicalEntry | { readonly entry: CanonicalEntry | null }>(
         `/v1/canonical/by-provider/mangadex/${encodeURIComponent(mangaDexId)}`,
       );
-      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-      if (body && "entry" in (body as Record<string, unknown>)) {
+      if (isJsonObject(body) && "entry" in body) {
         // SAFETY: optional field is { entry: CanonicalEntry | null } when present at this call site
         return (body as { entry: CanonicalEntry | null }).entry ?? undefined;
       }
@@ -368,8 +367,7 @@ export const createPersonalApiClient = (
       const body = await request<CanonicalListState | { readonly state: CanonicalListState | null }>(
         `/v1/entries/${encodeURIComponent(entryId)}/list-state`,
       );
-      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-      if (body && "state" in (body as Record<string, unknown>)) {
+      if (isJsonObject(body) && "state" in body) {
         // SAFETY: optional field is { state: CanonicalListState | null } when present at this call site
         return (body as { state: CanonicalListState | null }).state ?? undefined;
       }

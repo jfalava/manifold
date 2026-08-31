@@ -6,5 +6,6 @@
     "rootDir": ".",
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts", "package.json"]
+  "include": ["src/**/*.ts", "package.json"],
+  "references": [{ "path": "../packages/json" }]
 }

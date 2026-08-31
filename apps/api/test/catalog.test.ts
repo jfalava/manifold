@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { requestHref } from "@manifold/json";
 import { catalogApp } from "../src/catalog";
 import type { Env } from "../src/types";
 
@@ -13,7 +14,7 @@ const env = {
   ENVIRONMENT: "test",
   ASSETS: {
     fetch: async (input: Request | string) => {
-      const pathname = new URL(typeof input === "string" ? input : input.url).pathname;
+      const pathname = new URL(requestHref(input)).pathname;
       const body = assets.get(pathname);
       if (body === undefined) {return new Response("missing", { status: 404 });}
       return new Response(body, { status: 200 });

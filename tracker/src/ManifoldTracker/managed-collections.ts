@@ -5,6 +5,7 @@ import {
   type SourceManga,
 } from "@paperback/types";
 
+import { isFiniteNumber, isString } from "@manifold/json";
 import {
   ANILIST_SESSION_KEY,
   ANILIST_VIEWER_ID_KEY,
@@ -50,7 +51,7 @@ const NUKE_QUIET_MS = 120_000;
 
 const readPendingNukes = (): Record<string, PendingNuke> => {
   const raw = Application.getState(PENDING_NUKES_KEY);
-  if (typeof raw !== "string") {return {};}
+  if (!isString(raw)) {return {};}
   try {
     // SAFETY: parsed JSON matches Record<string, PendingNuke> for this trusted/test payload
     return JSON.parse(raw) as Record<string, PendingNuke>;
@@ -118,7 +119,7 @@ export const recordAniListProgress = async (
 ): Promise<boolean> => {
   const token = aniListSessionToken();
   if (!token) {return false;}
-  if (typeof chapterNumber !== "number" || !Number.isFinite(chapterNumber) || chapterNumber < 0) {
+  if (!isFiniteNumber(chapterNumber) || chapterNumber < 0) {
     return false;
   }
   const resolved = await anilistIdOf(sourceManga).catch(() => undefined);

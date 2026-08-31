@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@manifold/canonical": "workspace:*",
+    "@manifold/json": "workspace:*",
     "@paperback/types": "catalog:paperback"
   },
   "scripts": {

@@ -27,6 +27,12 @@ import {
   type SourceManga,
 } from "@paperback/types";
 import {
+  isFiniteNumber,
+  isJsonObject,
+  isJsonValue,
+  objectField,
+} from "@manifold/json";
+import {
   hashIdFromMangaId,
   paginationFromPayload,
   resultItems,
@@ -101,12 +107,17 @@ const requestJson = async (url: string): Promise<JsonRequest> => {
     throw new Error(`Comix request failed with HTTP ${response.status}: ${url}`);
   }
 
+  let parsed: unknown;
   try {
-    // SAFETY: Response body is untyped JSON at the HTTP boundary; ComixCaptureBody is the domain parse target.
-    return { url, body: JSON.parse(body) as ComixCaptureBody };
+    // SAFETY: I/O JSON.parse of the Comix HTTP body at the scheduleRequest boundary.
+    parsed = JSON.parse(body);
   } catch {
     throw new Error(`Comix returned a non-JSON response: ${url}`);
   }
+  if (!isJsonValue(parsed)) {
+    throw new Error(`Comix returned a non-JSON response: ${url}`);
+  }
+  return { url, body: parsed };
 };
 
 const requestHtml = async (url: string): Promise<HtmlRequest> => {
@@ -131,12 +142,8 @@ const requestHtml = async (url: string): Promise<HtmlRequest> => {
 };
 
 const pageFromMetadata = (metadata: Metadata | undefined): number => {
-  if (typeof metadata === "number" && Number.isFinite(metadata)) {return metadata;}
-  if (typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)) {
-    // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-    const page = (metadata as Record<string, unknown>).page;
-    if (typeof page === "number" && Number.isFinite(page)) {return page;}
-  }
+  if (isFiniteNumber(metadata)) {return metadata;}
+  if (isJsonObject(metadata) && isFiniteNumber(metadata.page)) {return metadata.page;}
   return 1;
 };
 
@@ -227,8 +234,11 @@ export class ComixSource implements
       storage: { cookies: [...this.cookieStorage.cookies] },
     });
     this.cookieStorage.cookies = execution.storage.cookies;
-    // SAFETY: WebView inject result is untyped at the boundary; ComixCaptureBody is the domain parse target.
-    return execution.result as ComixCaptureBody;
+    const captured: unknown = execution.result;
+    if (!isJsonValue(captured)) {
+      throw new Error(`Comix WebView returned a non-JSON result: ${url}`);
+    }
+    return captured;
   }
 
   async getSearchResults(
@@ -255,12 +265,8 @@ export class ComixSource implements
     const hashId = hashIdFromMangaId(mangaId);
     const response = await requestJson(`${COMIX_ORIGIN}/api/v1/manga/${encodeURIComponent(hashId)}`);
     const items = resultItems(response.body);
-    // SAFETY: value is Record<string at this site
     const item = items[0] ?? (
-      typeof response.body === "object" && response.body !== null
-        // SAFETY: test/double or boundary cast through unknown to Record<string, unknown> | undefined
-        ? ((response.body as Record<string, unknown>).result as Record<string, unknown> | undefined)
-        : undefined
+      isJsonObject(response.body) ? objectField(response.body, "result") : undefined
     );
 
     if (!item) {throw new Error(`Comix manga not found: ${mangaId}`);}
@@ -280,7 +286,10 @@ export class ComixSource implements
       chaptersWebViewScript,
     );
     return chaptersFromWebView(webViewResult).map((item) =>
-      toChapter({ url: item.url, title: item.title }, sourceManga),
+      toChapter(
+        { url: item.url, ...(item.title !== undefined && { title: item.title }) },
+        sourceManga,
+      ),
     );
   }
 

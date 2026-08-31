@@ -1,0 +1,44 @@
+---
+title: md2al
+description: Push your MangaDex library into private AniList list entries.
+audience: human
+sidebar:
+  order: 1
+---
+
+```text
+bun run manifold migrate md2al [flags]
+```
+
+Exports your MangaDex library, matches each title to AniList (external links, title search, Vectorize embeddings), then creates **private** AniList list entries. Optional chapter progress comes from MangaDex read markers.
+
+## Flags
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--apply` | `false` | Write to AniList. Dry-run without it. |
+| `--anilist-token` | env | `ANILIST_TOKEN` / `ALCHEMY_SECRET_ANILIST_TOKEN` |
+| `--mangadex-token` | env | Or use password-grant flags below |
+| `--skip-progress` | `false` | Do not push chapter progress from MD markers |
+| `--use-cache` | `false` | Reuse `.tmp` snapshot, matches, and progress |
+| `--limit` | — | Only process the first N entries after export |
+| `--phase` | `all` | `all` \| `export` \| `match` \| `push` |
+| `--mangadex-client-id` / `--secret` / `--username` / `--password` | env | Password-grant fallback when no personal token |
+
+## Workflow
+
+1. **Export** — MangaDex library + read markers into `.tmp`
+2. **Match** — AniList candidates via links, titles, embeddings
+3. **Push** — `SaveMediaListEntry` as private (+ optional progress)
+
+Phases are resumable. Delete the CLI `.tmp` directory to force a fresh pass. Long MangaDex runs refresh the token about every 15 minutes.
+
+```text
+bun run manifold migrate md2al              # dry-run
+bun run manifold migrate md2al --apply
+bun run manifold migrate md2al --phase match --use-cache
+```
+
+<Aside type="note" title="Local AniList writes">
+  AniList blocks Cloudflare Worker IPs. This command always runs on your machine.
+</Aside>

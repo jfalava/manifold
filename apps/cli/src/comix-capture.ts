@@ -2,6 +2,15 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+import {
+  isJsonObject,
+  isString,
+  stringField,
+  type JsonObject,
+  type JsonValue,
+} from "@manifold/json";
+
 import {
   COMIX_ORIGIN,
   comixBrowseUrl,
@@ -22,8 +31,8 @@ export interface ComixView {
   readonly title: string;
   readonly url: string;
   navigate: (url: string) => Promise<void>;
-  evaluate: <T = unknown>(script: string) => Promise<T>;
-  cdp: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>;
+  evaluate: <T = JsonValue>(script: string) => Promise<T>;
+  cdp: <T = JsonValue>(method: string, params?: JsonObject) => Promise<T>;
   close: () => void;
 }
 
@@ -93,11 +102,11 @@ export const findChromeDevToolsUrl = (
 
 export const parseChromeVersionEndpoint = (body: string): string | undefined => {
   try {
+    // SAFETY: Chrome /json/version body is decoded via isJsonObject/stringField
     const parsed: unknown = JSON.parse(body);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {return undefined;}
-    // SAFETY: test/double or boundary cast through unknown to { webSocketDebuggerUrl?: unknown }
-    const url = (parsed as { webSocketDebuggerUrl?: unknown }).webSocketDebuggerUrl;
-    return typeof url === "string" && url.startsWith("ws://") ? url : undefined;
+    if (!isJsonObject(parsed)) {return undefined;}
+    const url = stringField(parsed, "webSocketDebuggerUrl");
+    return url !== undefined && url.startsWith("ws://") ? url : undefined;
   } catch {
     return undefined;
   }
@@ -250,8 +259,8 @@ export const createComixBrowser = async (options: {
     });
     let userAgent: string | undefined;
     try {
-      const ua = await view.evaluate<string>("navigator.userAgent");
-      if (typeof ua === "string" && ua.length > 0) {userAgent = ua;}
+      const ua = await view.evaluate("navigator.userAgent");
+      if (isString(ua) && ua.length > 0) {userAgent = ua;}
     } catch {
       // harvest cookies even if the tab is mid-navigation
     }
@@ -260,9 +269,10 @@ export const createComixBrowser = async (options: {
 
   const search = async (keyword: string): Promise<readonly ComixSearchItem[] | "challenge"> => {
     await view.navigate(comixBrowseUrl(keyword));
-    const snapshot = await view.evaluate<{ title?: unknown; html?: unknown }>(SNAPSHOT_SCRIPT);
-    const title = typeof snapshot?.title === "string" ? snapshot.title : view.title;
-    const html = typeof snapshot?.html === "string" ? snapshot.html : "";
+    const snapshot = await view.evaluate(SNAPSHOT_SCRIPT);
+    const record = isJsonObject(snapshot) ? snapshot : undefined;
+    const title = record === undefined ? view.title : stringField(record, "title") ?? view.title;
+    const html = record === undefined ? "" : stringField(record, "html") ?? "";
     if (classifyPage(title, html) === "challenge") {return "challenge";}
     const payload = await view.evaluate("window.__comixResult__");
     return itemsFromCapture(payload) ?? "challenge";

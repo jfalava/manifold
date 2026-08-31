@@ -1,0 +1,36 @@
+---
+title: mangadex
+description: Prefill MangaDex provider links on canonical registry rows.
+audience: human
+sidebar:
+  order: 2
+---
+
+```text
+bun run manifold registry mangadex [flags]
+```
+
+Backfills missing `mangadex` provider links. Matching runs on the Worker (vector + live search) — **no local MangaDex secrets** are required. Dry-run until `--apply`.
+
+## Flags
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--apply` | `false` | Write provider links |
+| `--limit` | all unmatched | Cap how many rows to attempt |
+| `--status` | `auto` | `auto` or comma-list: `reading,paused,dropped,completed,planning` |
+| `--delay` | `800` | Milliseconds between resolve calls |
+| `--api-token` / `--api-origin` | env | Registry access |
+| `--anilist-token` | env | Improves search aliases from AniList titles |
+
+`--status` filters `row.state.status` before `--limit`. `reading` expands to `reading,re_reading`. `auto` includes every status.
+
+## Usage
+
+```text
+bun run manifold registry mangadex
+bun run manifold registry mangadex --status reading,completed --limit 50
+bun run manifold registry mangadex --apply
+```
+
+Rows without an AniList or MAL id are skipped. Ambiguous / not-found / tombstoned results are not written. The summary counts linked, ambiguous, not_found, skipped, and errors.

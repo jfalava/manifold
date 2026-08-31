@@ -1,12 +1,22 @@
+import {
+  arrayField,
+  isJsonObject,
+  isString,
+  objectField,
+  stringField,
+  type JsonObject,
+  type JsonValue,
+} from "@manifold/json";
+
 export const COMIX_ORIGIN = "https://comix.to";
 
 export interface ComixSearchItem {
-  readonly hid?: unknown;
-  readonly hash_id?: unknown;
-  readonly title?: unknown;
-  readonly altTitles?: unknown;
-  readonly alt_titles?: unknown;
-  readonly slug?: unknown;
+  readonly hid?: string;
+  readonly hash_id?: string;
+  readonly title?: string;
+  readonly altTitles?: readonly string[];
+  readonly alt_titles?: readonly string[];
+  readonly slug?: string;
 }
 
 export const normalizeTitle = (value: string): string =>
@@ -25,14 +35,12 @@ const tokensCompatible = (a: string, b: string): boolean => {
   return i >= 4;
 };
 
-export const altTitlesOf = (item: ComixSearchItem): readonly string[] => {
-  const raw = item.altTitles ?? item.alt_titles;
-  return Array.isArray(raw) ? raw.filter((t): t is string => typeof t === "string") : [];
-};
+export const altTitlesOf = (item: ComixSearchItem): readonly string[] =>
+  item.altTitles ?? item.alt_titles ?? [];
 
 export const hidOf = (item: ComixSearchItem): string | undefined => {
   const hid = item.hid ?? item.hash_id;
-  return typeof hid === "string" && hid.length > 0 ? hid : undefined;
+  return hid !== undefined && hid.length > 0 ? hid : undefined;
 };
 
 export const uniqueTitles = (titles: readonly string[]): readonly string[] => {
@@ -53,7 +61,7 @@ export const pickMatch = (
   items: readonly ComixSearchItem[],
   titles: string | readonly string[],
 ): ComixSearchItem | undefined => {
-  const candidates = uniqueTitles(typeof titles === "string" ? [titles] : titles)
+  const candidates = uniqueTitles(isString(titles) ? [titles] : titles)
     .map(normalizeTitle)
     .filter(Boolean);
   if (candidates.length === 0) {return undefined;}
@@ -61,7 +69,7 @@ export const pickMatch = (
   let bestScore = 0;
   for (const item of items) {
     const names = [item.title, ...altTitlesOf(item)]
-      .filter((t): t is string => typeof t === "string")
+      .filter(isString)
       .map(normalizeTitle)
       .filter(Boolean);
     for (const candidate of candidates) {
@@ -100,35 +108,46 @@ export const isChallengeText = (value: string): boolean => {
 };
 
 /** Unwrapped Comix capture payload (the `r` field, or the value itself). */
-export type ComixCaptureBody =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly ComixCaptureBody[]
-  | { readonly [key: string]: ComixCaptureBody };
+export type ComixCaptureBody = JsonValue;
 
-export const unwrapComixResult = (value: unknown): ComixCaptureBody => {
-  if (value !== null && typeof value === "object" && "r" in value) {
-    // SAFETY: Comix inject contract wraps payload as { r }; ComixCaptureBody is the domain target.
-    return (value as { r: ComixCaptureBody }).r;
-  }
-  // SAFETY: bare capture bodies are already domain JSON at this boundary.
-  return value as ComixCaptureBody;
+const parseComixSearchItem = (value: JsonObject): ComixSearchItem => {
+  const hid = stringField(value, "hid");
+  const hash_id = stringField(value, "hash_id");
+  const title = stringField(value, "title");
+  const slug = stringField(value, "slug");
+  const altTitles = arrayField(value, "altTitles")?.filter(isString);
+  const alt_titles = arrayField(value, "alt_titles")?.filter(isString);
+  return {
+    ...(hid !== undefined && { hid }),
+    ...(hash_id !== undefined && { hash_id }),
+    ...(title !== undefined && { title }),
+    ...(slug !== undefined && { slug }),
+    ...(altTitles !== undefined && { altTitles }),
+    ...(alt_titles !== undefined && { alt_titles }),
+  };
 };
 
-export const itemsFromCapture = (payload: unknown): readonly ComixSearchItem[] | undefined => {
+export const unwrapComixResult = (value: JsonValue): JsonValue => {
+  if (isJsonObject(value) && "r" in value) {
+    return value.r;
+  }
+  return value;
+};
+
+export const itemsFromCapture = (payload: JsonValue): readonly ComixSearchItem[] | undefined => {
   const unwrapped = unwrapComixResult(payload);
-  if (unwrapped == null) {return undefined;}
+  if (unwrapped === null) {return undefined;}
   try {
-    const parsed: unknown =
-      // SAFETY: test/double or boundary cast through unknown to unknown
-      typeof unwrapped === "string" ? (JSON.parse(unwrapped) as unknown) : unwrapped;
-    if (parsed === null || typeof parsed !== "object") {return undefined;}
-    // SAFETY: test/double or boundary cast through unknown to { result?: { items?: unknown } }
-    const items = (parsed as { result?: { items?: unknown } }).result?.items;
-    // SAFETY: value matches ComixSearchItem[] at this call site
-    return Array.isArray(items) ? items as ComixSearchItem[] : undefined;
+    let parsed: JsonValue = unwrapped;
+    if (isString(unwrapped)) {
+      // SAFETY: captured Comix JSON string is decoded via isJsonObject below
+      parsed = JSON.parse(unwrapped) as JsonValue;
+    }
+    if (!isJsonObject(parsed)) {return undefined;}
+    const result = objectField(parsed, "result");
+    const items = result === undefined ? undefined : arrayField(result, "items");
+    if (items === undefined) {return undefined;}
+    return items.filter(isJsonObject).map(parseComixSearchItem);
   } catch {
     return undefined;
   }

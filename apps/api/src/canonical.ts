@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect";
+import { isJsonObject, numberField, stringField } from "@manifold/json";
 import {
   createAniListSource,
   createMyAnimeListSource,
@@ -30,25 +31,28 @@ export interface CanonicalSearchResponse {
 
 const sourceError = (
   provider: CanonicalSourceError["provider"],
-  error: unknown,
+  cause: unknown,
 ): CanonicalSourceError => {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "_tag" in error &&
-    error._tag === "CanonicalSourceError" &&
-    "provider" in error &&
-    (error.provider === "anilist" || error.provider === "mal") &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    // SAFETY: caught value narrowed to CanonicalSourceError at this site
-    return error as CanonicalSourceError;
+  if (isJsonObject(cause) && cause._tag === "CanonicalSourceError") {
+    const taggedProvider = stringField(cause, "provider");
+    const message = stringField(cause, "message");
+    if (
+      (taggedProvider === "anilist" || taggedProvider === "mal") &&
+      message !== undefined
+    ) {
+      const status = numberField(cause, "status");
+      return {
+        _tag: "CanonicalSourceError",
+        provider: taggedProvider,
+        message,
+        ...(!(status === undefined) && { status }),
+      };
+    }
   }
   return {
     _tag: "CanonicalSourceError",
     provider,
-    message: error instanceof Error ? error.message : "Canonical provider search failed",
+    message: cause instanceof Error ? cause.message : "Canonical provider search failed",
   };
 };
 

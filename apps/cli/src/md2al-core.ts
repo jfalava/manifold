@@ -1,5 +1,14 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 
+import {
+  errorMessage,
+  isFiniteNumber,
+  isJsonObject,
+  isString,
+  objectField,
+  type JsonObject,
+} from "@manifold/json";
+
 import type { PhaseReporter } from "@/ui";
 
 /**
@@ -60,7 +69,7 @@ interface GraphQLResponse<A> {
 const gql = async <A>(
   token: string,
   query: string,
-  variables: Record<string, unknown> = {},
+  variables: JsonObject = {},
 ): Promise<A> => {
   const response = await fetch(ANILIST_ENDPOINT, {
     method: "POST",
@@ -172,12 +181,11 @@ export const phaseExport = async (
   if (!statusResponse.ok) {
     throw new Error(`MangaDex HTTP ${statusResponse.status} for /manga/status`);
   }
-  // SAFETY: parsed JSON matches { statuses: Record<string, string>; }; cons for this trusted/test payload
-  const statusBody = (await statusResponse.json()) as {
-    statuses: Record<string, string>;
-  };
+  // SAFETY: MangaDex /manga/status JSON is decoded via isJsonObject / isMdStatus below
+  const statusBody: unknown = await statusResponse.json();
+  const statuses = isJsonObject(statusBody) ? objectField(statusBody, "statuses") ?? {} : {};
 
-  const validStatuses = new Set([
+  const validStatuses = new Set<string>([
     "reading",
     "on_hold",
     "plan_to_read",
@@ -185,13 +193,14 @@ export const phaseExport = async (
     "re_reading",
     "completed",
   ]);
+  const isMdStatus = (value: unknown): value is MdStatus =>
+    isString(value) && validStatuses.has(value);
   const entries: MdLibraryEntry[] = [];
-  for (const [id, rawStatus] of Object.entries(statusBody.statuses ?? {})) {
-    if (typeof rawStatus !== "string" || !validStatuses.has(rawStatus)) {continue;}
+  for (const [id, rawStatus] of Object.entries(statuses)) {
+    if (!isMdStatus(rawStatus)) {continue;}
     entries.push({
       mangaDexId: id,
-      // SAFETY: value matches MdStatus, t at this call site
-      status: rawStatus as MdStatus,
+      status: rawStatus,
       title: "",
       altTitles: [],
     });
@@ -500,9 +509,9 @@ export const collectProgress = async (
             progressByMdId.set(entry.mangaDexId, Math.floor(maxChapter));
           }
         }
-      } catch (error) {
+      } catch (cause) {
         report?.problem(
-          `markers failed for ${entry.mangaDexId}: ${error instanceof Error ? error.message : error}`,
+          `markers failed for ${entry.mangaDexId}: ${errorMessage(cause)}`,
         );
       }
     }
@@ -543,7 +552,7 @@ export const fetchExistingProgress = async (
   const existingProgress = new Map<string, number>();
   for (const list of data.MediaListCollection?.lists ?? []) {
     for (const e of list.entries ?? []) {
-      if (typeof e.progress === "number" && e.mediaId !== undefined) {
+      if (isFiniteNumber(e.progress) && e.mediaId !== undefined) {
         existingProgress.set(String(e.mediaId), e.progress);
       }
     }
@@ -596,10 +605,10 @@ export const saveMatches = async (
       }
       done += 1;
       if (progress !== undefined) {withProgress += 1;}
-    } catch (error) {
+    } catch (cause) {
       failed += 1;
       report?.problem(
-        `${match.mangaDexId} -> ${anilistId} failed: ${error instanceof Error ? error.message : error}`,
+        `${match.mangaDexId} -> ${anilistId} failed: ${errorMessage(cause)}`,
       );
     }
 

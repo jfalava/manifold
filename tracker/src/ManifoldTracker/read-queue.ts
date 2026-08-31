@@ -3,6 +3,7 @@ import type {
   TrackedMangaChapterReadAction,
 } from "@paperback/types";
 
+import { isFiniteNumber } from "@manifold/json";
 import {
   errorMessage,
   type PersonalReadInput,
@@ -68,7 +69,7 @@ export const processReadActions = async (
       console.log(`[manifold] read queued:${sourceChapterId}`);
 
       const num = action.chapterNum;
-      if (typeof num === "number" && Number.isFinite(num) && num >= 0) {
+      if (isFiniteNumber(num) && num >= 0) {
         const current = maxByManga.get(action.sourceManga.mangaId);
         if (!current || num > current.chapterNum) {
           maxByManga.set(action.sourceManga.mangaId, {

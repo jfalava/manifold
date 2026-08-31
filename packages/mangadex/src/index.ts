@@ -1,4 +1,12 @@
 import * as Effect from "effect/Effect";
+import {
+  isFiniteNumber,
+  isJsonArray,
+  isJsonObject,
+  isString,
+  type JsonObject,
+  type JsonValue,
+} from "@manifold/json";
 
 export const MANGADEX_TOKEN_ENDPOINT =
   "https://auth.mangadex.org/realms/mangadex/protocol/openid-connect/token";
@@ -208,39 +216,24 @@ export interface MangaDexClientOptions {
   readonly retryDelayMs?: number;
 }
 
-type JsonRecord = Record<string, unknown>;
-
-/** Parsed JSON body from the MangaDex API. */
-type MangaDexJson =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly MangaDexJson[]
-  | { readonly [key: string]: MangaDexJson };
-
 const defaultFetcher: MangaDexFetcher = (input, init) => fetch(input, init);
 
-const isRecord = (value: unknown): value is JsonRecord =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+const asObject = (value: JsonValue | undefined): JsonObject | undefined =>
+  isJsonObject(value) ? value : undefined;
 
-const record = (value: unknown): JsonRecord | undefined =>
-  isRecord(value) ? value : undefined;
+const stringValue = (value: JsonValue | undefined): string | undefined =>
+  isString(value) && value.trim().length > 0 ? value.trim() : undefined;
 
-const stringValue = (value: unknown): string | undefined =>
-  typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-
-const numberValue = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) {return value;}
-  if (typeof value !== "string" || value.trim().length === 0) {return undefined;}
+const numberValue = (value: JsonValue | undefined): number | undefined => {
+  if (value === undefined) {return undefined;}
+  if (isFiniteNumber(value)) {return value;}
+  if (!isString(value) || value.trim().length === 0) {return undefined;}
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const objectValues = (value: unknown): readonly JsonRecord[] =>
-  Array.isArray(value)
-    ? value.map(record).filter((item): item is JsonRecord => item !== undefined)
-    : [];
+const objectValues = (value: JsonValue | undefined): readonly JsonObject[] =>
+  isJsonArray(value) ? value.filter(isJsonObject) : [];
 
 const uniqueStrings = (values: readonly (string | undefined)[]): string[] => {
   const seen = new Set<string>();
@@ -256,28 +249,28 @@ const uniqueStrings = (values: readonly (string | undefined)[]): string[] => {
   return result;
 };
 
-const preferredLocalizedValue = (value: unknown): string | undefined => {
-  const values = record(value);
+const preferredLocalizedValue = (value: JsonValue | undefined): string | undefined => {
+  const values = asObject(value);
   if (!values) {return stringValue(value);}
   return [values.en, values["ja-ro"], values.ja, ...Object.values(values)]
     .map(stringValue)
     .find((item): item is string => item !== undefined);
 };
 
-const mangaFromResource = (value: unknown): MangaDexManga | undefined => {
-  const resource = record(value);
+const mangaFromResource = (value: JsonValue | undefined): MangaDexManga | undefined => {
+  const resource = asObject(value);
   const id = stringValue(resource?.id);
-  const attributes = record(resource?.attributes);
+  const attributes = asObject(resource?.attributes);
   if (!id || !attributes) {return undefined;}
 
   const title = preferredLocalizedValue(attributes.title) ?? id;
-  const links = record(attributes.links);
+  const links = asObject(attributes.links);
   const altTitles = objectValues(attributes.altTitles).flatMap((item) =>
     Object.values(item).map(stringValue),
   );
   const relationships = objectValues(resource?.relationships);
   const cover = relationships.find((item) => item.type === "cover_art");
-  const coverFileName = stringValue(record(cover?.attributes)?.fileName);
+  const coverFileName = stringValue(asObject(cover?.attributes)?.fileName);
 
   return {
     id,
@@ -292,9 +285,9 @@ const mangaFromResource = (value: unknown): MangaDexManga | undefined => {
   };
 };
 
-const chapterFromResource = (value: unknown): MangaDexChapter | undefined => {
-  const resource = record(value);
-  const attributes = record(resource?.attributes);
+const chapterFromResource = (value: JsonValue | undefined): MangaDexChapter | undefined => {
+  const resource = asObject(value);
+  const attributes = asObject(resource?.attributes);
   const id = stringValue(resource?.id);
   const relationships = objectValues(resource?.relationships);
   const mangaId = stringValue(relationships.find((item) => item.type === "manga")?.id);
@@ -317,11 +310,11 @@ const chapterFromResource = (value: unknown): MangaDexChapter | undefined => {
 };
 
 const pageFromValue = (
-  value: unknown,
+  value: JsonValue,
   baseUrl: string,
   hash: string,
 ): MangaDexPage | undefined => {
-  const page = record(value);
+  const page = asObject(value);
   const filename = stringValue(page?.filename ?? value);
   if (!filename) {return undefined;}
   const url = filename.startsWith("http")
@@ -337,16 +330,16 @@ const pageFromValue = (
 const errorFrom = (cause: unknown, status?: number): MangaDexSourceError => ({
   _tag: "MangaDexSourceError",
   message:
-    typeof cause === "string"
+    isString(cause)
       ? cause
       : cause instanceof Error
         ? cause.message
         : "MangaDex request failed",
-  ...(!(status === undefined) && { status }),
+  ...(status !== undefined && { status }),
 });
 
 const isSourceError = (value: unknown): value is MangaDexSourceError =>
-  isRecord(value) && value._tag === "MangaDexSourceError" && typeof value.message === "string";
+  isJsonObject(value) && value._tag === "MangaDexSourceError" && isString(value.message);
 
 const withSourceError = <A>(action: () => Promise<A>): Effect.Effect<A, MangaDexSourceError> =>
   Effect.tryPromise({
@@ -373,16 +366,15 @@ const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 const parseChaptersPage = async (
-  jsonPromise: Promise<MangaDexJson>,
+  jsonPromise: Promise<JsonObject>,
 ): Promise<{ chapters: readonly MangaDexChapter[]; total: number | undefined }> => {
-  const body = record(await jsonPromise);
-  const chapters = Array.isArray(body?.data)
-    ? body.data.flatMap((item) => {
-        const chapter = chapterFromResource(item);
-        return chapter ? [chapter] : [];
-      })
-    : [];
-  return { chapters, total: numberValue(body?.total) };
+  const body = await jsonPromise;
+  const data = isJsonArray(body.data) ? body.data : [];
+  const chapters = data.flatMap((item) => {
+    const chapter = chapterFromResource(item);
+    return chapter === undefined ? [] : [chapter];
+  });
+  return { chapters, total: numberValue(body.total) };
 };
 
 export const createMangaDexClient = (
@@ -409,7 +401,7 @@ export const createMangaDexClient = (
   const request = async (
     path: string,
     method = "GET",
-    body?: unknown,
+    body?: JsonValue,
     attempt = 1,
   ): Promise<Response> => {
     // Accumulator: start empty so known literals are not widened into Record.
@@ -453,9 +445,13 @@ export const createMangaDexClient = (
     return response;
   };
 
-  const requestJson = async (path: string): Promise<MangaDexJson> =>
-    // SAFETY: Response.json() is untyped at the HTTP boundary; MangaDexJson is the domain parse target.
-    (await request(path)).json() as Promise<MangaDexJson>;
+  const requestJson = async (path: string): Promise<JsonObject> => {
+    const body: unknown = await (await request(path)).json();
+    if (!isJsonObject(body)) {
+      throw errorFrom("MangaDex returned a non-object JSON body");
+    }
+    return body;
+  };
 
   const getChaptersPage = async (
     mangaId: string,
@@ -506,20 +502,19 @@ export const createMangaDexClient = (
         // MangaDex defaults title search to safe+suggestive and silently
         // hides erotica/pornographic entries — which are exactly the ones
         // this private stack tracks. Ask for everything.
-        const body = record(await requestJson(queryPath("/manga", [
+        const body = await requestJson(queryPath("/manga", [
           ["title", normalized],
           ["limit", String(limit)],
           ["includes[]", "cover_art"],
           ...MANGADEX_CONTENT_RATINGS.map(
             (rating) => ["contentRating[]", rating] as const,
           ),
-        ])));
-        return Array.isArray(body?.data)
-          ? body.data.flatMap((item) => {
-              const manga = mangaFromResource(item);
-              return manga ? [manga] : [];
-            })
-          : [];
+        ]));
+        const data = isJsonArray(body.data) ? body.data : [];
+        return data.flatMap((item) => {
+          const manga = mangaFromResource(item);
+          return manga === undefined ? [] : [manga];
+        });
       }),
     listManga: (listOptions) =>
       withSourceError(async () => {
@@ -542,25 +537,23 @@ export const createMangaDexClient = (
           // titles even for ids[] lookups — always ask explicitly. Default
           // to the full rating set so callers never get invisible “untitled”
           // rows (the admin library hit this for erotica/pornographic titles).
-          // SAFETY: value matches readonly string[]).map( at this call site
-          ...((listOptions.contentRating ?? MANGADEX_CONTENT_RATINGS) as readonly string[]).map(
+          ...(listOptions.contentRating ?? MANGADEX_CONTENT_RATINGS).map(
             (rating) => ["contentRating[]", rating] as const,
           ),
         ];
-        const body = record(await requestJson(queryPath("/manga", params)));
-        const items = Array.isArray(body?.data)
-          ? body.data.flatMap((item) => {
-              const manga = mangaFromResource(item);
-              return manga ? [manga] : [];
-            })
-          : [];
-        return { items, total: numberValue(body?.total) };
+        const body = await requestJson(queryPath("/manga", params));
+        const data = isJsonArray(body.data) ? body.data : [];
+        const items = data.flatMap((item) => {
+          const manga = mangaFromResource(item);
+          return manga === undefined ? [] : [manga];
+        });
+        return { items, total: numberValue(body.total) };
       }),
     getManga: (mangaId) =>
       withSourceError(async () => {
         const path = queryPath(`/manga/${encodeURIComponent(mangaId)}`, [["includes[]", "cover_art"]]);
-        const body = record(await requestJson(path));
-        const manga = mangaFromResource(body?.data);
+        const body = await requestJson(path);
+        const manga = mangaFromResource(body.data);
         if (!manga) {throw errorFrom(`MangaDex manga not found: ${mangaId}`, 404);}
         return manga;
       }),
@@ -590,14 +583,13 @@ export const createMangaDexClient = (
           ["limit", String(pageLimit)],
           ["offset", String(listOptions?.offset ?? 0)],
         ];
-        const body = record(await requestJson(queryPath("/user/follows/manga", params)));
-        const items = Array.isArray(body?.data)
-          ? body.data.flatMap((item) => {
-              const manga = mangaFromResource(item);
-              return manga ? [manga] : [];
-            })
-          : [];
-        return { items, total: numberValue(body?.total) };
+        const body = await requestJson(queryPath("/user/follows/manga", params));
+        const data = isJsonArray(body.data) ? body.data : [];
+        const items = data.flatMap((item) => {
+          const manga = mangaFromResource(item);
+          return manga === undefined ? [] : [manga];
+        });
+        return { items, total: numberValue(body.total) };
       }),
     latestChapterSince: (mangaId, publishedAtSince) =>
       withSourceError(async () => {
@@ -612,12 +604,12 @@ export const createMangaDexClient = (
       }),
     getChapterDetails: (chapterId) =>
       withSourceError(async () => {
-        const body = record(await requestJson(`/at-home/server/${encodeURIComponent(chapterId)}`));
-        const chapter = record(body?.chapter);
-        const baseUrl = stringValue(body?.baseUrl);
+        const body = await requestJson(`/at-home/server/${encodeURIComponent(chapterId)}`);
+        const chapter = asObject(body.chapter);
+        const baseUrl = stringValue(body.baseUrl);
         const hash = stringValue(chapter?.hash);
         if (!baseUrl || !hash) {throw errorFrom(`MangaDex page server returned no hash: ${chapterId}`);}
-        const filenames = Array.isArray(chapter?.data) ? chapter.data : [];
+        const filenames = chapter !== undefined && isJsonArray(chapter.data) ? chapter.data : [];
         const pages = filenames
           .map((value) => pageFromValue(value, baseUrl, hash))
           .filter((page): page is MangaDexPage => page !== undefined);
@@ -639,8 +631,8 @@ export const createMangaDexClient = (
           statusOptions?.status === undefined
             ? "/manga/status"
             : queryPath("/manga/status", [["status", statusOptions.status]]);
-        const body = record(await requestJson(path));
-        const statuses = record(body?.statuses);
+        const body = await requestJson(path);
+        const statuses = asObject(body.statuses);
         const result: Record<string, MangaDexReadingStatus> = {};
         for (const [mangaId, status] of Object.entries(statuses ?? {})) {
           if (
@@ -666,17 +658,17 @@ export const createMangaDexClient = (
       }),
     currentUser: () =>
       withSourceError(async () => {
-        const body = record(await requestJson("/user/me"));
-        const data = record(body?.data);
+        const body = await requestJson("/user/me");
+        const data = asObject(body.data);
         const id = stringValue(data?.id);
         if (!id) {throw errorFrom("MangaDex returned no current user", 401);}
-        const attributes = record(data?.attributes);
+        const attributes = asObject(data?.attributes);
         return { id, ...(stringValue(attributes?.username) && { name: stringValue(attributes?.username) }) };
       }),
     readMarkers: (mangaId) =>
       withSourceError(async () => {
-        const body = record(await requestJson(`/manga/${encodeURIComponent(mangaId)}/read`));
-        const chapters = body?.data;
+        const body = await requestJson(`/manga/${encodeURIComponent(mangaId)}/read`);
+        const chapters = body.data;
         return Array.isArray(chapters)
           ? chapters.flatMap((value) => {
               const id = stringValue(value);
@@ -694,10 +686,10 @@ export const createMangaDexClient = (
             ...chunk.map((id) => ["ids[]", id] as const),
             ["grouped", "true"],
           ]);
-          const body = record(await requestJson(path));
+          const body = await requestJson(path);
           // grouped=true returns { [mangaId]: chapterIds }; an empty history
           // degrades to the ungrouped array shape — treat as no markers.
-          const grouped = record(body?.data);
+          const grouped = asObject(body.data);
           for (const [mangaId, chapters] of Object.entries(grouped ?? {})) {
             result[mangaId] = Array.isArray(chapters)
               ? chapters.flatMap((value) => {
@@ -718,10 +710,10 @@ export const createMangaDexClient = (
           const chunk = mangaIds.slice(index, index + 100);
           if (chunk.length === 0) {continue;}
           const path = queryPath("/rating", chunk.map((id) => ["manga[]", id] as const));
-          const body = record(await requestJson(path));
-          const ratings = record(body?.ratings);
+          const body = await requestJson(path);
+          const ratings = asObject(body.ratings);
           for (const [mangaId, value] of Object.entries(ratings ?? {})) {
-            const entry = record(value);
+            const entry = asObject(value);
             const rating = numberValue(entry?.rating);
             const createdAt = stringValue(entry?.createdAt);
             if (rating === undefined || createdAt === undefined) {continue;}

@@ -6,17 +6,19 @@ import {
   type SearchResultItem,
   type SourceManga,
 } from "@paperback/types";
+import {
+  isFiniteNumber,
+  isJsonArray,
+  isJsonObject,
+  isString,
+  type JsonObject,
+  type JsonValue,
+} from "@manifold/json";
 
-export type JsonObject = Record<string, unknown>;
+export type { JsonObject };
 
 /** Parsed payload from a Comix WebView inject or site-bundle capture. */
-export type ComixCaptureBody =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly ComixCaptureBody[]
-  | { readonly [key: string]: ComixCaptureBody };
+export type ComixCaptureBody = JsonValue;
 
 export type ComixPagination = {
   readonly currentPage?: number;
@@ -29,15 +31,11 @@ export type ComixPage = {
   readonly height?: number;
 };
 
-// SAFETY: value is JsonObject) at this site
-const asObject = (value: unknown): JsonObject | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    // SAFETY: value matches JsonObject at this call site
-    ? (value as JsonObject)
-    : undefined;
+const asObject = (value: JsonValue | undefined): JsonObject | undefined =>
+  isJsonObject(value) ? value : undefined;
 
-const asArray = (value: unknown): readonly unknown[] =>
-  Array.isArray(value) ? value : [];
+const asArray = (value: JsonValue | undefined): readonly JsonValue[] =>
+  isJsonArray(value) ? value : [];
 
 const first = <T>(...values: readonly T[]): T | undefined => {
   for (const value of values) {
@@ -48,19 +46,18 @@ const first = <T>(...values: readonly T[]): T | undefined => {
   return undefined;
 };
 
-const asString = (value: unknown, fallback = ""): string =>
-  typeof value === "string" || typeof value === "number" ? String(value) : fallback;
+const asString = (value: JsonValue | undefined, fallback = ""): string =>
+  isString(value) ? value : isFiniteNumber(value) ? String(value) : fallback;
 
-const asNumber = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) {return value;}
-  if (typeof value !== "string") {return undefined;}
+const asNumber = (value: JsonValue | undefined): number | undefined => {
+  if (isFiniteNumber(value)) {return value;}
+  if (!isString(value)) {return undefined;}
   const parsed = Number.parseFloat(value.replace(/[^\d.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const asDate = (value: unknown): Date | undefined => {
-  if (value instanceof Date && !Number.isNaN(value.valueOf())) {return value;}
-  if (typeof value !== "string" && typeof value !== "number") {return undefined;}
+const asDate = (value: JsonValue | undefined): Date | undefined => {
+  if (!isString(value) && !isFiniteNumber(value)) {return undefined;}
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? undefined : date;
 };
@@ -96,21 +93,21 @@ const contentRatingFromItem = (item: JsonObject): ContentRating => {
   return ContentRating.EVERYONE;
 };
 
-const joinedTitles = (value: unknown): string[] =>
+const joinedTitles = (value: JsonValue | undefined): string[] =>
   asArray(value).map((title) => {
-    if (typeof title === "string") {return title;}
+    if (isString(title)) {return title;}
     const object = asObject(title);
     return asString(first(object?.title, object?.name));
   }).filter(Boolean);
 
-const joinedNames = (value: unknown): string | undefined => {
+const joinedNames = (value: JsonValue | undefined): string | undefined => {
   const names = joinedTitles(value);
   return names.length > 0 ? names.join(", ") : undefined;
 };
 
 const itemGenres = (item: JsonObject): string[] =>
   asArray(item.genres).map((genre) => {
-    if (typeof genre === "string") {return genre;}
+    if (isString(genre)) {return genre;}
     const object = asObject(genre);
     return asString(first(object?.title, object?.name));
   }).filter(Boolean);
@@ -159,19 +156,19 @@ export const toSearchResult = (item: JsonObject): SearchResultItem => ({
   contentRating: contentRatingFromItem(item),
 });
 
-const resultObject = (payload: unknown): JsonObject => {
+const resultObject = (payload: JsonValue): JsonObject => {
   const root = asObject(payload);
   const result = asObject(root?.result);
   return result ?? root ?? {};
 };
 
-export const resultItems = (payload: unknown): readonly JsonObject[] => {
+export const resultItems = (payload: JsonValue): readonly JsonObject[] => {
   const result = resultObject(payload);
   const items = asArray(first(result.items, result.data));
-  return items.map(asObject).filter((item): item is JsonObject => item !== undefined);
+  return items.filter(isJsonObject);
 };
 
-export const paginationFromPayload = (payload: unknown): ComixPagination => {
+export const paginationFromPayload = (payload: JsonValue): ComixPagination => {
   const result = resultObject(payload);
   const pagination = asObject(result.pagination) ?? asObject(result.meta);
   return {
@@ -207,8 +204,8 @@ export const toChapter = (item: JsonObject, sourceManga: SourceManga): Chapter =
   },
 });
 
-const pageFromItem = (value: unknown): ComixPage | undefined => {
-  if (typeof value === "string") {return value ? { url: value } : undefined;}
+const pageFromItem = (value: JsonValue): ComixPage | undefined => {
+  if (isString(value)) {return value ? { url: value } : undefined;}
   const item = asObject(value);
   if (!item) {return undefined;}
   const url = asString(first(item.url, item.src, item.image, item.path));
@@ -217,7 +214,7 @@ const pageFromItem = (value: unknown): ComixPage | undefined => {
     : undefined;
 };
 
-export const pageItems = (payload: unknown): ComixPage[] => {
+export const pageItems = (payload: JsonValue): ComixPage[] => {
   const root = resultObject(payload);
   const pages = asObject(first(root.pages, root.images, root.data));
   const candidates = asArray(first(pages?.items, pages?.pages, root.items, root.images));
@@ -231,7 +228,7 @@ export const pageItems = (payload: unknown): ComixPage[] => {
     }));
 };
 
-export const toChapterDetails = (payload: unknown, chapter: Chapter): ChapterDetails => {
+export const toChapterDetails = (payload: JsonValue, chapter: Chapter): ChapterDetails => {
   const pages = pageItems(payload);
   if (pages.length === 0) {
     throw new Error("Comix returned no readable pages; the chapter payload may still be signed or encrypted");

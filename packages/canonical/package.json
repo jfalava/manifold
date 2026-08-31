@@ -8,6 +8,7 @@
     "./sources": "./src/sources.ts"
   },
   "dependencies": {
+      "@manifold/json": "workspace:*",
       "effect": "catalog:effect"
   },
   "scripts": {

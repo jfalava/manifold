@@ -1,5 +1,10 @@
 import { Effect, Schema } from "effect";
 import {
+  errorMessage,
+  isFiniteNumber,
+  isString,
+} from "@manifold/json";
+import {
   createMangaDexClient,
   type MangaDexManga,
 } from "@manifold/mangadex";
@@ -16,7 +21,15 @@ const VECTOR_ACCEPT_MARGIN = 0.06;
 const SEARCH_TERM_LIMIT = 5;
 const MATCH_CANDIDATE_LIMIT = 100;
 
-const MangaDexMatchInputSchema = Schema.Struct({
+/**
+ * Vectorize metadata bag for MangaDex title embeddings.
+ * Index signature matches VectorizeVector.metadata value contract.
+ */
+interface VectorMetadata {
+  [key: string]: string | number | boolean | string[];
+}
+
+export const MangaDexMatchInput = Schema.Struct({
   id: Schema.NonEmptyString,
   provider: Schema.Literals(["anilist", "mal"]),
   providerId: Schema.NonEmptyString,
@@ -40,7 +53,7 @@ const MangaDexMatchInputSchema = Schema.Struct({
   ),
 });
 
-export type MangaDexMatchInput = Schema.Schema.Type<typeof MangaDexMatchInputSchema>;
+export type MangaDexMatchInput = Schema.Schema.Type<typeof MangaDexMatchInput>;
 
 export type MangaDexMatchMethod =
   | "cached"
@@ -77,23 +90,23 @@ export interface RankedMangaDexCandidate {
   readonly score: number;
 }
 
-const stringValue = (value: unknown): string | undefined =>
-  typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+const stringValue = (value: VectorMetadata[string] | undefined): string | undefined =>
+  isString(value) && value.trim().length > 0 ? value.trim() : undefined;
 
-const numberValue = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) {return value;}
-  if (typeof value !== "string" || value.trim().length === 0) {return undefined;}
+const numberValue = (value: VectorMetadata[string] | undefined): number | undefined => {
+  if (isFiniteNumber(value)) {return value;}
+  if (!isString(value) || value.trim().length === 0) {return undefined;}
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const stringArray = (value: unknown): readonly string[] =>
-  Array.isArray(value)
-    ? value.flatMap((item) => {
-        const result = stringValue(item);
-        return result ? [result] : [];
-      })
-    : [];
+const stringArray = (value: VectorMetadata[string] | undefined): readonly string[] => {
+  if (!Array.isArray(value)) {return [];}
+  return value.flatMap((item) => {
+    const result = isString(item) && item.trim().length > 0 ? item.trim() : undefined;
+    return result ? [result] : [];
+  });
+};
 
 const uniqueStrings = (values: readonly string[]): string[] => {
   const seen = new Set<string>();
@@ -275,14 +288,6 @@ export const rankEmbeddedCandidates = (
     }))
     .sort((left, right) => right.score - left.score);
 
-/**
- * Vectorize metadata bag for MangaDex title embeddings.
- * Index signature matches VectorizeVector.metadata value contract.
- */
-interface VectorMetadata {
-  [key: string]: string | number | boolean | string[];
-}
-
 const vectorCandidate = (
   id: string,
   metadata: VectorMetadata | undefined,
@@ -405,9 +410,6 @@ const searchMangaDex = async (
   return uniqueManga(searched);
 };
 
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
 const cachedResult = (
   entry: MangaDexMatchInput,
   externalId: string,
@@ -425,11 +427,9 @@ const cachedResult = (
 
 export const resolveMangaDex = async (
   env: Env,
-  input: unknown,
+  input: MangaDexMatchInput,
 ): Promise<MangaDexMatchResult> => {
-  const entry = await Effect.runPromise(
-    Schema.decodeUnknownEffect(MangaDexMatchInputSchema)(input),
-  );
+  const entry = input;
   const sync = env.MANIFOLD_SYNC.getByName("default");
   const existing = await sync.getEntry(entry.id);
   const cached = existing?.providers.find((provider) => provider.provider === "mangadex");

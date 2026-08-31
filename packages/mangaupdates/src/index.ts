@@ -1,4 +1,14 @@
-
+import {
+  arrayField,
+  isJsonArray,
+  isJsonObject,
+  isString,
+  numberField,
+  objectField,
+  stringField,
+  type JsonObject,
+  type JsonValue,
+} from "@manifold/json";
 
 export const MANGAUPDATES_API_ORIGIN = "https://api.mangaupdates.com";
 export const MANGAUPDATES_USER_AGENT = "manifold/0.1 (+https://manifold.jfa.dev)";
@@ -54,125 +64,90 @@ export interface MangaUpdatesClientOptions {
   readonly fetcher?: MangaUpdatesFetcher;
 }
 
-type JsonRecord = Record<string, unknown>;
-
-/** Parsed JSON body from the MangaUpdates API. */
-type MangaUpdatesJson =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly MangaUpdatesJson[]
-  | { readonly [key: string]: MangaUpdatesJson };
-
 const defaultFetcher: MangaUpdatesFetcher = (input, init) => fetch(input, init);
 
-const isRecord = (value: unknown): value is JsonRecord =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+const asObject = (value: JsonValue | undefined): JsonObject | undefined =>
+  isJsonObject(value) ? value : undefined;
 
-const record = (value: unknown): JsonRecord | undefined => (isRecord(value) ? value : undefined);
+const stringValue = (value: JsonValue | undefined): string | undefined =>
+  isString(value) && value.trim().length > 0 ? value.trim() : undefined;
 
-const stringValue = (value: unknown): string | undefined =>
-  typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-
-const numberValue = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) {return value;}
-  if (typeof value !== "string" || value.trim().length === 0) {return undefined;}
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-};
-
-const seriesFromRecord = (value: unknown): MangaUpdatesSeries | undefined => {
-  const rec = record(value);
-  // SAFETY: optional field is JsonRecord | undefined when present at this call site
-  const recordData = (rec?.record as JsonRecord | undefined) ?? rec;
-  const id = numberValue(recordData?.series_id ?? rec?.series_id ?? rec?.id);
-  const title = stringValue(recordData?.title ?? rec?.title);
-  if (id === undefined || !title) {return undefined;}
-  const associated = Array.isArray(recordData?.associated) ? recordData.associated : [];
+const seriesFromRecord = (value: JsonValue | undefined): MangaUpdatesSeries | undefined => {
+  const rec = asObject(value);
+  const recordData = asObject(rec?.record) ?? rec;
+  if (recordData === undefined) {return undefined;}
+  const id =
+    numberField(recordData, "series_id") ??
+    (rec === undefined ? undefined : numberField(rec, "series_id")) ??
+    (rec === undefined ? undefined : numberField(rec, "id"));
+  const title = stringField(recordData, "title") ?? (rec === undefined ? undefined : stringField(rec, "title"));
+  if (id === undefined || title === undefined) {return undefined;}
+  const associated = arrayField(recordData, "associated") ?? [];
   const altTitles = associated
-    .map((a) => stringValue(record(a)?.title))
-    .filter((t): t is string => Boolean(t));
-  const image = record(recordData?.image);
-  const urlObj = record(image?.url);
-  const url = stringValue(urlObj?.original ?? record(image?.url)?.original);
+    .map((item) => (isJsonObject(item) ? stringField(item, "title") : undefined))
+    .filter((item): item is string => item !== undefined);
+  const image = objectField(recordData, "image");
+  const urlObj = image === undefined ? undefined : objectField(image, "url");
+  const url = urlObj === undefined ? undefined : stringField(urlObj, "original");
+  const description = stringField(recordData, "description");
+  const status = stringField(recordData, "status");
+  const year = numberField(recordData, "year");
+  const bayesianRating = numberField(recordData, "bayesian_rating");
+  const latestChapter = numberField(recordData, "latest_chapter");
+  const type = stringField(recordData, "type");
   return {
     id,
     title,
     altTitles,
-    ...(stringValue(recordData?.description) && { description: stringValue(recordData?.description) }),
-    ...(url && { imageUrl: url }),
-    ...(stringValue(recordData?.status) && { status: stringValue(recordData?.status) }),
-    ...(numberValue(recordData?.year) !== undefined && { year: numberValue(recordData?.year) }),
-    ...(numberValue(recordData?.bayesian_rating) !== undefined && { bayesianRating: numberValue(recordData?.bayesian_rating) }),
-    ...(numberValue(recordData?.latest_chapter) !== undefined && { latestChapter: numberValue(recordData?.latest_chapter) }),
-    ...(stringValue(recordData?.type) && { type: stringValue(recordData?.type) }),
+    ...(description !== undefined && { description }),
+    ...(url !== undefined && { imageUrl: url }),
+    ...(status !== undefined && { status }),
+    ...(year !== undefined && { year }),
+    ...(bayesianRating !== undefined && { bayesianRating }),
+    ...(latestChapter !== undefined && { latestChapter }),
+    ...(type !== undefined && { type }),
   };
 };
 
-const releaseFromRecord = (value: unknown): MangaUpdatesRelease | undefined => {
-  const rec = record(value);
-  // SAFETY: optional field is JsonRecord | undefined when present at this call site
-  const recordData = (rec?.record as JsonRecord | undefined) ?? rec;
-  // releases/search returns record.series_id as `series_id` inside `record`, but some firehose returns `id` as release id and `series_id` separate
-  const seriesId = numberValue(
-    // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-    (recordData as Record<string, unknown>)?.series_id ??
-      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-      (rec as Record<string, unknown>)?.series_id ??
-      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-      (recordData as Record<string, unknown>)?.series_id,
-  );
-  // The release title is in `title`, but for releases/search it's the manga title, not release title
-  // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-  const title = stringValue((recordData as Record<string, unknown>)?.title ?? (rec as Record<string, unknown>)?.title);
-  if (seriesId === undefined || !title) {return undefined;}
-  // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-  const groupsRaw = (recordData as Record<string, unknown>)?.groups;
-  const groups = Array.isArray(groupsRaw)
+const releaseFromRecord = (value: JsonValue | undefined): MangaUpdatesRelease | undefined => {
+  const rec = asObject(value);
+  const recordData = asObject(rec?.record) ?? rec;
+  if (recordData === undefined) {return undefined;}
+  const seriesId =
+    numberField(recordData, "series_id") ??
+    (rec === undefined ? undefined : numberField(rec, "series_id"));
+  const title = stringField(recordData, "title") ?? (rec === undefined ? undefined : stringField(rec, "title"));
+  if (seriesId === undefined || title === undefined) {return undefined;}
+  const groupsRaw = recordData.groups;
+  const groups = isJsonArray(groupsRaw)
     ? groupsRaw
-        .map((g) => {
-          const gr = record(g);
-          return stringValue(gr?.name ?? g);
+        .map((item) => {
+          const group = asObject(item);
+          return stringValue(group?.name ?? item);
         })
-        .filter((n): n is string => Boolean(n))
+        .filter((name): name is string => name !== undefined)
     : undefined;
+  const chapter = stringField(recordData, "chapter");
+  const volume = stringField(recordData, "volume");
+  const date = stringField(recordData, "release_date") ?? stringField(recordData, "date");
   return {
     seriesId,
     title,
-    // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-    ...(stringValue((recordData as Record<string, unknown>)?.chapter) && {
-      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-      chapter: stringValue((recordData as Record<string, unknown>)?.chapter),
-    }),
-    // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-    ...(stringValue((recordData as Record<string, unknown>)?.volume) && {
-      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-      volume: stringValue((recordData as Record<string, unknown>)?.volume),
-    }),
-    ...(groups && { groups }),
-    // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-    ...(stringValue(
-      (recordData as Record<string, unknown>)?.release_date ??
-        (recordData as Record<string, unknown>)?.date,
-    ) && {
-      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>
-      date: stringValue(
-        (recordData as Record<string, unknown>)?.release_date ??
-          (recordData as Record<string, unknown>)?.date,
-      ),
-    }),
+    ...(chapter !== undefined && { chapter }),
+    ...(volume !== undefined && { volume }),
+    ...(groups !== undefined && { groups }),
+    ...(date !== undefined && { date }),
   };
 };
 
 const errorFrom = (cause: unknown, status?: number): MangaUpdatesSourceError => ({
   _tag: "MangaUpdatesSourceError",
-  message: cause instanceof Error ? cause.message : "MangaUpdates request failed",
-  ...(!(status === undefined) && { status }),
+  message: cause instanceof Error ? cause.message : isString(cause) ? cause : "MangaUpdates request failed",
+  ...(status !== undefined && { status }),
 });
 
 const isSourceError = (value: unknown): value is MangaUpdatesSourceError =>
-  isRecord(value) && value._tag === "MangaUpdatesSourceError" && typeof value.message === "string";
+  isJsonObject(value) && value._tag === "MangaUpdatesSourceError" && isString(value.message);
 
 const withSourceError = async <A>(action: () => Promise<A>): Promise<A> => {
   try {
@@ -187,7 +162,7 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
   const fetcher = options.fetcher ?? defaultFetcher;
   const endpoint = (options.endpoint ?? `${MANGAUPDATES_API_ORIGIN}/v1`).replace(/\/$/, "");
 
-  const request = async (path: string, method = "GET", body?: unknown): Promise<Response> => {
+  const request = async (path: string, method = "GET", body?: JsonValue): Promise<Response> => {
     // Accumulator: start empty so known literals are not widened into Record.
     const headers: Record<string, string> = {};
     headers.accept = "application/json";
@@ -198,7 +173,7 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
     const response = await fetcher(`${endpoint}${path}`, {
       method,
       headers,
-      ...(!(body === undefined) && { body: JSON.stringify(body) }),
+      ...(body !== undefined && { body: JSON.stringify(body) }),
     });
     if (!response.ok) {
       throw errorFrom(`MangaUpdates returned HTTP ${response.status}`, response.status);
@@ -209,14 +184,17 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
   const requestJson = async (
     path: string,
     method = "GET",
-    body?: unknown,
-  ): Promise<MangaUpdatesJson> =>
-    // SAFETY: Response.json() is untyped at the HTTP boundary; MangaUpdatesJson is the domain parse target.
-    (await request(path, method, body)).json() as Promise<MangaUpdatesJson>;
+    body?: JsonValue,
+  ): Promise<JsonObject> => {
+    const parsed: unknown = await (await request(path, method, body)).json();
+    if (!isJsonObject(parsed)) {
+      throw errorFrom("MangaUpdates returned a non-object JSON body");
+    }
+    return parsed;
+  };
 
   return {
     search: (query) =>
-      // SAFETY: value matches Promise<readonly MangaUpdatesSeries[]> at this call site
       withSourceError(async () => {
         const normalized = query.trim();
         if (!normalized) {throw errorFrom("MangaUpdates search query cannot be empty");}
@@ -225,22 +203,19 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
           perpage: 25,
           page: 1,
         });
-        const rec = record(body);
-        const results = Array.isArray(rec?.results) ? rec.results : [];
+        const results = arrayField(body, "results") ?? [];
         return results
           .map(seriesFromRecord)
-          .filter((m): m is MangaUpdatesSeries => m !== undefined);
-      }) as Promise<readonly MangaUpdatesSeries[]>,
+          .filter((item): item is MangaUpdatesSeries => item !== undefined);
+      }),
     getSeries: (id) =>
-      // SAFETY: value matches Promise<MangaUpdatesSeries> at this call site
       withSourceError(async () => {
         const body = await requestJson(`/series/${encodeURIComponent(String(id))}`, "GET");
         const series = seriesFromRecord(body);
         if (!series) {throw errorFrom(`MangaUpdates series not found: ${id}`, 404);}
         return series;
-      }) as Promise<MangaUpdatesSeries>,
+      }),
     releases: (releaseOptions) =>
-      // SAFETY: value matches Promise<MangaUpdatesPaged<MangaUpdatesRelease>> at this call site
       withSourceError(async () => {
         const page = releaseOptions.page ?? 1;
         const perpage = releaseOptions.perpage ?? 50;
@@ -250,10 +225,11 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
           perpage,
           ...(releaseOptions.orderby ? { orderby: releaseOptions.orderby } : { orderby: "date" }),
         });
-        const rec = record(body);
-        const results = Array.isArray(rec?.results) ? rec.results : [];
-        const items = results.map(releaseFromRecord).filter((r): r is MangaUpdatesRelease => r !== undefined);
-        return { items, total: numberValue(rec?.total_hits ?? rec?.total) ?? items.length };
-      }) as Promise<MangaUpdatesPaged<MangaUpdatesRelease>>,
+        const results = arrayField(body, "results") ?? [];
+        const items = results
+          .map(releaseFromRecord)
+          .filter((item): item is MangaUpdatesRelease => item !== undefined);
+        return { items, total: numberField(body, "total_hits") ?? numberField(body, "total") ?? items.length };
+      }),
   };
 };

@@ -1,3 +1,15 @@
+import {
+  arrayField,
+  isBoolean,
+  isFiniteNumber,
+  isJsonArray,
+  isJsonObject,
+  isString,
+  numberField,
+  type JsonObject,
+  type JsonValue,
+} from "@manifold/json";
+
 export const SECRETS_SERVICE = "manifold";
 export const SECRETS_NAME = "comix-session";
 export const SESSION_SKEW_MS = 60_000;
@@ -33,17 +45,17 @@ export const bunSecretStore: SecretStore = {
   delete: (service, name) => Bun.secrets.delete({ service, name }),
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object" && !Array.isArray(value);
+const presentString = (value: JsonValue | undefined): string | undefined =>
+  isString(value) && value.length > 0 ? value : undefined;
 
-const asString = (value: unknown): string | undefined =>
-  typeof value === "string" && value.length > 0 ? value : undefined;
-
-const asNumber = (value: unknown): number | undefined =>
-  typeof value === "number" && Number.isFinite(value) ? value : undefined;
-
-const asBoolean = (value: unknown): boolean | undefined =>
-  typeof value === "boolean" ? value : undefined;
+const cookiesFromJsonList = (list: readonly JsonValue[]): ComixCookie[] =>
+  list.flatMap((item) => {
+    if (!isJsonObject(item)) {
+      return [];
+    }
+    const cookie = parseComixCookie(item);
+    return cookie === undefined ? [] : [cookie];
+  });
 
 export const parseCookieHeader = (header: string): ComixCookie[] => {
   const cookies: ComixCookie[] = [];
@@ -96,41 +108,49 @@ export const cookiesFromFlags = (options: {
   return cookies;
 };
 
-export const parseComixCookie = (value: unknown): ComixCookie | undefined => {
-  if (!isRecord(value)) {return undefined;}
-  const name = asString(value.name);
-  const cookieValue = asString(value.value);
-  if (!name || !cookieValue) {return undefined;}
+export const parseComixCookie = (value: JsonObject): ComixCookie | undefined => {
+  const name = presentString(value.name);
+  const cookieValue = presentString(value.value);
+  if (name === undefined || cookieValue === undefined) {return undefined;}
+  const domain = presentString(value.domain);
+  const path = presentString(value.path);
+  const expires = isFiniteNumber(value.expires) ? value.expires : undefined;
+  const httpOnly = isBoolean(value.httpOnly) ? value.httpOnly : undefined;
+  const secure = isBoolean(value.secure) ? value.secure : undefined;
+  const sameSite = presentString(value.sameSite);
+  const session = isBoolean(value.session) ? value.session : undefined;
   return {
     name,
     value: cookieValue,
-    ...(asString(value.domain) && { domain: asString(value.domain) }),
-    ...(asString(value.path) && { path: asString(value.path) }),
-    ...(asNumber(value.expires) !== undefined && { expires: asNumber(value.expires) }),
-    ...(asBoolean(value.httpOnly) !== undefined && { httpOnly: asBoolean(value.httpOnly) }),
-    ...(asBoolean(value.secure) !== undefined && { secure: asBoolean(value.secure) }),
-    ...(asString(value.sameSite) && { sameSite: asString(value.sameSite) }),
-    ...(asBoolean(value.session) !== undefined && { session: asBoolean(value.session) }),
+    ...(domain !== undefined && { domain }),
+    ...(path !== undefined && { path }),
+    ...(expires !== undefined && { expires }),
+    ...(httpOnly !== undefined && { httpOnly }),
+    ...(secure !== undefined && { secure }),
+    ...(sameSite !== undefined && { sameSite }),
+    ...(session !== undefined && { session }),
   };
 };
 
 export const parseStoredSession = (raw: string): StoredComixSession | undefined => {
   try {
+    // SAFETY: secret-store JSON is decoded via isJsonObject / parseComixCookie below
     const parsed: unknown = JSON.parse(raw);
-    if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.cookies)) {
+    if (!isJsonObject(parsed) || parsed.version !== 1) {
       return undefined;
     }
-    const cookies = parsed.cookies.map(parseComixCookie).filter(
-      (cookie): cookie is ComixCookie => cookie !== undefined,
-    );
+    const cookiesRaw = arrayField(parsed, "cookies");
+    if (cookiesRaw === undefined) {return undefined;}
+    const cookies = cookiesFromJsonList(cookiesRaw);
     if (cookies.length === 0) {return undefined;}
-    const harvestedAt = asNumber(parsed.harvestedAt);
+    const harvestedAt = numberField(parsed, "harvestedAt");
     if (harvestedAt === undefined) {return undefined;}
+    const userAgent = presentString(parsed.userAgent);
     return {
       version: 1,
       cookies,
       harvestedAt,
-      ...(asString(parsed.userAgent) && { userAgent: asString(parsed.userAgent) }),
+      ...(userAgent !== undefined && { userAgent }),
     };
   } catch {
     return undefined;
@@ -138,12 +158,12 @@ export const parseStoredSession = (raw: string): StoredComixSession | undefined 
 };
 
 export const clearanceExpiresAtMs = (cookies: readonly ComixCookie[]): number | undefined => {
-  // SAFETY: value is number) at this site
-  const expiries = cookies
-    .filter((cookie) => cookie.name === "cf_clearance" && typeof cookie.expires === "number" && cookie.expires > 0)
-    // SAFETY: value is a number after the preceding runtime check
-    .map((cookie) => cookie.expires as number)
-    .map((expires) => (expires < 1_000_000_000_000 ? expires * 1000 : expires));
+  const expiries = cookies.flatMap((cookie) => {
+    if (cookie.name !== "cf_clearance") {return [];}
+    const expires = cookie.expires;
+    if (expires === undefined || expires <= 0) {return [];}
+    return [expires < 1_000_000_000_000 ? expires * 1000 : expires];
+  });
   if (expiries.length === 0) {return undefined;}
   return Math.min(...expiries);
 };
@@ -194,36 +214,27 @@ export const sessionFromCookies = (
   ...(userAgent && { userAgent }),
 });
 
-export const cookiesFromCdp = (value: unknown): ComixCookie[] => {
-  const list = isRecord(value) && Array.isArray(value.cookies)
+export const cookiesFromCdp = (value: JsonValue): ComixCookie[] => {
+  const list = isJsonObject(value) && isJsonArray(value.cookies)
     ? value.cookies
-    : Array.isArray(value)
+    : isJsonArray(value)
       ? value
       : [];
-  return list.map(parseComixCookie).filter((cookie): cookie is ComixCookie => cookie !== undefined);
+  return cookiesFromJsonList(list);
 };
 
-export interface CdpCookieParam {
-  readonly name: string;
-  readonly value: string;
-  readonly domain: string;
-  readonly path: string;
-  readonly expires?: number;
-  readonly httpOnly?: boolean;
-  readonly secure?: boolean;
-  readonly sameSite?: string;
-}
-
-export const toCdpCookie = (cookie: ComixCookie): CdpCookieParam => {
+export const toCdpCookie = (cookie: ComixCookie): JsonObject => {
   const expires = cookie.expires;
   return {
     name: cookie.name,
     value: cookie.value,
     domain: cookie.domain ?? "comix.to",
     path: cookie.path ?? "/",
-    ...(expires !== undefined && expires > 0 && { expires: expires > 1_000_000_000_000 ? expires / 1000 : expires }),
-    ...(cookie.httpOnly !== undefined && { httpOnly: cookie.httpOnly }),
     secure: cookie.secure ?? true,
-    ...(cookie.sameSite && { sameSite: cookie.sameSite }),
+    ...(expires !== undefined && expires > 0 && {
+      expires: expires > 1_000_000_000_000 ? expires / 1000 : expires,
+    }),
+    ...(cookie.httpOnly !== undefined && { httpOnly: cookie.httpOnly }),
+    ...(cookie.sameSite !== undefined && cookie.sameSite.length > 0 && { sameSite: cookie.sameSite }),
   };
 };

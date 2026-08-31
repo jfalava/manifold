@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
+import { errorMessage } from "@manifold/json";
 
 import { fetchAniListMangaEntries, type AniListEntry } from "@/anilist";
 import { runMigration } from "@/migration";
@@ -193,7 +194,7 @@ export const al2mdCommand = Command.make(
           }
         },
         catch: (cause) =>
-          new Error(cause instanceof Error ? cause.message : String(cause)),
+          new Error(errorMessage(cause)),
       });
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
 ).pipe(

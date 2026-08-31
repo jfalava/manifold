@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { Effect, Schema } from "effect";
+import { errorMessage, isJsonObject, stringField, type JsonObject } from "@manifold/json";
 import {
   createMangaDexClient,
   createMangaDexPasswordGrant,
@@ -14,25 +15,36 @@ import {
   type AuthConnection,
   type AuthProvider,
   type CanonicalEntry,
+  type CompleteOpsInput,
+  type LinkProviderInput,
   type ListEvent,
   type ListState,
+  type NukeEntryInput,
   type OAuthProvider,
   type OpKind,
   type OpOrigin,
   type OpState,
   type OpTarget,
-  type ProviderLink,
   type ReadingProgress,
+  type RecordReadInput,
   type ResolveEntryInput,
+  type SetListStateInput,
+  type SetMangaDexStatusInput,
   type SyncOp,
   type MangaDexLibraryItem,
-  CompleteOpsInput as CompleteOpsInputSchema,
-  LinkProviderInput as LinkProviderInputSchema,
-  RecordReadInput as RecordReadInputSchema,
-  ResolveEntryInput as ResolveEntryInputSchema,
-  SetListStateInput as SetListStateInputSchema,
-  UpsertEntryInput as UpsertEntryInputSchema
+  type UpsertEntryInput,
 } from "./domain";
+import {
+  composeMangaDexEntryStat,
+  mapWithConcurrency,
+  MD_STATS_CONCURRENCY,
+  MD_STATS_FEED_SAMPLE,
+  MD_STATS_TTL_MS,
+  parseMdFeedStatsPayload,
+  sampleFeedStats,
+  type MangaDexEntryStat,
+  type MdFeedStatsPayload,
+} from "./mangadex-stats";
 import {
   createAuthorizationUrl,
   createPkceChallenge,
@@ -40,90 +52,27 @@ import {
   getOAuthClientConfig,
   type OAuthStart,
   type OAuthTokenResponse,
-  OAuthTokenResponse as OAuthTokenResponseSchema
+  OAuthTokenResponse as OAuthTokenResponseSchema,
 } from "./oauth";
-import type { Env } from "./types";
 import { groupOutboxForDrain } from "./outbox-drain";
+import {
+  type EntryRow,
+  type ListEventRow,
+  type ListStateRow,
+  type OAuthSessionRow,
+  type OAuthTokenRow,
+  type OpRow,
+  type ProgressRow,
+  type ProviderRow,
+  toListEvent,
+  toListState,
+  toOp,
+  toProgress,
+} from "./sync-rows";
+import { decryptToken, encryptToken } from "./token-crypto";
+import type { Env } from "./types";
 
-interface EntryRow extends Record<string, SqlStorageValue> {
-  id: string;
-  provider: CanonicalEntry["provider"];
-  provider_id: string;
-  title: string;
-  created_at: number;
-  updated_at: number;
-}
-
-interface ProviderRow extends Record<string, SqlStorageValue> {
-  provider: ProviderLink["provider"];
-  external_id: string;
-  title: string | null;
-  updated_at: number;
-}
-
-interface ProgressRow extends Record<string, SqlStorageValue> {
-  entry_id: string;
-  chapter_key: string;
-  chapter_number: number | null;
-  volume_number: number | null;
-  provider: NonNullable<ReadingProgress["provider"]> | null;
-  source_chapter_id: string | null;
-  read_at: number;
-  version: number;
-}
-
-interface OpRow extends Record<string, SqlStorageValue> {
-  id: number;
-  op_id: string;
-  target: OpTarget;
-  kind: OpKind;
-  origin: OpOrigin;
-  payload: string;
-  state: OpState;
-  attempts: number;
-  last_error: string | null;
-  created_at: number;
-  updated_at: number;
-}
-
-interface ListStateRow extends Record<string, SqlStorageValue> {
-  entry_id: string;
-  status: string | null;
-  score: number | null;
-  notes: string | null;
-  started_at: string | null;
-  completed_at: string | null;
-  volume_progress: number | null;
-  media_list_entry_id: number | null;
-  updated_at: number;
-}
-
-interface ListEventRow extends Record<string, SqlStorageValue> {
-  id: number;
-  entry_id: string;
-  kind: string;
-  origin: OpOrigin;
-  detail: string | null;
-  created_at: number;
-}
-
-interface OAuthSessionRow extends Record<string, SqlStorageValue> {
-  provider: OAuthProvider;
-  state: string;
-  code_verifier: string | null;
-  redirect_uri: string;
-  created_at: number;
-}
-
-interface OAuthTokenRow extends Record<string, SqlStorageValue> {
-  provider: AuthProvider;
-  access_token: string;
-  refresh_token: string | null;
-  token_type: string;
-  expires_at: number | null;
-  scope: string | null;
-  updated_at: number;
-}
+export type { MangaDexEntryStat };
 
 const now = () => Date.now();
 
@@ -133,78 +82,6 @@ const SYNC_MAX_ATTEMPTS = 5;
 // MangaDex status shelves are one idempotent PUT per entry; a small cap per
 // alarm keeps the DO input gate closed only briefly.
 const MD_STATUS_DRAIN_LIMIT = 50;
-
-// MangaDex stats sweep: feed metadata is day-stable (scanlation uploads are
-// rare relative to admin visits), read markers stay uncached.
-const MD_STATS_TTL_MS = 24 * 60 * 60 * 1000;
-// Upstream rate limits (~5 req/s) bound how hard we may hammer the feed sweep.
-const MD_STATS_CONCURRENCY = 4;
-// Feed pages cap at 500; big series rarely list more at once anyway.
-const MD_STATS_FEED_SAMPLE = 500;
-
-interface MdFeedStatsPayload {
-  readonly totalListed: number;
-  readonly latestChapter: number | null;
-  readonly latestPublishedAt: number | null;
-  /** chapter id → chapter number for the sampled feed window. */
-  readonly numbersById: Readonly<Record<string, string>>;
-}
-
-export interface MangaDexEntryStat {
-  readonly lastRead: number | null;
-  readonly readChapters: number | null;
-  readonly totalListed: number | null;
-  readonly latestChapter: number | null;
-  readonly latestDate: string | null;
-  readonly percent: number | null;
-}
-
-/** Run `worker` over `items` with at most `concurrency` in flight. */
-async function mapWithConcurrency<T>(
-  items: readonly T[],
-  concurrency: number,
-  worker: (item: T) => Promise<void>,
-): Promise<void> {
-  let cursor = 0;
-  const runners = Array.from(
-    { length: Math.min(concurrency, items.length) },
-    async () => {
-      while (cursor < items.length) {
-        const item = items[cursor];
-        cursor += 1;
-        await worker(item);
-      }
-    },
-  );
-  await Promise.all(runners);
-}
-
-const errorMessage = (error: unknown): string => {
-  if (error instanceof Error) {return error.message;}
-  if (typeof error === "string") {return error;}
-  try {
-    const serialized = JSON.stringify(error);
-    return serialized === undefined ? String(error) : serialized;
-  } catch {
-    return String(error);
-  }
-};
-
-const toBase64Url = (bytes: Uint8Array): string => {
-  let binary = "";
-  for (const byte of bytes) {binary += String.fromCharCode(byte);}
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
-};
-
-const fromBase64Url = (value: string): Uint8Array => {
-  const padded = value.replaceAll("-", "+").replaceAll("_", "/") + "===";
-  const binary = atob(padded.slice(0, padded.length - (padded.length % 4)));
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-};
 
 export class ManifoldSync extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -357,13 +234,13 @@ export class ManifoldSync extends DurableObject<Env> {
     if (!row) {throw new Error(`Auth provider is not connected: ${provider}`);}
 
     if (row.expires_at === null || row.expires_at > now() + 30_000) {
-      return this.decryptToken(row.access_token);
+      return decryptToken(this.env, row.access_token);
     }
     if (!row.refresh_token) {
       throw new Error(`Auth provider requires reauthorization: ${provider}`);
     }
 
-    const refreshToken = await this.decryptToken(row.refresh_token);
+    const refreshToken = await decryptToken(this.env, row.refresh_token);
     const form =
       provider === "mangadex"
         ? createMangaDexRefreshGrant(
@@ -415,7 +292,7 @@ export class ManifoldSync extends DurableObject<Env> {
     const latest = this.readAuthToken(provider);
     if (!latest || latest.updated_at !== row.updated_at) {
       if (!latest) {throw new Error(`Auth provider disconnected during refresh: ${provider}`);}
-      return this.decryptToken(latest.access_token);
+      return decryptToken(this.env, latest.access_token);
     }
 
     const expiresAt = token.expires_in ? timestamp + token.expires_in * 1000 : null;
@@ -428,8 +305,8 @@ export class ManifoldSync extends DurableObject<Env> {
          scope = ?,
          updated_at = ?
        WHERE provider = ?`,
-      await this.encryptToken(token.access_token),
-      token.refresh_token ? await this.encryptToken(token.refresh_token) : null,
+      await encryptToken(this.env, token.access_token),
+      token.refresh_token ? await encryptToken(this.env, token.refresh_token) : null,
       token.token_type ?? row.token_type,
       expiresAt,
       token.scope ?? row.scope,
@@ -440,39 +317,27 @@ export class ManifoldSync extends DurableObject<Env> {
     return token.access_token;
   }
 
-  async upsertEntry(input: unknown): Promise<CanonicalEntry> {
-    const self = this;
-    return Effect.runPromise(
-      Effect.gen(function* () {
-        const entry = yield* Schema.decodeUnknownEffect(UpsertEntryInputSchema)(input);
-        const timestamp = now();
-
-        yield* Effect.sync(() => {
-          self.ctx.storage.sql.exec(
-            `INSERT INTO canonical_entries
-               (id, provider, provider_id, title, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET
-               provider = excluded.provider,
-               provider_id = excluded.provider_id,
-               title = excluded.title,
-               updated_at = excluded.updated_at`,
-            entry.id,
-            entry.provider,
-            entry.providerId,
-            entry.title,
-            timestamp,
-            timestamp
-          );
-        });
-
-        return yield* Effect.sync(() => {
-          const stored = self.readEntry(entry.id);
-          if (!stored) {throw new Error(`Canonical entry not found after write: ${entry.id}`);}
-          return stored;
-        });
-      })
+  async upsertEntry(input: UpsertEntryInput): Promise<CanonicalEntry> {
+    const timestamp = now();
+    this.ctx.storage.sql.exec(
+      `INSERT INTO canonical_entries
+         (id, provider, provider_id, title, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         provider = excluded.provider,
+         provider_id = excluded.provider_id,
+         title = excluded.title,
+         updated_at = excluded.updated_at`,
+      input.id,
+      input.provider,
+      input.providerId,
+      input.title,
+      timestamp,
+      timestamp,
     );
+    const stored = this.readEntry(input.id);
+    if (!stored) {throw new Error(`Canonical entry not found after write: ${input.id}`);}
+    return stored;
   }
 
   async listEntries(): Promise<readonly CanonicalEntry[]> {
@@ -498,149 +363,149 @@ export class ManifoldSync extends DurableObject<Env> {
         const row = this.ctx.storage.sql
           .exec<ProgressRow>("SELECT * FROM progress_state WHERE entry_id = ?", entryId)
           .toArray()[0];
-        return row ? this.toProgress(row) : undefined;
+        return row ? toProgress(row) : undefined;
       })
     );
   }
 
-  async recordRead(entryId: string, input: unknown): Promise<ReadingProgress> {
-    const self = this;
-    const progress = await Effect.runPromise(
-      Effect.gen(function* () {
-        const read = yield* Schema.decodeUnknownEffect(RecordReadInputSchema)(input);
-        const eventId = read.eventId ?? crypto.randomUUID();
-        const readAt = read.readAt ?? now();
-        // Resolved target may differ from the caller's entryId when a
-        // tombstoned row has a live successor — never reassign the param.
-        let targetEntryId = entryId;
+  async recordRead(entryId: string, input: RecordReadInput): Promise<ReadingProgress> {
+    const eventId = input.eventId ?? crypto.randomUUID();
+    const readAt = input.readAt ?? now();
+    // Resolved target may differ from the caller's entryId when a
+    // tombstoned row has a live successor — never reassign the param.
+    let targetEntryId = entryId;
 
-        yield* Effect.sync(() => {
-          const corpse = self.ctx.storage.sql
-            .exec<{ tombstoned_at: number | null }>(
-              "SELECT tombstoned_at FROM canonical_entries WHERE id = ?",
-              targetEntryId
-            )
-            .toArray()[0];
-          if (!corpse) {
-            throw new Error(`Canonical entry not found: ${targetEntryId}`);
-          }
-          if (corpse.tombstoned_at !== null) {
-            // Reads are sacred: a stale library binding pointing at a nuked
-            // row must never lose a read. Follow any provider link to the
-            // row's live successor; with none, resurrect the corpse.
-            const successor = self.ctx.storage.sql
-              .exec<{ entry_id: string }>(
-                `SELECT pl2.entry_id FROM provider_links pl
-                 JOIN provider_links pl2
-                   ON pl2.provider = pl.provider AND pl2.external_id = pl.external_id
-                 JOIN canonical_entries ce ON ce.id = pl2.entry_id
-                 WHERE pl.entry_id = ? AND pl2.entry_id <> ? AND ce.tombstoned_at IS NULL
-                 LIMIT 1`,
-                targetEntryId,
-                targetEntryId
-              )
-              .toArray()[0];
-            if (successor) {
-              targetEntryId = successor.entry_id;
-            } else {
-              self.ctx.storage.sql.exec(
-                "UPDATE canonical_entries SET tombstoned_at = NULL, updated_at = ? WHERE id = ?",
-                now(),
-                targetEntryId
-              );
-              self.appendEvent(targetEntryId, "list.resurrect", "device", {});
-            }
-          }
+    const corpse = this.ctx.storage.sql
+      .exec<{ tombstoned_at: number | null }>(
+        "SELECT tombstoned_at FROM canonical_entries WHERE id = ?",
+        targetEntryId,
+      )
+      .toArray()[0];
+    if (!corpse) {
+      throw new Error(`Canonical entry not found: ${targetEntryId}`);
+    }
+    if (corpse.tombstoned_at !== null) {
+      // Reads are sacred: a stale library binding pointing at a nuked
+      // row must never lose a read. Follow any provider link to the
+      // row's live successor; with none, resurrect the corpse.
+      const successor = this.ctx.storage.sql
+        .exec<{ entry_id: string }>(
+          `SELECT pl2.entry_id FROM provider_links pl
+           JOIN provider_links pl2
+             ON pl2.provider = pl.provider AND pl2.external_id = pl.external_id
+           JOIN canonical_entries ce ON ce.id = pl2.entry_id
+           WHERE pl.entry_id = ? AND pl2.entry_id <> ? AND ce.tombstoned_at IS NULL
+           LIMIT 1`,
+          targetEntryId,
+          targetEntryId,
+        )
+        .toArray()[0];
+      if (successor) {
+        targetEntryId = successor.entry_id;
+      } else {
+        this.ctx.storage.sql.exec(
+          "UPDATE canonical_entries SET tombstoned_at = NULL, updated_at = ? WHERE id = ?",
+          now(),
+          targetEntryId,
+        );
+        this.appendEvent(targetEntryId, "list.resurrect", "device", {});
+      }
+    }
 
-          const existingEvent = self.ctx.storage.sql
-            .exec<{ entry_id: string }>("SELECT entry_id FROM read_events WHERE event_id = ?", eventId)
-            .toArray()[0];
+    const existingEvent = this.ctx.storage.sql
+      .exec<{ entry_id: string }>("SELECT entry_id FROM read_events WHERE event_id = ?", eventId)
+      .toArray()[0];
 
-          if (existingEvent) {
-            if (existingEvent.entry_id !== targetEntryId) {
-              throw new Error(`Read event ${eventId} belongs to another entry`);
-            }
-            return;
-          }
+    if (existingEvent) {
+      if (existingEvent.entry_id !== targetEntryId) {
+        throw new Error(`Read event ${eventId} belongs to another entry`);
+      }
+    } else {
+      this.ctx.storage.sql.exec(
+        `INSERT INTO read_events
+           (event_id, entry_id, chapter_key, read_at)
+         VALUES (?, ?, ?, ?)`,
+        eventId,
+        targetEntryId,
+        input.chapterKey,
+        readAt,
+      );
 
-          self.ctx.storage.sql.exec(
-            `INSERT INTO read_events
-               (event_id, entry_id, chapter_key, read_at)
-             VALUES (?, ?, ?, ?)`,
-            eventId,
-            targetEntryId,
-            read.chapterKey,
-            readAt
-          );
+      const current = this.ctx.storage.sql
+        .exec<{ version: number }>("SELECT version FROM progress_state WHERE entry_id = ?", targetEntryId)
+        .toArray()[0];
+      const nextVersion = (current?.version ?? 0) + 1;
 
-          const current = self.ctx.storage.sql
-            .exec<{ version: number }>("SELECT version FROM progress_state WHERE entry_id = ?", targetEntryId)
-            .toArray()[0];
-          const nextVersion = (current?.version ?? 0) + 1;
+      this.ctx.storage.sql.exec(
+        `INSERT INTO progress_state
+           (entry_id, chapter_key, chapter_number, volume_number, provider,
+            source_chapter_id, read_at, version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(entry_id) DO UPDATE SET
+           chapter_key = excluded.chapter_key,
+           chapter_number = excluded.chapter_number,
+           volume_number = excluded.volume_number,
+           provider = excluded.provider,
+           source_chapter_id = excluded.source_chapter_id,
+           read_at = excluded.read_at,
+           version = excluded.version
+         WHERE excluded.read_at >= progress_state.read_at`,
+        targetEntryId,
+        input.chapterKey,
+        input.chapterNumber ?? null,
+        input.volumeNumber ?? null,
+        input.provider ?? null,
+        input.sourceChapterId ?? null,
+        readAt,
+        nextVersion,
+      );
 
-          self.ctx.storage.sql.exec(
-            `INSERT INTO progress_state
-               (entry_id, chapter_key, chapter_number, volume_number, provider,
-                source_chapter_id, read_at, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(entry_id) DO UPDATE SET
-               chapter_key = excluded.chapter_key,
-               chapter_number = excluded.chapter_number,
-               volume_number = excluded.volume_number,
-               provider = excluded.provider,
-               source_chapter_id = excluded.source_chapter_id,
-               read_at = excluded.read_at,
-               version = excluded.version
-             WHERE excluded.read_at >= progress_state.read_at`,
-            targetEntryId,
-            read.chapterKey,
-            read.chapterNumber ?? null,
-            read.volumeNumber ?? null,
-            read.provider ?? null,
-            read.sourceChapterId ?? null,
-            readAt,
-            nextVersion
-          );
-
-          if (read.provider === "mangadex" && read.sourceChapterId) {
-            self.enqueueOp({
-              opId: eventId,
-              target: "mangadex",
-              kind: "mangadex.read",
-              origin: "device",
-              payload: { entryId: targetEntryId, ...read, eventId, readAt }
-            });
-          }
-
-          // Shelf mirror: any chapter read (MangaDex or Comix fallback) on a
-          // title that has a MangaDex provider link but is not yet on the
-          // user's MangaDex library should appear there as "reading".
-          // Copyrighted titles without an MD link are skipped — nothing to
-          // mark. Deduplicated by primary key until drained.
-          const mdLink = self.ctx.storage.sql
-            .exec<{ external_id: string }>(
-              "SELECT external_id FROM provider_links WHERE entry_id = ? AND provider = 'mangadex' LIMIT 1",
-              targetEntryId
-            )
-            .toArray()[0];
-          if (mdLink) {
-            self.ctx.storage.sql.exec(
-              `INSERT INTO md_status_queue (entry_id, created_at, attempts)
-               VALUES (?, ?, 0)
-               ON CONFLICT(entry_id) DO NOTHING`,
-              targetEntryId,
-              now()
-            );
-          }
+      if (input.provider === "mangadex" && input.sourceChapterId) {
+        const payload: JsonObject = {
+          entryId: targetEntryId,
+          chapterKey: input.chapterKey,
+          eventId,
+          readAt,
+          ...(input.chapterNumber !== undefined && { chapterNumber: input.chapterNumber }),
+          ...(input.volumeNumber !== undefined && { volumeNumber: input.volumeNumber }),
+          ...(input.provider !== undefined && { provider: input.provider }),
+          ...(input.sourceChapterId !== undefined && { sourceChapterId: input.sourceChapterId }),
+        };
+        this.enqueueOp({
+          opId: eventId,
+          target: "mangadex",
+          kind: "mangadex.read",
+          origin: "device",
+          payload,
         });
+      }
 
-        const written = yield* Effect.sync(() => self.getProgressSync(targetEntryId));
-        if (!written) {
-          throw new Error(`Progress was not written for entry ${targetEntryId}`);
-        }
-        return written;
-      })
-    );
+      // Shelf mirror: any chapter read (MangaDex or Comix fallback) on a
+      // title that has a MangaDex provider link but is not yet on the
+      // user's MangaDex library should appear there as "reading".
+      // Copyrighted titles without an MD link are skipped — nothing to
+      // mark. Deduplicated by primary key until drained.
+      const mdLink = this.ctx.storage.sql
+        .exec<{ external_id: string }>(
+          "SELECT external_id FROM provider_links WHERE entry_id = ? AND provider = 'mangadex' LIMIT 1",
+          targetEntryId,
+        )
+        .toArray()[0];
+      if (mdLink) {
+        this.ctx.storage.sql.exec(
+          `INSERT INTO md_status_queue (entry_id, created_at, attempts)
+           VALUES (?, ?, 0)
+           ON CONFLICT(entry_id) DO NOTHING`,
+          targetEntryId,
+          now(),
+        );
+      }
+    }
+
+    const progress = this.getProgressSync(targetEntryId);
+    if (!progress) {
+      throw new Error(`Progress was not written for entry ${targetEntryId}`);
+    }
     try {
       await this.scheduleSync();
     } catch (error) {
@@ -697,13 +562,10 @@ export class ManifoldSync extends DurableObject<Env> {
       const fresh = new Set<string>();
       for (const row of rows) {
         if (row.computed_at < cutoff) {continue;}
-        try {
-          // SAFETY: parsed JSON matches MdFeedStatsPayload); for this trusted/test payload
-          meta.set(row.manga_id, JSON.parse(row.payload) as MdFeedStatsPayload);
-          fresh.add(row.manga_id);
-        } catch {
-          // Corrupt row: treat as stale below.
-        }
+        const payload = parseMdFeedStatsPayload(row.payload);
+        if (!payload) {continue;}
+        meta.set(row.manga_id, payload);
+        fresh.add(row.manga_id);
       }
       for (const mangaDexId of chunk) {
         if (!fresh.has(mangaDexId)) {staleIds.push(mangaDexId);}
@@ -716,20 +578,7 @@ export class ManifoldSync extends DurableObject<Env> {
         const page = await Effect.runPromise(
           client.feedChapters(mangaDexId, { limit: MD_STATS_FEED_SAMPLE }),
         );
-        const newest = page.items[0];
-        const payload: MdFeedStatsPayload = {
-          totalListed: page.total ?? page.items.length,
-          latestChapter: newest?.chapterNumber ?? null,
-          latestPublishedAt: newest?.publishedAt ?? null,
-          numbersById: Object.fromEntries(
-            page.items.flatMap((chapter) =>
-              chapter.chapterNumber === undefined
-                ? []
-                : [[chapter.id, String(chapter.chapterNumber)] as const],
-            ),
-          ),
-        };
-        fetched.set(mangaDexId, payload);
+        fetched.set(mangaDexId, sampleFeedStats(page));
       } catch {
         // One failed lookup must not kill the batch — its cells stay "—".
       }
@@ -764,40 +613,11 @@ export class ManifoldSync extends DurableObject<Env> {
     // 3. Compose.
     const stats: Record<string, MangaDexEntryStat> = {};
     for (const mangaDexId of wanted) {
-      const feed = meta.get(mangaDexId);
-      const marks = readMarkers.get(mangaDexId);
-      const totalListed = feed?.totalListed ?? null;
-      let lastRead: number | null = null;
-      let readChapters: number | null = null;
-      if (!markerFailures.has(mangaDexId)) {
-        readChapters = 0;
-        if (marks !== undefined && feed !== undefined) {
-          for (const chapterId of marks) {
-            const numberText = feed.numbersById[chapterId];
-            if (numberText === undefined) {continue;}
-            readChapters += 1;
-            const parsed = Number.parseFloat(numberText);
-            if (Number.isFinite(parsed) && (lastRead === null || parsed > lastRead)) {
-              lastRead = parsed;
-            }
-          }
-        }
-      }
-      const percent =
-        totalListed !== null && totalListed > 0 && readChapters !== null
-          ? Math.min(100, Math.round((readChapters / totalListed) * 100))
-          : null;
-      stats[mangaDexId] = {
-        lastRead,
-        readChapters,
-        totalListed,
-        latestChapter: feed?.latestChapter ?? null,
-        latestDate:
-          feed?.latestPublishedAt !== undefined && feed?.latestPublishedAt !== null
-            ? new Date(feed.latestPublishedAt).toISOString().slice(0, 10)
-            : null,
-        percent,
-      };
+      stats[mangaDexId] = composeMangaDexEntryStat(
+        meta.get(mangaDexId),
+        readMarkers.get(mangaDexId),
+        markerFailures.has(mangaDexId),
+      );
     }
     return stats;
   }
@@ -950,29 +770,10 @@ export class ManifoldSync extends DurableObject<Env> {
     return Effect.runPromise(client.followedFeed({ limit, offset }));
   }
 
-  async setMangaDexStatus(mangaDexId: string, input: unknown): Promise<void> {
-    // SAFETY: optional field is known } | null | undefined)?.status; if ( when present at this call site
-    const status = (input as { status?: unknown } | null | undefined)?.status;
-    if (
-      status !== null &&
-      status !== "reading" &&
-      status !== "on_hold" &&
-      status !== "plan_to_read" &&
-      status !== "dropped" &&
-      status !== "re_reading" &&
-      status !== "completed"
-    ) {
-      throw new Error("Invalid MangaDex reading status");
-    }
+  async setMangaDexStatus(mangaDexId: string, input: SetMangaDexStatusInput): Promise<void> {
     const accessToken = await this.getAuthAccessToken("mangadex");
     const client = createMangaDexClient({ accessToken });
-    await Effect.runPromise(
-      client.updateReadingStatus(
-        mangaDexId,
-        // SAFETY: value matches of status, null>), ), ); at this call site
-        status === null ? null : (status as Exclude<typeof status, null>),
-      ),
-    );
+    await Effect.runPromise(client.updateReadingStatus(mangaDexId, input.status));
     this.mdLibraryCache = undefined;
   }
 
@@ -1024,17 +825,14 @@ export class ManifoldSync extends DurableObject<Env> {
   // Registry: provider-neutral entries keyed by minted UUIDs.
   // ------------------------------------------------------------------
 
-  async resolveEntry(input: unknown): Promise<CanonicalEntry> {
-    const request = await Effect.runPromise(
-      Schema.decodeUnknownEffect(ResolveEntryInputSchema)(input)
-    );
-    return this.resolveEntrySync(request);
+  async resolveEntry(input: ResolveEntryInput): Promise<CanonicalEntry> {
+    return this.resolveEntrySync(input);
   }
 
-  async resolveEntries(input: unknown): Promise<readonly CanonicalEntry[]> {
-    const requests = await Effect.runPromise(
-      Schema.decodeUnknownEffect(Schema.Array(ResolveEntryInputSchema))(input)
-    );
+  async resolveEntries(
+    input: readonly ResolveEntryInput[] | ResolveEntryInput,
+  ): Promise<readonly CanonicalEntry[]> {
+    const requests = Array.isArray(input) ? input : [input];
     return requests.map((request) => this.resolveEntrySync(request));
   }
 
@@ -1126,58 +924,45 @@ export class ManifoldSync extends DurableObject<Env> {
 
   // Binding moves the link: a provider id points at exactly one entry, so a
   // re-bind steals it from wherever it hung before.
-  async linkProvider(entryId: string, input: unknown): Promise<CanonicalEntry> {
-    const self = this;
-    return Effect.runPromise(
-      Effect.gen(function* () {
-        const link = yield* Schema.decodeUnknownEffect(LinkProviderInputSchema)(input);
-        const timestamp = now();
-
-        yield* Effect.sync(() => {
-          self.requireEntry(entryId);
-          const stolen = self.ctx.storage.sql
-            .exec<{ entry_id: string }>(
-              "SELECT entry_id FROM provider_links WHERE provider = ? AND external_id = ? AND entry_id <> ?",
-              link.provider,
-              link.externalId,
-              entryId
-            )
-            .toArray()[0];
-          if (stolen) {
-            self.ctx.storage.sql.exec(
-              "DELETE FROM provider_links WHERE entry_id = ? AND provider = ?",
-              stolen.entry_id,
-              link.provider
-            );
-            
-          }
-          self.ctx.storage.sql.exec(
-            `INSERT INTO provider_links
-               (entry_id, provider, external_id, title, updated_at)
-             VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(entry_id, provider) DO UPDATE SET
-               external_id = excluded.external_id,
-               title = excluded.title,
-               updated_at = excluded.updated_at`,
-            entryId,
-            link.provider,
-            link.externalId,
-            link.title ?? null,
-            timestamp
-          );
-          self.appendEvent(entryId, "link.set", "admin", {
-            provider: link.provider,
-            externalId: link.externalId
-          });
-        });
-
-        return yield* Effect.sync(() => {
-          const stored = self.readEntry(entryId);
-          if (!stored) {throw new Error(`Canonical entry not found after link: ${entryId}`);}
-          return stored;
-        });
-      })
+  async linkProvider(entryId: string, input: LinkProviderInput): Promise<CanonicalEntry> {
+    const timestamp = now();
+    this.requireEntry(entryId);
+    const stolen = this.ctx.storage.sql
+      .exec<{ entry_id: string }>(
+        "SELECT entry_id FROM provider_links WHERE provider = ? AND external_id = ? AND entry_id <> ?",
+        input.provider,
+        input.externalId,
+        entryId,
+      )
+      .toArray()[0];
+    if (stolen) {
+      this.ctx.storage.sql.exec(
+        "DELETE FROM provider_links WHERE entry_id = ? AND provider = ?",
+        stolen.entry_id,
+        input.provider,
+      );
+    }
+    this.ctx.storage.sql.exec(
+      `INSERT INTO provider_links
+         (entry_id, provider, external_id, title, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(entry_id, provider) DO UPDATE SET
+         external_id = excluded.external_id,
+         title = excluded.title,
+         updated_at = excluded.updated_at`,
+      entryId,
+      input.provider,
+      input.externalId,
+      input.title ?? null,
+      timestamp,
     );
+    this.appendEvent(entryId, "link.set", "admin", {
+      provider: input.provider,
+      externalId: input.externalId,
+    });
+    const stored = this.readEntry(entryId);
+    if (!stored) {throw new Error(`Canonical entry not found after link: ${entryId}`);}
+    return stored;
   }
 
   async unlinkProvider(entryId: string, provider: string): Promise<CanonicalEntry> {
@@ -1197,13 +982,8 @@ export class ManifoldSync extends DurableObject<Env> {
   // Paperback has no UI for (score, notes, dates).
   // ------------------------------------------------------------------
 
-  async setListState(entryId: string, input: unknown): Promise<ListState> {
-    const changes = await Effect.runPromise(
-      Effect.gen(function* () {
-        return yield* Schema.decodeUnknownEffect(SetListStateInputSchema)(input);
-      })
-    );
-
+  async setListState(entryId: string, input: SetListStateInput): Promise<ListState> {
+    const changes = input;
     this.requireEntry(entryId);
     const timestamp = now();
     const current = this.readListState(entryId);
@@ -1251,7 +1031,17 @@ export class ManifoldSync extends DurableObject<Env> {
     );
 
     const origin: OpOrigin = changes.origin ?? "admin";
-    this.appendEvent(entryId, "list.state", origin, { ...changes });
+    const eventDetail: JsonObject = {
+      ...(changes.status !== undefined && { status: changes.status }),
+      ...(changes.score !== undefined && { score: changes.score }),
+      ...(changes.notes !== undefined && { notes: changes.notes }),
+      ...(changes.startedAt !== undefined && { startedAt: changes.startedAt }),
+      ...(changes.completedAt !== undefined && { completedAt: changes.completedAt }),
+      ...(changes.volumeProgress !== undefined && { volumeProgress: changes.volumeProgress }),
+      ...(changes.origin !== undefined && { origin: changes.origin }),
+      ...(changes.appliedRemotely !== undefined && { appliedRemotely: changes.appliedRemotely }),
+    };
+    this.appendEvent(entryId, "list.state", origin, eventDetail);
 
     // Device-originated mutations were already applied to AniList on-device;
     // everything else becomes an op the device will drain.
@@ -1286,8 +1076,8 @@ export class ManifoldSync extends DurableObject<Env> {
           ...(nextNotes !== undefined && { notes: nextNotes }),
           ...(nextStarted !== undefined && { startedAt: nextStarted }),
           ...(nextCompleted !== undefined && { completedAt: nextCompleted }),
-          ...(nextVolumes !== undefined && { volumeProgress: nextVolumes })
-        }
+          ...(nextVolumes !== undefined && { volumeProgress: nextVolumes }),
+        } satisfies JsonObject,
       });
     }
 
@@ -1302,13 +1092,8 @@ export class ManifoldSync extends DurableObject<Env> {
 
   // Removal is a full nuke: the AniList entry is deleted outright and the
   // registry row is tombstoned so history survives upstream.
-  async nukeEntry(entryId: string, input: unknown): Promise<ListState | undefined> {
-    // SAFETY: optional field is known } | null | undefined) ?? {}; const ori when present at this call site
-    const record = (input as { origin?: unknown } | null | undefined) ?? {};
-    const origin: OpOrigin =
-      record.origin === "device" || record.origin === "cli" || record.origin === "migration"
-        ? record.origin
-        : "admin";
+  async nukeEntry(entryId: string, input: NukeEntryInput): Promise<ListState | undefined> {
+    const origin: OpOrigin = input.origin ?? "admin";
     this.requireEntry(entryId);
     const anilistId = this.anilistLinkOf(entryId);
     const current = this.readListState(entryId);
@@ -1324,8 +1109,8 @@ export class ManifoldSync extends DurableObject<Env> {
           anilistId,
           ...(current?.mediaListEntryId !== undefined && {
             mediaListEntryId: current.mediaListEntryId,
-          })
-        }
+          }),
+        },
       });
     }
 
@@ -1334,11 +1119,13 @@ export class ManifoldSync extends DurableObject<Env> {
       "UPDATE canonical_entries SET tombstoned_at = ?, updated_at = ? WHERE id = ?",
       timestamp,
       timestamp,
-      entryId
+      entryId,
     );
     this.ctx.storage.sql.exec("DELETE FROM md_status_queue WHERE entry_id = ?", entryId);
-    this.appendEvent(entryId, "list.nuke", origin, { anilistId });
-    
+    this.appendEvent(entryId, "list.nuke", origin, {
+      ...(anilistId !== undefined && { anilistId }),
+    });
+
     return this.readListState(entryId);
   }
 
@@ -1360,15 +1147,7 @@ export class ManifoldSync extends DurableObject<Env> {
                   Math.min(500, Math.max(1, limit))
                 )
                 .toArray()
-        ).map((row) => ({
-          id: row.id,
-          entryId: row.entry_id,
-          kind: row.kind,
-          origin: row.origin,
-          // SAFETY: test/double or boundary cast through unknown to Record<string, unknown> } : {}), cr
-          ...(row.detail && { detail: JSON.parse(row.detail) as Record<string, unknown> }),
-          createdAt: row.created_at
-        }));
+        ).map((row) => toListEvent(row));
         return rows;
       })
     );
@@ -1386,15 +1165,10 @@ export class ManifoldSync extends DurableObject<Env> {
     );
   }
 
-  async completeOps(input: unknown): Promise<{ updated: number }> {
-    const body = await Effect.runPromise(
-      Effect.gen(function* () {
-        return yield* Schema.decodeUnknownEffect(CompleteOpsInputSchema)(input);
-      })
-    );
+  async completeOps(input: CompleteOpsInput): Promise<{ updated: number }> {
     let updated = 0;
     const timestamp = now();
-    for (const result of body.results) {
+    for (const result of input.results) {
       const row = this.ctx.storage.sql
         .exec<OpRow>("SELECT * FROM sync_ops WHERE op_id = ?", result.opId)
         .toArray()[0];
@@ -1405,16 +1179,21 @@ export class ManifoldSync extends DurableObject<Env> {
            WHERE id = ?`,
           row.attempts + 1,
           timestamp,
-          row.id
+          row.id,
         );
         if (result.mediaListEntryId !== undefined && row.target === "anilist") {
-          // SAFETY: parsed JSON matches { entryId?: string }; if (payloa for this trusted/test payload
-          const payload = JSON.parse(row.payload) as { entryId?: string };
-          if (payload.entryId) {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(row.payload);
+          } catch {
+            parsed = undefined;
+          }
+          const entryId = isJsonObject(parsed) ? stringField(parsed, "entryId") : undefined;
+          if (entryId) {
             this.ctx.storage.sql.exec(
               "UPDATE list_state SET media_list_entry_id = ? WHERE entry_id = ?",
               result.mediaListEntryId,
-              payload.entryId
+              entryId,
             );
           }
         }
@@ -1447,7 +1226,7 @@ export class ManifoldSync extends DurableObject<Env> {
     const row = this.ctx.storage.sql
       .exec<OpRow>("SELECT * FROM sync_ops WHERE op_id = ?", opId)
       .toArray()[0];
-    return row ? this.toOp(row) : undefined;
+    return row ? toOp(row) : undefined;
   }
 
   async listOps(state?: string, target?: string, limit = 200): Promise<readonly SyncOp[]> {
@@ -1468,7 +1247,7 @@ export class ManifoldSync extends DurableObject<Env> {
         const rows = this.ctx.storage.sql
           .exec<OpRow>(`SELECT * FROM sync_ops ${where} ORDER BY id DESC LIMIT ?`, ...params)
           .toArray();
-        return rows.map((row) => this.toOp(row));
+        return rows.map((row) => toOp(row));
       })
     );
   }
@@ -1623,7 +1402,7 @@ export class ManifoldSync extends DurableObject<Env> {
     }
   }
 
-  private failOps(rows: readonly { id: number; attempts: number }[], error: unknown): void {
+  private failOps(rows: readonly { id: number; attempts: number }[], cause: unknown): void {
     for (const row of rows) {
       const attempt = row.attempts + 1;
       const state: OpState = attempt >= SYNC_MAX_ATTEMPTS ? "blocked" : "pending";
@@ -1633,13 +1412,13 @@ export class ManifoldSync extends DurableObject<Env> {
          WHERE id = ? AND state = 'pending'`,
         state,
         attempt,
-        errorMessage(error).slice(0, 500),
+        errorMessage(cause).slice(0, 500),
         now(),
-        row.id
+        row.id,
       );
       console.error(
         `[ManifoldSync] op failed:${row.id}:attempt=${attempt}:` +
-          `${state}:${errorMessage(error)}`
+          `${state}:${errorMessage(cause)}`,
       );
     }
   }
@@ -1671,9 +1450,9 @@ export class ManifoldSync extends DurableObject<Env> {
     token: OAuthTokenResponse
   ): Promise<AuthConnection> {
     const timestamp = now();
-    const encryptedAccessToken = await this.encryptToken(token.access_token);
+    const encryptedAccessToken = await encryptToken(this.env, token.access_token);
     const encryptedRefreshToken = token.refresh_token
-      ? await this.encryptToken(token.refresh_token)
+      ? await encryptToken(this.env, token.refresh_token)
       : null;
     const expiresAt = token.expires_in ? timestamp + token.expires_in * 1000 : null;
 
@@ -1719,46 +1498,6 @@ export class ManifoldSync extends DurableObject<Env> {
     return this.ctx.storage.sql
       .exec<OAuthTokenRow>("SELECT * FROM oauth_tokens WHERE provider = ?", provider)
       .toArray()[0];
-  }
-
-  private async encryptionKey(): Promise<CryptoKey> {
-    const encryptionSecret = await readSecret(
-      this.env.OAUTH_TOKEN_ENCRYPTION_SECRET,
-      "OAUTH_TOKEN_ENCRYPTION_SECRET"
-    );
-    const digest = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(encryptionSecret)
-    );
-    return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, [
-      "encrypt",
-      "decrypt"
-    ]);
-  }
-
-  private async encryptToken(value: string): Promise<string> {
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encrypted = await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv },
-      await this.encryptionKey(),
-      new TextEncoder().encode(value)
-    );
-    const combined = new Uint8Array(iv.byteLength + encrypted.byteLength);
-    combined.set(iv);
-    combined.set(new Uint8Array(encrypted), iv.byteLength);
-    return toBase64Url(combined);
-  }
-
-  private async decryptToken(value: string): Promise<string> {
-    const combined = fromBase64Url(value);
-    const iv = combined.slice(0, 12);
-    const encrypted = combined.slice(12);
-    const decrypted = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv },
-      await this.encryptionKey(),
-      encrypted
-    );
-    return new TextDecoder().decode(decrypted);
   }
 
   private migrate(): void {
@@ -1923,7 +1662,7 @@ export class ManifoldSync extends DurableObject<Env> {
     target: OpTarget;
     kind: OpKind;
     origin: OpOrigin;
-    payload: Record<string, unknown>;
+    payload: JsonObject;
   }): void {
     const timestamp = now();
     this.ctx.storage.sql.exec(
@@ -1959,52 +1698,15 @@ export class ManifoldSync extends DurableObject<Env> {
               limit
             )
             .toArray()
-    ).map((row) => this.toOp(row));
+    ).map((row) => toOp(row));
     return rows;
-  }
-
-  private toOp(row: OpRow): SyncOp {
-    let payload: Record<string, unknown>;
-    try {
-      // SAFETY: test/double or boundary cast through unknown to Record<string, unknown>; } catch { pa
-      payload = JSON.parse(row.payload) as Record<string, unknown>;
-    } catch {
-      // Keep the original string so ops UI can surface unparseable rows.
-      payload = {};
-      payload.raw = row.payload;
-    }
-    return {
-      id: row.id,
-      opId: row.op_id,
-      target: row.target,
-      kind: row.kind,
-      origin: row.origin,
-      payload,
-      state: row.state,
-      attempts: row.attempts,
-      ...(!(row.last_error === null) && { lastError: row.last_error }),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    };
   }
 
   private readListState(entryId: string): ListState | undefined {
     const row = this.ctx.storage.sql
       .exec<ListStateRow>("SELECT * FROM list_state WHERE entry_id = ?", entryId)
       .toArray()[0];
-    if (!row) {return undefined;}
-    return {
-      entryId: row.entry_id,
-      // SAFETY: value matches "status"] }), ...(row.score at this call site
-      ...(!(row.status === null) && { status: row.status as ListState["status"] }),
-      ...(!(row.score === null) && { score: row.score }),
-      ...(!(row.notes === null) && { notes: row.notes }),
-      ...(!(row.started_at === null) && { startedAt: row.started_at }),
-      ...(!(row.completed_at === null) && { completedAt: row.completed_at }),
-      ...(!(row.volume_progress === null) && { volumeProgress: row.volume_progress }),
-      ...(!(row.media_list_entry_id === null) && { mediaListEntryId: row.media_list_entry_id }),
-      updatedAt: row.updated_at
-    };
+    return row ? toListState(row) : undefined;
   }
 
   private anilistLinkOf(entryId: string): string | undefined {
@@ -2022,7 +1724,7 @@ export class ManifoldSync extends DurableObject<Env> {
     entryId: string,
     kind: string,
     origin: OpOrigin,
-    detail?: Record<string, unknown>
+    detail?: JsonObject,
   ): void {
     this.ctx.storage.sql.exec(
       `INSERT INTO list_events (entry_id, kind, origin, detail, created_at)
@@ -2072,19 +1774,6 @@ export class ManifoldSync extends DurableObject<Env> {
     const row = this.ctx.storage.sql
       .exec<ProgressRow>("SELECT * FROM progress_state WHERE entry_id = ?", entryId)
       .toArray()[0];
-    return row ? this.toProgress(row) : undefined;
-  }
-
-  private toProgress(row: ProgressRow): ReadingProgress {
-    return {
-      entryId: row.entry_id,
-      chapterKey: row.chapter_key,
-      ...(!(row.chapter_number === null) && { chapterNumber: row.chapter_number }),
-      ...(!(row.volume_number === null) && { volumeNumber: row.volume_number }),
-      ...(!(row.provider === null) && { provider: row.provider }),
-      ...(!(row.source_chapter_id === null) && { sourceChapterId: row.source_chapter_id }),
-      readAt: row.read_at,
-      version: row.version
-    };
+    return row ? toProgress(row) : undefined;
   }
 }

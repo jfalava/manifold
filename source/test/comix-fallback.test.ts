@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SourceManga } from "@paperback/types";
 
+import type { JsonObject } from "@manifold/json";
 import {
   chapterItemsFromCapture,
   isComixChapterId,
@@ -24,7 +25,7 @@ const sourceManga: SourceManga = {
 
 describe("pickComixMatch", () => {
   it("prefers an exact normalized title match", () => {
-    const items = [
+    const items: JsonObject[] = [
       { hid: "aaa", title: "Cuckoos Guide" },
       { hid: "6glz", title: "A Couple of Cuckoos" },
     ];
@@ -32,7 +33,7 @@ describe("pickComixMatch", () => {
   });
 
   it("matches alt titles and falls back to partial inclusion", () => {
-    const items = [
+    const items: JsonObject[] = [
       { hid: "abc", title: "Something Else", altTitles: ["Kakkou no Iinazuke"] },
       { hid: "zzz", title: "A Couple of Cuckoo Sequel" },
     ];
@@ -41,11 +42,11 @@ describe("pickComixMatch", () => {
   });
 
   it("returns undefined when nothing matches", () => {
-    expect(pickComixMatch([{ hid: "x", title: "Unrelated" }], ["Cuckoos"])).toBeUndefined();
+    expect(pickComixMatch([{ hid: "x", title: "Unrelated" } satisfies JsonObject], ["Cuckoos"])).toBeUndefined();
   });
 
   it("exactOnly skips fuzzy matches that plain mode would take", () => {
-    const items = [{ hid: "zzz", title: "A Couple of Cuckoo Sequel" }];
+    const items: JsonObject[] = [{ hid: "zzz", title: "A Couple of Cuckoo Sequel" }];
     expect(pickComixMatch(items, ["A Couple of Cuckoos"])?.hid).toBe("zzz");
     expect(pickComixMatch(items, ["A Couple of Cuckoos"], true)).toBeUndefined();
   });

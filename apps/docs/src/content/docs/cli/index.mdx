@@ -1,0 +1,65 @@
+---
+title: Overview
+description: Migrations, op-log triage, drift reconciliation, and registry backfill from the terminal.
+audience: human
+sidebar:
+  order: 1
+  label: Overview
+---
+
+`manifold` lives in `apps/cli` (`@manifold/cli`). Run it from the repo root:
+
+```text
+bun run manifold <subcommand> [flags]
+```
+
+## Command tree
+
+```text
+manifold
+├── migrate
+│   ├── md2al                 MangaDex library → private AniList entries
+│   ├── anilist-to-mangadex   AniList list → MangaDex statuses + markers
+│   ├── wipe-al               Delete all AniList manga list + activities
+│   └── al2pas5               AniList list → Paperback .pas5 backup
+├── stale-status              Mass-set MangaDex status by chapter age
+├── unfollow-dropped          Unfollow MangaDex titles by reading status
+├── ops
+│   ├── pending               List pending / failed / blocked ops
+│   └── retry                 Reset one op back to pending
+├── reconcile
+│   └── diff                  Live AniList vs registry (read-only)
+└── registry
+    ├── import                Snapshot AniList list into the registry
+    ├── mangadex              Prefill MangaDex provider links
+    └── comix                 Prefill Comix hid links via local Chrome
+```
+
+Each leaf has its own page in this section.
+
+## Configuration
+
+Remote-touching commands resolve credentials the same way: **flag → bare env → `ALCHEMY_SECRET_`-prefixed env** (the `iac/.env` convention).
+
+| Flag | Environment fallback | Used by |
+| --- | --- | --- |
+| `--api-token` | `MANIFOLD_TOKEN` / `ALCHEMY_SECRET_MANIFOLD_TOKEN` | ops, reconcile, registry |
+| `--api-origin` | `MANIFOLD_API_ORIGIN` | ops, reconcile, registry (default `https://manifold.jfa.dev/api`) |
+| `--anilist-token` | `ANILIST_TOKEN` / `ALCHEMY_SECRET_ANILIST_TOKEN` | migrate, reconcile, registry |
+| MangaDex client flags | `MANGADEX_CLIENT_ID` / `SECRET` / `USERNAME` / `PASSWORD` | migrate, stale-status, unfollow-dropped |
+
+AniList writes always run on your machine — AniList blocks Cloudflare Worker egress IPs, which is also why `anilist:*` ops drain on the device rather than the Worker.
+
+## Dry-run defaults
+
+Most write commands are **dry-run until `--apply`**. Exceptions:
+
+| Command | Gate |
+| --- | --- |
+| `migrate wipe-al` | Interactive confirm, or `--yes` |
+| `ops retry` | Writes immediately |
+| `registry import` | Writes immediately (idempotent; no ops enqueued) |
+
+## Exit codes
+
+Human-readable tables and summaries go to stdout. Non-zero exit means failure — usually an upstream HTTP error (AniList rate limits: expect ~2.5 s spacing and 429 backoff) or a missing token.

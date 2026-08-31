@@ -9,6 +9,7 @@
   },
   "include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
   "references": [
+    { "path": "../../packages/json" },
     { "path": "../../packages/canonical" },
     { "path": "../../packages/mangadex" },
     { "path": "../../packages/comix" }

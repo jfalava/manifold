@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
+import { requestHref, requestInitText, type JsonValue } from "@manifold/json";
 import { createMangaDexClient } from "../src/index";
 
-const jsonResponse = (body: unknown, status = 200): Response =>
+const jsonResponse = (body: JsonValue, status = 200): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/json" },
@@ -14,7 +15,7 @@ describe("MangaDex client", () => {
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
-        requests.push(String(input));
+        requests.push(requestHref(input));
         return jsonResponse({
           data: [{
             id: "manga-1",
@@ -58,7 +59,7 @@ describe("MangaDex client", () => {
       endpoint: "https://mangadex.test",
       limit: 1,
       fetcher: async (input) => {
-        const url = String(input);
+        const url = requestHref(input);
         requests.push(url);
         if (url.includes("/at-home/server/")) {
           return jsonResponse({
@@ -132,7 +133,7 @@ describe("MangaDex client", () => {
       endpoint: "https://mangadex.test",
       accessToken: "access-token",
       fetcher: async (input, init) => {
-        requests.push({ url: String(input), init });
+        requests.push({ url: requestHref(input), init });
         return new Response(null, { status: 204 });
       },
     });
@@ -147,7 +148,7 @@ describe("MangaDex client", () => {
         "content-type": "application/json",
       },
     });
-    expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({
+    expect(JSON.parse(requestInitText(requests[0]?.init) ?? "null")).toEqual({
       chapterIdsRead: ["chapter-1", "chapter-2"],
     });
   });
@@ -157,7 +158,7 @@ describe("MangaDex client", () => {
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
-        requests.push(String(input));
+        requests.push(requestHref(input));
         return jsonResponse({ total: 1, data: [{ id: "manga-9", attributes: { title: { en: "Nine" } } }] });
       },
     });
@@ -185,7 +186,7 @@ describe("MangaDex client", () => {
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
-        requests.push(String(input));
+        requests.push(requestHref(input));
         return jsonResponse({
           total: 1,
           data: [{
@@ -211,7 +212,7 @@ describe("MangaDex client", () => {
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
-        requests.push(String(input));
+        requests.push(requestHref(input));
         return jsonResponse({
           total: 1,
           data: [{
@@ -248,7 +249,7 @@ describe("MangaDex client", () => {
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
-        requests.push(String(input));
+        requests.push(requestHref(input));
         return jsonResponse({
           total: empty ? 0 : 1,
           data: empty ? [] : [{
@@ -279,7 +280,7 @@ describe("MangaDex client", () => {
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
-        requests.push(String(input));
+        requests.push(requestHref(input));
         return jsonResponse({
           total: 1,
           data: [{ id: "manga-8", attributes: { title: { en: "Eight" } } }],
@@ -301,7 +302,7 @@ describe("MangaDex client", () => {
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
-        requests.push(String(input));
+        requests.push(requestHref(input));
         return jsonResponse({ total: 0, data: [] });
       },
     });
@@ -345,8 +346,8 @@ describe("MangaDex client", () => {
       endpoint: "https://mangadex.test",
       accessToken: "access-token",
       fetcher: async (input, init) => {
-        requests.push({ url: String(input), init });
-        if (String(input).endsWith("/status") && init?.method === "POST") {
+        requests.push({ url: requestHref(input), init });
+        if (requestHref(input).endsWith("/status") && init?.method === "POST") {
           return new Response(null, { status: 200 });
         }
         return jsonResponse({ statuses: { "manga-1": "reading", "manga-2": "bogus" } });
@@ -365,7 +366,7 @@ describe("MangaDex client", () => {
     await Effect.runPromise(client.updateReadingStatus("manga-1", "on_hold"));
     const write = requests.find((request) => request.init?.method === "POST");
     expect(write?.url).toBe("https://mangadex.test/manga/manga-1/status");
-    expect(JSON.parse(String(write?.init?.body))).toEqual({ status: "on_hold" });
+    expect(JSON.parse(requestInitText(write?.init) ?? "null")).toEqual({ status: "on_hold" });
   });
 
   it("fetches one page of a manga feed with explicit content ratings", async () => {
@@ -373,7 +374,7 @@ describe("MangaDex client", () => {
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
-        requests.push(String(input));
+        requests.push(requestHref(input));
         return jsonResponse({
           total: 32,
           data: [{
@@ -412,7 +413,7 @@ describe("MangaDex client", () => {
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
-        requests.push(String(input));
+        requests.push(requestHref(input));
         if (empty) {return jsonResponse({ data: [] });}
         return jsonResponse({
           data: { "manga-1": ["chapter-1", "chapter-2"], "manga-2": [] },
@@ -442,7 +443,7 @@ describe("MangaDex client", () => {
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
-        requests.push(String(input));
+        requests.push(requestHref(input));
         return jsonResponse({ total: 1, data: [{ id: "adult-1", attributes: { title: { en: "Adult One" } } }] });
       },
     });
@@ -464,8 +465,8 @@ describe("MangaDex client", () => {
       endpoint: "https://mangadex.test",
       accessToken: "token",
       fetcher: async (input) => {
-        requests.push(String(input));
-        const url = String(input);
+        requests.push(requestHref(input));
+        const url = requestHref(input);
         if (url.includes("/rating")) {
           return jsonResponse({
             result: "ok",

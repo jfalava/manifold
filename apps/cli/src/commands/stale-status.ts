@@ -3,6 +3,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import type { ListrTask } from "listr2";
+import {
+  errorMessage,
+  isJsonObject,
+  numberField,
+  objectField,
+  stringField,
+} from "@manifold/json";
 
 import { createMangaDexTokenManager } from "@/mangadex-token";
 import {
@@ -49,24 +56,26 @@ const loadStaleCache = async (): Promise<{
   entries: Record<string, number>;
 }> => {
   try {
-    // SAFETY: parsed JSON matches StaleCacheFile; for this trusted/test payload
-    const raw = JSON.parse(
-      await readFile(STALE_CACHE_PATH, "utf8"),
-    ) as StaleCacheFile;
-    if (raw.version !== 1 || typeof raw.savedAt !== "string") {return { usable: false, savedAt: undefined, entries: {} };}
-    const age = Date.now() - Date.parse(raw.savedAt);
+    // SAFETY: stale-cache JSON is decoded via isJsonObject / field helpers below
+    const raw: unknown = JSON.parse(await readFile(STALE_CACHE_PATH, "utf8"));
+    if (!isJsonObject(raw) || raw.version !== 1) {
+      return { usable: false, savedAt: undefined, entries: {} };
+    }
+    const savedAt = stringField(raw, "savedAt");
+    if (savedAt === undefined) {return { usable: false, savedAt: undefined, entries: {} };}
+    const age = Date.now() - Date.parse(savedAt);
     const entries: Record<string, number> = {};
-    for (const [id, entry] of Object.entries(raw.entries ?? {})) {
-      if (
-        typeof entry?.lastUploadAt === "number" &&
-        Number.isFinite(entry.lastUploadAt)
-      ) {
-        entries[id] = entry.lastUploadAt;
+    const entriesRaw = objectField(raw, "entries") ?? {};
+    for (const [id, entry] of Object.entries(entriesRaw)) {
+      if (!isJsonObject(entry)) {continue;}
+      const lastUploadAt = numberField(entry, "lastUploadAt");
+      if (lastUploadAt !== undefined) {
+        entries[id] = lastUploadAt;
       }
     }
     return {
       usable: Number.isFinite(age) && age >= 0 && age < STALE_CACHE_TTL_MS,
-      savedAt: raw.savedAt,
+      savedAt,
       entries,
     };
   } catch {
@@ -355,9 +364,7 @@ export const staleStatusCommand = Command.make(
                   sweepComplete = true;
                 } catch (cause) {
                   reporter.problem(
-                    `Feed sweep failed after ${requests} pages (${
-                      cause instanceof Error ? cause.message : String(cause)
-                    }); finishing with per-title checks.`,
+                    `Feed sweep failed after ${requests} pages (${errorMessage(cause)}); finishing with per-title checks.`,
                   );
                 }
 
@@ -498,12 +505,8 @@ export const staleStatusCommand = Command.make(
                       try {
                         await Effect.runPromise(client.updateReadingStatus(mangaId, targetStatus));
                       } catch (cause) {
-                        const msg = cause instanceof Error ? cause.message : String(cause);
-                        const isAuth =
-                          // SAFETY: optional field is : number })?.status === "num when present at this call site
-                          typeof (cause as { status?: number })?.status === "number" &&
-                          // SAFETY: value matches : number }).status === 401; at this call site
-                          (cause as { status?: number }).status === 401;
+                        const msg = errorMessage(cause);
+                        const isAuth = isJsonObject(cause) && numberField(cause, "status") === 401;
                         if (isAuth) {
                           try {
                             await refreshClient();
@@ -516,9 +519,7 @@ export const staleStatusCommand = Command.make(
                             continue;
                           } catch (retryCause) {
                             failures.push(
-                              `${ctx.titles[mangaId] ?? mangaId}: ${
-                                retryCause instanceof Error ? retryCause.message : String(retryCause)
-                              }`,
+                              `${ctx.titles[mangaId] ?? mangaId}: ${errorMessage(retryCause)}`,
                             );
                           }
                         } else {
@@ -568,17 +569,7 @@ export const staleStatusCommand = Command.make(
             throw error;
           }
         },
-        catch: (cause) => {
-          // SAFETY: value is { message: unknown }).message) at this site
-          const message =
-            cause instanceof Error
-              ? cause.message
-              : typeof cause === "object" && cause !== null && "message" in cause
-                // SAFETY: value matches .message) : S at this call site
-                ? String((cause as { message: unknown }).message)
-                : String(cause);
-          return new Error(message);
-        },
+        catch: (cause) => new Error(errorMessage(cause)),
       }).pipe(Effect.onError(() => Effect.sync(abortFrame)));
     }),
 ).pipe(

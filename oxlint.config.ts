@@ -7,10 +7,7 @@ import { defineConfig, type DummyRuleMap } from "oxlint";
 //
 // Effect plugin is opt-in: only packages with a direct `effect` dependency
 // should pass `{ effect: true }` (skill: install-anti-slop).
-export const antiSlopJsPlugins = (
-  specifierPrefix: string,
-  options: { effect?: boolean } = {},
-) => {
+export const antiSlopJsPlugins = (specifierPrefix: string, options: { effect?: boolean } = {}) => {
   const plugins = [
     {
       name: "anti-slop",
@@ -44,9 +41,9 @@ export const agentIgnores = [
   ".windsurf/**",
 ];
 
-// Boundary anti-slop rules that require monorepo-wide parse-at-I/O redesign stay
-// "warn" (typeof, unknown-params, unsafe-dictionary). Everything else is "error"
-// (memory 1014: anti-slop warn→error).
+// typeof is allowed only inside type-predicate parsers (`allowInTypeGuards`).
+// Remaining unknown params and Record<string, unknown> are errors: parse at I/O
+// into JsonObject / named domain types (`@manifold/json`).
 export const antiSlopRules: DummyRuleMap = {
   "anti-slop/no-chained-type-assertions": "error",
   "anti-slop/no-conditional-empty-object-spread": "error",
@@ -55,12 +52,12 @@ export const antiSlopRules: DummyRuleMap = {
   "anti-slop/no-object-parameters": "error",
   "anti-slop/no-reflect-apply": "error",
   "anti-slop/no-reflect-get": "error",
-  "anti-slop/no-runtime-typeof": "warn",
+  "anti-slop/no-runtime-typeof": ["error", { allowInTypeGuards: true }],
   "anti-slop/no-shape-in-symbol-names": "error",
-  "anti-slop/no-unknown-parameters": "warn",
+  "anti-slop/no-unknown-parameters": "error",
   "anti-slop/no-unknown-returns": "error",
   "anti-slop/no-unknown-type-aliases": "error",
-  "anti-slop/no-unsafe-dictionary-type": "warn",
+  "anti-slop/no-unsafe-dictionary-type": "error",
   "anti-slop/no-widen-then-assert": "error",
   "anti-slop/require-safety-comment-for-type-assertion": "error",
 };
@@ -184,7 +181,7 @@ export default defineConfig({
   },
   overrides: [
     {
-      files: ["*.test.ts", "**/*.test.ts"],
+      files: ["*.test.ts", "**/*.test.ts", "scripts/**"],
       rules: {
         "no-shadow": "off",
       },

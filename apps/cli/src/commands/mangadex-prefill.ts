@@ -1,6 +1,7 @@
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import type { ListrTask } from "listr2";
+import { errorMessage } from "@manifold/json";
 import { loadRegistrySearchTitles } from "@/comix-aliases";
 import { resolveValue } from "@/env-resolve";
 import { matchesStatusFilter, parseStatusFilter, STATUS_FILTER_HINT } from "@/registry-status";
@@ -289,7 +290,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
         }
         process.exit(0);
       },
-      catch: (cause) => new Error(cause instanceof Error ? cause.message : String(cause)),
+      catch: (cause) => new Error(errorMessage(cause)),
     }),
   ),
 );

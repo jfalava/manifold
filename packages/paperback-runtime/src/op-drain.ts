@@ -1,8 +1,10 @@
+import { isFiniteNumber, isString } from "@manifold/json";
 import {
   ANILIST_SESSION_KEY,
   ANILIST_VIEWER_ID_KEY,
   type AniListReadingStatus,
 } from "./anilist-types.js";
+import { errorMessage } from "./errors.js";
 import {
   deleteAniListEntry,
   fetchAniListMediaListEntryIds,
@@ -38,15 +40,14 @@ interface DrainPayload {
 }
 
 const aniListToken = (): string | undefined => {
-  // SAFETY: Paperback secure/state store returns string | undefined for this key
-  const token = Application.getSecureState(ANILIST_SESSION_KEY) as string | undefined;
-  return typeof token === "string" && token.trim().length > 0 ? token.trim() : undefined;
+  const token = Application.getSecureState(ANILIST_SESSION_KEY);
+  return isString(token) && token.trim().length > 0 ? token.trim() : undefined;
 };
 
 const aniListUserId = (): number | undefined => {
-  // SAFETY: Paperback secure/state store returns string | number | undefined for this key
-  const raw = Application.getState(ANILIST_VIEWER_ID_KEY) as string | number | undefined;
-  const parsed = raw === undefined ? Number.NaN : Number(raw);
+  const raw = Application.getState(ANILIST_VIEWER_ID_KEY);
+  if (!isString(raw) && !isFiniteNumber(raw)) {return undefined;}
+  const parsed = Number(raw);
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 };
 
@@ -135,8 +136,8 @@ export const drainAniListOps = async (): Promise<void> => {
       const mediaListEntryId = await executeOp(token, op, mediaListEntryIds);
       results.push({ opId: op.opId, ok: true, ...(mediaListEntryId !== undefined && { mediaListEntryId }) });
       
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+    } catch (cause) {
+      const message = errorMessage(cause);
       console.error(`[manifold] drain failed:${op.kind}:${message}`);
       results.push({ opId: op.opId, ok: false, error: message });
     }
@@ -147,7 +148,7 @@ export const drainAniListOps = async (): Promise<void> => {
   } catch (error) {
     // Completion reporting is best-effort; failed ops simply retry later.
     console.error(
-      `[manifold] drain completion report failed:${error instanceof Error ? error.message : String(error)}`,
+      `[manifold] drain completion report failed:${errorMessage(error)}`,
     );
   }
 };
@@ -160,9 +161,9 @@ export const maybeDrainAniListOps = (): void => {
   lastDrainAt = nowMs;
   if (drainInFlight) {return;}
   drainInFlight = drainAniListOps()
-    .catch((error) => {
+    .catch((cause) => {
       console.error(
-        `[manifold] op drain error:${error instanceof Error ? error.message : String(error)}`,
+        `[manifold] op drain error:${errorMessage(cause)}`,
       );
     })
     .finally(() => {

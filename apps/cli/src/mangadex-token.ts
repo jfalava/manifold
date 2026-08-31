@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { isFiniteNumber, isJsonObject, isString } from "@manifold/json";
 import {
   createMangaDexPasswordGrant,
   createMangaDexRefreshGrant,
@@ -38,9 +39,14 @@ const loadPersistedTokens = async (
 ): Promise<PersistedTokens> => {
   if (!cachePath) {return {};}
   try {
-    // SAFETY: parsed JSON matches PersistedTokens for this trusted/test payload
-    const raw = JSON.parse(await readFile(cachePath, "utf8")) as PersistedTokens;
-    return typeof raw === "object" && raw !== null ? raw : {};
+    // SAFETY: token cache JSON is decoded via isJsonObject / field guards below
+    const raw: unknown = JSON.parse(await readFile(cachePath, "utf8"));
+    if (!isJsonObject(raw)) {return {};}
+    return {
+      accessToken: isString(raw.accessToken) ? raw.accessToken : undefined,
+      refreshToken: isString(raw.refreshToken) ? raw.refreshToken : undefined,
+      expiresAt: isFiniteNumber(raw.expiresAt) ? raw.expiresAt : undefined,
+    };
   } catch {
     return {};
   }
@@ -101,8 +107,7 @@ export const createMangaDexTokenManager = (
         const stored = await persisted();
         accessToken = stored.accessToken;
         refreshToken = stored.refreshToken;
-        // SAFETY: value is a number after the preceding runtime check
-        expiresAt = Number.isFinite(stored.expiresAt) ? (stored.expiresAt as number) : 0;
+        expiresAt = stored.expiresAt ?? 0;
         if (accessToken && Date.now() < expiresAt) {return accessToken;}
       }
       if (refreshToken) {

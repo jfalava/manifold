@@ -1,3 +1,11 @@
+import {
+  arrayField,
+  isJsonObject,
+  numberField,
+  objectField,
+  stringField,
+} from "@manifold/json";
+
 import type { PhaseReporter } from "@/ui";
 
 /**
@@ -151,38 +159,37 @@ const fetchActivitiesPage = async (
     })
   });
   if (!response.ok) {throw new Error(`Activity page fetch failed: HTTP ${response.status}`);}
-  // SAFETY: parsed JSON matches { data?: { Page?: { pageInfo: { hasNextPage: boolean }; activities: Array<Record for this trusted/test payload
-  const data = (await response.json()) as {
-    data?: {
-      Page?: {
-        pageInfo: { hasNextPage: boolean };
-        activities: Array<Record<string, unknown>>;
-      };
-    };
-  };
-  const raw = data.data?.Page?.activities ?? [];
+  // SAFETY: AniList activity page JSON is decoded via isJsonObject / field helpers below
+  const data: unknown = await response.json();
+  const envelope = isJsonObject(data) ? objectField(data, "data") : undefined;
+  const pageRecord = envelope === undefined ? undefined : objectField(envelope, "Page");
+  const activityItems = pageRecord === undefined
+    ? []
+    : (arrayField(pageRecord, "activities") ?? []).filter(isJsonObject);
   const activities: Activity[] = [];
-  for (const item of raw) {
-    const id = item.id;
-    if (typeof id !== "number") {continue;}
-    if (item.type === "MANGA_LIST") {
-      // SAFETY: optional field is | { title?: { romaji?: string | null; english?: string | null } } | undefined; when present at this call site
-      const media = item.media as
-        | { title?: { romaji?: string | null; english?: string | null } }
-        | undefined;
+  for (const item of activityItems) {
+    const id = numberField(item, "id");
+    if (id === undefined) {continue;}
+    const type = stringField(item, "type");
+    if (type === "MANGA_LIST") {
+      const media = objectField(item, "media");
+      const title = media === undefined ? undefined : objectField(media, "title");
       activities.push({
         type: "MANGA_LIST",
         id,
-        status: typeof item.status === "string" ? item.status : "",
-        progress: typeof item.progress === "string" ? item.progress : null,
+        status: stringField(item, "status") ?? "",
+        progress: stringField(item, "progress") ?? null,
         mediaTitle:
-          media?.title?.english ?? media?.title?.romaji ?? "Unknown",
+          title === undefined
+            ? "Unknown"
+            : stringField(title, "english") ?? stringField(title, "romaji") ?? "Unknown",
       });
-    } else if (item.type === "TEXT") {
-      activities.push({ type: "TEXT", id, text: String(item.text ?? "") });
+    } else if (type === "TEXT") {
+      activities.push({ type: "TEXT", id, text: stringField(item, "text") ?? "" });
     }
   }
-  return { activities, hasNextPage: data.data?.Page?.pageInfo.hasNextPage ?? false };
+  const pageInfo = pageRecord === undefined ? undefined : objectField(pageRecord, "pageInfo");
+  return { activities, hasNextPage: pageInfo !== undefined && pageInfo.hasNextPage === true };
 };
 
 const MANGA_KEYWORDS = [

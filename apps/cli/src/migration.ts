@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { errorMessage, isJsonObject, numberField, stringField } from "@manifold/json";
 import {
   createMangaDexClient,
   type MangaDexChapter,
@@ -165,7 +166,7 @@ export const runMigration = async (
         error:
           cause instanceof Error
             ? cause.message
-            : `Unknown failure: ${String(cause)}`
+            : `Unknown failure: ${errorMessage(cause)}`
       });
     }
   }
@@ -185,14 +186,11 @@ interface MangaDexAuthErrorPayload {
   readonly status?: number;
 }
 
-const isAuthFailure = (error: unknown): boolean => {
-  // SAFETY: caught Effect failures may carry MangaDexSourceError fields
-  const payload = error as MangaDexAuthErrorPayload | undefined;
+const isAuthFailure = (cause: unknown): cause is MangaDexAuthErrorPayload => {
+  if (!isJsonObject(cause)) {return false;}
   return (
-    typeof payload === "object" &&
-    payload !== null &&
-    payload._tag === "MangaDexSourceError" &&
-    (payload.status === 401 || payload.status === 403)
+    stringField(cause, "_tag") === "MangaDexSourceError" &&
+    (numberField(cause, "status") === 401 || numberField(cause, "status") === 403)
   );
 };
 

@@ -1,6 +1,7 @@
 {
   "files": [],
   "references": [
+    { "path": "./packages/json" },
     { "path": "./packages/canonical" },
     { "path": "./packages/mangadex" },
     { "path": "./packages/mangaupdates" },

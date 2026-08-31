@@ -1,0 +1,33 @@
+---
+title: unfollow-dropped
+description: Unfollow MangaDex titles that have a given reading status (default dropped).
+audience: human
+sidebar:
+  order: 41
+---
+
+```text
+bun run manifold unfollow-dropped [flags]
+```
+
+Also available as `manifold mangadex unfollow-dropped` and alias `manifold mangadex-unfollow`.
+
+Unchecks **Follow** on MangaDex for titles in the selected reading status. Reading status itself is unchanged — only the follow relationship is removed. Dry-run until `--apply`.
+
+## Flags
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--status` | `dropped` | Comma-separated MangaDex statuses |
+| `--apply` | `false` | Actually unfollow |
+| MangaDex client flags | env | Required |
+
+## Usage
+
+```text
+bun run manifold unfollow-dropped
+bun run manifold unfollow-dropped --status dropped,on_hold
+bun run manifold unfollow-dropped --apply
+```
+
+The report intersects the status list with your currently followed set, so already-unfollowed titles do not appear as work items.

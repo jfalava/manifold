@@ -9,6 +9,7 @@
     "./webview": "./src/webview.ts"
   },
   "dependencies": {
+      "@manifold/json": "workspace:*",
       "@paperback/types": "catalog:paperback"
   },
   "scripts": {

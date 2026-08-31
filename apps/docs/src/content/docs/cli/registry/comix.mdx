@@ -1,0 +1,43 @@
+---
+title: comix
+description: Prefill Comix hid links via a local headed Chrome session.
+audience: human
+sidebar:
+  order: 3
+---
+
+```text
+bun run manifold registry comix [flags]
+```
+
+Backfills missing Comix `hid` provider links. comix.to's JSON API is HMAC-signed and Cloudflare-gated, so the CLI does **not** replay cookies through `fetch`. It captures `/browse?keyword=` inside a local Chrome WebView (same approach as the Paperback source) and stores the jar in `Bun.secrets` until `cf_clearance` expires.
+
+Dry-run until `--apply`.
+
+## Flags
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--apply` | `false` | Write provider links |
+| `--limit` | all without comix | Cap attempts |
+| `--status` | `auto` | Same PAS5-style filter as [mangadex](/cli/registry/mangadex/) |
+| `--chrome-cdp-url` | auto-launch | Or `COMIX_CHROME_CDP_URL` |
+| `--refresh-session` | `false` | Drop the stored Keychain jar |
+| `--cf-clearance` / `--session` / `--cookies` | env | Optional seed into the view only |
+| `--api-token` / `--api-origin` / `--anilist-token` | env | Registry + better aliases |
+
+## Chrome / Cloudflare
+
+Turnstile needs a real window. The CLI launches headed Chrome with a dedicated `~/.manifold/comix-chrome` profile because Chrome 136+ ignores `--remote-debugging-port` on the default profile. Solve the check in that window, then press Enter if prompted. After three challenges the run circuit-breaks.
+
+Do **not** tell the CLI to attach by opening plain Chrome with `--remote-debugging-port=9222` on the default profile — that port never opens on Chrome 136+.
+
+## Usage
+
+```text
+bun run manifold registry comix
+bun run manifold registry comix --apply
+bun run manifold registry comix --refresh-session --apply
+```
+
+Requires a local Chrome/Chromium/Edge/Brave install. Search titles use registry + AniList aliases (capped per search).

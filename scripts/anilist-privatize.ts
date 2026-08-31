@@ -13,6 +13,8 @@
  * well below the published rate limit.
  */
 
+import type { JsonObject } from "@manifold/json";
+
 const ENDPOINT = "https://graphql.anilist.co";
 const REQUEST_INTERVAL_MS = 1200; // ~50 req/min, comfortably under the 90/min limit
 
@@ -31,8 +33,12 @@ const parseArgs = (): CliArgs => {
   let token: string | undefined;
   let dryRun = false;
   for (let i = 0; i < argv.length; i += 1) {
-    if (argv[i] === "--token") token = argv[i + 1];
-    if (argv[i] === "--dry-run") dryRun = true;
+    if (argv[i] === "--token") {
+      token = argv[i + 1];
+    }
+    if (argv[i] === "--dry-run") {
+      dryRun = true;
+    }
   }
   return { token: token ?? process.env.ANILIST_TOKEN, dryRun };
 };
@@ -42,7 +48,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 const gql = async <A>(
   token: string,
   query: string,
-  variables: Record<string, unknown> = {},
+  variables: JsonObject = {},
 ): Promise<A> => {
   const response = await fetch(ENDPOINT, {
     method: "POST",
@@ -59,11 +65,15 @@ const gql = async <A>(
     await sleep(Math.max(retryAfter, 5) * 1000);
     return gql<A>(token, query, variables);
   }
+  // SAFETY: AniList GraphQL envelope is validated for errors/ok below before data is used
   const body = (await response.json()) as GraphQLResponse<A>;
   if (body.errors?.length) {
     throw new Error(body.errors.map((e) => e.message ?? "?").join("; "));
   }
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  // SAFETY: caller supplies A; AniList returns that selection set when errors is empty
   return body.data as A;
 };
 
@@ -100,7 +110,9 @@ const main = async (): Promise<void> => {
   for (const list of collection.MediaListCollection.lists ?? []) {
     for (const entry of list.entries ?? []) {
       const mediaId = entry.media?.id;
-      if (!mediaId) continue;
+      if (!mediaId) {
+        continue;
+      }
       if (entry.private) {
         alreadyPrivate += 1;
       } else {
@@ -113,7 +125,9 @@ const main = async (): Promise<void> => {
     `${alreadyPrivate} entries already private, ${mediaIds.size} to privatize` +
       (dryRun ? " (dry run — no changes will be made)" : ""),
   );
-  if (dryRun || mediaIds.size === 0) return;
+  if (dryRun || mediaIds.size === 0) {
+    return;
+  }
 
   let done = 0;
   let failed = 0;
@@ -127,11 +141,15 @@ const main = async (): Promise<void> => {
         { mediaId },
       );
       done += 1;
-    } catch (error) {
+    } catch (cause) {
       failed += 1;
-      console.error(`  media ${mediaId} failed: ${error instanceof Error ? error.message : error}`);
+      console.error(
+        `  media ${mediaId} failed: ${cause instanceof Error ? cause.message : "unknown error"}`,
+      );
     }
-    if (done % 25 === 0) console.log(`  ${done}/${mediaIds.size}…`);
+    if (done % 25 === 0) {
+      console.log(`  ${done}/${mediaIds.size}…`);
+    }
     await sleep(REQUEST_INTERVAL_MS);
   }
 

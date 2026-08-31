@@ -1,4 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import type { JsonValue } from "@manifold/json";
 
 interface ResponseLike {
   status: number;
@@ -15,7 +16,7 @@ interface GlobalWithApplication {
   Application?: ApplicationHarness;
 }
 
-const jsonResponse = (payload: unknown): ArrayBuffer =>
+const jsonResponse = (payload: JsonValue): ArrayBuffer =>
   // SAFETY: Node runtime value is ArrayBuffer in this IAC/CLI context
   new TextEncoder().encode(JSON.stringify(payload)).buffer as ArrayBuffer;
 
@@ -25,7 +26,7 @@ const makeHarness = () => {
   let overlapped = false;
   const requests: Array<{ body: string }> = [];
 
-  const install = (respond: (index: number) => { status: number; headers?: Record<string, string>; body?: unknown }) => {
+  const install = (respond: (index: number) => { status: number; headers?: Record<string, string>; body?: JsonValue }) => {
     let index = 0;
     // SAFETY: vitest installs a Paperback Application stub on globalThis for this suite
     (globalThis as GlobalWithApplication).Application = {
@@ -100,9 +101,11 @@ describe("aniListRequest throttling", () => {
     const getCallCount = harness.install(() => {
       calls += 1;
       if (calls === 1) {
-        return { status: 429, headers: { "Retry-After": "38" }, body: { errors: [{ message: "Too Many Requests.", status: 429 }] } };
+        const body: JsonValue = { errors: [{ message: "Too Many Requests.", status: 429 }] };
+        return { status: 429, headers: { "Retry-After": "38" }, body };
       }
-      return { status: 200, body: { data: { Viewer: { id: 7, name: "y" } } } };
+      const body: JsonValue = { data: { Viewer: { id: 7, name: "y" } } };
+      return { status: 200, body };
     });
     const { aniListRequest, viewerQuery } = await harness.loadModule();
 

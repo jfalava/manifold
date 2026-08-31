@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import type { OAuthProvider } from "./domain";
 import { readSecret, readSecretOptional } from "./read-secret";
+import { toBase64Url } from "./token-crypto";
 import type { RuntimeSecret } from "./types";
 
 export interface OAuthEnvironment {
@@ -57,12 +58,6 @@ export const getOAuthClientConfig = async (
       (await readSecretOptional(env.MAL_CLIENT_SECRET, "MAL_CLIENT_SECRET")) ?? "",
     pkceMethod: "plain"
   };
-};
-
-const toBase64Url = (bytes: Uint8Array): string => {
-  let binary = "";
-  for (const byte of bytes) {binary += String.fromCharCode(byte);}
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 };
 
 export const createRandomValue = (bytes = 32): string => {

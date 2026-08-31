@@ -8,6 +8,10 @@ import {
   type PagedResults,
 } from "@paperback/types";
 import {
+  isFiniteNumber,
+  isJsonObject,
+} from "@manifold/json";
+import {
   MANGADEX_CONTENT_RATINGS,
   type MangaDexChapter,
   type MangaDexChapterFeedOptions,
@@ -76,14 +80,8 @@ export const DISCOVER_SECTIONS = [
 ] as const;
 
 const offsetFromMetadata = (metadata: Metadata | undefined): number => {
-  // SAFETY: value is { readonly offset?: unknown }) at this site
-  const record =
-    typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)
-      // SAFETY: test/double or boundary cast through unknown to { readonly offset?: unknown })
-      ? (metadata as { readonly offset?: unknown })
-      : undefined;
-  const value = record?.offset;
-  return typeof value === "number" ? value : 0;
+  if (isJsonObject(metadata) && isFiniteNumber(metadata.offset)) {return metadata.offset;}
+  return 0;
 };
 
 const nextOffsetMetadata = (

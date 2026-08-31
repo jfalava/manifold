@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { BunRuntime, BunServices } from "@effect/platform-bun";
+import { errorMessage } from "@manifold/json";
 import { Effect } from "effect";
 import { CliError, Command } from "effect/unstable/cli";
 
@@ -16,19 +17,19 @@ const program = Command.runWith(makeRootCommand(), {
   version: "0.1.0",
 })(Bun.argv.slice(2)).pipe(
   Effect.provide(BunServices.layer),
-  Effect.catch((error) =>
+  Effect.catch((cause) =>
     Effect.sync(() => {
       process.exitCode = 1;
-      if (!CliError.isCliError(error)) {
-        const message = error instanceof Error ? error.message : String(error);
+      if (!CliError.isCliError(cause)) {
+        const message = errorMessage(cause);
         console.error(`Error: ${message}`);
       }
     }),
   ),
-  Effect.catchDefect((defect) =>
+  Effect.catchDefect((cause) =>
     Effect.sync(() => {
       process.exitCode = 1;
-      const message = defect instanceof Error ? defect.message : String(defect);
+      const message = errorMessage(cause);
       console.error(`Error: ${message}`);
     }),
   ),

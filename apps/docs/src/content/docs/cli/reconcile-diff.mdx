@@ -1,0 +1,29 @@
+---
+title: reconcile diff
+description: Compare the live AniList manga list against the registry projection.
+audience: human
+sidebar:
+  order: 30
+---
+
+```text
+bun run manifold reconcile diff [flags]
+```
+
+**Read-only.** Walks every live AniList manga entry, maps statuses into registry vocabulary, and prints `NOT IN REGISTRY` / `DRIFT` lines plus a summary.
+
+## Flags
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--anilist-token` | env | Required for the live list |
+| `--api-token` | env | Registry access |
+| `--api-origin` | env / `https://manifold.jfa.dev/api` | Personal API origin |
+
+## Usage
+
+```text
+bun run manifold reconcile diff
+```
+
+When AniList was edited directly on anilist.co, the registry projection silently disagrees. Fix drift with [registry import](/cli/registry/import/) — that command records live status with `appliedRemotely: true` and does **not** enqueue ops.

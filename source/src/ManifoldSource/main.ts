@@ -32,6 +32,14 @@ import {
   type SourceManga,
 } from "@paperback/types";
 import type { CanonicalSearchResult } from "@manifold/canonical";
+import {
+  isFiniteNumber,
+  isJsonObject,
+  isString,
+  requestHref,
+  requestInitText,
+  type JsonObject,
+} from "@manifold/json";
 import * as Effect from "effect/Effect";
 import { createAniListSource, type CanonicalFetcher } from "@manifold/canonical/sources";
 import { createMangaDexClient, type MangaDexFetcher } from "@manifold/mangadex";
@@ -145,28 +153,24 @@ const persistCfClearance = (cookies: readonly Cookie[]): void => {
 };
 const restorePersistedCfClearance = (): Cookie | undefined => {
   const raw = Application.getState(CF_CLEARANCE_PERSIST_KEY);
-  if (typeof raw !== "string") {return undefined;}
+  if (!isString(raw)) {return undefined;}
   try {
     // JSON can only round-trip the ISO string written by persistCfClearance.
-    // SAFETY: test/double or boundary cast through unknown to { name?: unknown; value?: unknown; domain?: unknown; path?: unknown; expires?: u
-    const parsed = JSON.parse(raw) as {
-      name?: unknown;
-      value?: unknown;
-      domain?: unknown;
-      path?: unknown;
-      expires?: unknown;
-    };
-    if (parsed.name !== "cf_clearance" || typeof parsed.value !== "string") {return undefined;}
+    // SAFETY: I/O JSON.parse of the persisted cf_clearance cookie blob.
+    const parsed: unknown = JSON.parse(raw);
+    if (!isJsonObject(parsed) || parsed.name !== "cf_clearance" || !isString(parsed.value)) {
+      return undefined;
+    }
     let expires: Date | undefined;
-    if (typeof parsed.expires === "string") {
+    if (isString(parsed.expires)) {
       expires = new Date(parsed.expires);
       if (Number.isNaN(expires.getTime())) {return undefined;}
     }
     return {
       name: "cf_clearance",
       value: parsed.value,
-      domain: typeof parsed.domain === "string" && parsed.domain.length > 0 ? parsed.domain : COMIX_ORIGIN_HOST,
-      path: typeof parsed.path === "string" && parsed.path.length > 0 ? parsed.path : "/",
+      domain: isString(parsed.domain) && parsed.domain.length > 0 ? parsed.domain : COMIX_ORIGIN_HOST,
+      path: isString(parsed.path) && parsed.path.length > 0 ? parsed.path : "/",
       ...(expires && { expires }),
     };
   } catch {
@@ -271,13 +275,13 @@ class ManifoldMangaDexInterceptor extends PaperbackInterceptor {
 
 const scheduledMangaDexFetcher: MangaDexFetcher = async (input, init) => {
   const headers: Record<string, string> = {};
-  if (init?.headers && typeof init.headers === "object" && !Array.isArray(init.headers)) {
+  if (isJsonObject(init?.headers)) {
     for (const [key, value] of Object.entries(init.headers)) {
-      if (typeof value === "string") {headers[key] = value;}
+      if (isString(value)) {headers[key] = value;}
     }
   }
   const [response, bodyBuffer] = await Application.scheduleRequest({
-    url: String(input),
+    url: requestHref(input),
     method: init?.method ?? "GET",
     headers,
   });
@@ -286,16 +290,17 @@ const scheduledMangaDexFetcher: MangaDexFetcher = async (input, init) => {
 
 const scheduledAniListFetcher: CanonicalFetcher = async (input, init) => {
   const headers: Record<string, string> = {};
-  if (init?.headers && typeof init.headers === "object" && !Array.isArray(init.headers)) {
+  if (isJsonObject(init?.headers)) {
     for (const [key, value] of Object.entries(init.headers)) {
-      if (typeof value === "string") {headers[key] = value;}
+      if (isString(value)) {headers[key] = value;}
     }
   }
+  const requestBody = requestInitText(init);
   const [response, bodyBuffer] = await Application.scheduleRequest({
-    url: String(input),
+    url: requestHref(input),
     method: init?.method ?? "GET",
     headers,
-    ...(typeof init?.body === "string" && { body: init.body }),
+    ...(requestBody !== undefined && { body: requestBody }),
   });
   return scheduledFetchResponse(response, bodyBuffer);
 };
@@ -314,43 +319,29 @@ const MANGADEX_UPDATES_PROBE_BUDGET = 40;
 // first Discover paint under ~30s even when the registry already has hids.
 const COMIX_UPDATES_PROBE_BUDGET = 12;
 
-interface CachedDiscoverCard {
-  t?: number;
-  ttl?: number;
-  card?: {
-    source?: string;
-    mangaId?: string;
-    chapterId?: string;
-    subtitle?: string;
-    publishDate?: string;
-  };
-}
-
 interface CachedCardState {
   readonly card: UpdateCard;
   readonly fresh: boolean;
 }
 
-const cardFromCachedPayload = (
-  card: NonNullable<CachedDiscoverCard["card"]>,
-): UpdateCard | undefined => {
-  if (!card.mangaId || !card.chapterId) {return undefined;}
+const cardFromCachedPayload = (card: JsonObject): UpdateCard | undefined => {
+  if (!isString(card.mangaId) || !isString(card.chapterId)) {return undefined;}
   return {
     source: card.source === "Comix" ? "Comix" : "MD",
     mangaId: card.mangaId,
     chapterId: card.chapterId,
-    subtitle: card.subtitle ?? "",
-    ...(card.publishDate && { publishDate: new Date(card.publishDate) }),
+    subtitle: isString(card.subtitle) ? card.subtitle : "",
+    ...(isString(card.publishDate) && { publishDate: new Date(card.publishDate) }),
   };
 };
 
 const readCachedCardState = (cacheKey: string): CachedCardState | undefined => {
   const raw = Application.getState(cacheKey);
-  if (typeof raw !== "string") {return undefined;}
+  if (!isString(raw)) {return undefined;}
   try {
-    // SAFETY: parsed JSON matches CachedDiscoverCard; for this trusted/test payload
-    const parsed = JSON.parse(raw) as CachedDiscoverCard;
-    if (typeof parsed.t !== "number" || typeof parsed.ttl !== "number" || !parsed.card) {
+    // SAFETY: I/O JSON.parse of a Discover latest-card cache blob.
+    const parsed: unknown = JSON.parse(raw);
+    if (!isJsonObject(parsed) || !isFiniteNumber(parsed.t) || !isFiniteNumber(parsed.ttl) || !isJsonObject(parsed.card)) {
       return undefined;
     }
     const card = cardFromCachedPayload(parsed.card);
@@ -667,7 +658,7 @@ export class ManifoldSourceImpl implements
     _sortingOption: SortingOption | undefined,
   ): Promise<PagedResults<SearchResultItem>> {
     maybeDrainAniListOps();
-    const title = typeof query?.title === "string" ? query.title.trim() : "";
+    const title = query.title.trim();
     console.log(`[manifold] search:${title || "<empty>"}`);
     if (!title) {return { items: [] };}
 
@@ -1075,23 +1066,20 @@ export class ManifoldSourceImpl implements
     const HID_TTL_MS = 7 * 24 * 60 * 60 * 1000;
     const readHidCache = (): ComixResolvedHid | undefined => {
       const raw = Application.getState(hidKey);
-      if (typeof raw !== "string") {return undefined;}
+      if (!isString(raw)) {return undefined;}
       try {
-        // SAFETY: value is { at this site
-        const parsed = JSON.parse(raw) as {
-          t?: number;
-          hid?: string;
-          slug?: string;
-        };
+        // SAFETY: I/O JSON.parse of the per-title Comix hid cache blob.
+        const parsed: unknown = JSON.parse(raw);
         if (
-          typeof parsed.t !== "number" ||
+          !isJsonObject(parsed) ||
+          !isFiniteNumber(parsed.t) ||
           Date.now() - parsed.t >= HID_TTL_MS ||
-          typeof parsed.hid !== "string" ||
+          !isString(parsed.hid) ||
           parsed.hid.length === 0
         ) {
           return undefined;
         }
-        return { hid: parsed.hid, ...(typeof parsed.slug === "string" && { slug: parsed.slug }) };
+        return { hid: parsed.hid, ...(isString(parsed.slug) && { slug: parsed.slug }) };
       } catch {
         return undefined;
       }
@@ -1110,15 +1098,15 @@ export class ManifoldSourceImpl implements
       configuredPersonalApi()
         .linkProvider(entry.id, { provider: "comix", externalId: hidValue, title: entry.title })
         .then(() => console.log(`[manifold] comix hid linked:${entry.title}:${hidValue}`))
-        .catch((error: unknown) =>
-          console.error(`[manifold] comix hid link failed:${entry.title}:${errorMessage(error)}`),
+        .catch((cause) =>
+          console.error(`[manifold] comix hid link failed:${entry.title}:${errorMessage(cause)}`),
         );
     };
 
     const cached = readHidCache();
     let hid = cached?.hid;
     let slug = cached?.slug;
-    const fromCache = typeof hid === "string" && hid.length > 0;
+    const fromCache = hid !== undefined && hid.length > 0;
     if (!hid) {
       // Device cache miss — the registry may already hold a comix link from
       // a previous sweep or the search fallback; skip the WebView sweep.
@@ -1229,29 +1217,24 @@ export class ManifoldSourceImpl implements
       | { p: "comix" | "mangadex"; t: number; ttl: number; n: number; h?: string }
       | undefined => {
       const raw = Application.getState(choiceKey);
-      if (typeof raw !== "string") {return undefined;}
+      if (!isString(raw)) {return undefined;}
       try {
-        // SAFETY: value is { at this site
-        const parsed = JSON.parse(raw) as {
-          p?: string;
-          t?: number;
-          ttl?: number;
-          n?: number;
-          h?: string;
-        };
+        // SAFETY: I/O JSON.parse of the chapter-source choice cache blob.
+        const parsed: unknown = JSON.parse(raw);
         if (
+          isJsonObject(parsed) &&
           (parsed.p === "comix" || parsed.p === "mangadex") &&
-          typeof parsed.t === "number"
+          isFiniteNumber(parsed.t)
         ) {
           // Entries written before tiered TTLs (<=v1.0.30) carry no ttl field;
           // treat them as expired so stuck titles re-compare on first open.
-          if (typeof parsed.ttl !== "number") {return undefined;}
+          if (!isFiniteNumber(parsed.ttl)) {return undefined;}
           return {
             p: parsed.p,
             t: parsed.t,
             ttl: parsed.ttl,
-            n: typeof parsed.n === "number" ? parsed.n : 0,
-            h: typeof parsed.h === "string" ? parsed.h : undefined,
+            n: isFiniteNumber(parsed.n) ? parsed.n : 0,
+            h: isString(parsed.h) ? parsed.h : undefined,
           };
         }
       } catch {
@@ -1312,12 +1295,13 @@ export class ManifoldSourceImpl implements
       // Registry / device hid cache first — avoids a browse WebView sweep.
       const hidKey = `comix-hid:${sourceManga.mangaId}`;
       const rawHid = Application.getState(hidKey);
-      if (typeof rawHid === "string" && rawHid.length > 0) {
+      if (isString(rawHid) && rawHid.length > 0) {
         try {
-          // SAFETY: value is { hid?: string } at this site
-          const parsed = JSON.parse(rawHid) as { hid?: string };
-          // SAFETY: value matches of parsed.hid === "string" && parsed.h at this call site
-          if (typeof parsed.hid === "string" && parsed.hid.length > 0) {return parsed.hid;}
+          // SAFETY: I/O JSON.parse of the chapter-list Comix hid cache blob.
+          const parsed: unknown = JSON.parse(rawHid);
+          if (isJsonObject(parsed) && isString(parsed.hid) && parsed.hid.length > 0) {
+            return parsed.hid;
+          }
         } catch {
           // fall through
         }

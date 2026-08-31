@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
+import { errorMessage } from "@manifold/json";
 import {
   deleteActivitiesWithProgress,
   deleteEntriesWithProgress,
@@ -97,7 +98,7 @@ export const wipeAlCommand = Command.make("wipe-al", {
           }
         },
         catch: (cause) =>
-          new Error(cause instanceof Error ? cause.message : String(cause)),
+          new Error(errorMessage(cause)),
       });
 
       if (scan.entries.length === 0 && scan.activities.length === 0) {
@@ -163,7 +164,7 @@ export const wipeAlCommand = Command.make("wipe-al", {
           }
         },
         catch: (cause) =>
-          new Error(cause instanceof Error ? cause.message : String(cause)),
+          new Error(errorMessage(cause)),
       });
     }).pipe(Effect.onError(() => Effect.sync(abortFrame)));
   }),

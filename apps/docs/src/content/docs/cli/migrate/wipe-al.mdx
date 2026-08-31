@@ -1,0 +1,35 @@
+---
+title: wipe-al
+description: Delete every AniList manga list entry and manga-related activity.
+audience: human
+sidebar:
+  order: 3
+---
+
+```text
+bun run manifold migrate wipe-al [flags]
+```
+
+**Destructive.** Scans your AniList profile, then deletes **all** manga list entries and **all** manga-related activities. Anime is never touched.
+
+There is no dry-run mode: the command scans, prompts, then deletes. Pass `--yes` only when you intend to skip the interactive confirms.
+
+## Flags
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--yes` | `false` | Skip interactive confirmation prompts |
+| `--anilist-token` | env | `ANILIST_TOKEN` / `ALCHEMY_SECRET_ANILIST_TOKEN` |
+
+## Usage
+
+```text
+bun run manifold migrate wipe-al
+bun run manifold migrate wipe-al --yes
+```
+
+An empty manga list exits cleanly without deleting anything.
+
+<Aside type="danger" title="Irreversible">
+  This permanently removes manga list state and activity history on AniList. Prefer exporting or migrating first if you still need the data.
+</Aside>

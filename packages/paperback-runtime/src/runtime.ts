@@ -1,3 +1,4 @@
+import { isJsonValue, isString, type JsonValue } from "@manifold/json";
 import {
   createPersonalApiClient,
   MANIFOLD_API_ORIGIN,
@@ -18,10 +19,13 @@ export const scheduledPersonalRequester = async (
     ...(!(request.body === undefined) && { body: request.body }),
   });
   const text = Application.arrayBufferToUTF8String(bodyBuffer);
-  let body: unknown = text;
+  let body: JsonValue = text;
   try {
-    // SAFETY: test/double or boundary cast through unknown to unknown
-    body = JSON.parse(text) as unknown;
+    // SAFETY: I/O JSON.parse of the personal API HTTP body at the scheduleRequest boundary.
+    const parsed: unknown = JSON.parse(text);
+    if (isJsonValue(parsed)) {
+      body = parsed;
+    }
   } catch {
     // The typed API error below still includes the HTTP status.
   }
@@ -30,7 +34,7 @@ export const scheduledPersonalRequester = async (
 
 export const secureStateString = (key: string): string | undefined => {
   const value = Application.getSecureState(key);
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+  return isString(value) && value.trim().length > 0 ? value.trim() : undefined;
 };
 
 export const configuredPersonalApi = (): PersonalApiClient => {

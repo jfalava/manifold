@@ -1,3 +1,4 @@
+import { isJsonObject, type JsonObject } from "@manifold/json";
 import type { AniListReadingStatus } from "./anilist-types.js";
 
 const ANILIST_GRAPHQL_ENDPOINT = "https://graphql.anilist.co";
@@ -71,7 +72,7 @@ interface RawOutcome<A> {
 const rawAniListRequest = async <A>(
   token: string,
   query: string,
-  variables: Record<string, unknown>,
+  variables: JsonObject,
 ): Promise<RawOutcome<A>> => {
   const [response, bodyBuffer] = await Application.scheduleRequest({
     url: ANILIST_GRAPHQL_ENDPOINT,
@@ -84,11 +85,19 @@ const rawAniListRequest = async <A>(
     body: JSON.stringify({ query, variables }),
   });
   try {
-    // SAFETY: HTTP value is the expected GraphQLResponse<A> after the preceding check
-    const body = JSON.parse(
+    // SAFETY: I/O JSON.parse of the AniList GraphQL HTTP body at the scheduleRequest boundary.
+    const parsed: unknown = JSON.parse(
       Application.arrayBufferToUTF8String(bodyBuffer),
-    ) as GraphQLResponse<A>;
-    return { status: response.status, headers: response.headers ?? {}, body };
+    );
+    if (!isJsonObject(parsed)) {
+      return { status: response.status, headers: response.headers ?? {} };
+    }
+    // SAFETY: JSON object is the GraphQL envelope; interpretOutcome reads data/errors.
+    return {
+      status: response.status,
+      headers: response.headers ?? {},
+      body: parsed as GraphQLResponse<A>,
+    };
   } catch {
     // Non-JSON payload (e.g. an HTML error page); the HTTP status decides.
     return { status: response.status, headers: response.headers ?? {} };
@@ -100,7 +109,7 @@ const isThrottled = <A>(outcome: RawOutcome<A>): boolean => {
   return (outcome.body?.errors ?? []).some(
     (error) =>
       error.status === 429 ||
-      (typeof error.message === "string" && THROTTLE_MESSAGE.test(error.message)),
+      (error.message !== undefined && THROTTLE_MESSAGE.test(error.message)),
   );
 };
 
@@ -139,7 +148,7 @@ const interpretOutcome = <A>(outcome: RawOutcome<A>): A => {
 export const aniListRequest = async <A>(
   token: string,
   query: string,
-  variables: Record<string, unknown> = {},
+  variables: JsonObject = {},
 ): Promise<A> =>
   enqueue(async () => {
     for (let attempt = 1; ; attempt += 1) {
@@ -244,8 +253,8 @@ export const normalizeAniListStatus = (status: string): AniListReadingStatus | u
   }
 };
 
-const titleValue = (value: unknown): string | undefined =>
-  typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+const titleValue = (value: string | undefined): string | undefined =>
+  value !== undefined && value.trim().length > 0 ? value.trim() : undefined;
 
 export const fetchAniListLibrary = async (
   token: string,
@@ -312,11 +321,11 @@ export interface AniListFieldChange {
 const FMI_DATE = /\d{4}-\d{2}-\d{2}/;
 
 /** AniList GraphQL FuzzyDateInput for startedAt / completedAt mutations. */
-export interface FuzzyDateInput {
+export type FuzzyDateInput = {
   readonly year: number;
   readonly month: number;
   readonly day: number;
-}
+};
 
 const fmiDate = (value: string | null | undefined): FuzzyDateInput | undefined =>
   value == null || !FMI_DATE.test(value)
@@ -351,9 +360,9 @@ export const saveAniListFields = async (
       ...(!(change.status === undefined) && { status: change.status === null ? null : toAniListStatus(change.status) }),
       ...(!(change.score === undefined) && { score: change.score }),
       ...(!(change.notes === undefined) && { notes: change.notes }),
-      ...(!(change.startedAt === undefined) && { startedAt: fmiDate(change.startedAt) }),
-      ...(!(change.completedAt === undefined) && { completedAt: fmiDate(change.completedAt) }),
-      ...(!(change.volumeProgress === undefined) && { progressVolumes: change.volumeProgress })
+      ...(!(change.startedAt === undefined) && { startedAt: fmiDate(change.startedAt) ?? null }),
+      ...(!(change.completedAt === undefined) && { completedAt: fmiDate(change.completedAt) ?? null }),
+      ...(!(change.volumeProgress === undefined) && { progressVolumes: change.volumeProgress }),
     },
   );
 };

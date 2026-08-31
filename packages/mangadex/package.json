@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+      "@manifold/json": "workspace:*",
       "effect": "catalog:effect"
   },
   "scripts": {

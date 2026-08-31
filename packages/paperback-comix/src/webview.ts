@@ -1,4 +1,9 @@
-import type { JsonObject } from "./parser.js";
+import {
+  isJsonArray,
+  isJsonObject,
+  isString,
+  type JsonValue,
+} from "@manifold/json";
 
 export type WebViewChapter = {
   readonly url: string;
@@ -43,32 +48,21 @@ const webViewScript = (mode: "chapters" | "pages"): string => `
 export const chaptersWebViewScript = webViewScript("chapters");
 export const pagesWebViewScript = webViewScript("pages");
 
-// SAFETY: value is JsonObject) at this site
-const asObject = (value: unknown): JsonObject | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    // SAFETY: value matches JsonObject at this call site
-    ? (value as JsonObject)
-    : undefined;
-
-const asArray = (value: unknown): readonly unknown[] =>
-  Array.isArray(value) ? value : [];
-
-const asString = (value: unknown): string => typeof value === "string" ? value : "";
-
-export const chaptersFromWebView = (value: unknown): readonly WebViewChapter[] => {
-  const root = asObject(value);
-  return asArray(root?.chapters)
-    .map(asObject)
+export const chaptersFromWebView = (value: JsonValue): readonly WebViewChapter[] => {
+  const root = isJsonObject(value) ? value : undefined;
+  const chapters = isJsonArray(root?.chapters) ? root.chapters : [];
+  return chapters
+    .map((item) => (isJsonObject(item) ? item : undefined))
     .map((item): WebViewChapter | undefined => {
-      const url = asString(item?.url);
-      return url ? { url, title: asString(item?.title) || undefined } : undefined;
+      const url = isString(item?.url) ? item.url : "";
+      const title = isString(item?.title) ? item.title : "";
+      return url ? { url, title: title || undefined } : undefined;
     })
     .filter((item): item is WebViewChapter => item !== undefined);
 };
 
-export const pagesFromWebView = (value: unknown): readonly string[] => {
-  const root = asObject(value);
-  return asArray(root?.pages)
-    .map(asString)
-    .filter((url) => url.length > 0);
+export const pagesFromWebView = (value: JsonValue): readonly string[] => {
+  const root = isJsonObject(value) ? value : undefined;
+  const pages = isJsonArray(root?.pages) ? root.pages : [];
+  return pages.filter(isString).filter((url) => url.length > 0);
 };
