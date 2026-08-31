@@ -11,14 +11,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-      "@effect/platform-bun": "catalog:effect",
-      "@effect/platform-node": "catalog:effect",
-      "alchemy": "catalog:iac",
-      "effect": "catalog:effect"
+    "@effect/platform-bun": "catalog:effect",
+    "@effect/platform-node": "catalog:effect",
+    "alchemy": "catalog:iac",
+    "effect": "catalog:effect"
   },
   "devDependencies": {
-      "@cloudflare/workers-types": "catalog:cloudflare",
-      "@types/node": "catalog:types",
-      "typescript": "catalog:build"
+    "@cloudflare/workers-types": "catalog:cloudflare",
+    "@types/node": "catalog:types",
+    "typescript": "catalog:build"
   }
 }

@@ -22,18 +22,18 @@
     "registry:comix": "bun index.ts registry comix"
   },
   "dependencies": {
-      "@effect/platform-bun": "catalog:effect",
-      "@manifold/canonical": "workspace:*",
-      "@manifold/mangadex": "workspace:*",
-      "cli-progress": "catalog:cli",
-      "effect": "catalog:effect",
-      "listr2": "catalog:cli",
-      "picocolors": "catalog:cli"
+    "@effect/platform-bun": "catalog:effect",
+    "@manifold/canonical": "workspace:*",
+    "@manifold/mangadex": "workspace:*",
+    "cli-progress": "catalog:cli",
+    "effect": "catalog:effect",
+    "listr2": "catalog:cli",
+    "picocolors": "catalog:cli"
   },
   "devDependencies": {
-      "@types/bun": "catalog:types",
-      "@types/cli-progress": "catalog:types",
-      "typescript": "catalog:build",
-      "vitest": "catalog:build"
+    "@types/bun": "catalog:types",
+    "@types/cli-progress": "catalog:types",
+    "typescript": "catalog:build",
+    "vitest": "catalog:build"
   }
 }
