@@ -8,7 +8,7 @@ export const toBase64Url = (bytes: Uint8Array): string => {
 };
 
 export const fromBase64Url = (value: string): Uint8Array => {
-  const padded = value.replaceAll("-", "+").replaceAll("/", "_") + "===";
+  const padded = value.replaceAll("-", "+").replaceAll("_", "/") + "===";
   const binary = atob(padded.slice(0, padded.length - (padded.length % 4)));
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
@@ -17,7 +17,9 @@ export const fromBase64Url = (value: string): Uint8Array => {
   return bytes;
 };
 
-const encryptionKey = async (env: Env): Promise<CryptoKey> => {
+const encryptionKey = async (
+  env: Pick<Env, "OAUTH_TOKEN_ENCRYPTION_SECRET">,
+): Promise<CryptoKey> => {
   const encryptionSecret = await readSecret(
     env.OAUTH_TOKEN_ENCRYPTION_SECRET,
     "OAUTH_TOKEN_ENCRYPTION_SECRET",
@@ -32,7 +34,10 @@ const encryptionKey = async (env: Env): Promise<CryptoKey> => {
   ]);
 };
 
-export const encryptToken = async (env: Env, value: string): Promise<string> => {
+export const encryptToken = async (
+  env: Pick<Env, "OAUTH_TOKEN_ENCRYPTION_SECRET">,
+  value: string,
+): Promise<string> => {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encrypted = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv },
@@ -45,7 +50,10 @@ export const encryptToken = async (env: Env, value: string): Promise<string> => 
   return toBase64Url(combined);
 };
 
-export const decryptToken = async (env: Env, value: string): Promise<string> => {
+export const decryptToken = async (
+  env: Pick<Env, "OAUTH_TOKEN_ENCRYPTION_SECRET">,
+  value: string,
+): Promise<string> => {
   const combined = fromBase64Url(value);
   const iv = combined.slice(0, 12);
   const encrypted = combined.slice(12);
