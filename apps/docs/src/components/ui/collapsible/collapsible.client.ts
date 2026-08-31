@@ -3,10 +3,16 @@
 import { mount, makeDisclosure } from "@cloudflare/nimbus-docs/client";
 
 function initCollapsible(root: HTMLElement): () => void {
-  const trigger = root.querySelector<HTMLElement>("[data-nb-collapsible-trigger]");
-  const content = root.querySelector<HTMLElement>("[data-nb-collapsible-content]");
+  const trigger = root.querySelector<HTMLElement>(
+    "[data-nb-collapsible-trigger]",
+  );
+  const content = root.querySelector<HTMLElement>(
+    "[data-nb-collapsible-content]",
+  );
 
-  if (!trigger || !content) {return () => undefined;}
+  if (!trigger || !content) {
+    return () => undefined;
+  }
 
   const defaultOpen = root.dataset.nbDefaultOpen === "true";
 

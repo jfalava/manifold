@@ -46,7 +46,8 @@ export async function GET({ props }: { props: SlugProps }) {
   const { item } = props;
   const { entry, title, description, version } = item;
   const socialImage =
-    (isEntryData(entry.data) ? entrySocialImage(entry.data) : undefined) ?? config.socialImage;
+    (isEntryData(entry.data) ? entrySocialImage(entry.data) : undefined) ??
+    config.socialImage;
 
   const body = [
     "---",

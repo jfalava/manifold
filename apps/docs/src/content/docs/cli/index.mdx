@@ -41,12 +41,12 @@ Each leaf has its own page in this section.
 
 Remote-touching commands resolve credentials the same way: **flag → bare env → `ALCHEMY_SECRET_`-prefixed env** (the `iac/.env` convention).
 
-| Flag | Environment fallback | Used by |
-| --- | --- | --- |
-| `--api-token` | `MANIFOLD_TOKEN` / `ALCHEMY_SECRET_MANIFOLD_TOKEN` | ops, reconcile, registry |
-| `--api-origin` | `MANIFOLD_API_ORIGIN` | ops, reconcile, registry (default `https://manifold.jfa.dev/api`) |
-| `--anilist-token` | `ANILIST_TOKEN` / `ALCHEMY_SECRET_ANILIST_TOKEN` | migrate, reconcile, registry |
-| MangaDex client flags | `MANGADEX_CLIENT_ID` / `SECRET` / `USERNAME` / `PASSWORD` | migrate, stale-status, unfollow-dropped |
+| Flag                  | Environment fallback                                      | Used by                                                           |
+| --------------------- | --------------------------------------------------------- | ----------------------------------------------------------------- |
+| `--api-token`         | `MANIFOLD_TOKEN` / `ALCHEMY_SECRET_MANIFOLD_TOKEN`        | ops, reconcile, registry                                          |
+| `--api-origin`        | `MANIFOLD_API_ORIGIN`                                     | ops, reconcile, registry (default `https://manifold.jfa.dev/api`) |
+| `--anilist-token`     | `ANILIST_TOKEN` / `ALCHEMY_SECRET_ANILIST_TOKEN`          | migrate, reconcile, registry                                      |
+| MangaDex client flags | `MANGADEX_CLIENT_ID` / `SECRET` / `USERNAME` / `PASSWORD` | migrate, stale-status, unfollow-dropped                           |
 
 AniList writes always run on your machine — AniList blocks Cloudflare Worker egress IPs, which is also why `anilist:*` ops drain on the device rather than the Worker.
 

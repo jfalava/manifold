@@ -31,20 +31,22 @@ interface SectionProps {
 export async function getStaticPaths() {
   const { groups } = await getIndexedTopLevel();
   // SAFETY: value is if they don't exist. at this site
-  return groups
-    // Versioning: hidden versions don't get a per-section llms.txt
-    // index. They're URL-reachable for direct navigation, but every
-    // agent-discovery surface should treat them as if they don't exist.
-    .filter((group) => !group.hidden)
-    .map((group) => ({
-      params: { section: group.slug },
-      props: {
-        // SAFETY: value matches SectionProps, }) at this call site
-        slug: group.slug,
-        label: group.label,
-        members: group.members,
-      } as SectionProps,
-    }));
+  return (
+    groups
+      // Versioning: hidden versions don't get a per-section llms.txt
+      // index. They're URL-reachable for direct navigation, but every
+      // agent-discovery surface should treat them as if they don't exist.
+      .filter((group) => !group.hidden)
+      .map((group) => ({
+        params: { section: group.slug },
+        props: {
+          // SAFETY: value matches SectionProps, }) at this call site
+          slug: group.slug,
+          label: group.label,
+          members: group.members,
+        } as SectionProps,
+      }))
+  );
 }
 
 export async function GET({ props }: { props: SectionProps }) {

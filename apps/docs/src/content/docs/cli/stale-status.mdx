@@ -16,14 +16,14 @@ Scans your MangaDex library for titles whose latest uploaded chapter is older th
 
 ## Flags
 
-| Flag | Default | Notes |
-| --- | --- | --- |
-| `--older-than` | `365d` | `90`, `90d`, `12w`, `6mo`, `2y`, … |
-| `--to` | `on_hold` | Target MangaDex reading status |
-| `--from` | `reading,re_reading` | Comma-separated statuses eligible for change |
-| `--apply` | `false` | Write status changes |
-| `--use-plan` | `false` | Skip scan; reuse `.tmp/mangadex-stale-plan.json` (flags must match) |
-| MangaDex client flags | env | Required (`MANGADEX_CLIENT_*` / username / password) |
+| Flag                  | Default              | Notes                                                               |
+| --------------------- | -------------------- | ------------------------------------------------------------------- |
+| `--older-than`        | `365d`               | `90`, `90d`, `12w`, `6mo`, `2y`, …                                  |
+| `--to`                | `on_hold`            | Target MangaDex reading status                                      |
+| `--from`              | `reading,re_reading` | Comma-separated statuses eligible for change                        |
+| `--apply`             | `false`              | Write status changes                                                |
+| `--use-plan`          | `false`              | Skip scan; reuse `.tmp/mangadex-stale-plan.json` (flags must match) |
+| MangaDex client flags | env                  | Required (`MANGADEX_CLIENT_*` / username / password)                |
 
 ## Usage
 

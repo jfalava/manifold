@@ -7,7 +7,12 @@ import type {
 const basePrefix = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export function withBase(href: string): string {
-  if (!href.startsWith("/") || basePrefix === "" || href === basePrefix || href.startsWith(`${basePrefix}/`)) {
+  if (
+    !href.startsWith("/") ||
+    basePrefix === "" ||
+    href === basePrefix ||
+    href.startsWith(`${basePrefix}/`)
+  ) {
     return href;
   }
 
@@ -37,17 +42,28 @@ export function withBaseBreadcrumbs(items: Breadcrumb[]): Breadcrumb[] {
 
 export function withBasePrevNext(value: PrevNext): PrevNext {
   return {
-    prev: value.prev ? { ...value.prev, href: withBase(value.prev.href) } : undefined,
-    next: value.next ? { ...value.next, href: withBase(value.next.href) } : undefined,
+    prev: value.prev
+      ? { ...value.prev, href: withBase(value.prev.href) }
+      : undefined,
+    next: value.next
+      ? { ...value.next, href: withBase(value.next.href) }
+      : undefined,
   };
 }
 
-export function withBaseInText(value: string, site: string, paths: string[]): string {
-  if (basePrefix === "") {return value;}
+export function withBaseInText(
+  value: string,
+  site: string,
+  paths: string[],
+): string {
+  if (basePrefix === "") {
+    return value;
+  }
 
   const siteOrigin = new URL(site).origin;
   return paths.reduce(
-    (text, path) => text.replaceAll(`${siteOrigin}${path}`, `${siteOrigin}${withBase(path)}`),
+    (text, path) =>
+      text.replaceAll(`${siteOrigin}${path}`, `${siteOrigin}${withBase(path)}`),
     value,
   );
 }

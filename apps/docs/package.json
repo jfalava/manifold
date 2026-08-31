@@ -10,7 +10,6 @@
     "lint:docs:fix": "nimbus-docs lint --fix",
     "lint:oxlint": "oxlint src --ignore-pattern '**/*.astro'",
     "check": "bun typecheck && bun lint",
-    "deploy": "wrangler deploy",
     "dev": "astro dev",
     "format": "prettier --write src",
     "format:check": "prettier --check src",
@@ -20,8 +19,7 @@
     "lint:oxlint:fix": "oxlint src --ignore-pattern '**/*.astro' --fix",
     "predeploy": "astro check && astro build",
     "prepreview:cf": "astro build",
-    "preview": "astro preview",
-    "preview:cf": "wrangler dev"
+    "preview": "astro preview"
   },
   "dependencies": {
     "@cloudflare/nimbus-docs": "catalog:docs",

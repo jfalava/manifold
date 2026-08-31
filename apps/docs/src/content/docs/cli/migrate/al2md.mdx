@@ -16,12 +16,12 @@ Fetches your AniList manga list, matches titles on MangaDex, then sets reading s
 
 ## Flags
 
-| Flag | Default | Notes |
-| --- | --- | --- |
-| `--apply` | `false` | Write to MangaDex. Dry-run without it. |
-| `--anilist-token` | env | Required |
-| `--skip-progress` | `false` | Skip chapter read-marker backfill |
-| `--mangadex-client-id` / `--secret` / `--username` / `--password` | env | **Required** (password grant only — no personal-token path) |
+| Flag                                                              | Default | Notes                                                       |
+| ----------------------------------------------------------------- | ------- | ----------------------------------------------------------- |
+| `--apply`                                                         | `false` | Write to MangaDex. Dry-run without it.                      |
+| `--anilist-token`                                                 | env     | Required                                                    |
+| `--skip-progress`                                                 | `false` | Skip chapter read-marker backfill                           |
+| `--mangadex-client-id` / `--secret` / `--username` / `--password` | env     | **Required** (password grant only — no personal-token path) |
 
 ## Matching and status map
 
@@ -32,14 +32,14 @@ Per AniList entry:
 
 AniList → MangaDex status mapping:
 
-| AniList | MangaDex |
-| --- | --- |
-| CURRENT | `reading` |
-| REPEATING | `re_reading` |
-| PAUSED | `on_hold` |
-| PLANNING | `plan_to_read` |
-| COMPLETED | `completed` |
-| DROPPED | `dropped` |
+| AniList   | MangaDex       |
+| --------- | -------------- |
+| CURRENT   | `reading`      |
+| REPEATING | `re_reading`   |
+| PAUSED    | `on_hold`      |
+| PLANNING  | `plan_to_read` |
+| COMPLETED | `completed`    |
+| DROPPED   | `dropped`      |
 
 Chapter backfill marks read every chapter numbered up to the AniList progress
 value (unless `--skip-progress`).
@@ -54,5 +54,6 @@ bun run manifold migrate anilist-to-mangadex --apply
 Unmatched titles and per-title failures leave a non-zero exit code. Prefer a dry-run first on a large list. Secrets live in `iac/.env` — see `iac/.env.example`.
 
 <Aside type="caution" title="Credentials">
-  Unlike `md2al`, this path does not accept a MangaDex personal token. You need the OAuth client + username/password grant env vars.
+  Unlike `md2al`, this path does not accept a MangaDex personal token. You need
+  the OAuth client + username/password grant env vars.
 </Aside>

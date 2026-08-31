@@ -14,18 +14,18 @@ public hostname serves documentation, the sync API, and the Paperback catalog.
 There is **no** separate development stack or `workers.dev` endpoint.
 Deployments go through Alchemy (`iac/`).
 
-| Worker | Role |
-| --- | --- |
-| `ManifoldRouter` | Owns `manifold.jfa.dev`; routes by path |
-| `SyncApi` | HTTP API, personal Durable Object, Paperback catalog |
-| `ManifoldDocs` | Static Nimbus documentation site |
+| Worker           | Role                                                 |
+| ---------------- | ---------------------------------------------------- |
+| `ManifoldRouter` | Owns `manifold.jfa.dev`; routes by path              |
+| `SyncApi`        | HTTP API, personal Durable Object, Paperback catalog |
+| `ManifoldDocs`   | Static Nimbus documentation site                     |
 
 The router mounts:
 
-| Path | Upstream |
-| --- | --- |
-| `/` | Documentation (`ManifoldDocs`) |
-| `/api/*` | Sync API (`SyncApi`) |
+| Path           | Upstream                                            |
+| -------------- | --------------------------------------------------- |
+| `/`            | Documentation (`ManifoldDocs`)                      |
+| `/api/*`       | Sync API (`SyncApi`)                                |
 | `/paperback/*` | Paperback catalog / extension artifacts (`SyncApi`) |
 
 Provider cookies for Comix stay on the device inside Paperback's in-app browser.

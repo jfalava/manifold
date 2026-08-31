@@ -33,7 +33,9 @@ export async function GET() {
 
   for (const group of groups) {
     // Older doc versions have their own /<v>/llms.txt; don't list them here.
-    if (group.kind === "version") {continue;}
+    if (group.kind === "version") {
+      continue;
+    }
     rows.push({
       key: `/${group.slug}`,
       line: `- [${group.label}](${new URL(withBase(`/${group.slug}/llms.txt`), config.site).href})`,
@@ -41,7 +43,9 @@ export async function GET() {
   }
 
   rows.sort((a, b) => a.key.localeCompare(b.key));
-  for (const row of rows) {lines.push(row.line);}
+  for (const row of rows) {
+    lines.push(row.line);
+  }
 
   lines.push("");
 

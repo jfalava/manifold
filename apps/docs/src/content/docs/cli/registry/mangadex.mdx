@@ -14,14 +14,14 @@ Backfills missing `mangadex` provider links. Matching runs on the Worker (vector
 
 ## Flags
 
-| Flag | Default | Notes |
-| --- | --- | --- |
-| `--apply` | `false` | Write provider links |
-| `--limit` | all unmatched | Cap how many rows to attempt |
-| `--status` | `auto` | `auto` or comma-list: `reading,paused,dropped,completed,planning` |
-| `--delay` | `800` | Milliseconds between resolve calls |
-| `--api-token` / `--api-origin` | env | Registry access |
-| `--anilist-token` | env | Improves search aliases from AniList titles |
+| Flag                           | Default       | Notes                                                             |
+| ------------------------------ | ------------- | ----------------------------------------------------------------- |
+| `--apply`                      | `false`       | Write provider links                                              |
+| `--limit`                      | all unmatched | Cap how many rows to attempt                                      |
+| `--status`                     | `auto`        | `auto` or comma-list: `reading,paused,dropped,completed,planning` |
+| `--delay`                      | `800`         | Milliseconds between resolve calls                                |
+| `--api-token` / `--api-origin` | env           | Registry access                                                   |
+| `--anilist-token`              | env           | Improves search aliases from AniList titles                       |
 
 `--status` filters `row.state.status` before `--limit`. `reading` expands to `reading,re_reading`. `auto` includes every status.
 

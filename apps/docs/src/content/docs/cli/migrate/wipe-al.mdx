@@ -19,11 +19,11 @@ The command scans and reports what it would delete by default. `--apply` enables
 
 ## Flags
 
-| Flag | Default | Notes |
-| --- | --- | --- |
-| `--apply` | `false` | Permanently delete the scanned AniList data |
-| `--yes` | `false` | Skip confirmation when used with `--apply` |
-| `--anilist-token` | env | `ANILIST_TOKEN` / `ALCHEMY_SECRET_ANILIST_TOKEN` |
+| Flag              | Default | Notes                                            |
+| ----------------- | ------- | ------------------------------------------------ |
+| `--apply`         | `false` | Permanently delete the scanned AniList data      |
+| `--yes`           | `false` | Skip confirmation when used with `--apply`       |
+| `--anilist-token` | env     | `ANILIST_TOKEN` / `ALCHEMY_SECRET_ANILIST_TOKEN` |
 
 ## Usage
 
@@ -36,5 +36,6 @@ bun run manifold migrate wipe-al --apply --yes
 An empty manga list exits cleanly without deleting anything.
 
 <Aside type="danger" title="Irreversible">
-  This permanently removes manga list state and activity history on AniList. Prefer exporting or migrating first if you still need the data.
+  This permanently removes manga list state and activity history on AniList.
+  Prefer exporting or migrating first if you still need the data.
 </Aside>
