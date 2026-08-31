@@ -35,6 +35,7 @@ export const MangaDexMatchInput = Schema.Struct({
   providerId: Schema.NonEmptyString,
   title: Schema.NonEmptyString,
   aliases: Schema.Array(Schema.String),
+  persistSearchResults: Schema.optional(Schema.Boolean),
   externalIds: Schema.optional(
     Schema.Struct({
       anilist: Schema.optional(Schema.NonEmptyString),
@@ -453,17 +454,19 @@ export const resolveMangaDex = async (
     searched.map((manga, index) => ({ manga, embedding: fresh[index] ?? [] })),
   );
 
-  try {
-    await env.MANGADEX_INDEX.upsert(
-      searched.flatMap((manga, index) => {
-        const values = fresh[index];
-        return values
-          ? [{ id: `mangadex:${manga.id}`, values, metadata: vectorMetadata(manga) }]
-          : [];
-      }),
-    );
-  } catch (error) {
-    console.warn(`[MangaDexMatch] Vectorize upsert failed: ${errorMessage(error)}`);
+  if (input.persistSearchResults !== false) {
+    try {
+      await env.MANGADEX_INDEX.upsert(
+        searched.flatMap((manga, index) => {
+          const values = fresh[index];
+          return values
+            ? [{ id: `mangadex:${manga.id}`, values, metadata: vectorMetadata(manga) }]
+            : [];
+        }),
+      );
+    } catch (error) {
+      console.warn(`[MangaDexMatch] Vectorize upsert failed: ${errorMessage(error)}`);
+    }
   }
 
   const byId = new Map<string, RankedMangaDexCandidate>();

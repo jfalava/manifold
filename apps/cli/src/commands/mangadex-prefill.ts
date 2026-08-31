@@ -222,6 +222,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                         )
                         .map((p) => [p.provider, p.externalId]),
                     ),
+                    persistSearchResults: apply,
                   },
                 );
               } catch {

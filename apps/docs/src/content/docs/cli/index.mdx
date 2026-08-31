@@ -52,13 +52,7 @@ AniList writes always run on your machine — AniList blocks Cloudflare Worker e
 
 ## Dry-run defaults
 
-Most write commands are **dry-run until `--apply`**. Exceptions:
-
-| Command | Gate |
-| --- | --- |
-| `migrate wipe-al` | Interactive confirm, or `--yes` |
-| `ops retry` | Writes immediately |
-| `registry import` | Writes immediately (idempotent; no ops enqueued) |
+Every command that changes remote state is **dry-run until `--apply`**. `migrate wipe-al --apply` also requires interactive confirmation unless `--yes` is present.
 
 ## Exit codes
 

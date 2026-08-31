@@ -187,15 +187,23 @@ export const opsCommand = Command.make("ops").pipe(
     ),
     Command.make("retry", {
       opId: Flag.string("op-id").pipe(Flag.withDescription("The op_id to reset to pending.")),
+      apply: Flag.boolean("apply").pipe(
+        Flag.withDefault(false),
+        Flag.withDescription("Reset the op remotely (default: dry-run)."),
+      ),
       apiOrigin: apiOriginFlag,
       apiToken: apiTokenFlag,
     }).pipe(
       Command.withDescription("Reset one op back to pending."),
-      Command.withHandler(({ opId, apiOrigin, apiToken }) =>
+      Command.withHandler(({ opId, apply, apiOrigin, apiToken }) =>
         Effect.tryPromise({
           try: async () => {
             openFrame("ops retry");
             try {
+              if (!apply) {
+                closeFrame(`Dry run: would reset ${opId} to pending. Re-run with --apply.`);
+                return;
+              }
               const config = apiConfig(apiOrigin, apiToken);
               await apiCall(config, `/v1/ops/${encodeURIComponent(opId)}/retry`, "POST");
               closeFrame(`reset to pending: ${opId}`);
@@ -272,23 +280,35 @@ export const reconcileCommand = Command.make("diff", {
 
 export const importCommand = Command.make("import", {
   anilistToken: anilistTokenFlag,
+  apply: Flag.boolean("apply").pipe(
+    Flag.withDefault(false),
+    Flag.withDescription("Write imported rows and list state to the registry (default: dry-run)."),
+  ),
   apiOrigin: apiOriginFlag,
   apiToken: apiTokenFlag,
 }).pipe(
   Command.withDescription(
     "Backfill: mint registry rows for every live AniList manga entry and record its status (no ops enqueued — AniList already holds this state).",
   ),
-  Command.withHandler(({ anilistToken, apiOrigin, apiToken }) =>
+  Command.withHandler(({ anilistToken, apply, apiOrigin, apiToken }) =>
     Effect.tryPromise({
       try: async () => {
         openFrame("registry import");
         try {
           const token = resolveValue(anilistToken, "ANILIST_TOKEN", "ALCHEMY_SECRET_ANILIST_TOKEN");
           if (!token) {throw new Error("AniList token missing (ANILIST_TOKEN)");}
-          const config = apiConfig(apiOrigin, apiToken);
 
           const live = await fetchAniListMangaEntries(token);
           frameDetail(`fetched ${live.length} AniList entries`);
+          if (!apply) {
+            const importable = live.filter((entry) => mappedRegistryStatus(entry.status) !== undefined);
+            closeFrame(
+              `Dry run: would import ${importable.length}/${live.length} rows. Re-run with --apply.`,
+            );
+            return;
+          }
+
+          const config = apiConfig(apiOrigin, apiToken);
 
           const resolved = await apiCall<{
             entries: readonly {

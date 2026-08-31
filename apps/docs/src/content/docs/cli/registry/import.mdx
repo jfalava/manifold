@@ -12,13 +12,14 @@ bun run manifold registry import [flags]
 
 Mints registry rows for every live AniList manga entry and records list status with `origin: migration` and `appliedRemotely: true`. **No ops are enqueued** — AniList already holds that state.
 
-Writes immediately (no `--apply` gate). Safe and idempotent after big AniList-side reorganizations.
+Dry-run until `--apply`. The dry run reports how many live AniList entries are importable without changing the registry.
 
 ## Flags
 
 | Flag | Default | Notes |
 | --- | --- | --- |
 | `--anilist-token` | env | Live AniList list |
+| `--apply` | `false` | Mint rows and record list state |
 | `--api-token` | env | `MANIFOLD_TOKEN` / `ALCHEMY_SECRET_MANIFOLD_TOKEN` |
 | `--api-origin` | env / `https://manifold.jfa.dev/api` | Personal API origin |
 
@@ -27,6 +28,7 @@ Writes immediately (no `--apply` gate). Safe and idempotent after big AniList-si
 ```text
 bun run manifold reconcile diff     # optional: see drift first
 bun run manifold registry import
+bun run manifold registry import --apply
 ```
 
 Typical pairing: [reconcile diff](/cli/reconcile-diff/) to inspect, then `registry import` to align.

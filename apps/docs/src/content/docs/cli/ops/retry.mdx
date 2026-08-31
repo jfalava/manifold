@@ -10,13 +10,14 @@ sidebar:
 bun run manifold ops retry --op-id <op_id> [flags]
 ```
 
-Immediately POSTs `/v1/ops/:opId/retry`. There is no dry-run — the op returns to the pending queue as soon as the call succeeds.
+Dry-run by default. With `--apply`, POSTs `/v1/ops/:opId/retry` and returns the op to the pending queue.
 
 ## Flags
 
 | Flag | Default | Notes |
 | --- | --- | --- |
 | `--op-id` | required | Op id from `ops pending` or the admin panel |
+| `--apply` | `false` | Reset the op remotely |
 | `--api-token` | env | `MANIFOLD_TOKEN` / `ALCHEMY_SECRET_MANIFOLD_TOKEN` |
 | `--api-origin` | env / `https://manifold.jfa.dev/api` | Personal API origin |
 
@@ -25,6 +26,7 @@ Immediately POSTs `/v1/ops/:opId/retry`. There is no dry-run — the op returns 
 ```text
 bun run manifold ops pending
 bun run manifold ops retry --op-id <op_id>
+bun run manifold ops retry --op-id <op_id> --apply
 ```
 
 Blocked ops (usually after ~5 failed attempts) are the usual candidates. After retry, `mangadex:*` ops drain on the Worker; `anilist:*` ops still need a device drain.

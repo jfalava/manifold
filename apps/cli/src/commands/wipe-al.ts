@@ -26,9 +26,13 @@ interface WipeCtx extends RunContext {
 }
 
 export const wipeAlCommand = Command.make("wipe-al", {
+  apply: Flag.boolean("apply").pipe(
+    Flag.withDefault(false),
+    Flag.withDescription("Permanently delete the scanned AniList data (default: dry-run)."),
+  ),
   yes: Flag.boolean("yes").pipe(
     Flag.withDefault(false),
-    Flag.withDescription("Skip the interactive confirmation prompts."),
+    Flag.withDescription("Skip the interactive confirmation when used with --apply."),
   ),
   anilistToken: Flag.string("anilist-token").pipe(
     Flag.optional,
@@ -38,7 +42,7 @@ export const wipeAlCommand = Command.make("wipe-al", {
   Command.withDescription(
     "NUKE: delete ALL manga list entries and ALL manga-related activities on AniList. Anime is never touched.",
   ),
-  Command.withHandler(({ yes, anilistToken }) => {
+  Command.withHandler(({ apply, yes, anilistToken }) => {
     const token =
       Option.getOrUndefined(anilistToken) ??
       process.env.ANILIST_TOKEN ??
@@ -103,6 +107,13 @@ export const wipeAlCommand = Command.make("wipe-al", {
 
       if (scan.entries.length === 0 && scan.activities.length === 0) {
         closeFrame("Nothing to delete.");
+        return;
+      }
+
+      if (!apply) {
+        closeFrame(
+          `Dry run: would delete ${scan.entries.length} list entries and ${scan.activities.length} activities. Re-run with --apply.`,
+        );
         return;
       }
 

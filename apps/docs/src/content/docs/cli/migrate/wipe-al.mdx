@@ -15,20 +15,22 @@ AniList profile, then deletes **all** manga list entries and **all**
 manga-related activities (list updates and text posts matching manga keywords).
 Anime is never touched.
 
-There is no dry-run mode: the command scans, prompts, then deletes. Pass `--yes` only when you intend to skip the interactive confirms.
+The command scans and reports what it would delete by default. `--apply` enables deletion and still prompts for confirmation. Pass `--yes` with `--apply` only when you intend to skip that prompt.
 
 ## Flags
 
 | Flag | Default | Notes |
 | --- | --- | --- |
-| `--yes` | `false` | Skip interactive confirmation prompts |
+| `--apply` | `false` | Permanently delete the scanned AniList data |
+| `--yes` | `false` | Skip confirmation when used with `--apply` |
 | `--anilist-token` | env | `ANILIST_TOKEN` / `ALCHEMY_SECRET_ANILIST_TOKEN` |
 
 ## Usage
 
 ```text
 bun run manifold migrate wipe-al
-bun run manifold migrate wipe-al --yes
+bun run manifold migrate wipe-al --apply
+bun run manifold migrate wipe-al --apply --yes
 ```
 
 An empty manga list exits cleanly without deleting anything.
