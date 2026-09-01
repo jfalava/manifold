@@ -55,6 +55,21 @@ describe("Paperback catalog routes", () => {
     expect(await response.text()).toBe("source-bundle");
   });
 
+  it("serves icon.png at the Paperback static/ path", async () => {
+    const response = await get(
+      "/extensions/0.9/stable/ManifoldSource/static/icon.png",
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/png");
+    expect(await response.text()).toBe("png");
+  });
+
+  it("still serves icon.png at the flat path", async () => {
+    const response = await get("/extensions/0.9/stable/ManifoldSource/icon.png");
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("png");
+  });
+
   it("404s unknown extension ids", async () => {
     const response = await get("/extensions/0.9/stable/Nope/info.json");
     expect(response.status).toBe(404);

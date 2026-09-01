@@ -81,6 +81,10 @@ export const catalogApp: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
   .get(`${STABLE}/:id/index.js`, (c) =>
     asset(c.env, `/${c.req.param("id")}/index.js`, "application/javascript"),
   )
+  // Paperback 0.9 resolves info.icon as `{id}/static/{icon}` (see inkdex layout).
+  .get(`${STABLE}/:id/static/icon.png`, (c) =>
+    asset(c.env, `/${c.req.param("id")}/icon.png`, "image/png"),
+  )
   .get(`${STABLE}/:id/icon.png`, (c) =>
     asset(c.env, `/${c.req.param("id")}/icon.png`, "image/png"),
   )
