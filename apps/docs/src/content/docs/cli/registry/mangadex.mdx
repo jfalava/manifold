@@ -13,14 +13,93 @@ Backfills missing `mangadex` provider links. Matching runs on the Worker (vector
 
 ## Flags
 
-| Flag                           | Default       | Notes                                                             |
-| ------------------------------ | ------------- | ----------------------------------------------------------------- |
-| `--apply`                      | `false`       | Write provider links                                              |
-| `--limit`                      | all unmatched | Cap how many rows to attempt                                      |
-| `--status`                     | `auto`        | `auto` or comma-list: `reading,paused,dropped,completed,planning` |
-| `--delay`                      | `800`         | Milliseconds between resolve calls                                |
-| `--api-token` / `--api-origin` | env           | Registry access                                                   |
-| `--anilist-token`              | env           | Improves search aliases from AniList titles                       |
+### `--apply`
+
+Write matched MangaDex provider links to the registry. Without this flag, the
+command resolves titles and reports results without changing rows.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold registry mangadex --apply
+```
+
+### `--limit <n>`
+
+Attempt at most `n` unmatched registry rows. Filtering happens before the
+limit is applied.
+
+- Default: all unmatched rows
+
+Example:
+
+```text
+bun run manifold registry mangadex --limit 50
+```
+
+### `--status <statuses>`
+
+Filter rows by their `state.status` before applying `--limit`. Use `auto` for
+every status, or pass a comma-separated list such as `reading,completed`.
+`reading` also includes `re_reading`.
+
+- Default: `auto`
+
+Example:
+
+```text
+bun run manifold registry mangadex --status reading,completed
+```
+
+### `--delay <milliseconds>`
+
+Wait this many milliseconds between MangaDex resolve calls. Increase it when
+you want to reduce request pressure on the upstream service.
+
+- Default: `800`
+
+Example:
+
+```text
+bun run manifold registry mangadex --delay 1200
+```
+
+### `--api-token <token>`
+
+Personal API token used to read and update registry rows. Falls back to
+`MANIFOLD_TOKEN` or `ALCHEMY_SECRET_MANIFOLD_TOKEN`.
+
+Example:
+
+```text
+bun run manifold registry mangadex --api-token "$MANIFOLD_TOKEN"
+```
+
+### `--api-origin <url>`
+
+Personal API origin containing the registry.
+
+- Default: `https://manifold.jfa.dev/api` (or `MANIFOLD_API_ORIGIN`)
+
+Example:
+
+```text
+bun run manifold registry mangadex --api-origin https://manifold.example/api
+```
+
+### `--anilist-token <token>`
+
+Optional AniList access token used to add English, romaji, native, and synonym
+aliases to searches. Falls back to `ANILIST_TOKEN` or
+`ALCHEMY_SECRET_ANILIST_TOKEN`.
+
+Example:
+
+```text
+bun run manifold registry mangadex --anilist-token "$ANILIST_TOKEN"
+```
 
 `--status` filters `row.state.status` before `--limit`. `reading` expands to `reading,re_reading`. `auto` includes every status.
 

@@ -18,11 +18,42 @@ The command scans and reports what it would delete by default. `--apply` enables
 
 ## Flags
 
-| Flag              | Default | Notes                                            |
-| ----------------- | ------- | ------------------------------------------------ |
-| `--apply`         | `false` | Permanently delete the scanned AniList data      |
-| `--yes`           | `false` | Skip confirmation when used with `--apply`       |
-| `--anilist-token` | env     | `ANILIST_TOKEN` / `ALCHEMY_SECRET_ANILIST_TOKEN` |
+### `--apply`
+
+Permanently delete the scanned AniList manga list entries and manga-related
+activities. Without this flag, the command only scans and reports the data.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold migrate wipe-al --apply
+```
+
+### `--yes`
+
+Skip the interactive confirmation prompt. This flag has an effect only when
+combined with `--apply`.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold migrate wipe-al --apply --yes
+```
+
+### `--anilist-token <token>`
+
+AniList access token used to scan and delete the manga data. Falls back to
+`ANILIST_TOKEN` or `ALCHEMY_SECRET_ANILIST_TOKEN`.
+
+Example:
+
+```text
+bun run manifold migrate wipe-al --anilist-token "$ANILIST_TOKEN"
+```
 
 ## Usage
 

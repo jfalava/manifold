@@ -15,12 +15,89 @@ Fetches your AniList manga list, matches titles on MangaDex, then sets reading s
 
 ## Flags
 
-| Flag                                                              | Default | Notes                                                       |
-| ----------------------------------------------------------------- | ------- | ----------------------------------------------------------- |
-| `--apply`                                                         | `false` | Write to MangaDex. Dry-run without it.                      |
-| `--anilist-token`                                                 | env     | Required                                                    |
-| `--skip-progress`                                                 | `false` | Skip chapter read-marker backfill                           |
-| `--mangadex-client-id` / `--secret` / `--username` / `--password` | env     | **Required** (password grant only — no personal-token path) |
+### `--anilist-token <token>`
+
+AniList access token used to read the source manga list. The flag is optional
+when `ANILIST_TOKEN` or `ALCHEMY_SECRET_ANILIST_TOKEN` is set.
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --anilist-token "$ANILIST_TOKEN"
+```
+
+### `--apply`
+
+Write statuses and chapter read markers to MangaDex. Without this flag, the
+command only reports what it would change.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --apply
+```
+
+### `--skip-progress`
+
+Update reading statuses but do not backfill MangaDex chapter read markers from
+AniList progress.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --skip-progress
+```
+
+### `--mangadex-client-id <id>`
+
+OAuth client ID for the MangaDex password grant. Falls back to
+`MANGADEX_CLIENT_ID` or `ALCHEMY_SECRET_MANGADEX_CLIENT_ID`.
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --mangadex-client-id "$MANGADEX_CLIENT_ID"
+```
+
+### `--mangadex-client-secret <secret>`
+
+OAuth client secret for the MangaDex password grant. Falls back to
+`MANGADEX_CLIENT_SECRET` or `ALCHEMY_SECRET_MANGADEX_CLIENT_SECRET`.
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --mangadex-client-secret "$MANGADEX_CLIENT_SECRET"
+```
+
+### `--mangadex-username <username>`
+
+MangaDex account username for the password grant. Falls back to
+`MANGADEX_USERNAME` or `ALCHEMY_SECRET_MANGADEX_USERNAME`.
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --mangadex-username "$MANGADEX_USERNAME"
+```
+
+### `--mangadex-password <password>`
+
+MangaDex account password for the password grant. Falls back to
+`MANGADEX_PASSWORD` or `ALCHEMY_SECRET_MANGADEX_PASSWORD`.
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --mangadex-password "$MANGADEX_PASSWORD"
+```
+
+All four MangaDex credential flags are required together. This command accepts
+the OAuth password grant only; it does not accept a MangaDex personal token.
 
 ## Matching and status map
 

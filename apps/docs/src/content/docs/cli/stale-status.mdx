@@ -15,14 +15,115 @@ Scans your MangaDex library for titles whose latest uploaded chapter is older th
 
 ## Flags
 
-| Flag                  | Default              | Notes                                                               |
-| --------------------- | -------------------- | ------------------------------------------------------------------- |
-| `--older-than`        | `365d`               | `90`, `90d`, `12w`, `6mo`, `2y`, …                                  |
-| `--to`                | `on_hold`            | Target MangaDex reading status                                      |
-| `--from`              | `reading,re_reading` | Comma-separated statuses eligible for change                        |
-| `--apply`             | `false`              | Write status changes                                                |
-| `--use-plan`          | `false`              | Skip scan; reuse `.tmp/mangadex-stale-plan.json` (flags must match) |
-| MangaDex client flags | env                  | Required (`MANGADEX_CLIENT_*` / username / password)                |
+### `--older-than <duration>`
+
+Select titles whose latest uploaded chapter is at least this old. Durations
+can be written as a number of days (`90` or `90d`), weeks (`12w`), months
+(`6mo`), or years (`2y`).
+
+- Default: `365d`
+
+Example:
+
+```text
+bun run manifold stale-status --older-than 180d
+```
+
+### `--to <status>`
+
+Set stale titles to this MangaDex reading status. Valid statuses include
+`reading`, `re_reading`, `on_hold`, `plan_to_read`, `completed`, and `dropped`.
+
+- Default: `on_hold`
+
+Example:
+
+```text
+bun run manifold stale-status --to dropped
+```
+
+### `--from <statuses>`
+
+Limit changes to titles currently in one of these comma-separated MangaDex
+reading statuses.
+
+- Default: `reading,re_reading`
+
+Example:
+
+```text
+bun run manifold stale-status --from reading,on_hold
+```
+
+### `--apply`
+
+Write the target status to MangaDex. Without this flag, the command builds and
+reports a plan without changing your library.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold stale-status --older-than 180d --to on_hold --apply
+```
+
+### `--use-plan`
+
+Skip the scan and reuse `.tmp/mangadex-stale-plan.json` from the previous run.
+The command requires the relevant flags to match the saved plan.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold stale-status --use-plan --apply
+```
+
+### `--mangadex-client-id <id>`
+
+OAuth client ID for the MangaDex password grant. Falls back to
+`MANGADEX_CLIENT_ID` or `ALCHEMY_SECRET_MANGADEX_CLIENT_ID`.
+
+Example:
+
+```text
+bun run manifold stale-status --mangadex-client-id "$MANGADEX_CLIENT_ID"
+```
+
+### `--mangadex-client-secret <secret>`
+
+OAuth client secret for the MangaDex password grant. Falls back to
+`MANGADEX_CLIENT_SECRET` or `ALCHEMY_SECRET_MANGADEX_CLIENT_SECRET`.
+
+Example:
+
+```text
+bun run manifold stale-status --mangadex-client-secret "$MANGADEX_CLIENT_SECRET"
+```
+
+### `--mangadex-username <username>`
+
+MangaDex account username for the password grant. Falls back to
+`MANGADEX_USERNAME` or `ALCHEMY_SECRET_MANGADEX_USERNAME`.
+
+Example:
+
+```text
+bun run manifold stale-status --mangadex-username "$MANGADEX_USERNAME"
+```
+
+### `--mangadex-password <password>`
+
+MangaDex account password for the password grant. Falls back to
+`MANGADEX_PASSWORD` or `ALCHEMY_SECRET_MANGADEX_PASSWORD`.
+
+Example:
+
+```text
+bun run manifold stale-status --mangadex-password "$MANGADEX_PASSWORD"
+```
 
 ## Usage
 

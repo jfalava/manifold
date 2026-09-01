@@ -15,15 +15,139 @@ Dry-run until `--apply`.
 
 ## Flags
 
-| Flag                                               | Default           | Notes                                                         |
-| -------------------------------------------------- | ----------------- | ------------------------------------------------------------- |
-| `--apply`                                          | `false`           | Write provider links                                          |
-| `--limit`                                          | all without comix | Cap attempts                                                  |
-| `--status`                                         | `auto`            | Same PAS5-style filter as [mangadex](/cli/registry/mangadex/) |
-| `--chrome-cdp-url`                                 | auto-launch       | Or `COMIX_CHROME_CDP_URL`                                     |
-| `--refresh-session`                                | `false`           | Drop the stored Keychain jar                                  |
-| `--cf-clearance` / `--session` / `--cookies`       | env               | Optional seed into the view only                              |
-| `--api-token` / `--api-origin` / `--anilist-token` | env               | Registry + better aliases                                     |
+### `--apply`
+
+Write matched Comix provider links to the registry. Without this flag, the
+command only reports the links it finds.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold registry comix --apply
+```
+
+### `--limit <n>`
+
+Attempt at most `n` registry rows that do not already have a Comix link.
+
+- Default: all rows without a Comix link
+
+Example:
+
+```text
+bun run manifold registry comix --limit 25
+```
+
+### `--status <statuses>`
+
+Filter rows by their reading status before processing them. Use `auto` for all
+statuses, or pass a comma-separated list such as `reading,completed`. As with
+the [MangaDex prefill](/cli/registry/mangadex/), `reading` includes
+`re_reading`.
+
+- Default: `auto`
+
+Example:
+
+```text
+bun run manifold registry comix --status reading,completed
+```
+
+### `--chrome-cdp-url <url>`
+
+Attach to an already-running Chrome DevTools WebSocket instead of
+auto-launching a dedicated browser. The value must look like
+`ws://127.0.0.1:9222/...`. Falls back to `COMIX_CHROME_CDP_URL`.
+
+Example:
+
+```text
+bun run manifold registry comix --chrome-cdp-url "ws://127.0.0.1:9222/devtools/browser/..."
+```
+
+### `--refresh-session`
+
+Discard the stored OS-keychain cookie jar and harvest a new session in the
+Chrome view.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold registry comix --refresh-session
+```
+
+### `--cf-clearance <value>`
+
+Seed the browser view with a `cf_clearance` cookie. This is optional and is
+used only inside the view; it falls back to `COMIX_CF_CLEARANCE` or
+`ALCHEMY_SECRET_COMIX_CF_CLEARANCE`.
+
+Example:
+
+```text
+bun run manifold registry comix --cf-clearance "$CF_CLEARANCE"
+```
+
+### `--session <value>`
+
+Seed the browser view with a session cookie. It falls back to `COMIX_SESSION`
+or `ALCHEMY_SECRET_COMIX_SESSION`.
+
+Example:
+
+```text
+bun run manifold registry comix --session "$COMIX_SESSION"
+```
+
+### `--cookies <header>`
+
+Seed the browser view with a complete `Cookie` header. This takes precedence
+over the individual `--cf-clearance` and `--session` flags, and falls back to
+`COMIX_COOKIES` or `ALCHEMY_SECRET_COMIX_COOKIES`.
+
+Example:
+
+```text
+bun run manifold registry comix --cookies "cf_clearance=...; session=..."
+```
+
+### `--api-token <token>`
+
+Personal API token used to read and update registry rows. Falls back to
+`MANIFOLD_TOKEN` or `ALCHEMY_SECRET_MANIFOLD_TOKEN`.
+
+Example:
+
+```text
+bun run manifold registry comix --api-token "$MANIFOLD_TOKEN"
+```
+
+### `--api-origin <url>`
+
+Personal API origin containing the registry.
+
+- Default: `https://manifold.jfa.dev/api` (or `MANIFOLD_API_ORIGIN`)
+
+Example:
+
+```text
+bun run manifold registry comix --api-origin https://manifold.example/api
+```
+
+### `--anilist-token <token>`
+
+Optional AniList access token used to search with English and romaji aliases.
+Falls back to `ANILIST_TOKEN` or `ALCHEMY_SECRET_ANILIST_TOKEN`.
+
+Example:
+
+```text
+bun run manifold registry comix --anilist-token "$ANILIST_TOKEN"
+```
 
 ## Chrome / Cloudflare
 

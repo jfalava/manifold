@@ -13,10 +13,28 @@ Read-only triage for the personal API op log. Prints every non-completed op (up 
 
 ## Flags
 
-| Flag           | Default                              | Notes                                              |
-| -------------- | ------------------------------------ | -------------------------------------------------- |
-| `--api-token`  | env                                  | `MANIFOLD_TOKEN` / `ALCHEMY_SECRET_MANIFOLD_TOKEN` |
-| `--api-origin` | env / `https://manifold.jfa.dev/api` | Personal API origin                                |
+### `--api-token <token>`
+
+Personal API token used to read the op log. Falls back to `MANIFOLD_TOKEN` or
+`ALCHEMY_SECRET_MANIFOLD_TOKEN`.
+
+Example:
+
+```text
+bun run manifold ops pending --api-token "$MANIFOLD_TOKEN"
+```
+
+### `--api-origin <url>`
+
+Personal API origin to query.
+
+- Default: `https://manifold.jfa.dev/api` (or `MANIFOLD_API_ORIGIN`)
+
+Example:
+
+```text
+bun run manifold ops pending --api-origin https://manifold.example/api
+```
 
 ## Usage
 

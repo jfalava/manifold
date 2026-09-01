@@ -15,12 +15,53 @@ Dry-run until `--apply`. The dry run reports how many live AniList entries are i
 
 ## Flags
 
-| Flag              | Default                              | Notes                                              |
-| ----------------- | ------------------------------------ | -------------------------------------------------- |
-| `--anilist-token` | env                                  | Live AniList list                                  |
-| `--apply`         | `false`                              | Mint rows and record list state                    |
-| `--api-token`     | env                                  | `MANIFOLD_TOKEN` / `ALCHEMY_SECRET_MANIFOLD_TOKEN` |
-| `--api-origin`    | env / `https://manifold.jfa.dev/api` | Personal API origin                                |
+### `--anilist-token <token>`
+
+AniList access token used to read the live manga list. Falls back to
+`ANILIST_TOKEN` or `ALCHEMY_SECRET_ANILIST_TOKEN`.
+
+Example:
+
+```text
+bun run manifold registry import --anilist-token "$ANILIST_TOKEN"
+```
+
+### `--apply`
+
+Mint registry rows and record the live AniList list state. Without this flag,
+the command reports how many entries can be imported without changing the
+registry.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold registry import --apply
+```
+
+### `--api-token <token>`
+
+Personal API token used to write the registry. Falls back to `MANIFOLD_TOKEN` or
+`ALCHEMY_SECRET_MANIFOLD_TOKEN`.
+
+Example:
+
+```text
+bun run manifold registry import --api-token "$MANIFOLD_TOKEN"
+```
+
+### `--api-origin <url>`
+
+Personal API origin containing the registry.
+
+- Default: `https://manifold.jfa.dev/api` (or `MANIFOLD_API_ORIGIN`)
+
+Example:
+
+```text
+bun run manifold registry import --api-origin https://manifold.example/api
+```
 
 ## Usage
 

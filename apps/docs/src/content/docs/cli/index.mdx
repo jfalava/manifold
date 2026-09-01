@@ -12,40 +12,107 @@ sidebar:
 bun run manifold <subcommand> [flags]
 ```
 
-## Command tree
-
-```text
-manifold
-├── migrate
-│   ├── md2al                 MangaDex library → private AniList entries
-│   ├── anilist-to-mangadex   AniList list → MangaDex statuses + markers
-│   ├── wipe-al               Delete all AniList manga list + activities
-│   └── al2pas5               AniList list → Paperback .pas5 backup
-├── stale-status              Mass-set MangaDex status by chapter age
-├── unfollow-dropped          Unfollow MangaDex titles by reading status
-├── ops
-│   ├── pending               List pending / failed / blocked ops
-│   └── retry                 Reset one op back to pending
-├── reconcile
-│   └── diff                  Live AniList vs registry (read-only)
-└── registry
-    ├── import                Snapshot AniList list into the registry
-    ├── mangadex              Prefill MangaDex provider links
-    └── comix                 Prefill Comix hid links via local Chrome
-```
-
-Each leaf has its own page in this section.
-
 ## Configuration
 
-Remote-touching commands resolve credentials the same way: **flag → bare env → `ALCHEMY_SECRET_`-prefixed env** (the `iac/.env` convention).
+Remote-touching commands resolve credentials in this order: **flag → bare `.env`
+→ `ALCHEMY_SECRET_`-prefixed env** (the `iac/.env` convention).
 
-| Flag                  | Environment fallback                                      | Used by                                                           |
-| --------------------- | --------------------------------------------------------- | ----------------------------------------------------------------- |
-| `--api-token`         | `MANIFOLD_TOKEN` / `ALCHEMY_SECRET_MANIFOLD_TOKEN`        | ops, reconcile, registry                                          |
-| `--api-origin`        | `MANIFOLD_API_ORIGIN`                                     | ops, reconcile, registry (default `https://manifold.jfa.dev/api`) |
-| `--anilist-token`     | `ANILIST_TOKEN` / `ALCHEMY_SECRET_ANILIST_TOKEN`          | migrate, reconcile, registry                                      |
-| MangaDex client flags | `MANGADEX_CLIENT_ID` / `SECRET` / `USERNAME` / `PASSWORD` | migrate, stale-status, unfollow-dropped                           |
+### `--api-token <token>`
+
+Personal API token for `ops`, `reconcile`, and `registry` commands. Falls back
+to `MANIFOLD_TOKEN` or `ALCHEMY_SECRET_MANIFOLD_TOKEN`.
+
+Example:
+
+```text
+bun run manifold ops pending --api-token "$MANIFOLD_TOKEN"
+```
+
+### `--api-origin <url>`
+
+Personal API origin for `ops`, `reconcile`, and `registry` requests. Falls back
+to `MANIFOLD_API_ORIGIN`.
+
+- Default: `https://manifold.jfa.dev/api`
+
+Example:
+
+```text
+bun run manifold reconcile diff --api-origin https://manifold.example/api
+```
+
+### `--anilist-token <token>`
+
+AniList access token for migration, reconcile, and registry commands. Falls
+back to `ANILIST_TOKEN` or `ALCHEMY_SECRET_ANILIST_TOKEN`.
+
+Example:
+
+```text
+bun run manifold registry import --anilist-token "$ANILIST_TOKEN"
+```
+
+`migrate anilist-to-mangadex`, `stale-status`, and `unfollow-dropped` require
+all four MangaDex credentials.
+
+### `--mangadex-client-id <id>`
+
+OAuth client ID for the MangaDex password grant. Falls back to
+`MANGADEX_CLIENT_ID` or `ALCHEMY_SECRET_MANGADEX_CLIENT_ID`.
+
+Example:
+
+```text
+bun run manifold stale-status --mangadex-client-id "$MANGADEX_CLIENT_ID"
+```
+
+### `--mangadex-client-secret <secret>`
+
+OAuth client secret for the MangaDex password grant. Falls back to
+`MANGADEX_CLIENT_SECRET` or `ALCHEMY_SECRET_MANGADEX_CLIENT_SECRET`.
+
+Example:
+
+```text
+bun run manifold stale-status --mangadex-client-secret "$MANGADEX_CLIENT_SECRET"
+```
+
+### `--mangadex-username <username>`
+
+MangaDex account username for the password grant. Falls back to
+`MANGADEX_USERNAME` or `ALCHEMY_SECRET_MANGADEX_USERNAME`.
+
+Example:
+
+```text
+bun run manifold stale-status --mangadex-username "$MANGADEX_USERNAME"
+```
+
+### `--mangadex-password <password>`
+
+MangaDex account password for the password grant. Falls back to
+`MANGADEX_PASSWORD` or `ALCHEMY_SECRET_MANGADEX_PASSWORD`.
+
+Example:
+
+```text
+bun run manifold stale-status --mangadex-password "$MANGADEX_PASSWORD"
+```
+
+### MangaDex credentials together
+
+Pass all four flags when credentials are not available through the
+environment:
+
+Example:
+
+```text
+bun run manifold stale-status \
+  --mangadex-client-id "$MANGADEX_CLIENT_ID" \
+  --mangadex-client-secret "$MANGADEX_CLIENT_SECRET" \
+  --mangadex-username "$MANGADEX_USERNAME" \
+  --mangadex-password "$MANGADEX_PASSWORD"
+```
 
 AniList writes always run on your machine — AniList blocks Cloudflare Worker egress IPs, which is also why `anilist:*` ops drain on the device rather than the Worker.
 

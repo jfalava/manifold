@@ -13,16 +13,137 @@ Exports your MangaDex library, matches each title to AniList (external links, ti
 
 ## Flags
 
-| Flag                                                              | Default | Notes                                            |
-| ----------------------------------------------------------------- | ------- | ------------------------------------------------ |
-| `--apply`                                                         | `false` | Write to AniList. Dry-run without it.            |
-| `--anilist-token`                                                 | env     | `ANILIST_TOKEN` / `ALCHEMY_SECRET_ANILIST_TOKEN` |
-| `--mangadex-token`                                                | env     | Or use password-grant flags below                |
-| `--skip-progress`                                                 | `false` | Do not push chapter progress from MD markers     |
-| `--use-cache`                                                     | `false` | Reuse `.tmp` snapshot, matches, and progress     |
-| `--limit`                                                         | —       | Only process the first N entries after export    |
-| `--phase`                                                         | `all`   | `all` \| `export` \| `match` \| `push`           |
-| `--mangadex-client-id` / `--secret` / `--username` / `--password` | env     | Password-grant fallback when no personal token   |
+### `--anilist-token <token>`
+
+AniList access token used to create private list entries. Falls back to
+`ANILIST_TOKEN` or `ALCHEMY_SECRET_ANILIST_TOKEN`.
+
+Example:
+
+```text
+bun run manifold migrate md2al --anilist-token "$ANILIST_TOKEN"
+```
+
+### `--mangadex-token <token>`
+
+MangaDex personal token with the `manga.read` scope, used to export the
+library. Falls back to `MANGADEX_TOKEN`. If omitted, the command uses the
+password-grant flags below.
+
+Example:
+
+```text
+bun run manifold migrate md2al --mangadex-token "$MANGADEX_TOKEN"
+```
+
+### `--apply`
+
+Create or update AniList entries. Without this flag, the command runs through
+export and matching but does not write to AniList.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold migrate md2al --apply
+```
+
+### `--skip-progress`
+
+Create list entries without copying chapter progress from MangaDex read
+markers.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold migrate md2al --skip-progress --apply
+```
+
+### `--use-cache`
+
+Reuse the snapshot, match results (including unmatched titles), and read-marker
+progress stored in `.tmp` instead of fetching them again.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold migrate md2al --phase match --use-cache
+```
+
+### `--limit <n>`
+
+Process only the first `n` entries after the MangaDex export. Use this for a
+small canary run before processing the full library.
+
+- Default: no limit
+
+Example:
+
+```text
+bun run manifold migrate md2al --limit 25
+```
+
+### `--phase <phase>`
+
+Run one stage instead of the complete migration. Accepted values are `all`,
+`export`, `match`, and `push`.
+
+- Default: `all`
+
+Example:
+
+```text
+bun run manifold migrate md2al --phase export
+```
+
+### `--mangadex-client-id <id>`
+
+OAuth client ID for the password-grant fallback. Falls back to
+`MANGADEX_CLIENT_ID` or `ALCHEMY_SECRET_MANGADEX_CLIENT_ID`.
+
+Example:
+
+```text
+bun run manifold migrate md2al --mangadex-client-id "$MANGADEX_CLIENT_ID"
+```
+
+### `--mangadex-client-secret <secret>`
+
+OAuth client secret for the password-grant fallback. Falls back to
+`MANGADEX_CLIENT_SECRET` or `ALCHEMY_SECRET_MANGADEX_CLIENT_SECRET`.
+
+Example:
+
+```text
+bun run manifold migrate md2al --mangadex-client-secret "$MANGADEX_CLIENT_SECRET"
+```
+
+### `--mangadex-username <username>`
+
+MangaDex account username for the password-grant fallback. Falls back to
+`MANGADEX_USERNAME` or `ALCHEMY_SECRET_MANGADEX_USERNAME`.
+
+Example:
+
+```text
+bun run manifold migrate md2al --mangadex-username "$MANGADEX_USERNAME"
+```
+
+### `--mangadex-password <password>`
+
+MangaDex account password for the password-grant fallback. Falls back to
+`MANGADEX_PASSWORD` or `ALCHEMY_SECRET_MANGADEX_PASSWORD`.
+
+Example:
+
+```text
+bun run manifold migrate md2al --mangadex-password "$MANGADEX_PASSWORD"
+```
 
 ## Matching
 

@@ -13,11 +13,39 @@ bun run manifold reconcile diff [flags]
 
 ## Flags
 
-| Flag              | Default                              | Notes                      |
-| ----------------- | ------------------------------------ | -------------------------- |
-| `--anilist-token` | env                                  | Required for the live list |
-| `--api-token`     | env                                  | Registry access            |
-| `--api-origin`    | env / `https://manifold.jfa.dev/api` | Personal API origin        |
+### `--anilist-token <token>`
+
+Required AniList access token used to fetch the live manga list. Falls back to
+`ANILIST_TOKEN` or `ALCHEMY_SECRET_ANILIST_TOKEN`.
+
+Example:
+
+```text
+bun run manifold reconcile diff --anilist-token "$ANILIST_TOKEN"
+```
+
+### `--api-token <token>`
+
+Personal API token used to read the registry. Falls back to `MANIFOLD_TOKEN` or
+`ALCHEMY_SECRET_MANIFOLD_TOKEN`.
+
+Example:
+
+```text
+bun run manifold reconcile diff --api-token "$MANIFOLD_TOKEN"
+```
+
+### `--api-origin <url>`
+
+Personal API origin containing the registry.
+
+- Default: `https://manifold.jfa.dev/api` (or `MANIFOLD_API_ORIGIN`)
+
+Example:
+
+```text
+bun run manifold reconcile diff --api-origin https://manifold.example/api
+```
 
 ## Usage
 
