@@ -14,8 +14,15 @@ import {
 import {
   COMIX_ORIGIN,
   comixBrowseUrl,
+  googleComixSearchUrl,
+  comixItemFromGoogleLink,
+  googleGotoLinks,
   isChallengeText,
+  isComixPageUrl,
+  isGoogleBlockedPage,
+  isGoogleResultsUrl,
   itemsFromCapture,
+  itemsFromGoogleLinks,
   type ComixSearchItem,
 } from "./comix-match";
 import {
@@ -25,6 +32,9 @@ import {
 } from "./comix-session";
 
 export const CAPTURE_TIMEOUT_MS = 15_000;
+export const GOOGLE_POLL_INTERVAL_MS = 500;
+export const GOTO_FOLLOW_LIMIT = 3;
+export const GOTO_REDIRECT_TIMEOUT_MS = 10_000;
 export const CHROME_DEBUG_PORT = 9222;
 
 export interface ComixView {
@@ -38,6 +48,7 @@ export interface ComixView {
 
 export interface ComixBrowser {
   readonly search: (keyword: string) => Promise<readonly ComixSearchItem[] | "challenge">;
+  readonly searchGoogle: (keyword: string) => Promise<readonly ComixSearchItem[] | "challenge">;
   readonly harvest: () => Promise<{ cookies: ComixCookie[]; userAgent?: string }>;
   readonly close: () => void;
 }
@@ -234,11 +245,23 @@ export const classifyPage = (title: string, html: string): "ok" | "challenge" =>
 const SNAPSHOT_SCRIPT =
   "({ title: document.title, html: document.documentElement.outerHTML.slice(0, 4000), ua: navigator.userAgent })";
 
+// One evaluate per poll: navigation resolves before Google renders results,
+// so searchGoogle re-runs this until comix.to anchors appear or time runs out.
+const GOOGLE_SNAPSHOT_SCRIPT =
+  "({ url: location.href, ready: document.readyState, title: document.title, " +
+  "links: Array.from(document.querySelectorAll('a[href*=\"comix.to\"], a[href*=\"/goto?\"]'), " +
+  "function(anchor){ return { href: anchor.href, title: anchor.textContent || '' }; }) })";
+
 export const createComixBrowser = async (options: {
   readonly view: ComixView;
   readonly cookies?: readonly ComixCookie[];
+  readonly now?: () => number;
+  readonly sleep?: (ms: number) => Promise<void>;
 }): Promise<ComixBrowser> => {
   const { view } = options;
+  const now = options.now ?? Date.now;
+  const sleep = options.sleep ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   await view.navigate("about:blank");
   await view.cdp("Page.enable");
   await view.cdp("Network.enable");
@@ -278,8 +301,65 @@ export const createComixBrowser = async (options: {
     return itemsFromCapture(payload) ?? "challenge";
   };
 
+  const searchGoogle = async (
+    keyword: string,
+  ): Promise<readonly ComixSearchItem[] | "challenge"> => {
+    await view.navigate(googleComixSearchUrl(keyword));
+    const deadline = now() + CAPTURE_TIMEOUT_MS;
+    let completedPolls = 0;
+    while (true) {
+      const snapshot = await view.evaluate(GOOGLE_SNAPSHOT_SCRIPT);
+      const record = isJsonObject(snapshot) ? snapshot : undefined;
+      const url = record === undefined ? view.url : stringField(record, "url") ?? view.url;
+      const title = record === undefined ? view.title : stringField(record, "title") ?? view.title;
+      if (isGoogleBlockedPage(url, title)) {return "challenge";}
+      // Page.navigate resolves when navigation starts, so early polls still see
+      // the previous document (often a comix.to page full of comix.to anchors).
+      // Only read anchors once the WebView is actually on Google results.
+      if (isGoogleResultsUrl(url) && record !== undefined) {
+        const items = itemsFromGoogleLinks(record.links ?? null);
+        if (items.length > 0) {return items;}
+        const ready = stringField(record, "ready") ?? "";
+        if (ready === "complete") {
+          completedPolls += 1;
+          // Google's udm=14 view wraps results in opaque /goto redirects; the
+          // only way to recover the comix.to URL is to follow one.
+          const gotoLinks = googleGotoLinks(record.links ?? null);
+          if (gotoLinks.length > 0) {return followGotoLinks(gotoLinks);}
+          // Results are server-rendered, so two empty polls on a complete
+          // page mean a real miss.
+          if (completedPolls >= 2) {return [];}
+        }
+      }
+      if (now() >= deadline) {return [];}
+      await sleep(GOOGLE_POLL_INTERVAL_MS);
+    }
+  };
+
+  const followGotoLinks = async (
+    links: readonly { readonly href: string; readonly title: string }[],
+  ): Promise<readonly ComixSearchItem[] | "challenge"> => {
+    for (const link of links.slice(0, GOTO_FOLLOW_LIMIT)) {
+      await view.navigate(link.href);
+      const deadline = now() + GOTO_REDIRECT_TIMEOUT_MS;
+      while (true) {
+        const href = await view.evaluate("location.href");
+        const current = isString(href) ? href : view.url;
+        if (isGoogleBlockedPage(current, "")) {return "challenge";}
+        const item = comixItemFromGoogleLink(current, link.title);
+        if (item !== undefined) {return [item];}
+        // Landed on comix.to but not a /title/ page: try the next link.
+        if (isComixPageUrl(current)) {break;}
+        if (now() >= deadline) {break;}
+        await sleep(GOOGLE_POLL_INTERVAL_MS);
+      }
+    }
+    return [];
+  };
+
   return {
     search,
+    searchGoogle,
     harvest,
     close: () => view.close(),
   };

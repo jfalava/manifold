@@ -10,7 +10,12 @@ import {
   waitForChromeDevToolsUrl,
 } from "@/comix-capture";
 import { loadRegistrySearchTitles, searchTitlesFor } from "@/comix-aliases";
-import { hidOf, pickMatch, type ComixSearchItem } from "@/comix-match";
+import {
+  addComixSearchItems,
+  hidOf,
+  pickMatch,
+  type ComixSearchItem,
+} from "@/comix-match";
 import {
   bunSecretStore,
   clearStoredSession,
@@ -266,6 +271,7 @@ export const comixPrefillCommand = Command.make("comix", {
               try {
                 if (total > 0) {reporter.progress(0, total, counts());}
                 let waitedForUser = false;
+                let waitedForGoogle = false;
                 let persisted = false;
                 for (const row of ctx.unmatched) {
                   task.title = `${baseTitle} — ${formatTitle(row.title)}`;
@@ -292,17 +298,29 @@ export const comixPrefillCommand = Command.make("comix", {
                       await persistHarvest(browser);
                       persisted = true;
                     }
-                    const seen = new Set(
-                      items.map(hidOf).filter((hid): hid is string => hid !== undefined),
-                    );
-                    for (const item of captured) {
-                      const hid = hidOf(item);
-                      if (hid !== undefined && seen.has(hid)) {continue;}
-                      if (hid !== undefined) {seen.add(hid);}
-                      items.push(item);
-                    }
+                    addComixSearchItems(items, captured);
                     if (pickMatch(items, searchTerms)) {break;}
                     await sleep(SEARCH_DELAY_MS);
+                  }
+                  if (!challenged && pickMatch(items, searchTerms) === undefined) {
+                    for (const term of searchTerms) {
+                      let captured = await browser.searchGoogle(term);
+                      if (captured === "challenge" && !waitedForGoogle) {
+                        reporter.note(
+                          "Google blocked this session (captcha/consent). Solve it in the manifold Chrome window, then press Enter.",
+                        );
+                        await waitForEnterInFrame("press Enter after Google loads");
+                        waitedForGoogle = true;
+                        captured = await browser.searchGoogle(term);
+                      }
+                      if (captured === "challenge") {
+                        challenged = true;
+                        break;
+                      }
+                      addComixSearchItems(items, captured);
+                      if (pickMatch(items, searchTerms)) {break;}
+                      await sleep(SEARCH_DELAY_MS);
+                    }
                   }
                   if (challenged) {
                     ctx.challenges += 1;

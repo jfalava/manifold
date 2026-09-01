@@ -1,5 +1,6 @@
 import {
   arrayField,
+  isJsonArray,
   isJsonObject,
   isString,
   objectField,
@@ -92,11 +93,145 @@ export const pickMatch = (
   return best;
 };
 
-export const comixBrowseUrl = (keyword: string, page = 1): string => {
-  const url = new URL("/browse", COMIX_ORIGIN);
-  url.searchParams.set("page", String(page));
-  url.searchParams.set("keyword", keyword);
-  return url.toString();
+// All four content ratings are pinned: the site's default filter hides
+// erotica/pornographic titles, which silently turned NSFW entries into misses.
+export const comixBrowseUrl = (keyword: string): string =>
+  `${COMIX_ORIGIN}/browse?q=${encodeURIComponent(keyword)}&sort=relevance%3Adesc` +
+  "&content_rating=safe%2Csuggestive%2Cerotica%2Cpornographic";
+
+// udm=14 is Google's plain "Web" results view: server-rendered organic links
+// without AI panels; hl=en keeps block-page detection and titles predictable.
+export const googleComixSearchUrl = (keyword: string): string =>
+  `https://www.google.com/search?q=${encodeURIComponent(`${keyword} site:comix.to`)}&udm=14&num=20&hl=en`;
+
+/** True once the WebView actually shows Google results (not the previous page). */
+export const isGoogleResultsUrl = (url: string): boolean => {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.includes("google.") && parsed.pathname === "/search";
+  } catch {
+    return false;
+  }
+};
+
+const directComixUrl = (href: string): URL | undefined => {
+  try {
+    const url = new URL(href, "https://www.google.com");
+    if (url.hostname === "www.google.com" && url.pathname === "/url") {
+      const target = url.searchParams.get("q") ?? url.searchParams.get("url");
+      return target === null ? undefined : directComixUrl(target);
+    }
+    return url.hostname === "comix.to" || url.hostname === "www.comix.to" ? url : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+export const comixItemFromGoogleLink = (
+  href: string,
+  title = "",
+): ComixSearchItem | undefined => {
+  const url = directComixUrl(href);
+  if (url === undefined) {return undefined;}
+  const encodedMangaId = url.pathname.match(/^\/title\/([^/]+)/)?.[1];
+  if (encodedMangaId === undefined) {return undefined;}
+  let mangaId: string;
+  try {
+    mangaId = decodeURIComponent(encodedMangaId);
+  } catch {
+    return undefined;
+  }
+  const separator = mangaId.indexOf("-");
+  const hid = separator === -1 ? mangaId : mangaId.slice(0, separator);
+  const slug = separator === -1 ? undefined : mangaId.slice(separator + 1);
+  if (slug !== undefined && slug.length === 0) {return undefined;}
+  if (!/^[a-z0-9]+$/i.test(hid)) {return undefined;}
+  const resultTitle = title.trim() || slug?.replaceAll("-", " ");
+  return {
+    hid,
+    ...(slug !== undefined && { slug }),
+    ...(resultTitle !== undefined && resultTitle.length > 0 && { title: resultTitle }),
+  };
+};
+
+export const addComixSearchItems = (
+  target: ComixSearchItem[],
+  incoming: readonly ComixSearchItem[],
+): void => {
+  const indexByHid = new Map<string, number>();
+  for (const [index, item] of target.entries()) {
+    const hid = hidOf(item);
+    if (hid !== undefined) {indexByHid.set(hid, index);}
+  }
+  for (const item of incoming) {
+    const hid = hidOf(item);
+    const existingIndex = hid === undefined ? undefined : indexByHid.get(hid);
+    if (existingIndex === undefined) {
+      if (hid !== undefined) {indexByHid.set(hid, target.length);}
+      target.push(item);
+      continue;
+    }
+    const existing = target[existingIndex];
+    if (existing === undefined) {continue;}
+    const titles = uniqueTitles([
+      ...altTitlesOf(existing),
+      ...altTitlesOf(item),
+      ...(existing.title === undefined ? [] : [existing.title]),
+      ...(item.title === undefined ? [] : [item.title]),
+    ]);
+    target[existingIndex] = { ...item, ...existing, altTitles: titles };
+  }
+};
+
+/**
+ * Google's tracking redirect anchors (`/goto?url=<opaque token>`) hide the
+ * target URL; the token only resolves by following the redirect in a browser.
+ */
+export const googleGotoLinks = (
+  value: JsonValue,
+): readonly { readonly href: string; readonly title: string }[] => {
+  if (!isJsonArray(value)) {return [];}
+  const seen = new Set<string>();
+  const links: { href: string; title: string }[] = [];
+  for (const entry of value) {
+    if (!isJsonObject(entry)) {continue;}
+    const href = stringField(entry, "href");
+    if (href === undefined) {continue;}
+    let absolute: string;
+    try {
+      const url = new URL(href, "https://www.google.com");
+      if (!url.hostname.includes("google.") || url.pathname !== "/goto") {continue;}
+      absolute = url.toString();
+    } catch {
+      continue;
+    }
+    if (seen.has(absolute)) {continue;}
+    seen.add(absolute);
+    links.push({ href: absolute, title: (stringField(entry, "title") ?? "").trim() });
+  }
+  return links;
+};
+
+export const isComixPageUrl = (href: string): boolean => {
+  try {
+    const url = new URL(href);
+    return url.hostname === "comix.to" || url.hostname === "www.comix.to";
+  } catch {
+    return false;
+  }
+};
+
+export const itemsFromGoogleLinks = (value: JsonValue): readonly ComixSearchItem[] => {
+  if (!isJsonArray(value)) {return [];}
+  const items: ComixSearchItem[] = [];
+  for (const entry of value) {
+    if (!isJsonObject(entry)) {continue;}
+    const href = stringField(entry, "href");
+    if (href === undefined) {continue;}
+    const item = comixItemFromGoogleLink(href, stringField(entry, "title") ?? "");
+    if (item !== undefined) {addComixSearchItems(items, [item]);}
+  }
+  return items;
 };
 
 export const isChallengeText = (value: string): boolean => {
@@ -105,6 +240,18 @@ export const isChallengeText = (value: string): boolean => {
     lowered.includes("cf-chl-") ||
     lowered.includes("challenge-platform") ||
     lowered.includes("_cf_chl_");
+};
+
+/** Google's own interstitials: /sorry captcha, consent wall, rate-limit page. */
+export const isGoogleBlockedPage = (url: string, title: string): boolean => {
+  const loweredUrl = url.toLowerCase();
+  if (loweredUrl.includes("google.com/sorry") || loweredUrl.includes("consent.google")) {
+    return true;
+  }
+  const loweredTitle = title.toLowerCase();
+  return loweredTitle.includes("before you continue") ||
+    loweredTitle.includes("antes de continuar") ||
+    loweredTitle.includes("unusual traffic");
 };
 
 /** Unwrapped Comix capture payload (the `r` field, or the value itself). */
