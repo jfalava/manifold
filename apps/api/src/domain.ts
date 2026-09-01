@@ -7,6 +7,11 @@ export type CanonicalProvider = Schema.Schema.Type<typeof CanonicalProvider>;
 export const ContentProvider = Schema.Literals(["mangadex", "comix"]);
 export type ContentProvider = Schema.Schema.Type<typeof ContentProvider>;
 
+// Per-entry chapter list pin. `auto` keeps the device's MangaDex-trust /
+// richer-list heuristic; mangadex/comix skip comparison and load that source.
+export const ChapterSource = Schema.Literals(["auto", "mangadex", "comix"]);
+export type ChapterSource = Schema.Schema.Type<typeof ChapterSource>;
+
 // Every provider that can appear in canonical_links. Registry entries are
 // provider-neutral rows keyed by a minted UUID; links resolve them.
 export const RegistryProvider = Schema.Literals(["anilist", "mal", "mangadex", "comix"]);
@@ -79,6 +84,12 @@ export const LinkProviderInput = Schema.Struct({
 });
 export type LinkProviderInput = Schema.Schema.Type<typeof LinkProviderInput>;
 
+export const SetChapterSourceInput = Schema.Struct({
+  chapterSource: ChapterSource,
+  origin: Schema.optional(Schema.Literals(["device", "admin", "cli", "migration"])),
+});
+export type SetChapterSourceInput = Schema.Schema.Type<typeof SetChapterSourceInput>;
+
 export const ResolveEntryInput = Schema.Struct({
   provider: RegistryProvider,
   providerId: Schema.NonEmptyString,
@@ -112,6 +123,8 @@ export interface CanonicalEntry {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly providers: readonly ProviderLink[];
+  /** Chapter list pin. Omitted or `auto` = device heuristic. */
+  readonly chapterSource?: ChapterSource;
 }
 
 export interface ReadingProgress {

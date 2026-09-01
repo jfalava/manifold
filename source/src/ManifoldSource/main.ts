@@ -97,6 +97,7 @@ interface StoredPersonalEntry {
   readonly providerId: string;
   readonly title: string;
   readonly providers: readonly { readonly provider: string; readonly externalId: string }[];
+  readonly chapterSource?: "auto" | "mangadex" | "comix";
 }
 
 const scheduledFetchResponse = (
@@ -1445,6 +1446,92 @@ export class ManifoldSourceImpl implements
       }
       return loadComix();
     };
+
+    // Admin/registry pin wins over MangaDex trust + richer-list heuristic.
+    // Forced pins skip comparison entirely so incomplete MangaDex catalogs
+    // (still >= trust threshold) can be overridden to Comix.
+    const forcedSource = await (async (): Promise<"mangadex" | "comix" | undefined> => {
+      if (!UUID_RE.test(sourceManga.mangaId)) {return undefined;}
+      const pinKey = `chapter-source-pin:v1:${sourceManga.mangaId}`;
+      const PIN_TTL_MS = 5 * 60 * 1000;
+      let previousPin: "auto" | "mangadex" | "comix" | undefined;
+      const rawPin = Application.getState(pinKey);
+      if (isString(rawPin) && rawPin.length > 0) {
+        try {
+          // SAFETY: I/O JSON.parse of the chapter-source force pin cache.
+          const parsed: unknown = JSON.parse(rawPin);
+          if (isJsonObject(parsed)) {
+            if (parsed.p === "mangadex" || parsed.p === "comix" || parsed.p === "auto") {
+              previousPin = parsed.p;
+            }
+            if (
+              isFiniteNumber(parsed.t) &&
+              Date.now() - parsed.t < PIN_TTL_MS &&
+              previousPin !== undefined
+            ) {
+              return previousPin === "auto" ? undefined : previousPin;
+            }
+          }
+        } catch {
+          // fall through to registry
+        }
+      }
+      const stored = await configuredPersonalApi()
+        .getEntry(sourceManga.mangaId)
+        .catch(() => undefined);
+      const pin =
+        stored?.chapterSource === "mangadex" || stored?.chapterSource === "comix"
+          ? stored.chapterSource
+          : "auto";
+      Application.setState(JSON.stringify({ p: pin, t: Date.now() }), pinKey);
+      // Only drop the choice cache when leaving a force pin, so auto titles
+      // keep their MangaDex-trust cache across pin revalidations.
+      if (
+        pin === "auto" &&
+        (previousPin === "mangadex" || previousPin === "comix")
+      ) {
+        Application.setState("", choiceKey);
+      }
+      return pin === "auto" ? undefined : pin;
+    })();
+    if (forcedSource === "comix") {
+      const chapters = await loadComixCached(
+        cachedChoice?.p === "comix" ? cachedChoice.h : undefined,
+      );
+      if (chapters.length === 0 && comixCloudflareError) {
+        throw comixCloudflareError;
+      }
+      Application.setState(
+        JSON.stringify({
+          p: "comix",
+          t: Date.now(),
+          ttl: chapters.length === 0 ? FAILED_RETRY_TTL_MS : CHOICE_TTL_MS,
+          n: chapters.length,
+          ...(comixHid && { h: comixHid }),
+        }),
+        choiceKey,
+      );
+      console.log(
+        `[manifold] chapters source:${sourceManga.mangaId}:comix-forced:${chapters.length}`,
+      );
+      return finalize(chapters);
+    }
+    if (forcedSource === "mangadex") {
+      const chapters = await loadMangadex();
+      Application.setState(
+        JSON.stringify({
+          p: "mangadex",
+          t: Date.now(),
+          ttl: MANGADEX_RECHECK_TTL_MS,
+          n: chapters.length,
+        }),
+        choiceKey,
+      );
+      console.log(
+        `[manifold] chapters source:${sourceManga.mangaId}:mangadex-forced:${chapters.length}`,
+      );
+      return finalize(chapters);
+    }
 
     if (choiceFresh && cachedChoice) {
       console.log(

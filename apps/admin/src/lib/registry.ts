@@ -27,6 +27,8 @@ export interface RegistryListState {
 }
 
 // Type aliases (not interfaces) so TanStack Table v9's `TData extends Record<string, any>` constraint accepts them
+export type ChapterSource = "auto" | "mangadex" | "comix";
+
 export type RegistryEntry = {
   readonly id: string;
   readonly provider: string;
@@ -37,6 +39,8 @@ export type RegistryEntry = {
   readonly providers: readonly RegistryLink[];
   readonly state?: RegistryListState;
   readonly tombstoned?: boolean;
+  /** Chapter list pin. Omitted or auto = device heuristic. */
+  readonly chapterSource?: ChapterSource;
 };
 
 export type SyncOpItem = {
@@ -273,6 +277,23 @@ export const saveListState = createServerFn({ method: "POST" })
       body: { ...patch, origin: "admin" },
     });
   });
+
+interface ChapterSourceInput {
+  readonly entryId: string;
+  readonly chapterSource: ChapterSource;
+}
+
+export const saveChapterSource = createServerFn({ method: "POST" })
+  .validator((data: ChapterSourceInput) => data)
+  .handler(async ({ data }) =>
+    call<{ ok: boolean }>(
+      `/v1/entries/${encodeURIComponent(data.entryId)}/chapter-source`,
+      {
+        method: "POST",
+        body: { chapterSource: data.chapterSource, origin: "admin" },
+      },
+    ),
+  );
 
 interface BindInput {
   readonly entryId: string;

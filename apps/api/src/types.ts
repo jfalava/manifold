@@ -12,6 +12,7 @@ import type {
   ReadingProgress,
   RecordReadInput,
   ResolveEntryInput,
+  SetChapterSourceInput,
   SetListStateInput,
   SetMangaDexStatusInput,
   SyncOp,
@@ -66,6 +67,7 @@ export interface ManifoldSyncStub {
   unlinkProvider(entryId: string, provider: string): Promise<CanonicalEntry>;
   setListState(entryId: string, input: SetListStateInput): Promise<ListState>;
   getListState(entryId: string): Promise<ListState | undefined>;
+  setChapterSource(entryId: string, input: SetChapterSourceInput): Promise<CanonicalEntry>;
   nukeEntry(entryId: string, input: NukeEntryInput): Promise<ListState | undefined>;
   listEvents(entryId: string | undefined, limit?: number): Promise<readonly ListEvent[]>;
   reportUpdateFailures(input: ReportUpdateFailuresInput): Promise<{ recorded: number }>;

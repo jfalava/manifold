@@ -79,6 +79,8 @@ export interface PersonalEntry {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly providers: readonly PersonalProviderLink[];
+  /** Chapter list pin from registry. Omitted/`auto` = device heuristic. */
+  readonly chapterSource?: "auto" | "mangadex" | "comix";
 }
 
 export interface PersonalReadingProgress {

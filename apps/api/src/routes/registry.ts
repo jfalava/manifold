@@ -3,6 +3,7 @@ import {
   LinkProviderInput,
   NukeEntryInput,
   RecordReadInput,
+  SetChapterSourceInput,
   SetListStateInput,
   UpsertEntryInput,
 } from "../domain";
@@ -96,6 +97,12 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
       const raw = yield* parseJson(request);
       const input = yield* Schema.decodeUnknownEffect(SetListStateInput)(raw);
       return json(yield* tryPromise(() => sync.setListState(entryId, input)));
+    }
+
+    if (path[3] === "chapter-source" && path.length === 4 && request.method === "POST") {
+      const raw = yield* parseJson(request);
+      const input = yield* Schema.decodeUnknownEffect(SetChapterSourceInput)(raw);
+      return json(yield* tryPromise(() => sync.setChapterSource(entryId, input)));
     }
 
     if (path[3] === "delete" && path.length === 4 && request.method === "POST") {

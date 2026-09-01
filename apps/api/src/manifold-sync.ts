@@ -28,8 +28,10 @@ import {
   type ReadingProgress,
   type RecordReadInput,
   type ResolveEntryInput,
+  type SetChapterSourceInput,
   type SetListStateInput,
   type SetMangaDexStatusInput,
+  type ChapterSource,
   type SyncOp,
   type MangaDexLibraryItem,
   type ReportUpdateFailuresInput,
@@ -1089,6 +1091,31 @@ export class ManifoldSync extends DurableObject<Env> {
     return Effect.runSync(Effect.sync(() => this.readListState(entryId)));
   }
 
+  async setChapterSource(
+    entryId: string,
+    input: SetChapterSourceInput,
+  ): Promise<CanonicalEntry> {
+    this.requireEntry(entryId);
+    const timestamp = now();
+    const value: ChapterSource = input.chapterSource;
+    // `auto` clears the pin so the device falls back to its heuristic.
+    const stored = value === "auto" ? null : value;
+    this.ctx.storage.sql.exec(
+      "UPDATE canonical_entries SET chapter_source = ?, updated_at = ? WHERE id = ?",
+      stored,
+      timestamp,
+      entryId,
+    );
+    this.appendEvent(entryId, "chapter_source.set", input.origin ?? "admin", {
+      chapterSource: value,
+    });
+    const entry = this.readEntry(entryId);
+    if (!entry) {
+      throw new Error(`Canonical entry not found after chapter source: ${entryId}`);
+    }
+    return entry;
+  }
+
   // Removal is a full nuke: the AniList entry is deleted outright and the
   // registry row is tombstoned so history survives upstream.
   async nukeEntry(entryId: string, input: NukeEntryInput): Promise<ListState | undefined> {
@@ -1599,6 +1626,13 @@ export class ManifoldSync extends DurableObject<Env> {
     } catch {
       // Column already exists.
     }
+    try {
+      this.ctx.storage.sql.exec(
+        "ALTER TABLE canonical_entries ADD COLUMN chapter_source TEXT"
+      );
+    } catch {
+      // Column already exists.
+    }
     this.ctx.storage.sql.exec(`
       CREATE TABLE IF NOT EXISTS provider_links (
         entry_id TEXT NOT NULL REFERENCES canonical_entries(id) ON DELETE CASCADE,
@@ -1854,6 +1888,12 @@ export class ManifoldSync extends DurableObject<Env> {
         updatedAt: provider.updated_at
       }));
 
+    const rawChapterSource = row.chapter_source ?? null;
+    const chapterSource =
+      rawChapterSource === "mangadex" || rawChapterSource === "comix"
+        ? rawChapterSource
+        : undefined;
+
     return {
       id: row.id,
       provider: row.provider,
@@ -1861,7 +1901,8 @@ export class ManifoldSync extends DurableObject<Env> {
       title: row.title,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      providers
+      providers,
+      ...(chapterSource && { chapterSource }),
     };
   }
 
