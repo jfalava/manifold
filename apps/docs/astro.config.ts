@@ -9,7 +9,7 @@ const nimbusConfig = defineNimbusConfig({
   description: "Production documentation for Manifold and its Paperback source.",
   locale: "en",
   homeLabel: "Manifold",
-  github: null,
+  github: "https://github.com/jfalava/manifold",
   sidebar: {
     scope: "full",
     items: [
