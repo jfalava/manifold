@@ -4,7 +4,6 @@ import {
   isTitleMatch,
   toCanonicalSearchResult,
   toMangaDexChapters,
-  toMangaDexExternalChapterDetails,
 } from "../src/ManifoldSource/mapper";
 
 const entry = {
@@ -30,7 +29,7 @@ describe("manifold Paperback mapping", () => {
     expect(isTitleMatch(entry, "A different title")).toBe(false);
   });
 
-  it("keeps MangaDex chapter IDs while retaining the canonical source manga", () => {
+  it("keeps hosted MangaDex chapters and drops external or empty entries", () => {
     const sourceManga: SourceManga = {
       mangaId: entry.id,
       mangaInfo: {
@@ -54,31 +53,20 @@ describe("manifold Paperback mapping", () => {
       chapterNumber: 2,
       language: "en",
       externalUrl: "https://mangaplus.shueisha.co.jp/viewer/example",
+      pageCount: 20,
+    }, {
+      id: "empty-chapter",
+      mangaId: "manga-1",
+      chapterNumber: 3,
+      language: "en",
       pageCount: 0,
     }]);
 
-    expect(chapters).toHaveLength(2);
-    expect(chapters[0]).toMatchObject({
+    expect(chapters).toEqual([expect.objectContaining({
       chapterId: "chapter-1",
       sourceManga,
       chapNum: 1,
-      additionalInfo: { "manifold provider": "mangadex" },
-    });
-    expect(chapters[1]).toMatchObject({
-      chapterId: "external-chapter",
-      additionalInfo: {
-        "manifold external URL": "https://mangaplus.shueisha.co.jp/viewer/example",
-      },
-    });
-
-    expect(toMangaDexExternalChapterDetails(
-      chapters[1],
-      "https://mangaplus.shueisha.co.jp/viewer/example?a=1&b=2",
-    )).toEqual({
-      id: "external-chapter",
-      mangaId: "anilist:1",
-      type: "html",
-      html: '<p>This chapter is hosted outside MangaDex.</p><p><a href="https://mangaplus.shueisha.co.jp/viewer/example?a=1&amp;b=2">Open chapter</a></p>',
-    });
+      additionalInfo: expect.objectContaining({ "manifold provider": "mangadex" }),
+    })]);
   });
 });

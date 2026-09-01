@@ -60,13 +60,13 @@ import {
   type AniListViewer,
 } from "@manifold/paperback-runtime";
 import {
+  isMangaDexHostedChapter,
   providerFromInfo,
   toCanonicalSearchResult,
   toCanonicalSourceManga,
   toComixSourceManga,
   toMangaDexChapterDetails,
   toMangaDexChapters,
-  toMangaDexExternalChapterDetails,
   toMangaDexSourceManga,
   buildMangaDexSourceManga,
 } from "./mapper.js";
@@ -889,7 +889,7 @@ export class ManifoldSourceImpl implements
       getAnilistLibraryForMangadex: () =>
         this.fetchAnilistLibraryFiltered(MANGADEX_STATUSES),
       mangadexLatest: async (entry) => {
-        const cacheKey = `md-latest:${entry.id}`;
+        const cacheKey = `md-hosted-latest:${entry.id}`;
         const cached = readCachedCardState(cacheKey);
         if (cached?.fresh) {return cached.card;}
         // Budget is decremented synchronously before the await so Promise.all
@@ -1034,13 +1034,13 @@ export class ManifoldSourceImpl implements
       console.log(`[manifold] md latest unresolved:${entry.title}:${resolution.status}`);
       return undefined;
     }
-    // Only the newest chapter matters here. getChapters paginates the full
-    // chapter list (oldest first), which turned each board probe into dozens
-    // of requests; the manga feed endpoint returns one page, newest first.
+    // Scan one newest-first page rather than paginating the full chapter list.
+    // Licensed releases can occupy the first several slots as external links,
+    // so fetch enough entries to find the newest MangaDex-hosted chapter.
     const page = await Effect.runPromise(
-      this.mangaDex.feedChapters(resolution.externalId, { limit: 5 }),
+      this.mangaDex.feedChapters(resolution.externalId, { limit: 100 }),
     );
-    const newest = page.items[0];
+    const newest = page.items.find(isMangaDexHostedChapter);
     if (!newest) {return undefined;}
     return {
       source: "MD",
@@ -1205,7 +1205,7 @@ export class ManifoldSourceImpl implements
   async getChapters(sourceManga: SourceManga, sinceDate?: Date): Promise<Chapter[]> {
     maybeDrainAniListOps();
     const provider = providerFromInfo(sourceManga);
-    const choiceKey = `comix-source-choice:${sourceManga.mangaId}`;
+    const choiceKey = `comix-source-choice:v2:${sourceManga.mangaId}`;
     const CHOICE_TTL_MS = 6 * 60 * 60 * 1000;
     const MANGADEX_RECHECK_TTL_MS = 6 * 60 * 60 * 1000;
     const FAILED_RETRY_TTL_MS = 10 * 60 * 1000;
@@ -1447,8 +1447,6 @@ export class ManifoldSourceImpl implements
     if (!provider || provider.provider !== "mangadex") {
       throw new Error("This chapter has no verified MangaDex provider link");
     }
-    const externalUrl = chapter.additionalInfo?.["manifold external URL"];
-    if (externalUrl) {return toMangaDexExternalChapterDetails(chapter, externalUrl);}
     const details = await Effect.runPromise(this.mangaDex.getChapterDetails(chapter.chapterId));
     return toMangaDexChapterDetails(chapter, details);
   }

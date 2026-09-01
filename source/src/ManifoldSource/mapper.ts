@@ -72,11 +72,14 @@ export const toMangaDexSourceManga = (
   },
 });
 
+export const isMangaDexHostedChapter = (chapter: MangaDexChapter): boolean =>
+  chapter.externalUrl === undefined && chapter.pageCount !== 0;
+
 export const toMangaDexChapters = (
   sourceManga: SourceManga,
   chapters: readonly MangaDexChapter[],
 ): Chapter[] => chapters
-  .filter((chapter) => chapter.pageCount !== 0 || chapter.externalUrl !== undefined)
+  .filter(isMangaDexHostedChapter)
   .map((chapter) => ({
     chapterId: chapter.id,
     sourceManga,
@@ -88,27 +91,8 @@ export const toMangaDexChapters = (
     additionalInfo: {
       "manifold provider": "mangadex",
       "manifold provider ID": chapter.id,
-      ...(chapter.externalUrl && { "manifold external URL": chapter.externalUrl }),
     },
   }));
-
-const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (character) => ({
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-}[character] ?? character));
-
-export const toMangaDexExternalChapterDetails = (
-  chapter: Chapter,
-  externalUrl: string,
-): ChapterDetails => ({
-  id: chapter.chapterId,
-  mangaId: chapter.sourceManga.mangaId,
-  type: "html",
-  html: `<p>This chapter is hosted outside MangaDex.</p><p><a href="${escapeHtml(externalUrl)}">Open chapter</a></p>`,
-});
 
 export const toMangaDexChapterDetails = (
   chapter: Chapter,
