@@ -5,10 +5,10 @@ import { tableScroll } from "@cloudflare/nimbus-docs/markdown";
 
 const nimbusConfig = defineNimbusConfig({
   site: "https://manifold.jfa.dev",
-  title: "MANIFOLD",
-  description: "Production documentation for Manifold and its Paperback source.",
+  title: "MANIFOLD by JFA",
+  description: 'Documentation, Architecture, Tools and Motives of the Paperback source "MANIFOLD"',
   locale: "en",
-  homeLabel: "Manifold",
+  homeLabel: "MANIFOLD by JFA: the Last Source you will ever need",
   github: "https://github.com/jfalava/manifold",
   sidebar: {
     scope: "full",
