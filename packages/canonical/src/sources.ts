@@ -57,16 +57,14 @@ const stringsFrom = (value: JsonValue | undefined): string[] =>
 
 const mangaDexIdFromUrl = (value: JsonValue | undefined): string | undefined => {
   if (!isString(value)) {return undefined;}
-  try {
-    const url = new URL(value);
-    if (url.hostname !== "mangadex.org" && url.hostname !== "www.mangadex.org") {
-      return undefined;
-    }
-    const match = url.pathname.match(/^\/title\/([0-9a-f]{8}-[0-9a-f-]{27})(?:\/|$)/i);
-    return match?.[1].toLowerCase();
-  } catch {
-    return undefined;
-  }
+  // Parse without global URL — Paperback's extension JSC sandbox does not
+  // define it (`Can't find variable: URL`), and AniList enrichment runs this
+  // on every library open when normalizing externalLinks.
+  const trimmed = value.trim();
+  const match = /^(?:https?:)?\/\/(?:www\.)?mangadex\.org\/title\/([0-9a-f]{8}-[0-9a-f-]{27})(?:\/|$)/i.exec(
+    trimmed,
+  );
+  return match?.[1]?.toLowerCase();
 };
 
 const mangaDexExternalId = (value: JsonValue | undefined): string | undefined => {
@@ -449,8 +447,8 @@ export const createMyAnimeListSource = (
   const fetcher = options.fetcher ?? defaultFetcher;
   const endpoint = options.endpoint ?? MYANIMELIST_MANGA_ENDPOINT;
 
-  const request = (url: URL) =>
-    requestJson("mal", fetcher, url, {
+  const request = (href: string) =>
+    requestJson("mal", fetcher, href, {
       headers: {
         accept: "application/json",
         "X-MAL-CLIENT-ID": options.clientId,
@@ -465,11 +463,11 @@ export const createMyAnimeListSource = (
         if (!options.clientId || options.clientId === "not-configured") {
           throw sourceError("mal", "MyAnimeList client id is not configured");
         }
-        const url = new URL(endpoint);
-        url.searchParams.set("q", requireQuery(query, "mal"));
-        url.searchParams.set("limit", String(limitFrom(searchOptions)));
-        url.searchParams.set("fields", malFields);
-        const body = await request(url);
+        const q = encodeURIComponent(requireQuery(query, "mal"));
+        const limit = encodeURIComponent(String(limitFrom(searchOptions)));
+        const fields = encodeURIComponent(malFields);
+        const href = `${endpoint}?q=${q}&limit=${limit}&fields=${fields}`;
+        const body = await request(href);
         const data = arrayField(body, "data") ?? [];
         return data.flatMap((item) => {
           const result = malEntry(isJsonObject(item) ? objectField(item, "node") : undefined);
@@ -481,9 +479,9 @@ export const createMyAnimeListSource = (
         if (!options.clientId || options.clientId === "not-configured") {
           throw sourceError("mal", "MyAnimeList client id is not configured");
         }
-        const url = new URL(`${endpoint}/${encodeURIComponent(providerId)}`);
-        url.searchParams.set("fields", malFields);
-        const body = await request(url);
+        const href =
+          `${endpoint}/${encodeURIComponent(providerId)}?fields=${encodeURIComponent(malFields)}`;
+        const body = await request(href);
         return malEntry(body);
       }),
   };
