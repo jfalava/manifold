@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Manifold orb resume: fast, idempotent re-checks after wake.
+# Must finish well within Amp's 10s window; never install dependencies here.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Ensure the pinned Bun from setup is on PATH for anything that follows.
+export BUN_INSTALL="$HOME/.bun"
+if [[ -d "$BUN_INSTALL/bin" ]]; then
+  case ":$PATH:" in
+    *":$BUN_INSTALL/bin:"*) ;;
+    *) export PATH="$BUN_INSTALL/bin:$PATH" ;;
+  esac
+fi
+
+# Repair workspace dependencies only if node_modules is missing entirely
+# (setup normally guarantees it; a wiped workspace is the only expected gap).
+if [[ ! -d "$repo_root/node_modules" ]]; then
+  cd "$repo_root"
+  bun install --frozen-lockfile
+fi
+
+printf '[resume] manifold orb ready (bun %s)\n' "$(command -v bun >/dev/null 2>&1 && bun --version || echo missing)"

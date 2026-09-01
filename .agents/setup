@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Manifold orb setup: pinned Bun toolchain + locked dependencies.
+# Idempotent; safe on warm snapshots (skips satisfied steps).
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+SECONDS=0
+step() { printf '\n[setup +%ss] %s\n' "$SECONDS" "$1"; }
+
+# --- Bun (version pinned by "packageManager": "bun@1.4.0" in package.json) ---
+BUN_VERSION="1.4.0"
+
+if [[ -x "$HOME/.bun/bin/bun" ]] && [[ "$("$HOME/.bun/bin/bun" --version)" == "$BUN_VERSION" ]]; then
+  step "Bun $BUN_VERSION already installed at ~/.bun/bin/bun"
+elif command -v bun >/dev/null 2>&1 && [[ "$(bun --version)" == "$BUN_VERSION" ]]; then
+  step "Bun $BUN_VERSION already provided on PATH ($(command -v bun))"
+else
+  step "Installing Bun $BUN_VERSION"
+  curl -fsSL https://bun.sh/install | bash -s "bun-v$BUN_VERSION"
+fi
+
+# The installer cannot update this running script's environment, and Amp plus
+# supervised services start in fresh non-interactive login shells, so make the
+# pinned Bun visible there ahead of the base image's /usr/local/bin/bun.
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+
+profile_marker="# manifold orb: pinned Bun toolchain"
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  {
+    printf '\n%s\n' "$profile_marker"
+    printf 'export BUN_INSTALL="$HOME/.bun"\n'
+    printf 'case ":$PATH:" in *":$BUN_INSTALL/bin:"*) ;; *) export PATH="$BUN_INSTALL/bin:$PATH" ;; esac\n'
+  } >> "$HOME/.bash_profile"
+fi
+step "Login-shell PATH pinned to Bun $("$HOME/.bun/bin/bun" --version)"
+
+# --- Dependencies (bun.lock is authoritative) ---
+step "Installing workspace dependencies (bun install --frozen-lockfile)"
+bun install --frozen-lockfile
+step "bun install done"
+
+# --- Environment template (never clobber existing config) ---
+if [[ ! -f iac/.env && -f iac/.env.example ]]; then
+  cp -- iac/.env.example iac/.env
+  step "Created iac/.env from iac/.env.example (fill in secrets before deploy)"
+else
+  step "iac/.env already present or no template"
+fi
+
+# --- Smoke test: workspace resolution + native deps load ---
+step "Smoke test: resolving workspace graph"
+bun -e "const p = require('./package.json'); console.log('manifold setup OK, bun', process.versions.bun)"
+
+printf '\n[setup] completed in %ss\n' "$SECONDS"
