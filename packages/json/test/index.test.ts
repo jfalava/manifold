@@ -41,6 +41,10 @@ describe("json boundary parsers", () => {
   it("formats request hrefs and init text without String(object)", () => {
     expect(requestHref("https://example.test/a")).toBe("https://example.test/a");
     expect(requestHref(new URL("https://example.test/b"))).toBe("https://example.test/b");
+    // Duck-typed Request-like (no global Request required)
+    expect(requestHref({ url: "https://example.test/c" } as RequestInfo)).toBe(
+      "https://example.test/c",
+    );
     expect(requestInitText({ body: "{\"ok\":true}" })).toBe("{\"ok\":true}");
     expect(requestInitText({ body: new URLSearchParams("a=1") })).toBeUndefined();
   });

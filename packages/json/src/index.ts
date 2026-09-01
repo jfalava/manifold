@@ -96,13 +96,21 @@ export function errorMessage(cause: unknown): string {
 }
 
 export function requestHref(input: RequestInfo | URL): string {
-  if (input instanceof URL) {
+  // Strings first: MangaDex/AniList fetchers always pass absolute URL strings.
+  // Do not touch global URL/Request — Paperback's extension JSC sandbox may not
+  // define them, and `instanceof URL` then throws "Can't find variable: URL"
+  // (surfaced to the user as a missing-variable error on Discover boards that
+  // always hit the network: Popular New Titles / Latest Updates).
+  if (isString(input)) {
+    return input;
+  }
+  if (isJsonObject(input) && isString(input.href)) {
     return input.href;
   }
-  if (input instanceof Request) {
+  if (isJsonObject(input) && isString(input.url)) {
     return input.url;
   }
-  return input;
+  throw new TypeError("requestHref: expected a string URL, URL, or Request");
 }
 
 export function requestInitText(init: RequestInit | undefined): string | undefined {
