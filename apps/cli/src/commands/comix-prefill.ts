@@ -10,12 +10,7 @@ import {
   waitForChromeDevToolsUrl,
 } from "@/comix-capture";
 import { loadRegistrySearchTitles, searchTitlesFor } from "@/comix-aliases";
-import {
-  addComixSearchItems,
-  hidOf,
-  pickMatch,
-  type ComixSearchItem,
-} from "@/comix-match";
+import { addComixSearchItems, hidOf, pickMatch, type ComixSearchItem } from "@/comix-match";
 import {
   bunSecretStore,
   clearStoredSession,
@@ -26,11 +21,7 @@ import {
   type ComixCookie,
 } from "@/comix-session";
 import { resolveValue } from "@/env-resolve";
-import {
-  matchesStatusFilter,
-  parseStatusFilter,
-  STATUS_FILTER_HINT,
-} from "@/registry-status";
+import { matchesStatusFilter, parseStatusFilter, STATUS_FILTER_HINT } from "@/registry-status";
 import {
   abortFrame,
   closeFrame,
@@ -46,8 +37,7 @@ import { apiCall, apiConfig, type ApiConfig, type RegistryRow } from "@/commands
 const SEARCH_DELAY_MS = 1_500;
 const CHALLENGE_CIRCUIT_BREAK = 3;
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface ComixCtx extends RunContext {
   unmatched: RegistryRow[];
@@ -73,7 +63,9 @@ export const comixPrefillCommand = Command.make("comix", {
   ),
   chromeCdpUrl: Flag.string("chrome-cdp-url").pipe(
     Flag.optional,
-    Flag.withDescription("DevTools WebSocket of a running Chrome (ws://127.0.0.1:9222/...). Overrides COMIX_CHROME_CDP_URL."),
+    Flag.withDescription(
+      "DevTools WebSocket of a running Chrome (ws://127.0.0.1:9222/...). Overrides COMIX_CHROME_CDP_URL.",
+    ),
   ),
   refreshSession: Flag.boolean("refresh-session").pipe(
     Flag.withDefault(false),
@@ -81,21 +73,29 @@ export const comixPrefillCommand = Command.make("comix", {
   ),
   cfClearance: Flag.string("cf-clearance").pipe(
     Flag.optional,
-    Flag.withDescription("Optional seed cf_clearance. Falls back to COMIX_CF_CLEARANCE / ALCHEMY_SECRET_COMIX_CF_CLEARANCE."),
+    Flag.withDescription(
+      "Optional seed cf_clearance. Falls back to COMIX_CF_CLEARANCE / ALCHEMY_SECRET_COMIX_CF_CLEARANCE.",
+    ),
   ),
   session: Flag.string("session").pipe(
     Flag.optional,
-    Flag.withDescription("Optional seed session cookie. Falls back to COMIX_SESSION / ALCHEMY_SECRET_COMIX_SESSION."),
+    Flag.withDescription(
+      "Optional seed session cookie. Falls back to COMIX_SESSION / ALCHEMY_SECRET_COMIX_SESSION.",
+    ),
   ),
   cookies: Flag.string("cookies").pipe(
     Flag.optional,
-    Flag.withDescription("Optional seed Cookie header. Overrides the individual cookie flags. Falls back to COMIX_COOKIES / ALCHEMY_SECRET_COMIX_COOKIES."),
+    Flag.withDescription(
+      "Optional seed Cookie header. Overrides the individual cookie flags. Falls back to COMIX_COOKIES / ALCHEMY_SECRET_COMIX_COOKIES.",
+    ),
   ),
   apiOrigin: Flag.string("api-origin").pipe(Flag.optional),
   apiToken: Flag.string("api-token").pipe(Flag.optional),
   anilistToken: Flag.string("anilist-token").pipe(
     Flag.optional,
-    Flag.withDescription("Falls back to ANILIST_TOKEN / ALCHEMY_SECRET_ANILIST_TOKEN. Used to search Comix with English/romaji aliases."),
+    Flag.withDescription(
+      "Falls back to ANILIST_TOKEN / ALCHEMY_SECRET_ANILIST_TOKEN. Used to search Comix with English/romaji aliases.",
+    ),
   ),
 }).pipe(
   Command.withDescription(
@@ -119,36 +119,32 @@ export const comixPrefillCommand = Command.make("comix", {
         try: async () => {
           const config: ApiConfig = apiConfig(apiOrigin, apiToken);
           const statusFilter = parseStatusFilter(status);
-          if (refreshSession) {await clearStoredSession(bunSecretStore);}
+          if (refreshSession) {
+            await clearStoredSession(bunSecretStore);
+          }
           const seedCookies = cookiesFromFlags({
             cfClearance: resolveValue(
               cfClearance,
               "COMIX_CF_CLEARANCE",
               "ALCHEMY_SECRET_COMIX_CF_CLEARANCE",
             ),
-            session: resolveValue(
-              session,
-              "COMIX_SESSION",
-              "ALCHEMY_SECRET_COMIX_SESSION",
-            ),
-            cookieHeader: resolveValue(
-              cookies,
-              "COMIX_COOKIES",
-              "ALCHEMY_SECRET_COMIX_COOKIES",
-            ),
+            session: resolveValue(session, "COMIX_SESSION", "ALCHEMY_SECRET_COMIX_SESSION"),
+            cookieHeader: resolveValue(cookies, "COMIX_COOKIES", "ALCHEMY_SECRET_COMIX_COOKIES"),
           });
-          const stored = seedCookies.length > 0 ? undefined : await loadStoredSession(bunSecretStore);
+          const stored =
+            seedCookies.length > 0 ? undefined : await loadStoredSession(bunSecretStore);
           const anilist = resolveValue(
             anilistToken,
             "ANILIST_TOKEN",
             "ALCHEMY_SECRET_ANILIST_TOKEN",
           );
-          let chromeUrl = resolveValue(chromeCdpUrl, "COMIX_CHROME_CDP_URL") ?? await waitForChromeDevToolsUrl({
-            timeoutMs: 1_000,
-          });
+          let chromeUrl =
+            resolveValue(chromeCdpUrl, "COMIX_CHROME_CDP_URL") ??
+            (await waitForChromeDevToolsUrl({
+              timeoutMs: 1_000,
+            }));
 
           openFrame(`Comix registry prefill → ${apply ? "apply" : "dry run"}`);
-          frameDetail("search runs in a headed Chrome window, not as a pasted Cookie header");
           if (statusFilter) {
             frameDetail(`status filter: ${[...statusFilter].join(", ")}`);
           }
@@ -158,7 +154,9 @@ export const comixPrefillCommand = Command.make("comix", {
               throw new Error("Chrome/Chromium/Edge/Brave not found. Install one, then re-run.");
             }
             frameDetail(`opening ${executable} with a dedicated manifold profile`);
-            frameDetail("Chrome 136+ ignores --remote-debugging-port on your default profile, so this is a separate window");
+            frameDetail(
+              "Chrome 136+ ignores --remote-debugging-port on your default profile, so this is a separate window",
+            );
             launchComixChrome({ executable });
             frameDetail("waiting for DevTools on 9222…");
             chromeUrl = await waitForChromeDevToolsUrl({ timeoutMs: 20_000 });
@@ -176,9 +174,13 @@ export const comixPrefillCommand = Command.make("comix", {
             frameDetail("reusing the Keychain jar until cf_clearance expires");
           }
           if (anilist) {
-            frameDetail("searching Comix with AniList english/romaji/synonyms, then MangaDex alts if needed");
+            frameDetail(
+              "searching Comix with AniList english/romaji/synonyms, then MangaDex alts if needed",
+            );
           } else {
-            frameDetail("no ANILIST_TOKEN: searching the registry title, then MangaDex alts if a mangadex link exists");
+            frameDetail(
+              "no ANILIST_TOKEN: searching the registry title, then MangaDex alts if a mangadex link exists",
+            );
           }
 
           const limitValue = Option.getOrUndefined(limit);
@@ -226,9 +228,9 @@ export const comixPrefillCommand = Command.make("comix", {
             rendererOptions: { outputBar: Infinity },
           };
 
-          const persistHarvest = async (
-            browser: { harvest: () => Promise<{ cookies: ComixCookie[]; userAgent?: string }> },
-          ): Promise<void> => {
+          const persistHarvest = async (browser: {
+            harvest: () => Promise<{ cookies: ComixCookie[]; userAgent?: string }>;
+          }): Promise<void> => {
             try {
               const harvested = await browser.harvest();
               if (harvested.cookies.some((cookie) => cookie.name === "cf_clearance")) {
@@ -256,7 +258,10 @@ export const comixPrefillCommand = Command.make("comix", {
               const done = (): number => ctx.linked + ctx.misses + ctx.challenges;
               const formatTitle = (rowTitle: string, suffix = ""): string => {
                 const cols = process.stdout.columns ?? 80;
-                const budget = Math.max(24, Math.min(48, cols - baseTitle.length - 16 - suffix.length));
+                const budget = Math.max(
+                  24,
+                  Math.min(48, cols - baseTitle.length - 16 - suffix.length),
+                );
                 const clean = rowTitle.replace(/\s+/g, " ").trim();
                 const short = clean.length > budget ? `${clean.slice(0, budget - 1)}…` : clean;
                 return suffix ? `${short}${suffix}` : short;
@@ -269,7 +274,9 @@ export const comixPrefillCommand = Command.make("comix", {
               });
 
               try {
-                if (total > 0) {reporter.progress(0, total, counts());}
+                if (total > 0) {
+                  reporter.progress(0, total, counts());
+                }
                 let waitedForUser = false;
                 let waitedForGoogle = false;
                 let persisted = false;
@@ -281,7 +288,8 @@ export const comixPrefillCommand = Command.make("comix", {
                   const items: ComixSearchItem[] = [];
                   let challenged = false;
                   for (const term of searchTerms) {
-                    let captured: readonly ComixSearchItem[] | "challenge" = await browser.search(term);
+                    let captured: readonly ComixSearchItem[] | "challenge" =
+                      await browser.search(term);
                     if (captured === "challenge" && !waitedForUser) {
                       reporter.note(
                         "Cloudflare challenged this session. Solve it in the manifold Chrome window, then press Enter.",
@@ -299,7 +307,9 @@ export const comixPrefillCommand = Command.make("comix", {
                       persisted = true;
                     }
                     addComixSearchItems(items, captured);
-                    if (pickMatch(items, searchTerms)) {break;}
+                    if (pickMatch(items, searchTerms)) {
+                      break;
+                    }
                     await sleep(SEARCH_DELAY_MS);
                   }
                   if (!challenged && pickMatch(items, searchTerms) === undefined) {
@@ -318,7 +328,9 @@ export const comixPrefillCommand = Command.make("comix", {
                         break;
                       }
                       addComixSearchItems(items, captured);
-                      if (pickMatch(items, searchTerms)) {break;}
+                      if (pickMatch(items, searchTerms)) {
+                        break;
+                      }
                       await sleep(SEARCH_DELAY_MS);
                     }
                   }
