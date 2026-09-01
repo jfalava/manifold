@@ -69,7 +69,11 @@ function OverviewPage() {
         <Banner
           variant="alert"
           title="Library data incomplete"
-          description={library.errors.join(" · ")}
+          description={
+            library.errors.some((message) => message.includes("not connected"))
+              ? `${library.errors.join(" · ")} Open Credentials to connect MangaDex from deployment secrets.`
+              : library.errors.join(" · ")
+          }
         />
       )}
 

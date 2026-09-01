@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 
 import { isFunctionValue, isJsonObject, isStringValue, type SecretHandle } from "./guards";
 import type { MangaDexLibraryItem, MangaDexReadingStatus, MangaDexStat } from "./mangadex";
-import { cachedJson } from "./server-cache";
+import { cachedJson, invalidateCachedJson } from "./server-cache";
 import { trusted } from "./trusted-cast";
 
 const MANIFOLD_API_ORIGIN = "https://manifold.jfa.dev/api";
@@ -527,3 +527,59 @@ export const getLibraryOverview = createServerFn({ method: "GET" }).handler(
       return { value: overview, cacheable: errors.length === 0 };
     }),
 );
+
+// ------------------------------------------------------------------
+// Upstream auth connections (AniList / MAL / MangaDex)
+// ------------------------------------------------------------------
+
+export type AuthProvider = "anilist" | "mal" | "mangadex";
+
+export type AuthConnection = {
+  readonly provider: AuthProvider;
+  readonly connected: boolean;
+  readonly expiresAt?: number;
+  readonly updatedAt?: number;
+};
+
+export const AUTH_PROVIDERS = ["anilist", "mal", "mangadex"] as const;
+
+const isAuthProvider = (value: string): value is AuthProvider =>
+  (AUTH_PROVIDERS as readonly string[]).includes(value);
+
+export const loadAuthConnections = createServerFn({ method: "GET" }).handler(
+  async (): Promise<readonly AuthConnection[]> => {
+    const body = await call<readonly AuthConnection[]>("/v1/auth");
+    return Array.isArray(body) ? body : [];
+  },
+);
+
+/**
+ * MangaDex password-grant bootstrap. Uses the MANGADEX_* deployment secrets
+ * already bound to the sync Worker — never asks the browser for a password.
+ * Mints encrypted access/refresh tokens into the personal Durable Object.
+ */
+export const loginMangaDex = createServerFn({ method: "POST" }).handler(
+  async (): Promise<AuthConnection> => {
+    const connection = await call<AuthConnection>("/v1/auth/mangadex/login", {
+      method: "POST",
+    });
+    // Library overview caches a failed mangadex snapshot until soft TTL;
+    // drop it so Overview reflects the new connection immediately.
+    await invalidateCachedJson("library-overview:v1");
+    return connection;
+  },
+);
+
+export const disconnectAuth = createServerFn({ method: "POST" })
+  .validator((data: { provider: AuthProvider }) => data)
+  .handler(async ({ data }): Promise<AuthConnection> => {
+    if (!isAuthProvider(data.provider)) {
+      throw new Error(`Unknown auth provider: ${data.provider}`);
+    }
+    await call<{ provider: AuthProvider; connected: boolean }>(
+      `/v1/auth/${encodeURIComponent(data.provider)}`,
+      { method: "DELETE" },
+    );
+    await invalidateCachedJson("library-overview:v1");
+    return { provider: data.provider, connected: false };
+  });

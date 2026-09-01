@@ -1,5 +1,5 @@
 import { Badge, Banner, Button, Select, Text } from "@cloudflare/kumo";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTable, type ColumnDef, type SortingState } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -522,10 +522,24 @@ function MangaDexLibraryPage() {
       </div>
 
       {error !== undefined && (
-        <Banner variant="error" title="Action failed">
-          {error}
-        </Banner>
+        <Banner
+          variant="error"
+          title={
+            error.includes("not connected") || error.includes("reauthorization")
+              ? "MangaDex not connected"
+              : "Action failed"
+          }
+          description={error}
+        />
       )}
+      {error !== undefined &&
+        (error.includes("not connected") || error.includes("reauthorization")) && (
+          <p className="text-sm">
+            <Link to="/credentials" className="underline opacity-80 hover:opacity-100">
+              Open Credentials → connect from deployment secrets
+            </Link>
+          </p>
+        )}
       {notice !== undefined && (
         <Banner variant="default" title="Library updated">
           {notice}

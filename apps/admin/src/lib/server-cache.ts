@@ -160,3 +160,17 @@ export async function cachedJson<T>(
 
   return computeAndStore(key, kv, compute);
 }
+
+/** Drop a cached snapshot from L1 and KV so the next read recomputes. */
+export async function invalidateCachedJson(key: string): Promise<void> {
+  l1.delete(key);
+  const { kv } = await workersRuntime();
+  if (kv === null) {
+    return;
+  }
+  try {
+    await kv.delete(key);
+  } catch {
+    // Best effort — next soft-TTL expiry still refreshes.
+  }
+}

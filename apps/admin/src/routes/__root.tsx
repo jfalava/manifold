@@ -5,6 +5,7 @@ import {
   CloudArrowUp,
   Database,
   Gauge,
+  Key,
   ListChecks,
   Monitor,
   Moon,
@@ -55,7 +56,10 @@ const navGroups: NavGroup[] = [
   },
   {
     label: "Operations",
-    items: [{ label: "Sync operations", path: "/operations", icon: Queue }],
+    items: [
+      { label: "Sync operations", path: "/operations", icon: Queue },
+      { label: "Credentials", path: "/credentials", icon: Key },
+    ],
   },
   {
     label: "Infrastructure",

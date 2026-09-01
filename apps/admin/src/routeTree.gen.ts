@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CacheRouteImport } from './routes/cache'
+import { Route as CredentialsRouteImport } from './routes/credentials'
 import { Route as DurableObjectsRouteImport } from './routes/durable-objects'
 import { Route as MangadexLibraryRouteImport } from './routes/mangadex-library'
 import { Route as OperationsRouteImport } from './routes/operations'
@@ -25,6 +26,11 @@ const IndexRoute = IndexRouteImport.update({
 const CacheRoute = CacheRouteImport.update({
   id: '/cache',
   path: '/cache',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CredentialsRoute = CredentialsRouteImport.update({
+  id: '/credentials',
+  path: '/credentials',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DurableObjectsRoute = DurableObjectsRouteImport.update({
@@ -56,6 +62,7 @@ const RequestsRoute = RequestsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/cache': typeof CacheRoute
+  '/credentials': typeof CredentialsRoute
   '/durable-objects': typeof DurableObjectsRoute
   '/mangadex-library': typeof MangadexLibraryRoute
   '/operations': typeof OperationsRoute
@@ -65,6 +72,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cache': typeof CacheRoute
+  '/credentials': typeof CredentialsRoute
   '/durable-objects': typeof DurableObjectsRoute
   '/mangadex-library': typeof MangadexLibraryRoute
   '/operations': typeof OperationsRoute
@@ -75,6 +83,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/cache': typeof CacheRoute
+  '/credentials': typeof CredentialsRoute
   '/durable-objects': typeof DurableObjectsRoute
   '/mangadex-library': typeof MangadexLibraryRoute
   '/operations': typeof OperationsRoute
@@ -86,6 +95,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/cache'
+    | '/credentials'
     | '/durable-objects'
     | '/mangadex-library'
     | '/operations'
@@ -95,6 +105,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/cache'
+    | '/credentials'
     | '/durable-objects'
     | '/mangadex-library'
     | '/operations'
@@ -104,6 +115,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/cache'
+    | '/credentials'
     | '/durable-objects'
     | '/mangadex-library'
     | '/operations'
@@ -114,6 +126,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CacheRoute: typeof CacheRoute
+  CredentialsRoute: typeof CredentialsRoute
   DurableObjectsRoute: typeof DurableObjectsRoute
   MangadexLibraryRoute: typeof MangadexLibraryRoute
   OperationsRoute: typeof OperationsRoute
@@ -135,6 +148,13 @@ declare module '@tanstack/react-router' {
       path: '/cache'
       fullPath: '/cache'
       preLoaderRoute: typeof CacheRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/credentials': {
+      id: '/credentials'
+      path: '/credentials'
+      fullPath: '/credentials'
+      preLoaderRoute: typeof CredentialsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/durable-objects': {
@@ -178,6 +198,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CacheRoute: CacheRoute,
+  CredentialsRoute: CredentialsRoute,
   DurableObjectsRoute: DurableObjectsRoute,
   MangadexLibraryRoute: MangadexLibraryRoute,
   OperationsRoute: OperationsRoute,
