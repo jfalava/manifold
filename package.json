@@ -72,7 +72,7 @@
         "picocolors": "1.1.1"
       },
       "iac": {
-        "alchemy": "2.0.0-beta.74"
+        "alchemy": "2.0.0-beta.75"
       },
       "paperback": {
         "@paperback/toolchain": "1.0.0-alpha.91",
