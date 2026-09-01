@@ -438,7 +438,15 @@ export class ManifoldSourceImpl implements
   private readonly comix = createComixFallback({
     cookies: () => this.cookieStorage.cookies,
     setCookies: (cookies) => {
-      this.cookieStorage.cookies = [...cookies];
+      // WebView captures round-trip the full jar; keep clearance only so
+      // login/session cookies never re-enter and force CSRF on later fetches.
+      // Empty write-backs must not wipe a still-valid session (same rule as
+      // saveCloudflareBypassCookies). Persist on every live update so mid-
+      // capture recovery survives cold start.
+      const filtered = clearanceCookiesOnly(cookies);
+      if (filtered.length === 0) {return;}
+      this.cookieStorage.cookies = filtered;
+      persistCfClearance(filtered);
     },
   });
 

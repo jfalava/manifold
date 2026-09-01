@@ -166,12 +166,42 @@ export interface ComixSession {
   readonly setCookies: (cookies: readonly Cookie[]) => void;
 }
 
+// Login/session cookies make comix demand CSRF tokens; only clearance is
+// useful for anonymous device-side traffic. Capture write-backs must not
+// replace a good jar with the full WebView store.
+const clearanceCookiesOnly = (cookies: readonly Cookie[]): Cookie[] =>
+  cookies.filter((cookie) => cookie.name === "cf_clearance" && cookie.value.length > 0);
+
+/** Merge clearance from a WebView round-trip without wiping or adding junk. */
+const adoptClearanceCookies = (
+  session: ComixSession,
+  incoming: readonly Cookie[],
+): number => {
+  const fresh = clearanceCookiesOnly(incoming);
+  if (fresh.length === 0) {return 0;}
+  const currentValues = new Set(
+    clearanceCookiesOnly(session.cookies()).map((cookie) => cookie.value),
+  );
+  const added = fresh.filter((cookie) => !currentValues.has(cookie.value));
+  // Prefer incoming clearance when present — a solved challenge replaces the
+  // old token; keep uniques from both sides.
+  const merged = [
+    ...clearanceCookiesOnly(session.cookies()).filter(
+      (cookie) => !fresh.some((next) => next.value === cookie.value),
+    ),
+    ...fresh,
+  ];
+  session.setCookies(merged);
+  // Callers that only care about "something new" (heal retry) use this count;
+  // write-backs still update the jar when fresh is non-empty even if values match.
+  return added.length;
+};
+
 const clearanceHeader = (cookies: readonly Cookie[]): Record<string, string> => {
   // Only cf_clearance may be sent explicitly; login/session cookies make
   // comix's backend demand CSRF tokens. URLSession merges shared-store
   // cookies after this header, but comix honours a clean clearance pair.
-  const jar = cookies
-    .filter((cookie) => cookie.name === "cf_clearance")
+  const jar = clearanceCookiesOnly(cookies)
     .map((cookie) => `${cookie.name}=${cookie.value}`);
   return jar.length > 0 ? { cookie: jar.join("; ") } : {};
 };
@@ -293,7 +323,7 @@ const captureViaSiteBundle = async (
       inject: "return window.__comixResult__",
       storage: { cookies: [...session.cookies()] },
     });
-    session.setCookies(execution.storage.cookies);
+    adoptClearanceCookies(session, execution.storage.cookies);
     const captured: unknown = execution.result;
     if (captured === undefined || captured === null) {return captured;}
     return isJsonObject(captured) ? captured : undefined;
@@ -369,20 +399,9 @@ const recoverCookiesFromStore = async (session: ComixSession): Promise<boolean> 
       inject: "document.title",
       storage: { cookies: [...session.cookies()] },
     });
-    const current = new Set(
-      session.cookies()
-        .filter((cookie) => cookie.name === "cf_clearance")
-        .map((cookie) => cookie.value),
-    );
-    const fresh = execution.storage.cookies.filter(
-      (cookie) =>
-        cookie.name === "cf_clearance" &&
-        cookie.value.length > 0 &&
-        !current.has(cookie.value),
-    );
-    if (fresh.length === 0) {return false;}
-    session.setCookies([...session.cookies(), ...fresh]);
-    console.log(`[manifold] comix session recovered:${fresh.length} clearance cookie(s)`);
+    const adopted = adoptClearanceCookies(session, execution.storage.cookies);
+    if (adopted === 0) {return false;}
+    console.log(`[manifold] comix session recovered:${adopted} clearance cookie(s)`);
     return true;
   } catch (cause) {
     console.error(
@@ -743,7 +762,7 @@ export const createComixFallback = (session: ComixSession) => ({
         inject: pagesInspectorScript(chapterUrl),
         storage: { cookies: [...session.cookies()] },
       });
-      session.setCookies(execution.storage.cookies);
+      adoptClearanceCookies(session, execution.storage.cookies);
       const captured: unknown = execution.result;
       const pages = isJsonValue(captured) ? pagesFromResult(captured) : [];
       if (pages.length === 0) {
