@@ -32,6 +32,8 @@ import {
   type SetMangaDexStatusInput,
   type SyncOp,
   type MangaDexLibraryItem,
+  type ReportUpdateFailuresInput,
+  type UpdateProbeFailure,
   type UpsertEntryInput,
 } from "./domain";
 import {
@@ -65,10 +67,12 @@ import {
   type OpRow,
   type ProgressRow,
   type ProviderRow,
+  type UpdateProbeFailureRow,
   toListEvent,
   toListState,
   toOp,
   toProgress,
+  toUpdateProbeFailure,
 } from "./sync-rows";
 import { decryptToken, encryptToken } from "./token-crypto";
 import type { Env } from "./types";
@@ -1148,6 +1152,86 @@ export class ManifoldSync extends DurableObject<Env> {
     );
   }
 
+  async reportUpdateFailures(input: ReportUpdateFailuresInput): Promise<{ recorded: number }> {
+    return Effect.runSync(
+      Effect.sync(() => {
+        const failures = input.failures.slice(0, 100);
+        const timestamp = now();
+        let recorded = 0;
+        for (const failure of failures) {
+          const title = failure.title.trim();
+          if (title.length === 0) {continue;}
+          const entryId = failure.entryId?.trim() || null;
+          const detail = failure.detail?.trim() || null;
+          this.ctx.storage.sql.exec(
+            `INSERT INTO update_probe_failures
+               (entry_id, title, source, reason, detail, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            entryId,
+            title.slice(0, 300),
+            failure.source,
+            failure.reason,
+            detail === null ? null : detail.slice(0, 1000),
+            timestamp,
+          );
+          recorded += 1;
+        }
+        // Keep the newest 2k rows so Discover boards cannot grow the DO unbounded.
+        // SQLite forbids deleting from a table while a plain subquery reads it;
+        // bound the cutoff id in a nested SELECT instead.
+        this.ctx.storage.sql.exec(
+          `DELETE FROM update_probe_failures
+           WHERE id < COALESCE((
+             SELECT MIN(keep_id) FROM (
+               SELECT id AS keep_id
+               FROM update_probe_failures
+               ORDER BY id DESC
+               LIMIT 2000
+             )
+           ), 0)`,
+        );
+        return { recorded };
+      }),
+    );
+  }
+
+  async listUpdateFailures(options?: {
+    readonly source?: string;
+    readonly reason?: string;
+    readonly entryId?: string;
+    readonly limit?: number;
+  }): Promise<readonly UpdateProbeFailure[]> {
+    return Effect.runSync(
+      Effect.sync(() => {
+        const limit = Math.min(500, Math.max(1, options?.limit ?? 200));
+        const clauses: string[] = [];
+        const params: Array<string | number> = [];
+        if (options?.source) {
+          clauses.push("source = ?");
+          params.push(options.source);
+        }
+        if (options?.reason) {
+          clauses.push("reason = ?");
+          params.push(options.reason);
+        }
+        if (options?.entryId) {
+          clauses.push("entry_id = ?");
+          params.push(options.entryId);
+        }
+        const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+        params.push(limit);
+        const rows = this.ctx.storage.sql
+          .exec<UpdateProbeFailureRow>(
+            `SELECT * FROM update_probe_failures ${where} ORDER BY id DESC LIMIT ?`,
+            ...params,
+          )
+          .toArray()
+          .map((row) => toUpdateProbeFailure(row));
+        return rows;
+      }),
+    );
+  }
+
   // ------------------------------------------------------------------
   // Op log: device-drained anilist targets.
   // ------------------------------------------------------------------
@@ -1617,6 +1701,22 @@ export class ManifoldSync extends DurableObject<Env> {
 
       CREATE INDEX IF NOT EXISTS list_events_entry
         ON list_events (entry_id, id);
+
+      CREATE TABLE IF NOT EXISTS update_probe_failures (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entry_id TEXT,
+        title TEXT NOT NULL,
+        source TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        detail TEXT,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS update_probe_failures_created
+        ON update_probe_failures (created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS update_probe_failures_entry
+        ON update_probe_failures (entry_id, created_at DESC);
     `);
     this.migrateLegacyOutbox();
   }

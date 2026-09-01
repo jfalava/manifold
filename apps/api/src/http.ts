@@ -18,6 +18,7 @@ import type {
   OAuthProvider,
   ReadingProgress,
   SyncOp,
+  UpdateProbeFailure,
 } from "./domain";
 import type { MangaDexMatchResult } from "./mangadex-match";
 import type { MangaDexEntryStat } from "./mangadex-stats";
@@ -38,12 +39,14 @@ export type JsonResponseBody =
   | ReadingProgress
   | RegistryListEntry
   | SyncOp
+  | UpdateProbeFailure
   | readonly AuthConnection[]
   | readonly CanonicalEntry[]
   | readonly ListEvent[]
   | readonly MangaDexLibraryItem[]
   | readonly RegistryListEntry[]
   | readonly SyncOp[]
+  | readonly UpdateProbeFailure[]
   | Record<string, MangaDexEntryStat>
   | { readonly chapters: readonly string[] }
   | { readonly connected: boolean; readonly provider: string }
@@ -52,6 +55,7 @@ export type JsonResponseBody =
   | { readonly entries: readonly CanonicalEntry[] | readonly RegistryListEntry[] }
   | { readonly entry: null }
   | { readonly events: readonly ListEvent[] }
+  | { readonly failures: readonly UpdateProbeFailure[] }
   | { readonly id: string; readonly name?: string }
   | { readonly library: readonly MangaDexLibraryItem[] }
   | { readonly ok: true; readonly build?: string; readonly environment?: string; readonly state?: ListState }
@@ -60,6 +64,7 @@ export type JsonResponseBody =
   | { readonly retried: number }
   | { readonly state: ListState | null }
   | { readonly stats: Record<string, MangaDexEntryStat> }
+  | { readonly recorded: number }
   | { readonly updated: number };
 
 export interface RouteContext {

@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { CompleteOpsInput } from "../domain";
+import { CompleteOpsInput, ReportUpdateFailuresInput } from "../domain";
 import {
   json,
   parseJson,
@@ -12,6 +12,28 @@ import {
 export const handleOps = (ctx: RouteContext): RouteEffect =>
   Effect.gen(function* () {
     const { path, request, env, url } = ctx;
+
+    if (path[0] === "v1" && path[1] === "update-failures") {
+      const sync = env.MANIFOLD_SYNC.getByName("default");
+      if (path.length === 2 && request.method === "GET") {
+        return json({
+          failures: yield* tryPromise(() =>
+            sync.listUpdateFailures({
+              source: url.searchParams.get("source") ?? undefined,
+              reason: url.searchParams.get("reason") ?? undefined,
+              entryId: url.searchParams.get("entryId") ?? undefined,
+              limit: Number(url.searchParams.get("limit") ?? 200) || 200,
+            }),
+          ),
+        });
+      }
+      if (path.length === 2 && request.method === "POST") {
+        const raw = yield* parseJson(request);
+        const input = yield* Schema.decodeUnknownEffect(ReportUpdateFailuresInput)(raw);
+        return json(yield* tryPromise(() => sync.reportUpdateFailures(input)), 201);
+      }
+      return json({ error: "Not found" }, 404);
+    }
 
     if (path[0] === "v1" && path[1] === "ops") {
       const sync = env.MANIFOLD_SYNC.getByName("default");

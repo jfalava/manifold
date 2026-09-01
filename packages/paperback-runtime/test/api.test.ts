@@ -100,4 +100,51 @@ describe("Paperback personal API client", () => {
       }),
     });
   });
+
+  it("posts Discover update probe failures in one batch", async () => {
+    const requests: Array<{
+      url: string;
+      method: string;
+      headers: Record<string, string>;
+      body?: string;
+    }> = [];
+    const client = createPersonalApiClient(async (request): Promise<PersonalApiResponse> => {
+      requests.push(request);
+      return { status: 201, body: { recorded: 2 } };
+    }, { origin: "https://personal.test", token: "secret" });
+
+    await expect(client.reportUpdateFailures([])).resolves.toEqual({ recorded: 0 });
+    await expect(client.reportUpdateFailures([
+      {
+        entryId: "uuid-1",
+        title: "One Piece",
+        source: "MD",
+        reason: "md_unresolved",
+        detail: "not_found",
+      },
+      { title: "Local only", source: "Comix", reason: "comix_hid_miss" },
+    ])).resolves.toEqual({ recorded: 2 });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      url: "https://personal.test/v1/update-failures",
+      method: "POST",
+      headers: {
+        authorization: "Bearer secret",
+        "content-type": "application/json",
+      },
+    });
+    expect(JSON.parse(requests[0]?.body ?? "{}")).toEqual({
+      failures: [
+        {
+          entryId: "uuid-1",
+          title: "One Piece",
+          source: "MD",
+          reason: "md_unresolved",
+          detail: "not_found",
+        },
+        { title: "Local only", source: "Comix", reason: "comix_hid_miss" },
+      ],
+    });
+  });
 });

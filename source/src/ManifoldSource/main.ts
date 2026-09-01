@@ -58,6 +58,8 @@ import {
   maybeDrainAniListOps,
   viewerQuery,
   type AniListViewer,
+  type UpdateProbeFailureInput,
+  type UpdateProbeReason,
 } from "@manifold/paperback-runtime";
 import {
   isMangaDexHostedChapter,
@@ -318,6 +320,9 @@ const MANGADEX_UPDATES_PROBE_BUDGET = 40;
 // Comix latest cards need one WebView title capture each; budget keeps the
 // first Discover paint under ~30s even when the registry already has hids.
 const COMIX_UPDATES_PROBE_BUDGET = 12;
+// Soft-fail outcomes for admin. Buffered per Discover open and flushed once
+// so a board walk is one POST instead of N. Best-effort: never block UI.
+const UPDATE_FAILURE_REPORT_MAX = 100;
 
 interface CachedCardState {
   readonly card: UpdateCard;
@@ -896,6 +901,9 @@ export class ManifoldSourceImpl implements
       getAnilistLibrary: () => this.fetchAnilistLibraryFiltered(COMIX_STATUSES),
       getAnilistLibraryForMangadex: () =>
         this.fetchAnilistLibraryFiltered(MANGADEX_STATUSES),
+      noteUpdateFailure: (entry, source, reason, detail) => {
+        this.noteUpdateFailure(entry, source, reason, detail);
+      },
       mangadexLatest: async (entry) => {
         const cacheKey = `md-hosted-latest:${entry.id}`;
         const cached = readCachedCardState(cacheKey);
@@ -906,12 +914,20 @@ export class ManifoldSourceImpl implements
           if (mdBudget.remaining <= 0) {return cached?.card;}
           mdBudget.remaining -= 1;
         }
-        return this.cachedLatestCard(
-          cacheKey,
-          "md",
-          () => this.probeMangaDexLatest(entry),
-          cached?.card ? { staleFallback: cached.card } : undefined,
-        );
+        try {
+          return await this.cachedLatestCard(
+            cacheKey,
+            "md",
+            () => this.probeMangaDexLatest(entry),
+            {
+              ...(cached?.card ? { staleFallback: cached.card } : {}),
+              onSoftError: (message) => this.noteUpdateFailure(entry, "MD", "error", message),
+            },
+          );
+        } catch (error) {
+          this.noteUpdateFailure(entry, "MD", "error", errorMessage(error));
+          throw error;
+        }
       },
       comixLatest: async (entry) => {
         const cacheKey = `comix-latest:${entry.id}`;
@@ -926,10 +942,16 @@ export class ManifoldSourceImpl implements
             cacheKey,
             "comix",
             () => this.probeComixLatest(entry),
-            cached?.card ? { staleFallback: cached.card } : undefined,
+            {
+              ...(cached?.card ? { staleFallback: cached.card } : {}),
+              onSoftError: (message) => this.noteUpdateFailure(entry, "Comix", "error", message),
+            },
           );
         } catch (error) {
-          if (!(error instanceof CloudflareError)) {throw error;}
+          if (!(error instanceof CloudflareError)) {
+            this.noteUpdateFailure(entry, "Comix", "error", errorMessage(error));
+            throw error;
+          }
           console.error(
             `[manifold] comix latest CF:${entry.title}:${error.message}`,
           );
@@ -940,11 +962,17 @@ export class ManifoldSourceImpl implements
             try {
               return await this.probeComixLatest(entry);
             } catch (retryError) {
-              if (!(retryError instanceof CloudflareError)) {throw retryError;}
+              if (!(retryError instanceof CloudflareError)) {
+                this.noteUpdateFailure(entry, "Comix", "error", errorMessage(retryError));
+                throw retryError;
+              }
               console.error(
                 `[manifold] comix latest CF after adopt:${entry.title}`,
               );
+              this.noteUpdateFailure(entry, "Comix", "cloudflare", retryError.message);
             }
+          } else {
+            this.noteUpdateFailure(entry, "Comix", "cloudflare", error.message);
           }
           return cached?.card;
         }
@@ -956,7 +984,10 @@ export class ManifoldSourceImpl implements
     cacheKey: string,
     label: string,
     probe: () => Promise<UpdateCard | undefined>,
-    options?: { readonly staleFallback?: UpdateCard },
+    options?: {
+      readonly staleFallback?: UpdateCard;
+      readonly onSoftError?: (message: string) => void;
+    },
   ): Promise<UpdateCard | undefined> {
     const cached = readCachedCard(cacheKey);
     if (cached) {return cached;}
@@ -980,7 +1011,10 @@ export class ManifoldSourceImpl implements
     cacheKey: string,
     label: string,
     probe: () => Promise<UpdateCard | undefined>,
-    options?: { readonly staleFallback?: UpdateCard },
+    options?: {
+      readonly staleFallback?: UpdateCard;
+      readonly onSoftError?: (message: string) => void;
+    },
   ): Promise<UpdateCard | undefined> {
     const writeFailure = (): void => {
       Application.setState(
@@ -1016,6 +1050,7 @@ export class ManifoldSourceImpl implements
       // Surface the challenge instead of caching a failure and hiding the banner.
       if (error instanceof CloudflareError) {throw error;}
       console.error(`[manifold] ${label} latest failed:${errorMessage(error)}`);
+      options?.onSoftError?.(errorMessage(error));
       if (options?.staleFallback) {return options.staleFallback;}
       writeFailure();
       return undefined;
@@ -1024,6 +1059,40 @@ export class ManifoldSourceImpl implements
 
   // In-flight latest probes keyed by cacheKey — see cachedLatestCard.
   private readonly pendingLatest = new Map<string, Promise<UpdateCard | undefined>>();
+  // Buffered Discover probe failures for the current open; flushed after the page returns.
+  private pendingUpdateFailures: UpdateProbeFailureInput[] = [];
+
+  private noteUpdateFailure(
+    entry: ManifoldLibraryEntry,
+    source: "MD" | "Comix",
+    reason: UpdateProbeReason,
+    detail?: string,
+  ): void {
+    if (this.pendingUpdateFailures.length >= UPDATE_FAILURE_REPORT_MAX) {return;}
+    const trimmedDetail = detail?.trim();
+    this.pendingUpdateFailures.push({
+      ...(entry.id.length > 0 ? { entryId: entry.id } : {}),
+      title: entry.title,
+      source,
+      reason,
+      ...(trimmedDetail && trimmedDetail.length > 0 ? { detail: trimmedDetail.slice(0, 1000) } : {}),
+    });
+  }
+
+  private flushUpdateFailures(): void {
+    const failures = this.pendingUpdateFailures;
+    this.pendingUpdateFailures = [];
+    if (failures.length === 0) {return;}
+    // Fire-and-forget: Discover must not wait on admin telemetry.
+    void configuredPersonalApi()
+      .reportUpdateFailures(failures)
+      .then((result) => {
+        console.log(`[manifold] update-failures reported:${result.recorded}`);
+      })
+      .catch((cause) => {
+        console.error(`[manifold] update-failures report failed:${errorMessage(cause)}`);
+      });
+  }
 
   private async probeMangaDexLatest(
     entry: ManifoldLibraryEntry,
@@ -1040,6 +1109,12 @@ export class ManifoldSourceImpl implements
     });
     if (resolution.status !== "matched" || !resolution.externalId) {
       console.log(`[manifold] md latest unresolved:${entry.title}:${resolution.status}`);
+      this.noteUpdateFailure(
+        entry,
+        "MD",
+        "md_unresolved",
+        `${resolution.status}${resolution.method ? `:${resolution.method}` : ""}`,
+      );
       return undefined;
     }
     // Scan one newest-first page rather than paginating the full chapter list.
@@ -1049,7 +1124,15 @@ export class ManifoldSourceImpl implements
       this.mangaDex.feedChapters(resolution.externalId, { limit: 100 }),
     );
     const newest = page.items.find(isMangaDexHostedChapter);
-    if (!newest) {return undefined;}
+    if (!newest) {
+      this.noteUpdateFailure(
+        entry,
+        "MD",
+        "md_no_hosted_chapter",
+        `feed=${page.items.length}`,
+      );
+      return undefined;
+    }
     return {
       source: "MD",
       mangaId: entry.id,
@@ -1131,6 +1214,7 @@ export class ManifoldSourceImpl implements
       const resolved = await resolveHid();
       if (!resolved.hid) {
         console.log(`[manifold] comix latest miss:${entry.title}`);
+        this.noteUpdateFailure(entry, "Comix", "comix_hid_miss");
         return undefined;
       }
       hid = resolved.hid;
@@ -1144,7 +1228,10 @@ export class ManifoldSourceImpl implements
       console.log(`[manifold] comix hid stale:${entry.title}:${hid}`);
       Application.setState("", hidKey);
       const refreshed = await resolveHid();
-      if (!refreshed.hid) {return undefined;}
+      if (!refreshed.hid) {
+        this.noteUpdateFailure(entry, "Comix", "comix_hid_miss", "stale-hid-refresh");
+        return undefined;
+      }
       hid = refreshed.hid;
       slug = refreshed.slug;
       writeHidCache(refreshed);
@@ -1153,6 +1240,7 @@ export class ManifoldSourceImpl implements
     }
     if (!latest) {
       console.log(`[manifold] comix latest empty:${entry.title}:${hid}`);
+      this.noteUpdateFailure(entry, "Comix", "comix_empty", `hid=${hid}`);
       return undefined;
     }
     return {
@@ -1197,8 +1285,11 @@ export class ManifoldSourceImpl implements
             })
           : this.syncContext();
     try {
-      return await getDiscoverSectionItems(section, metadata, context);
+      const page = await getDiscoverSectionItems(section, metadata, context);
+      this.flushUpdateFailures();
+      return page;
     } catch (error) {
+      this.flushUpdateFailures();
       // Keep cf_clearance on CloudflareError. Clearing here (2.0.20–2.0.24)
       // wiped a freshly solved session as soon as Discover re-probed Comix,
       // forcing an endless bypass loop (logs: "comix session cleared after

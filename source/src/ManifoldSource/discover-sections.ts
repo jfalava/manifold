@@ -70,6 +70,13 @@ export interface ManifoldDiscoverContext {
   readonly comixLatest?: (
     entry: ManifoldLibraryEntry,
   ) => Promise<UpdateCard | undefined>;
+  // Optional sink for soft-fail telemetry (Cloudflare card skips, etc.).
+  readonly noteUpdateFailure?: (
+    entry: ManifoldLibraryEntry,
+    source: "MD" | "Comix",
+    reason: "cloudflare" | "error",
+    detail?: string,
+  ) => void;
 }
 
 export const DISCOVER_SECTIONS = [
@@ -246,6 +253,7 @@ const libraryUpdatesPage = async (
           console.error(
             `[manifold] updates CF soft-fail:${entry.title}:${error.message}`,
           );
+          context.noteUpdateFailure?.(entry, "Comix", "cloudflare", error.message);
           return undefined;
         }
         throw error;

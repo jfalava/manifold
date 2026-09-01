@@ -15,6 +15,8 @@ import type {
   SetListStateInput,
   SetMangaDexStatusInput,
   SyncOp,
+  UpdateProbeFailure,
+  ReportUpdateFailuresInput,
   UpsertEntryInput,
 } from "./domain";
 import type { MangaDexChapter, MangaDexPaged } from "@manifold/mangadex";
@@ -66,6 +68,13 @@ export interface ManifoldSyncStub {
   getListState(entryId: string): Promise<ListState | undefined>;
   nukeEntry(entryId: string, input: NukeEntryInput): Promise<ListState | undefined>;
   listEvents(entryId: string | undefined, limit?: number): Promise<readonly ListEvent[]>;
+  reportUpdateFailures(input: ReportUpdateFailuresInput): Promise<{ recorded: number }>;
+  listUpdateFailures(options?: {
+    readonly source?: string;
+    readonly reason?: string;
+    readonly entryId?: string;
+    readonly limit?: number;
+  }): Promise<readonly UpdateProbeFailure[]>;
   pendingAniListOps(limit?: number): Promise<readonly SyncOp[]>;
   completeOps(input: CompleteOpsInput): Promise<{ updated: number }>;
   retryOp(opId: string): Promise<SyncOp | undefined>;

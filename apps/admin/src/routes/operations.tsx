@@ -17,6 +17,7 @@ import {
   type ListEventItem,
   type LoadOperationsResult,
   type SyncOpItem,
+  type UpdateProbeFailureItem,
 } from "../lib/registry";
 
 export const Route = createFileRoute("/operations")({
@@ -26,6 +27,7 @@ export const Route = createFileRoute("/operations")({
 const OPERATIONS_TABS = [
   { value: "operations", label: "Operations" },
   { value: "logs", label: "Logs" },
+  { value: "update-failures", label: "Update failures" },
 ] as const;
 
 type OperationsTab = (typeof OPERATIONS_TABS)[number]["value"];
@@ -91,7 +93,10 @@ function OperationsPage() {
           <Text as="h1" variant="heading">
             Sync operations
           </Text>
-          <Text>Queued provider operations and the registry mutation log.</Text>
+          <Text>
+            Queued provider operations, registry mutation log, and on-device My Updates probe
+            failures.
+          </Text>
         </div>
         <Button onClick={() => void refresh()} disabled={busy}>
           {busy ? "Working…" : "Refresh"}
@@ -116,7 +121,7 @@ function OperationsPage() {
         tabs={[...OPERATIONS_TABS]}
         value={tab}
         onValueChange={(value) => {
-          if (value === "operations" || value === "logs") {
+          if (value === "operations" || value === "logs" || value === "update-failures") {
             setTab(value);
           }
         }}
@@ -126,6 +131,9 @@ function OperationsPage() {
         <OpsTable data={data} loading={busy && data === undefined} onAct={act} />
       )}
       {tab === "logs" && <EventsTable data={data} loading={busy && data === undefined} />}
+      {tab === "update-failures" && (
+        <UpdateFailuresTable data={data} loading={busy && data === undefined} />
+      )}
     </div>
   );
 }
@@ -411,6 +419,236 @@ function EventsTable({
 
       {pager}
       <DataTable table={table} emptyText="No events recorded." loading={loading} skeletonColumns={5} />
+      {pager}
+    </div>
+  );
+}
+
+
+// ------------------------------------------------------------------
+// Update failures (device Discover probes)
+// ------------------------------------------------------------------
+
+function UpdateFailuresTable({
+  data,
+  loading,
+}: {
+  readonly data: LoadOperationsResult | undefined;
+  readonly loading: boolean;
+}): ReactNode {
+  const [filter, setFilter] = useState("");
+  const [sourceFilters, setSourceFilters] = useState<ReadonlySet<string>>(() => new Set());
+  const [reasonFilters, setReasonFilters] = useState<ReadonlySet<string>>(() => new Set());
+  const [sorting, setSorting] = useState<SortingState>([{ id: "createdAt", desc: true }]);
+  const { pagination, setPagination, goToPage, changePageSize, safePageIndex } =
+    useClientPagination(25);
+
+  const failures = useMemo(() => [...(data?.updateFailures ?? [])], [data]);
+
+  const bySource = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const failure of failures) {
+      counts.set(failure.source, (counts.get(failure.source) ?? 0) + 1);
+    }
+    return counts;
+  }, [failures]);
+
+  const byReason = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const failure of failures) {
+      counts.set(failure.reason, (counts.get(failure.reason) ?? 0) + 1);
+    }
+    return counts;
+  }, [failures]);
+
+  const filtered = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    return failures.filter((failure) => {
+      if (sourceFilters.size > 0 && !sourceFilters.has(failure.source)) {
+        return false;
+      }
+      if (reasonFilters.size > 0 && !reasonFilters.has(failure.reason)) {
+        return false;
+      }
+      if (needle === "") {
+        return true;
+      }
+      return (
+        failure.title.toLowerCase().includes(needle) ||
+        (failure.entryId?.toLowerCase().includes(needle) ?? false) ||
+        failure.reason.toLowerCase().includes(needle) ||
+        failure.source.toLowerCase().includes(needle) ||
+        (failure.detail?.toLowerCase().includes(needle) ?? false)
+      );
+    });
+  }, [failures, filter, reasonFilters, sourceFilters]);
+
+  const pageIndex = safePageIndex(filtered.length);
+
+  const toggleSourceFilter = useCallback((value: string) => {
+    setSourceFilters((current) => {
+      const next = new Set(current);
+      if (!next.delete(value)) {
+        next.add(value);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleReasonFilter = useCallback((value: string) => {
+    setReasonFilters((current) => {
+      const next = new Set(current);
+      if (!next.delete(value)) {
+        next.add(value);
+      }
+      return next;
+    });
+  }, []);
+
+  const columns = useMemo<ColumnDef<typeof adminTableFeatures, UpdateProbeFailureItem>[]>(
+    () => [
+      {
+        accessorKey: "createdAt",
+        header: "When",
+        cell: ({ row }) => (
+          <span className="text-sm whitespace-nowrap tabular-nums">
+            {new Date(row.original.createdAt).toLocaleString()}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "title",
+        header: "Title",
+        cell: ({ row }) => <span className="text-sm">{row.original.title}</span>,
+      },
+      {
+        accessorKey: "source",
+        header: "Source",
+        cell: ({ row }) => <Badge variant="neutral">{row.original.source}</Badge>,
+      },
+      {
+        accessorKey: "reason",
+        header: "Reason",
+        cell: ({ row }) => <code className="text-[0.9em]">{row.original.reason}</code>,
+      },
+      {
+        accessorKey: "entryId",
+        header: "Entry",
+        cell: ({ row }) =>
+          row.original.entryId ? (
+            <code className="text-xs">{row.original.entryId}</code>
+          ) : (
+            <span className="text-sm opacity-60">—</span>
+          ),
+      },
+      {
+        accessorKey: "detail",
+        header: "Detail",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="text-sm opacity-60">{row.original.detail ?? "—"}</span>
+        ),
+      },
+    ],
+    [],
+  );
+
+  // oxlint-disable-next-line react/incompatible-library -- TanStack Table's instance getters are inherently non-memoizable; the compiler already skips this component
+  const table = useTable({
+    features: adminTableFeatures,
+    data: filtered,
+    columns,
+    state: { sorting, pagination: { ...pagination, pageIndex } },
+    onSortingChange: setSorting,
+    onPaginationChange: setPagination,
+    autoResetPageIndex: false,
+  });
+
+  const pager = (
+    <TablePagination
+      page={pageIndex + 1}
+      pageSize={pagination.pageSize}
+      totalCount={filtered.length}
+      onPageChange={goToPage}
+      onPageSizeChange={changePageSize}
+    />
+  );
+
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-1">
+        <Text as="h2" variant="heading3">
+          Update failures
+        </Text>
+        <span className="text-sm opacity-60">
+          Soft-fails from My Updates · MangaDex / Comix on device. Use entry id + reason to fix
+          registry links or rematch.
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          className="w-72"
+          placeholder="Filter by title, entry, reason, detail"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+        />
+        <span className="text-sm opacity-60">
+          Showing {filtered.length} of {failures.length}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <FilterToggle
+            active={sourceFilters.size === 0}
+            variant="neutral"
+            onClick={() => setSourceFilters(new Set())}
+          >
+            All sources ({failures.length})
+          </FilterToggle>
+          {[...bySource.keys()].sort().map((value) => (
+            <FilterToggle
+              key={value}
+              active={sourceFilters.has(value)}
+              variant="neutral"
+              onClick={() => toggleSourceFilter(value)}
+            >
+              {value} ({bySource.get(value) ?? 0})
+            </FilterToggle>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <FilterToggle
+            active={reasonFilters.size === 0}
+            variant="neutral"
+            onClick={() => setReasonFilters(new Set())}
+          >
+            All reasons
+          </FilterToggle>
+          {[...byReason.keys()].sort().map((value) => (
+            <FilterToggle
+              key={value}
+              active={reasonFilters.has(value)}
+              variant="warning"
+              onClick={() => toggleReasonFilter(value)}
+            >
+              {value} ({byReason.get(value) ?? 0})
+            </FilterToggle>
+          ))}
+        </div>
+      </div>
+
+      {pager}
+      <DataTable
+        table={table}
+        emptyText="No update probe failures recorded yet. Open My Updates on device after deploying."
+        loading={loading}
+        skeletonColumns={6}
+      />
       {pager}
     </div>
   );

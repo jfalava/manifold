@@ -179,6 +179,45 @@ export const NukeEntryInput = Schema.Struct({
 });
 export type NukeEntryInput = Schema.Schema.Type<typeof NukeEntryInput>;
 
+// Discover "My Updates" probe outcomes reported from the device so admin can
+// see which library titles failed to resolve a freshest-chapter card and why.
+export const UpdateProbeSource = Schema.Literals(["MD", "Comix"]);
+export type UpdateProbeSource = Schema.Schema.Type<typeof UpdateProbeSource>;
+
+export const UpdateProbeReason = Schema.Literals([
+  "md_unresolved",
+  "md_no_hosted_chapter",
+  "comix_hid_miss",
+  "comix_empty",
+  "cloudflare",
+  "error",
+]);
+export type UpdateProbeReason = Schema.Schema.Type<typeof UpdateProbeReason>;
+
+export const UpdateProbeFailureInput = Schema.Struct({
+  entryId: Schema.optional(Schema.NonEmptyString),
+  title: Schema.NonEmptyString,
+  source: UpdateProbeSource,
+  reason: UpdateProbeReason,
+  detail: Schema.optional(Schema.String),
+});
+export type UpdateProbeFailureInput = Schema.Schema.Type<typeof UpdateProbeFailureInput>;
+
+export const ReportUpdateFailuresInput = Schema.Struct({
+  failures: Schema.Array(UpdateProbeFailureInput),
+});
+export type ReportUpdateFailuresInput = Schema.Schema.Type<typeof ReportUpdateFailuresInput>;
+
+export interface UpdateProbeFailure {
+  readonly id: number;
+  readonly entryId?: string;
+  readonly title: string;
+  readonly source: UpdateProbeSource;
+  readonly reason: UpdateProbeReason;
+  readonly detail?: string;
+  readonly createdAt: number;
+}
+
 export interface MangaDexLibraryItem {
   readonly mangaDexId: string;
   readonly status: string;

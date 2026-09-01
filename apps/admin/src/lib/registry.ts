@@ -62,6 +62,16 @@ export type ListEventItem = {
   readonly createdAt: number;
 };
 
+export type UpdateProbeFailureItem = {
+  readonly id: number;
+  readonly entryId?: string;
+  readonly title: string;
+  readonly source: string;
+  readonly reason: string;
+  readonly detail?: string;
+  readonly createdAt: number;
+};
+
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: secret binding comes from untyped workers env; parsed at I/O boundary
 async function resolveSecret(binding: unknown): Promise<string> {
   if (isStringValue(binding)) {
@@ -167,9 +177,11 @@ export interface LoadRegistryResult {
 export interface LoadOperationsResult {
   readonly ops: readonly SyncOpItem[];
   readonly events: readonly ListEventItem[];
+  readonly updateFailures: readonly UpdateProbeFailureItem[];
   readonly errors: {
     readonly ops?: string;
     readonly events?: string;
+    readonly updateFailures?: string;
   };
 }
 
@@ -212,13 +224,17 @@ export const loadRegistry = createServerFn({ method: "GET" }).handler(
 
 export const loadOperations = createServerFn({ method: "GET" }).handler(
   async (): Promise<LoadOperationsResult> => {
-    const [ops, events] = await Promise.all([
+    const [ops, events, updateFailures] = await Promise.all([
       capture("ops", () => call<{ ops: readonly SyncOpItem[] }>("/v1/ops?limit=200")),
       capture("events", () => call<{ events: readonly ListEventItem[] }>("/v1/events?limit=100")),
+      capture("update-failures", () =>
+        call<{ failures: readonly UpdateProbeFailureItem[] }>("/v1/update-failures?limit=200"),
+      ),
     ]);
     const errors: {
       ops?: string;
       events?: string;
+      updateFailures?: string;
     } = {}; // oxlint-disable-line anti-slop/no-known-value-widening -- SAFETY: errors map starts empty and is populated conditionally; anonymous type is intentionally widened from empty object
     if (!ops.ok) {
       errors.ops = ops.error;
@@ -226,9 +242,13 @@ export const loadOperations = createServerFn({ method: "GET" }).handler(
     if (!events.ok) {
       errors.events = events.error;
     }
+    if (!updateFailures.ok) {
+      errors.updateFailures = updateFailures.error;
+    }
     return {
       ops: ops.ok ? ops.value.ops : [],
       events: events.ok ? events.value.events : [],
+      updateFailures: updateFailures.ok ? updateFailures.value.failures : [],
       errors,
     };
   },

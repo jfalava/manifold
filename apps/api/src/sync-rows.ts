@@ -12,6 +12,9 @@ import type {
   ProviderLink,
   ReadingProgress,
   SyncOp,
+  UpdateProbeFailure,
+  UpdateProbeReason,
+  UpdateProbeSource,
 } from "./domain";
 
 export interface EntryRow extends Record<string, SqlStorageValue> {
@@ -73,6 +76,16 @@ export interface ListEventRow extends Record<string, SqlStorageValue> {
   entry_id: string;
   kind: string;
   origin: OpOrigin;
+  detail: string | null;
+  created_at: number;
+}
+
+export interface UpdateProbeFailureRow extends Record<string, SqlStorageValue> {
+  id: number;
+  entry_id: string | null;
+  title: string;
+  source: UpdateProbeSource;
+  reason: UpdateProbeReason;
   detail: string | null;
   created_at: number;
 }
@@ -149,5 +162,15 @@ export const toListEvent = (row: ListEventRow): ListEvent => ({
   kind: row.kind,
   origin: row.origin,
   ...(row.detail && { detail: parseStoredJsonObject(row.detail) }),
+  createdAt: row.created_at,
+});
+
+export const toUpdateProbeFailure = (row: UpdateProbeFailureRow): UpdateProbeFailure => ({
+  id: row.id,
+  ...(row.entry_id !== null && { entryId: row.entry_id }),
+  title: row.title,
+  source: row.source,
+  reason: row.reason,
+  ...(row.detail !== null && { detail: row.detail }),
   createdAt: row.created_at,
 });

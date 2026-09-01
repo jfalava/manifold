@@ -117,6 +117,24 @@ export interface PersonalFeedChapter {
   readonly publishedAt?: number;
 }
 
+export type UpdateProbeSource = "MD" | "Comix";
+
+export type UpdateProbeReason =
+  | "md_unresolved"
+  | "md_no_hosted_chapter"
+  | "comix_hid_miss"
+  | "comix_empty"
+  | "cloudflare"
+  | "error";
+
+export interface UpdateProbeFailureInput {
+  readonly entryId?: string;
+  readonly title: string;
+  readonly source: UpdateProbeSource;
+  readonly reason: UpdateProbeReason;
+  readonly detail?: string;
+}
+
 export interface PersonalApiClient {
   readonly searchCanonical: (
     query: string,
@@ -179,13 +197,19 @@ export interface PersonalApiClient {
       readonly mediaListEntryId?: number;
     }[],
   ) => Promise<{ updated: number }>;
+  // Discover My Updates soft-fails: device reports titles that did not produce
+  // a card so admin can inspect match / Comix / CF gaps.
+  readonly reportUpdateFailures: (
+    failures: readonly UpdateProbeFailureInput[],
+  ) => Promise<{ recorded: number }>;
 }
 
 type PersonalApiPostBody =
   | JsonValue
   | CanonicalEntry
   | PersonalReadInput
-  | CanonicalListStateChange;
+  | CanonicalListStateChange
+  | { readonly failures: readonly UpdateProbeFailureInput[] };
 
 export class PersonalApiError extends Error {
   readonly status: number;
@@ -395,5 +419,21 @@ export const createPersonalApiClient = (
     },
     completeOps: (results) =>
       request<{ updated: number }>("/v1/ops/complete", "POST", { results }),
+    reportUpdateFailures: async (failures) => {
+      if (failures.length === 0) {return { recorded: 0 };}
+      return request<{ recorded: number }>("/v1/update-failures", "POST", {
+        failures: failures.slice(0, 100).map((failure) => ({
+          ...(failure.entryId !== undefined && failure.entryId.length > 0
+            ? { entryId: failure.entryId }
+            : {}),
+          title: failure.title,
+          source: failure.source,
+          reason: failure.reason,
+          ...(failure.detail !== undefined && failure.detail.length > 0
+            ? { detail: failure.detail }
+            : {}),
+        })),
+      });
+    },
   };
 };
