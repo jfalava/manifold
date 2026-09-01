@@ -1,6 +1,6 @@
 {
   "name": "@manifold/tracker",
-  "version": "1.0.0-beta.3",
+  "version": "v2026.09.01",
   "private": true,
   "type": "module",
   "exports": {
