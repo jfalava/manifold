@@ -196,12 +196,14 @@ export const normalizeClearanceCookie = (cookie: Cookie): Cookie | undefined => 
     value,
     domain,
     path,
-    ...(cookie.expires instanceof Date && !Number.isNaN(cookie.expires.getTime())
-      ? { expires: cookie.expires }
-      : {}),
-    ...(cookie.created instanceof Date && !Number.isNaN(cookie.created.getTime())
-      ? { created: cookie.created }
-      : {}),
+    expires:
+      cookie.expires instanceof Date && !Number.isNaN(cookie.expires.getTime())
+        ? cookie.expires
+        : undefined,
+    created:
+      cookie.created instanceof Date && !Number.isNaN(cookie.created.getTime())
+        ? cookie.created
+        : undefined,
   };
 };
 

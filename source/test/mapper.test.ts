@@ -62,11 +62,13 @@ describe("manifold Paperback mapping", () => {
       pageCount: 0,
     }]);
 
-    expect(chapters).toEqual([expect.objectContaining({
-      chapterId: "chapter-1",
-      sourceManga,
-      chapNum: 1,
-      additionalInfo: expect.objectContaining({ "manifold provider": "mangadex" }),
-    })]);
+    expect(chapters).toMatchObject([
+      {
+        chapterId: "chapter-1",
+        sourceManga,
+        chapNum: 1,
+        additionalInfo: { "manifold provider": "mangadex" },
+      },
+    ]);
   });
 });

@@ -42,6 +42,7 @@ describe("json boundary parsers", () => {
     expect(requestHref("https://example.test/a")).toBe("https://example.test/a");
     expect(requestHref(new URL("https://example.test/b"))).toBe("https://example.test/b");
     // Duck-typed Request-like (no global Request required)
+    // SAFETY: fixture only needs a url string field; not a full Request instance.
     expect(requestHref({ url: "https://example.test/c" } as RequestInfo)).toBe(
       "https://example.test/c",
     );

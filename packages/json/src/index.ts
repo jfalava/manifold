@@ -95,19 +95,23 @@ export function errorMessage(cause: unknown): string {
   }
 }
 
+const isRequestHrefString = (value: RequestInfo | URL): value is string =>
+  typeof value === "string";
+
 export function requestHref(input: RequestInfo | URL): string {
   // Strings first: MangaDex/AniList fetchers always pass absolute URL strings.
   // Do not touch global URL/Request — Paperback's extension JSC sandbox may not
   // define them, and `instanceof URL` then throws "Can't find variable: URL"
   // (surfaced to the user as a missing-variable error on Discover boards that
   // always hit the network: Popular New Titles / Latest Updates).
-  if (isString(input)) {
+  if (isRequestHrefString(input)) {
     return input;
   }
-  if (isJsonObject(input) && isString(input.href)) {
+  // Duck-type the remaining Request | URL union without instanceof.
+  if ("href" in input) {
     return input.href;
   }
-  if (isJsonObject(input) && isString(input.url)) {
+  if ("url" in input) {
     return input.url;
   }
   throw new TypeError("requestHref: expected a string URL, URL, or Request");

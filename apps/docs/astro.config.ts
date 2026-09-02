@@ -12,6 +12,10 @@ const nimbusConfig = defineNimbusConfig({
   github: "https://github.com/jfalava/manifold",
   sidebar: {
     scope: "full",
+    // Folder indexes (e.g. cli/index.mdx) become a leading "Overview" leaf;
+    // the group header is disclosure-only, not a duplicate nav entry.
+    indexDisplay: "overview-leaf",
+    overviewLabel: "Overview",
     items: [
       {
         label: "Guides",

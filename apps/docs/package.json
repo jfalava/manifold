@@ -8,7 +8,7 @@
     "lint": "bun run lint:oxlint && bun run lint:astro && bun run lint:docs",
     "lint:docs": "nimbus-docs lint",
     "lint:docs:fix": "nimbus-docs lint --fix",
-    "lint:oxlint": "oxlint src --ignore-pattern '**/*.astro'",
+    "lint:oxlint": "astro sync && oxlint src --ignore-pattern '**/*.astro'",
     "check": "bun typecheck && bun lint",
     "dev": "astro dev",
     "format": "prettier --write src",
@@ -16,7 +16,7 @@
     "lint:astro": "eslint \"src/**/*.astro\"",
     "lint:astro:fix": "eslint \"src/**/*.astro\" --fix",
     "lint:fix": "bun run lint:oxlint:fix && bun run lint:astro:fix && bun run lint:docs:fix",
-    "lint:oxlint:fix": "oxlint src --ignore-pattern '**/*.astro' --fix",
+    "lint:oxlint:fix": "astro sync && oxlint src --ignore-pattern '**/*.astro' --fix",
     "predeploy": "astro check && astro build",
     "prepreview:cf": "astro build",
     "preview": "astro preview"

@@ -425,15 +425,17 @@ export const createPersonalApiClient = (
       if (failures.length === 0) {return { recorded: 0 };}
       return request<{ recorded: number }>("/v1/update-failures", "POST", {
         failures: failures.slice(0, 100).map((failure) => ({
-          ...(failure.entryId !== undefined && failure.entryId.length > 0
-            ? { entryId: failure.entryId }
-            : {}),
           title: failure.title,
           source: failure.source,
           reason: failure.reason,
-          ...(failure.detail !== undefined && failure.detail.length > 0
-            ? { detail: failure.detail }
-            : {}),
+          entryId:
+            failure.entryId !== undefined && failure.entryId.length > 0
+              ? failure.entryId
+              : undefined,
+          detail:
+            failure.detail !== undefined && failure.detail.length > 0
+              ? failure.detail
+              : undefined,
         })),
       });
     },

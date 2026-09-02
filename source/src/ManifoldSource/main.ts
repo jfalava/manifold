@@ -134,7 +134,7 @@ const COMIX_ORIGIN_HOST = "comix.to";
 const CHAPTER_SOURCE_DEFAULT_KEY = "manifold.chapter-source-default";
 type ChapterSourceChoice = "auto" | "mangadex" | "comix";
 
-const parseChapterSourceChoice = (value: unknown): ChapterSourceChoice | undefined => {
+const parseChapterSourceChoice = (value: string): ChapterSourceChoice | undefined => {
   if (value === "auto" || value === "mangadex" || value === "comix") {
     return value;
   }
@@ -963,7 +963,7 @@ export class ManifoldSourceImpl implements
             "md",
             () => this.probeMangaDexLatest(entry),
             {
-              ...(cached?.card ? { staleFallback: cached.card } : {}),
+              staleFallback: cached?.card,
               onSoftError: (message) => this.noteUpdateFailure(entry, "MD", "error", message),
             },
           );
@@ -986,7 +986,7 @@ export class ManifoldSourceImpl implements
             "comix",
             () => this.probeComixLatest(entry),
             {
-              ...(cached?.card ? { staleFallback: cached.card } : {}),
+              staleFallback: cached?.card,
               onSoftError: (message) => this.noteUpdateFailure(entry, "Comix", "error", message),
             },
           );
@@ -1114,11 +1114,14 @@ export class ManifoldSourceImpl implements
     if (this.pendingUpdateFailures.length >= UPDATE_FAILURE_REPORT_MAX) {return;}
     const trimmedDetail = detail?.trim();
     this.pendingUpdateFailures.push({
-      ...(entry.id.length > 0 ? { entryId: entry.id } : {}),
       title: entry.title,
       source,
       reason,
-      ...(trimmedDetail && trimmedDetail.length > 0 ? { detail: trimmedDetail.slice(0, 1000) } : {}),
+      entryId: entry.id.length > 0 ? entry.id : undefined,
+      detail:
+        trimmedDetail && trimmedDetail.length > 0
+          ? trimmedDetail.slice(0, 1000)
+          : undefined,
     });
   }
 
@@ -1523,8 +1526,8 @@ export class ManifoldSourceImpl implements
       const deviceForce = ():
         | { provider: "mangadex" | "comix"; via: "device" }
         | undefined => {
-        const provider = chapterSourceForceOrUndefined(readChapterSourceDefault());
-        return provider ? { provider, via: "device" } : undefined;
+        const forcedProvider = chapterSourceForceOrUndefined(readChapterSourceDefault());
+        return forcedProvider ? { provider: forcedProvider, via: "device" } : undefined;
       };
       const rawPin = Application.getState(pinKey);
       if (isString(rawPin) && rawPin.length > 0) {
@@ -1532,7 +1535,7 @@ export class ManifoldSourceImpl implements
           // SAFETY: I/O JSON.parse of the chapter-source force pin cache.
           const parsed: unknown = JSON.parse(rawPin);
           if (isJsonObject(parsed)) {
-            previousPin = parseChapterSourceChoice(parsed.p);
+            previousPin = isString(parsed.p) ? parseChapterSourceChoice(parsed.p) : undefined;
             if (
               isFiniteNumber(parsed.t) &&
               Date.now() - parsed.t < PIN_TTL_MS &&
@@ -1553,7 +1556,10 @@ export class ManifoldSourceImpl implements
       const stored = await configuredPersonalApi()
         .getEntry(sourceManga.mangaId)
         .catch(() => undefined);
-      const registryPin = parseChapterSourceChoice(stored?.chapterSource) ?? "auto";
+      const registryPin =
+        stored?.chapterSource !== undefined
+          ? (parseChapterSourceChoice(stored.chapterSource) ?? "auto")
+          : "auto";
       Application.setState(JSON.stringify({ p: registryPin, t: Date.now() }), pinKey);
       // Only drop the choice cache when leaving a force pin, so auto titles
       // keep their MangaDex-trust cache across pin revalidations.
