@@ -130,6 +130,48 @@ const scheduledFetchResponse = (
 const COMIX_ORIGIN = "https://comix.to";
 const COMIX_ORIGIN_HOST = "comix.to";
 
+/** Device-wide chapter provider default. Registry per-title pins still win. */
+const CHAPTER_SOURCE_DEFAULT_KEY = "manifold.chapter-source-default";
+type ChapterSourceChoice = "auto" | "mangadex" | "comix";
+
+const parseChapterSourceChoice = (value: unknown): ChapterSourceChoice | undefined => {
+  if (value === "auto" || value === "mangadex" || value === "comix") {
+    return value;
+  }
+  return undefined;
+};
+
+const readChapterSourceDefault = (): ChapterSourceChoice => {
+  const raw = Application.getState(CHAPTER_SOURCE_DEFAULT_KEY);
+  if (!isString(raw)) {
+    return "auto";
+  }
+  return parseChapterSourceChoice(raw.trim().toLowerCase()) ?? "auto";
+};
+
+const chapterSourceForceOrUndefined = (
+  value: ChapterSourceChoice,
+): "mangadex" | "comix" | undefined => (value === "auto" ? undefined : value);
+
+/** Bumped when the device chapter-source default changes so stale choice pins expire. */
+const CHAPTER_SOURCE_EPOCH_KEY = "manifold.chapter-source-epoch";
+
+const readChapterSourceEpoch = (): number => {
+  const raw = Application.getState(CHAPTER_SOURCE_EPOCH_KEY);
+  if (isFiniteNumber(raw)) {
+    return raw;
+  }
+  if (isString(raw) && raw.trim().length > 0) {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+};
+
+const bumpChapterSourceEpoch = (): void => {
+  Application.setState(String(readChapterSourceEpoch() + 1), CHAPTER_SOURCE_EPOCH_KEY);
+};
+
 // Session/login cookies make comix.to's backend demand CSRF tokens on its
 // API ("Missing token."); anonymous access needs only the clearance cookie.
 // clearanceCookiesOnly (comix-fallback) also pins empty domains to comix.to.
@@ -1327,8 +1369,9 @@ export class ManifoldSourceImpl implements
     // (the "MD lists 1 chapter, Comix has 214" edge); at or above it,
     // MangaDex is trusted without touching comix.to.
     const MANGADEX_TRUST_THRESHOLD = 5;
+    const chapterSourceEpoch = readChapterSourceEpoch();
     const cachedChoice = (():
-      | { p: "comix" | "mangadex"; t: number; ttl: number; n: number; h?: string }
+      | { p: "comix" | "mangadex"; t: number; ttl: number; n: number; h?: string; e: number }
       | undefined => {
       const raw = Application.getState(choiceKey);
       if (!isString(raw)) {return undefined;}
@@ -1349,6 +1392,8 @@ export class ManifoldSourceImpl implements
             ttl: parsed.ttl,
             n: isFiniteNumber(parsed.n) ? parsed.n : 0,
             h: isString(parsed.h) ? parsed.h : undefined,
+            // Missing e (pre-device-default builds) is epoch 0.
+            e: isFiniteNumber(parsed.e) ? parsed.e : 0,
           };
         }
       } catch {
@@ -1364,6 +1409,7 @@ export class ManifoldSourceImpl implements
       cachedChoice?.p === "comix" && !cachedChoice.h;
     const choiceFresh =
       cachedChoice !== undefined &&
+      cachedChoice.e === chapterSourceEpoch &&
       Date.now() - cachedChoice.t < cachedChoice.ttl &&
       !emptyOrTinyMangadexPin &&
       !missingComixHid;
@@ -1461,29 +1507,43 @@ export class ManifoldSourceImpl implements
       return loadComix();
     };
 
-    // Admin/registry pin wins over MangaDex trust + richer-list heuristic.
-    // Forced pins skip comparison entirely so incomplete MangaDex catalogs
-    // (still >= trust threshold) can be overridden to Comix.
-    const forcedSource = await (async (): Promise<"mangadex" | "comix" | undefined> => {
+    // Force order: registry per-title pin (max prio) → device default → auto
+    // heuristic (MangaDex trust + richer-list). Forced pins skip comparison
+    // so incomplete MangaDex catalogs (still >= trust threshold) can be
+    // overridden to Comix, and a device-wide mangadex/comix default can skip
+    // the dual-fetch fallback without touching registry rows.
+    const forcedSource = await (async (): Promise<
+      | { provider: "mangadex" | "comix"; via: "registry" | "device" }
+      | undefined
+    > => {
       if (!UUID_RE.test(sourceManga.mangaId)) {return undefined;}
       const pinKey = `chapter-source-pin:v1:${sourceManga.mangaId}`;
       const PIN_TTL_MS = 5 * 60 * 1000;
-      let previousPin: "auto" | "mangadex" | "comix" | undefined;
+      let previousPin: ChapterSourceChoice | undefined;
+      const deviceForce = ():
+        | { provider: "mangadex" | "comix"; via: "device" }
+        | undefined => {
+        const provider = chapterSourceForceOrUndefined(readChapterSourceDefault());
+        return provider ? { provider, via: "device" } : undefined;
+      };
       const rawPin = Application.getState(pinKey);
       if (isString(rawPin) && rawPin.length > 0) {
         try {
           // SAFETY: I/O JSON.parse of the chapter-source force pin cache.
           const parsed: unknown = JSON.parse(rawPin);
           if (isJsonObject(parsed)) {
-            if (parsed.p === "mangadex" || parsed.p === "comix" || parsed.p === "auto") {
-              previousPin = parsed.p;
-            }
+            previousPin = parseChapterSourceChoice(parsed.p);
             if (
               isFiniteNumber(parsed.t) &&
               Date.now() - parsed.t < PIN_TTL_MS &&
               previousPin !== undefined
             ) {
-              return previousPin === "auto" ? undefined : previousPin;
+              // Registry force wins; cached "auto" still applies the device default.
+              const registryForce = chapterSourceForceOrUndefined(previousPin);
+              if (registryForce) {
+                return { provider: registryForce, via: "registry" };
+              }
+              return deviceForce();
             }
           }
         } catch {
@@ -1493,22 +1553,23 @@ export class ManifoldSourceImpl implements
       const stored = await configuredPersonalApi()
         .getEntry(sourceManga.mangaId)
         .catch(() => undefined);
-      const pin =
-        stored?.chapterSource === "mangadex" || stored?.chapterSource === "comix"
-          ? stored.chapterSource
-          : "auto";
-      Application.setState(JSON.stringify({ p: pin, t: Date.now() }), pinKey);
+      const registryPin = parseChapterSourceChoice(stored?.chapterSource) ?? "auto";
+      Application.setState(JSON.stringify({ p: registryPin, t: Date.now() }), pinKey);
       // Only drop the choice cache when leaving a force pin, so auto titles
       // keep their MangaDex-trust cache across pin revalidations.
       if (
-        pin === "auto" &&
+        registryPin === "auto" &&
         (previousPin === "mangadex" || previousPin === "comix")
       ) {
         Application.setState("", choiceKey);
       }
-      return pin === "auto" ? undefined : pin;
+      const registryForce = chapterSourceForceOrUndefined(registryPin);
+      if (registryForce) {
+        return { provider: registryForce, via: "registry" };
+      }
+      return deviceForce();
     })();
-    if (forcedSource === "comix") {
+    if (forcedSource?.provider === "comix") {
       const chapters = await loadComixCached(
         cachedChoice?.p === "comix" ? cachedChoice.h : undefined,
       );
@@ -1521,16 +1582,17 @@ export class ManifoldSourceImpl implements
           t: Date.now(),
           ttl: chapters.length === 0 ? FAILED_RETRY_TTL_MS : CHOICE_TTL_MS,
           n: chapters.length,
+          e: chapterSourceEpoch,
           ...(comixHid && { h: comixHid }),
         }),
         choiceKey,
       );
       console.log(
-        `[manifold] chapters source:${sourceManga.mangaId}:comix-forced:${chapters.length}`,
+        `[manifold] chapters source:${sourceManga.mangaId}:comix-forced-${forcedSource.via}:${chapters.length}`,
       );
       return finalize(chapters);
     }
-    if (forcedSource === "mangadex") {
+    if (forcedSource?.provider === "mangadex") {
       const chapters = await loadMangadex();
       Application.setState(
         JSON.stringify({
@@ -1538,11 +1600,12 @@ export class ManifoldSourceImpl implements
           t: Date.now(),
           ttl: MANGADEX_RECHECK_TTL_MS,
           n: chapters.length,
+          e: chapterSourceEpoch,
         }),
         choiceKey,
       );
       console.log(
-        `[manifold] chapters source:${sourceManga.mangaId}:mangadex-forced:${chapters.length}`,
+        `[manifold] chapters source:${sourceManga.mangaId}:mangadex-forced-${forcedSource.via}:${chapters.length}`,
       );
       return finalize(chapters);
     }
@@ -1560,6 +1623,7 @@ export class ManifoldSourceImpl implements
               t: Date.now(),
               ttl: cachedChoice.ttl,
               n: chapters.length,
+              e: chapterSourceEpoch,
               h: comixHid,
             }),
             choiceKey,
@@ -1580,7 +1644,13 @@ export class ManifoldSourceImpl implements
       // on the next recompare TTL instead of immediately.
       const ttlMs = MANGADEX_RECHECK_TTL_MS;
       Application.setState(
-        JSON.stringify({ p: "mangadex", t: Date.now(), ttl: ttlMs, n: mangadexChapters.length }),
+        JSON.stringify({
+          p: "mangadex",
+          t: Date.now(),
+          ttl: ttlMs,
+          n: mangadexChapters.length,
+          e: chapterSourceEpoch,
+        }),
         choiceKey,
       );
       console.log(
@@ -1609,6 +1679,7 @@ export class ManifoldSourceImpl implements
           t: Date.now(),
           ttl: FAILED_RETRY_TTL_MS,
           n: 0,
+          e: chapterSourceEpoch,
           ...(useComix && comixHid && { h: comixHid }),
         }),
         choiceKey,
@@ -1629,6 +1700,7 @@ export class ManifoldSourceImpl implements
         t: Date.now(),
         ttl: ttlMs,
         n: best.length,
+        e: chapterSourceEpoch,
         ...(useComix && comixHid && { h: comixHid }),
       }),
       choiceKey,
@@ -1686,6 +1758,7 @@ class ManifoldSettingsForm extends Form {
   private pendingPersonalApiToken?: string;
   private pendingAniListToken?: string;
   private pendingComixCommand?: string;
+  private pendingChapterSourceDefault?: string;
 
   constructor(private readonly source: ManifoldSourceImpl) {
     super();
@@ -1704,6 +1777,7 @@ class ManifoldSettingsForm extends Form {
       // SAFETY: Paperback secure/state store returns ?? "Not connected"; const comixStatus = this.source.hasCom for this key
       (Application.getState(ANILIST_STATUS_KEY) as string | undefined) ?? "Not connected";
     const comixStatus = this.source.hasComixBrowserSession() ? "session ok" : "no session";
+    const chapterSourceDefault = readChapterSourceDefault();
     // SAFETY: value is asserted type at this site
     return [
       Section(
@@ -1711,7 +1785,7 @@ class ManifoldSettingsForm extends Form {
           id: "settings-minimal",
           header: `manifold: source ${info.version}`,
           footer:
-            "iOS 27-safe settings. Comix: clear / adopt / force — then Save. If My Updates · Comix stays empty after a solve, run adopt or force here (Discover often hides the CF banner).",
+            "iOS 27-safe settings. Chapter source: auto / mangadex / comix (device default; registry pins still win). Comix: clear / adopt / force — then Save. If My Updates · Comix stays empty after a solve, run adopt or force here (Discover often hides the CF banner).",
         },
         [
           LabelRow("build-id", {
@@ -1737,6 +1811,18 @@ class ManifoldSettingsForm extends Form {
             value: "",
             onValueChange: Application.Selector(this as ManifoldSettingsForm, "aniListTokenChanged"),
           // SAFETY: value matches LabelRow("comix-s at this call site
+          }),
+          LabelRow("chapter-source-default-status", {
+            title: "Chapter source",
+            value: chapterSourceDefault,
+          }),
+          InputRow("chapter-source-default", {
+            title: "Chapter source (auto|mangadex|comix)",
+            value: "",
+            onValueChange: Application.Selector(
+              this as ManifoldSettingsForm,
+              "chapterSourceDefaultChanged",
+            ),
           }),
           LabelRow("comix-status", {
             title: "Comix",
@@ -1770,6 +1856,10 @@ class ManifoldSettingsForm extends Form {
     this.pendingComixCommand = value;
   };
 
+  readonly chapterSourceDefaultChanged = async (value: string): Promise<void> => {
+    this.pendingChapterSourceDefault = value;
+  };
+
   override async formDidSubmit(): Promise<void> {
     const personalToken = this.pendingPersonalApiToken?.trim();
     if (personalToken) {
@@ -1795,9 +1885,31 @@ class ManifoldSettingsForm extends Form {
     }
 
     const comixCommand = this.pendingComixCommand?.trim().toLowerCase();
+    const chapterSourceRaw = this.pendingChapterSourceDefault?.trim().toLowerCase();
     this.pendingPersonalApiToken = undefined;
     this.pendingAniListToken = undefined;
     this.pendingComixCommand = undefined;
+    this.pendingChapterSourceDefault = undefined;
+
+    if (chapterSourceRaw) {
+      const next = parseChapterSourceChoice(chapterSourceRaw);
+      if (next) {
+        const previous = readChapterSourceDefault();
+        if (previous !== next) {
+          Application.setState(next, CHAPTER_SOURCE_DEFAULT_KEY);
+          // Invalidate comix-source-choice:v2 pins so auto titles re-resolve
+          // instead of keeping a previous device-forced provider for hours.
+          bumpChapterSourceEpoch();
+          console.log(
+            `[manifold] chapter source default:${previous}->${next}:epoch=${readChapterSourceEpoch()}`,
+          );
+        }
+      } else {
+        console.error(
+          `[manifold] chapter source default ignored (use auto|mangadex|comix):${chapterSourceRaw}`,
+        );
+      }
+    }
 
     if (comixCommand === "clear") {
       this.source.clearComixSession();
