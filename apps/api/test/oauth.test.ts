@@ -5,9 +5,11 @@ import {
   MANGADEX_TOKEN_ENDPOINT
 } from "@manifold/mangadex";
 import {
+  adminOAuthReturnPath,
   anilistDeviceRedirectUri,
   isPublicOAuthRoute,
   oauthRedirectUri,
+  publicSiteOrigin,
 } from "../src/http";
 import { createAuthorizationUrl, getOAuthClientConfig } from "../src/oauth";
 
@@ -40,6 +42,24 @@ describe("OAuth provider configuration", () => {
     expect(isPublicOAuthRoute("GET", ["v1", "auth", "anilist", "device"])).toBe(true);
     expect(isPublicOAuthRoute("POST", ["v1", "auth", "anilist", "callback"])).toBe(false);
     expect(isPublicOAuthRoute("GET", ["other", "path", "anilist", "device"])).toBe(false);
+  });
+
+  it("accepts only same-origin admin return paths after OAuth", () => {
+    expect(adminOAuthReturnPath("/admin/credentials")).toBe("/admin/credentials");
+    expect(adminOAuthReturnPath("/admin/credentials?x=1")).toBe("/admin/credentials?x=1");
+    expect(adminOAuthReturnPath("//evil.example")).toBeUndefined();
+    expect(adminOAuthReturnPath("https://evil.example/admin")).toBeUndefined();
+    expect(adminOAuthReturnPath("/api/v1/auth")).toBeUndefined();
+    expect(adminOAuthReturnPath(null)).toBeUndefined();
+  });
+
+  it("derives the public site origin from the OAuth redirect base", () => {
+    expect(publicSiteOrigin({ OAUTH_REDIRECT_BASE_URL: "https://example.test/" })).toBe(
+      "https://example.test",
+    );
+    expect(publicSiteOrigin({ OAUTH_REDIRECT_BASE_URL: "https://example.test/api" })).toBe(
+      "https://example.test",
+    );
   });
 
   it("creates the MAL callback URL with its supported plain PKCE method", async () => {

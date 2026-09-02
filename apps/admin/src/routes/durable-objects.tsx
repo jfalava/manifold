@@ -65,11 +65,7 @@ function DurableObjectsPage() {
   );
 }
 
-function DoInstancesCard({
-  state,
-}: {
-  readonly state: LoadState<AnalyticsSnapshot>;
-}): ReactNode {
+function DoInstancesCard({ state }: { readonly state: LoadState<AnalyticsSnapshot> }): ReactNode {
   return (
     <Surface>
       {state.status === "loading" ? (
@@ -104,11 +100,7 @@ function DoInstancesCard({
   );
 }
 
-function OutboxHealthCard({
-  state,
-}: {
-  readonly state: LoadState<OpsSummary | null>;
-}): ReactNode {
+function OutboxHealthCard({ state }: { readonly state: LoadState<OpsSummary | null> }): ReactNode {
   return (
     <div className="grid gap-1.5">
       <Text as="h2" variant="heading">

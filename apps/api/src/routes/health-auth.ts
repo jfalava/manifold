@@ -1,10 +1,13 @@
 import { Effect } from "effect";
+import { isJsonObject, isString, numberField } from "@manifold/json";
 import {
-  anilistDeviceRedirectUri,
+  adminOAuthReturnPath,
   authProvider,
   json,
   oauthProvider,
   oauthRedirectUri,
+  parseJson,
+  publicSiteOrigin,
   tryPromise,
   type RouteContext,
   type RouteEffect,
@@ -64,9 +67,9 @@ const anilistDevicePage = (authorizeUrl: string): string => `<!DOCTYPE html>
 
 const anilistImplicitReturnPage = `<!DOCTYPE html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Returning to admin…</title></head>
-<body><p>Returning to the admin app…</p>
-<script>location.replace("/admin" + location.hash)</script>
-<p><a href="/admin">Continue if you are not redirected.</a></p>
+<body><p>Returning to the admin credentials page…</p>
+<script>location.replace("/admin/credentials" + location.hash)</script>
+<p><a href="/admin/credentials">Continue if you are not redirected.</a></p>
 </body></html>`;
 
 export const handleHealth = (ctx: RouteContext): RouteEffect =>
@@ -81,10 +84,12 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
   Effect.gen(function* () {
     const { path, request, env, url } = ctx;
     if (path[0] === "v1" && path[1] === "auth" && path[2] === "anilist" && path[3] === "device") {
-      const redirectUri = anilistDeviceRedirectUri(env);
+      // Same as tracker OAuthButtonRow / AniList implicit docs: client_id + response_type only.
+      // App 49218's registered redirect is /admin/api/anilist/callback (not pin, not 49060).
+      const implicitClientId = "49218";
       const authorizeUrl =
-        `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(env.ANILIST_CLIENT_ID)}` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token`;
+        `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(implicitClientId)}` +
+        `&response_type=token`;
       return new Response(anilistDevicePage(authorizeUrl), {
         headers: { "content-type": "text/html" },
       });
@@ -110,11 +115,46 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
       return json(yield* tryPromise(() => sync.loginMangaDex()));
     }
 
+    // Browser-minted bearer (AniList implicit / paste). Worker never exchanges
+    // the code — AniList returns 403 on CF egress for token + GraphQL.
+    if (
+      provider === "anilist" &&
+      path.length === 4 &&
+      path[3] === "token" &&
+      request.method === "POST"
+    ) {
+      const body = yield* parseJson(request);
+      if (!isJsonObject(body) || !isString(body.accessToken)) {
+        return json({ error: "Body must include accessToken string" }, 400);
+      }
+      const accessToken = body.accessToken.trim();
+      if (!accessToken) {
+        return json({ error: "accessToken is empty" }, 400);
+      }
+      const expiresIn = numberField(body, "expiresIn");
+      return json(
+        yield* tryPromise(() =>
+          sync.importAuthToken(
+            "anilist",
+            accessToken,
+            expiresIn !== undefined && expiresIn > 0 ? expiresIn : undefined,
+          ),
+        ),
+      );
+    }
+
     const oauth = oauthProvider(provider);
     if (oauth && path.length === 4 && path[3] === "start" && request.method === "GET") {
+      const returnPath = adminOAuthReturnPath(url.searchParams.get("return"));
       const start = yield* tryPromise(() =>
-        sync.createOAuthSession(oauth, oauthRedirectUri(oauth, env)),
+        sync.createOAuthSession(oauth, oauthRedirectUri(oauth, env), returnPath),
       );
+      // Browser navigation (curl -I / Paperback) keeps the 302. Admin's
+      // server fn asks for JSON so it can hand the URL to window.location.
+      const accept = request.headers.get("accept") ?? "";
+      if (accept.includes("application/json")) {
+        return json(start);
+      }
       return new Response(null, {
         status: 302,
         headers: {
@@ -140,15 +180,32 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
         return json({ error: "OAuth callback is missing state" }, 400);
       }
       if (error) {
-        yield* tryPromise(() => sync.cancelOAuthSession(oauth, state));
+        const cancelled = yield* tryPromise(() => sync.cancelOAuthSession(oauth, state));
+        if (cancelled.returnPath) {
+          return new Response(null, {
+            status: 302,
+            headers: {
+              location: `${publicSiteOrigin(env)}${cancelled.returnPath}?oauth=denied&provider=${oauth}`,
+              "cache-control": "no-store",
+            },
+          });
+        }
         return json({ error: "OAuth authorization was denied", provider: oauth }, 400);
       }
 
       const code = url.searchParams.get("code");
       if (!code) {return json({ error: "OAuth callback is missing code" }, 400);}
-      return json(
-        yield* tryPromise(() => sync.completeOAuthSession(oauth, state, code)),
-      );
+      const connection = yield* tryPromise(() => sync.completeOAuthSession(oauth, state, code));
+      if (connection.returnPath) {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location: `${publicSiteOrigin(env)}${connection.returnPath}?oauth=connected&provider=${oauth}`,
+            "cache-control": "no-store",
+          },
+        });
+      }
+      return json(connection);
     }
 
     if (path.length === 3 && request.method === "GET") {

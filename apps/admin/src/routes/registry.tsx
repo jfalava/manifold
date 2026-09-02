@@ -167,9 +167,7 @@ function EntryEditor({
   const [volumeProgress, setVolumeProgress] = useState(
     entry.state?.volumeProgress !== undefined ? String(entry.state.volumeProgress) : "",
   );
-  const [chapterSource, setChapterSource] = useState<ChapterSource>(
-    entry.chapterSource ?? "auto",
-  );
+  const [chapterSource, setChapterSource] = useState<ChapterSource>(entry.chapterSource ?? "auto");
   const dead = entry.tombstoned === true;
   const chapterSourceDirty = chapterSource !== (entry.chapterSource ?? "auto");
 
@@ -251,8 +249,8 @@ function EntryEditor({
       <div className="grid gap-2">
         <Text bold>Chapter source</Text>
         <span className="text-sm opacity-60">
-          Pin which catalog the device loads for chapters. Force Comix when MangaDex
-          is incomplete but still has enough chapters to skip the fallback.
+          Pin which catalog the device loads for chapters. Force Comix when MangaDex is incomplete
+          but still has enough chapters to skip the fallback.
         </span>
         <div className="flex flex-wrap items-end gap-2">
           <label className="grid flex-1 gap-1 text-sm">
@@ -625,9 +623,7 @@ function EntriesTable({
           if (value === "auto") {
             return <span className="text-sm opacity-40">auto</span>;
           }
-          return (
-            <Badge variant={value === "comix" ? "warning" : "info"}>{value}</Badge>
-          );
+          return <Badge variant={value === "comix" ? "warning" : "info"}>{value}</Badge>;
         },
       },
       {

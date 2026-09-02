@@ -61,7 +61,12 @@ export function MeterCardSkeleton({ bars = 5 }: { readonly bars?: number }): Rea
               <SkeletonLine minWidth={48} maxWidth={96} blockHeight={14} className="rounded" />
               <SkeletonLine minWidth={24} maxWidth={40} blockHeight={14} className="rounded" />
             </div>
-            <SkeletonLine minWidth={120} maxWidth={280} blockHeight={8} className="w-full rounded" />
+            <SkeletonLine
+              minWidth={120}
+              maxWidth={280}
+              blockHeight={8}
+              className="w-full rounded"
+            />
           </div>
         ))}
       </div>
@@ -94,7 +99,10 @@ export function PagePending({
 
 export function OverviewPending(): ReactNode {
   return (
-    <PagePending title="Overview" description="Library and infrastructure health for manifold.jfa.dev.">
+    <PagePending
+      title="Overview"
+      description="Library and infrastructure health for manifold.jfa.dev."
+    >
       <LibraryWidgetsSkeleton />
       <InfrastructureWidgetsSkeleton />
     </PagePending>

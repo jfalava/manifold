@@ -32,7 +32,7 @@ export function ResourceListPage({
         <div className="flex flex-col">
           <div className="mb-1.5 flex items-center gap-1.5">
             {icon}
-            <h1 className="font-heading m-0 p-0 text-3xl font-semibold">{title}</h1>
+            <h1 className="m-0 p-0 font-heading text-3xl font-semibold">{title}</h1>
           </div>
           <p className="hidden p-0 text-lg leading-normal text-pretty text-kumo-subtle md:block">
             {description}

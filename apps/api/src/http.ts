@@ -25,6 +25,7 @@ import type {
 } from "./domain";
 import type { MangaDexMatchResult } from "./mangadex-match";
 import type { MangaDexEntryStat } from "./mangadex-stats";
+import type { OAuthStart } from "./oauth";
 import { readSecret } from "./read-secret";
 import type { Env, RegistryListEntry } from "./types";
 
@@ -39,6 +40,7 @@ export type JsonResponseBody =
   | MangaDexLibraryItem
   | MangaDexMatchResult
   | MangaDexPaged<MangaDexChapter>
+  | OAuthStart
   | ReadingProgress
   | RegistryListEntry
   | SyncOp
@@ -169,6 +171,29 @@ export const oauthRedirectUri = (
 export const anilistDeviceRedirectUri = (
   env: Pick<Env, "OAUTH_REDIRECT_BASE_URL">,
 ): string => `${oauthApiBaseUrl(env)}/v1/auth/anilist/device`;
+
+/**
+ * Optional browser landing path after OAuth callback. Only same-origin admin
+ * paths are accepted so the open redirect stays scoped to this site.
+ */
+export const adminOAuthReturnPath = (value: string | null): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("/admin")) {
+    return undefined;
+  }
+  if (trimmed.startsWith("//") || trimmed.includes("://") || /[\s<>"']/.test(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+};
+
+/** Public site origin (router), derived from the OAuth redirect base. */
+export const publicSiteOrigin = (
+  env: Pick<Env, "OAUTH_REDIRECT_BASE_URL">,
+): string => new URL(oauthApiBaseUrl(env)).origin;
 
 export const isPublicOAuthRoute = (
   method: string,

@@ -17,6 +17,7 @@ import { Route as MangadexLibraryRouteImport } from './routes/mangadex-library'
 import { Route as OperationsRouteImport } from './routes/operations'
 import { Route as RegistryRouteImport } from './routes/registry'
 import { Route as RequestsRouteImport } from './routes/requests'
+import { Route as ApiAnilistCallbackRouteImport } from './routes/api.anilist.callback'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -58,6 +59,11 @@ const RequestsRoute = RequestsRouteImport.update({
   path: '/requests',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAnilistCallbackRoute = ApiAnilistCallbackRouteImport.update({
+  id: '/api/anilist/callback',
+  path: '/api/anilist/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -68,6 +74,7 @@ export interface FileRoutesByFullPath {
   '/operations': typeof OperationsRoute
   '/registry': typeof RegistryRoute
   '/requests': typeof RequestsRoute
+  '/api/anilist/callback': typeof ApiAnilistCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -78,6 +85,7 @@ export interface FileRoutesByTo {
   '/operations': typeof OperationsRoute
   '/registry': typeof RegistryRoute
   '/requests': typeof RequestsRoute
+  '/api/anilist/callback': typeof ApiAnilistCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -89,6 +97,7 @@ export interface FileRoutesById {
   '/operations': typeof OperationsRoute
   '/registry': typeof RegistryRoute
   '/requests': typeof RequestsRoute
+  '/api/anilist/callback': typeof ApiAnilistCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -101,6 +110,7 @@ export interface FileRouteTypes {
     | '/operations'
     | '/registry'
     | '/requests'
+    | '/api/anilist/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -111,6 +121,7 @@ export interface FileRouteTypes {
     | '/operations'
     | '/registry'
     | '/requests'
+    | '/api/anilist/callback'
   id:
     | '__root__'
     | '/'
@@ -121,6 +132,7 @@ export interface FileRouteTypes {
     | '/operations'
     | '/registry'
     | '/requests'
+    | '/api/anilist/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -132,6 +144,7 @@ export interface RootRouteChildren {
   OperationsRoute: typeof OperationsRoute
   RegistryRoute: typeof RegistryRoute
   RequestsRoute: typeof RequestsRoute
+  ApiAnilistCallbackRoute: typeof ApiAnilistCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -192,6 +205,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RequestsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/anilist/callback': {
+      id: '/api/anilist/callback'
+      path: '/api/anilist/callback'
+      fullPath: '/api/anilist/callback'
+      preLoaderRoute: typeof ApiAnilistCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -204,6 +224,7 @@ const rootRouteChildren: RootRouteChildren = {
   OperationsRoute: OperationsRoute,
   RegistryRoute: RegistryRoute,
   RequestsRoute: RequestsRoute,
+  ApiAnilistCallbackRoute: ApiAnilistCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

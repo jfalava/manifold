@@ -63,7 +63,9 @@ export function PageHeader({
       {(title || description) && (
         <div className="flex flex-col gap-2 py-3 pl-3">
           {title && (
-            <h1 className="font-heading text-3xl font-semibold text-kumo-default">{title}</h1>
+            <h1 className="font-heading text-3xl font-semibold tracking-tighter text-kumo-default uppercase">
+              {title}
+            </h1>
           )}
           {description && <p className="max-w-prose text-base text-kumo-subtle">{description}</p>}
         </div>

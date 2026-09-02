@@ -2,7 +2,7 @@ import { isJsonObject, isNumberValue, isStringValue } from "./guards";
 import type { MangaDexLibraryItem, MangaDexReadingStatus } from "./mangadex";
 import { trusted } from "./trusted-cast";
 
-const DB_NAME = "df-admin-mangadex";
+const DB_NAME = "manifold-admin-mangadex";
 const DB_VERSION = 1;
 const STORE_ENTRIES = "entries";
 const STORE_META = "meta";

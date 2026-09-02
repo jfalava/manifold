@@ -286,13 +286,10 @@ interface ChapterSourceInput {
 export const saveChapterSource = createServerFn({ method: "POST" })
   .validator((data: ChapterSourceInput) => data)
   .handler(async ({ data }) =>
-    call<{ ok: boolean }>(
-      `/v1/entries/${encodeURIComponent(data.entryId)}/chapter-source`,
-      {
-        method: "POST",
-        body: { chapterSource: data.chapterSource, origin: "admin" },
-      },
-    ),
+    call<{ ok: boolean }>(`/v1/entries/${encodeURIComponent(data.entryId)}/chapter-source`, {
+      method: "POST",
+      body: { chapterSource: data.chapterSource, origin: "admin" },
+    }),
   );
 
 interface BindInput {
@@ -521,6 +518,64 @@ export const loginMangaDex = createServerFn({ method: "POST" }).handler(
     return connection;
   },
 );
+
+/**
+ * MAL only — authorization-code flow works from Worker egress.
+ * AniList code exchange returns 403 on CF IPs; use importAniListToken instead.
+ */
+export const startMalOAuth = createServerFn({ method: "POST" }).handler(
+  async (): Promise<{ readonly authorizationUrl: string }> => {
+    const start = await call<{
+      readonly provider: "mal";
+      readonly authorizationUrl: string;
+    }>(
+      `/v1/auth/mal/start?return=${encodeURIComponent("/admin/credentials")}`,
+    );
+    if (!isStringValue(start.authorizationUrl) || start.authorizationUrl.length === 0) {
+      throw new Error("OAuth start for mal returned no authorization URL");
+    }
+    return { authorizationUrl: start.authorizationUrl };
+  },
+);
+
+/**
+ * Stores a browser-minted AniList access token on the personal DO.
+ * Token is obtained via AniList implicit OAuth (client 49218) or paste;
+ * the Worker never calls AniList's token endpoint.
+ */
+export const importAniListToken = createServerFn({ method: "POST" })
+  .validator((data: { accessToken: string; expiresIn?: number }) => data)
+  .handler(async ({ data }): Promise<AuthConnection> => {
+    const accessToken = data.accessToken.trim();
+    if (!accessToken) {
+      throw new Error("AniList access token is empty");
+    }
+    const connection = await call<AuthConnection>(
+      "/v1/auth/anilist/token",
+      data.expiresIn !== undefined && data.expiresIn > 0
+        ? { method: "POST", body: { accessToken, expiresIn: data.expiresIn } }
+        : { method: "POST", body: { accessToken } },
+    );
+    await invalidateCachedJson("library-overview:v1");
+    await invalidateCachedJson("library-overview:v2");
+    return connection;
+  });
+
+/**
+ * Public AniList client for browser/device implicit login (ADMIN_ANILIST_CLIENT_ID).
+ * Confidential 49060 rejects response_type=token. Tracker/Paperback use the same id.
+ * Registered redirect: https://manifold.jfa.dev/admin/api/anilist/callback
+ * Authorize URL matches AniList implicit docs + tracker OAuthButtonRow: no redirect_uri
+ * query param — AniList uses the app's registered redirect.
+ */
+export const ANILIST_IMPLICIT_CLIENT_ID = "49218";
+
+export const ANILIST_IMPLICIT_CALLBACK_PATH = "/admin/api/anilist/callback";
+
+/** Same shape as tracker OAuthButtonRow (clientId + response_type=token only). */
+export const anilistImplicitAuthorizeUrl = (): string =>
+  `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(ANILIST_IMPLICIT_CLIENT_ID)}` +
+  `&response_type=token`;
 
 export const disconnectAuth = createServerFn({ method: "POST" })
   .validator((data: { provider: AuthProvider }) => data)

@@ -418,12 +418,16 @@ function EventsTable({
       </div>
 
       {pager}
-      <DataTable table={table} emptyText="No events recorded." loading={loading} skeletonColumns={5} />
+      <DataTable
+        table={table}
+        emptyText="No events recorded."
+        loading={loading}
+        skeletonColumns={5}
+      />
       {pager}
     </div>
   );
 }
-
 
 // ------------------------------------------------------------------
 // Update failures (device Discover probes)
@@ -545,9 +549,7 @@ function UpdateFailuresTable({
         accessorKey: "detail",
         header: "Detail",
         enableSorting: false,
-        cell: ({ row }) => (
-          <span className="text-sm opacity-60">{row.original.detail ?? "—"}</span>
-        ),
+        cell: ({ row }) => <span className="text-sm opacity-60">{row.original.detail ?? "—"}</span>,
       },
     ],
     [],

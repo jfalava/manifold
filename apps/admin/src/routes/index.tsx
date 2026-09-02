@@ -7,11 +7,7 @@ import {
   LibraryWidgetsSkeleton,
   StatCardSkeleton,
 } from "../components/loading";
-import {
-  getAnalyticsSnapshot,
-  WORKER_CATALOG,
-  type AnalyticsSnapshot,
-} from "../lib/analytics";
+import { getAnalyticsSnapshot, WORKER_CATALOG, type AnalyticsSnapshot } from "../lib/analytics";
 import {
   getLibraryOverview,
   TRACKER_PROVIDERS,
@@ -77,11 +73,7 @@ function OverviewPage() {
         />
       )}
       {analytics.status === "error" && (
-        <Banner
-          variant="alert"
-          title="Analytics unavailable"
-          description={analytics.message}
-        />
+        <Banner variant="alert" title="Analytics unavailable" description={analytics.message} />
       )}
       {analytics.status === "ready" && !analytics.value.ok && (
         <Banner
@@ -135,9 +127,7 @@ function LibrarySection({ state }: { readonly state: LoadState<LibraryOverview> 
   const { registry, ops, mangadex } = parts;
   const attention = attentionCount(ops);
   const coverage =
-    registry !== null && registry.active > 0
-      ? percent(registry.fullyLinked, registry.active)
-      : "—";
+    registry !== null && registry.active > 0 ? percent(registry.fullyLinked, registry.active) : "—";
   const mangadexFooter =
     mangadex !== null && mangadex.rated > 0
       ? `${mangadex.rated.toLocaleString("en")} rated · mean ${(mangadex.meanRating ?? 0).toFixed(1)}/10`
@@ -477,4 +467,3 @@ function formatCount(value: number): string {
 function percent(part: number, whole: number): string {
   return `${((part / whole) * 100).toFixed(0)}%`;
 }
-

@@ -1,6 +1,93 @@
-/* app.css or main.css */
+/* Kumo + jfa.dev branding — fonts and violet primary from https://jfa.dev/branding/ */
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans/700.css";
+@import "@fontsource/zilla-slab/400.css";
+@import "@fontsource/zilla-slab/500.css";
+@import "@fontsource/zilla-slab/600.css";
+@import "@fontsource/zilla-slab/700.css";
+@import "@fontsource/google-sans-code/400.css";
+@import "@fontsource/google-sans-code/500.css";
+@import "@fontsource/google-sans-code/600.css";
+@import "@fontsource/google-sans-code/700.css";
+
 @source "../../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
 @import "@cloudflare/kumo/styles/tailwind";
 @import "tailwindcss";
 
-/* Your custom styles */
+@theme {
+  --font-sans:
+    "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-serif: "Zilla Slab", ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  --font-mono:
+    "Google Sans Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  --font-heading: var(--font-sans);
+
+  /* jfa primary violet — also used by non-Kumo utilities */
+  --color-primary: oklch(0.511 0.262 276.966);
+  --color-primary-foreground: oklch(0.985 0 0);
+}
+
+/*
+ * Override Kumo brand (primary action) with jfa violet.
+ * Selectors mirror theme-kumo.css so light/dark both pick up the brand.
+ */
+@layer base {
+  :root,
+  [data-theme="kumo"] {
+    --color-kumo-brand: oklch(0.511 0.262 276.966);
+    --color-kumo-brand-hover: oklch(0.45 0.24 276.966);
+    --text-color-kumo-brand: oklch(0.511 0.262 276.966);
+  }
+
+  :root[data-mode="dark"],
+  [data-mode="dark"]:not([data-theme]),
+  [data-mode="dark"] [data-theme="kumo"],
+  [data-theme="kumo"][data-mode="dark"],
+  [data-theme="kumo"] [data-mode="dark"] {
+    --color-kumo-brand: oklch(0.673 0.182 276.935);
+    --color-kumo-brand-hover: oklch(0.74 0.16 276.935);
+    --text-color-kumo-brand: oklch(0.673 0.182 276.935);
+    --color-primary: oklch(0.673 0.182 276.935);
+    --color-primary-foreground: oklch(0.15 0 0);
+  }
+
+  html {
+    @apply min-w-[320px] bg-kumo-canvas font-sans;
+  }
+
+  body {
+    @apply m-0 min-w-[320px] bg-kumo-canvas font-sans text-kumo-default antialiased;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  /* User-editable fields use the jfa serif title face */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  [contenteditable="true"] {
+    @apply font-serif;
+  }
+
+  /* SiteHeader actions — no dotted underlines on chrome links */
+  .site-header :where(a, button) {
+    text-decoration: none;
+  }
+}
+
+/* jfa title treatment — page titles only (not dialog/content h2–h3) */
+@layer base {
+  main h1,
+  .font-heading {
+    letter-spacing: -0.04em;
+    text-transform: uppercase;
+  }
+}

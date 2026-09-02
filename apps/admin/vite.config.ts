@@ -5,11 +5,7 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
 
-import {
-  agentIgnores,
-  antiSlopJsPlugins,
-  antiSlopRules,
-} from "../../oxlint.config.ts";
+import { agentIgnores, antiSlopJsPlugins, antiSlopRules } from "../../oxlint.config.ts";
 
 const MOUNT_PATH = "/admin/";
 

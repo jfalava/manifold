@@ -3,7 +3,6 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTable, type ColumnDef, type SortingState } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { MangaDexLibraryPending } from "../components/loading";
 import {
   adminTableFeatures,
   DataTable,
@@ -13,6 +12,7 @@ import {
   useClientPagination,
   type FilterToggleVariant,
 } from "../components/data-table";
+import { MangaDexLibraryPending } from "../components/loading";
 import {
   formatMangaDexStatus,
   MANGADEX_STATUSES,

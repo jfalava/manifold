@@ -17,6 +17,9 @@
       "name": "@manifold/admin",
       "dependencies": {
         "@cloudflare/kumo": "catalog:cloudflare",
+        "@fontsource/google-sans-code": "catalog:fonts",
+        "@fontsource/ibm-plex-sans": "catalog:fonts",
+        "@fontsource/zilla-slab": "catalog:fonts",
         "@phosphor-icons/react": "catalog:ui",
         "@tanstack/react-router": "catalog:tanstack",
         "@tanstack/react-start": "catalog:tanstack",
@@ -240,7 +243,6 @@
     },
     "source": {
       "name": "@manifold/source",
-      "version": "2026.9.1",
       "dependencies": {
         "@manifold/canonical": "workspace:*",
         "@manifold/json": "workspace:*",

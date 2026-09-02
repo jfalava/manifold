@@ -34,14 +34,23 @@ export type RegistryListEntry = CanonicalEntry & {
 };
 
 export interface ManifoldSyncStub {
-  createOAuthSession(provider: OAuthProvider, redirectUri: string): Promise<OAuthStart>;
+  createOAuthSession(
+    provider: OAuthProvider,
+    redirectUri: string,
+    returnPath?: string
+  ): Promise<OAuthStart>;
   completeOAuthSession(
     provider: OAuthProvider,
     state: string,
     code: string
-  ): Promise<AuthConnection>;
-  cancelOAuthSession(provider: OAuthProvider, state: string): Promise<void>;
+  ): Promise<AuthConnection & { readonly returnPath?: string }>;
+  cancelOAuthSession(provider: OAuthProvider, state: string): Promise<{ readonly returnPath?: string }>;
   loginMangaDex(): Promise<AuthConnection>;
+  importAuthToken(
+    provider: AuthProvider,
+    accessToken: string,
+    expiresIn?: number
+  ): Promise<AuthConnection>;
   listAuthConnections(): Promise<readonly AuthConnection[]>;
   getAuthConnection(provider: AuthProvider): Promise<AuthConnection>;
   disconnectAuth(provider: AuthProvider): Promise<void>;

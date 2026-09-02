@@ -101,7 +101,11 @@ export class ManifoldSync extends DurableObject<Env> {
     });
   }
 
-  async createOAuthSession(provider: OAuthProvider, redirectUri: string): Promise<OAuthStart> {
+  async createOAuthSession(
+    provider: OAuthProvider,
+    redirectUri: string,
+    returnPath?: string
+  ): Promise<OAuthStart> {
     const config = await getOAuthClientConfig(provider, this.env);
     const state = createRandomValue();
     const codeVerifier = config.pkceMethod ? createRandomValue(48) : undefined;
@@ -114,12 +118,13 @@ export class ManifoldSync extends DurableObject<Env> {
     this.ctx.storage.sql.exec("DELETE FROM oauth_sessions WHERE created_at < ?", now() - 600_000);
     this.ctx.storage.sql.exec(
       `INSERT INTO oauth_sessions
-         (provider, state, code_verifier, redirect_uri, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
+         (provider, state, code_verifier, redirect_uri, return_path, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       provider,
       state,
       codeVerifier ?? null,
       redirectUri,
+      returnPath ?? null,
       now()
     );
 
@@ -133,7 +138,7 @@ export class ManifoldSync extends DurableObject<Env> {
     provider: OAuthProvider,
     state: string,
     code: string
-  ): Promise<AuthConnection> {
+  ): Promise<AuthConnection & { readonly returnPath?: string }> {
     const session = this.ctx.storage.sql
       .exec<OAuthSessionRow>(
         `SELECT * FROM oauth_sessions
@@ -145,6 +150,8 @@ export class ManifoldSync extends DurableObject<Env> {
       .toArray()[0];
 
     if (!session) {throw new Error("OAuth session is invalid or expired");}
+
+    const returnPath = session.return_path ?? undefined;
 
     // Consume the state before external I/O so a callback cannot be replayed.
     this.ctx.storage.sql.exec(
@@ -175,15 +182,28 @@ export class ManifoldSync extends DurableObject<Env> {
     const token = await Effect.runPromise(
       Schema.decodeUnknownEffect(OAuthTokenResponseSchema)(await response.json())
     );
-    return this.persistToken(provider, token);
+    const connection = await this.persistToken(provider, token);
+    return returnPath ? { ...connection, returnPath } : connection;
   }
 
-  async cancelOAuthSession(provider: OAuthProvider, state: string): Promise<void> {
+  async cancelOAuthSession(
+    provider: OAuthProvider,
+    state: string
+  ): Promise<{ readonly returnPath?: string }> {
+    const session = this.ctx.storage.sql
+      .exec<OAuthSessionRow>(
+        `SELECT return_path FROM oauth_sessions WHERE provider = ? AND state = ?`,
+        provider,
+        state
+      )
+      .toArray()[0];
     this.ctx.storage.sql.exec(
       "DELETE FROM oauth_sessions WHERE provider = ? AND state = ?",
       provider,
       state
     );
+    const returnPath = session?.return_path ?? undefined;
+    return returnPath ? { returnPath } : {};
   }
 
   async loginMangaDex(): Promise<AuthConnection> {
@@ -224,6 +244,33 @@ export class ManifoldSync extends DurableObject<Env> {
       console.error(`[ManifoldSync] failed to schedule MangaDex sync: ${errorMessage(error)}`);
     }
     return connection;
+  }
+
+  /**
+   * Stores a bearer access token minted outside the Worker (browser implicit
+   * OAuth or paste). AniList blocks Worker egress for code exchange and GraphQL;
+   * the DO still needs the encrypted token for device-drain coordination and
+   * connection status in admin.
+   */
+  async importAuthToken(
+    provider: AuthProvider,
+    accessToken: string,
+    expiresIn?: number
+  ): Promise<AuthConnection> {
+    const token = accessToken.trim();
+    if (!token) {
+      throw new Error("Access token is empty");
+    }
+    if (provider !== "anilist" && provider !== "mal") {
+      throw new Error(`Token import is not supported for ${provider}`);
+    }
+    const payload: {
+      readonly access_token: string;
+      readonly expires_in?: number;
+    } = expiresIn !== undefined && expiresIn > 0
+      ? { access_token: token, expires_in: expiresIn }
+      : { access_token: token };
+    return this.persistToken(provider, payload);
   }
 
   async listAuthConnections(): Promise<readonly AuthConnection[]> {
@@ -1877,6 +1924,13 @@ export class ManifoldSync extends DurableObject<Env> {
     } catch {
       // Column already exists.
     }
+    try {
+      this.ctx.storage.sql.exec(
+        "ALTER TABLE oauth_sessions ADD COLUMN return_path TEXT"
+      );
+    } catch {
+      // Column already exists.
+    }
     this.ctx.storage.sql.exec(`
       CREATE TABLE IF NOT EXISTS provider_links (
         entry_id TEXT NOT NULL REFERENCES canonical_entries(id) ON DELETE CASCADE,
@@ -1925,6 +1979,7 @@ export class ManifoldSync extends DurableObject<Env> {
         state TEXT NOT NULL,
         code_verifier TEXT,
         redirect_uri TEXT NOT NULL,
+        return_path TEXT,
         created_at INTEGER NOT NULL,
         PRIMARY KEY (provider, state)
       );

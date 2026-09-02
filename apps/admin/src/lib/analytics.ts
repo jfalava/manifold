@@ -21,11 +21,7 @@ const CACHE_WINDOW_HOURS = 23;
 const ZONE_NAME = "jfa.dev";
 const PUBLIC_HOSTNAME = "manifold.jfa.dev";
 
-export type LogicalWorker =
-  | "ManifoldRouter"
-  | "ManifoldApi"
-  | "ManifoldDocs"
-  | "manifold-admin";
+export type LogicalWorker = "ManifoldRouter" | "ManifoldApi" | "ManifoldDocs" | "manifold-admin";
 
 export type WorkerKind = "worker" | "static-site";
 

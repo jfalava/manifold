@@ -96,6 +96,7 @@ export interface OAuthSessionRow extends Record<string, SqlStorageValue> {
   state: string;
   code_verifier: string | null;
   redirect_uri: string;
+  return_path: string | null;
   created_at: number;
 }
 

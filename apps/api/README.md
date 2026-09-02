@@ -70,12 +70,28 @@ DELETE /api/v1/auth/mal
 POST   /api/v1/auth/mangadex/login
 GET    /api/v1/auth/mangadex
 DELETE /api/v1/auth/mangadex
+POST   /api/v1/auth/anilist/token
 ```
 
 `/start` and connection management require `Authorization: Bearer
 <MANIFOLD_TOKEN>`. The callback is intentionally unauthenticated but is
 accepted only when its one-time, expiring OAuth state matches the Durable
 Object record.
+
+`GET /v1/auth/{anilist|mal}/start` returns a 302 to the provider by default.
+Clients that send `Accept: application/json` receive `{ provider, authorizationUrl }`
+instead. An optional `?return=/admin/...` path is stored on the OAuth session;
+after MAL callback the browser is redirected there with
+`?oauth=connected|denied&provider=...`.
+
+AniList blocks Cloudflare Worker IPs on the token endpoint (403). Admin/tracker
+use the same implicit client as Paperback (`49218`): authorize URL is
+`client_id=49218&response_type=token` only (AniList docs / OAuthButtonRow). The
+app's registered redirect is `https://manifold.jfa.dev/admin/api/anilist/callback`,
+where the browser reads `#access_token=` and POSTs
+`/v1/auth/anilist/token`. Confidential client `49060` is code-flow only and
+rejects `response_type=token` (`unsupported_grant_type`). Pin URL only works if
+the app's registered redirect is exactly `https://anilist.co/api/v2/oauth/pin`.
 
 MangaDex login uses the credentials in `iac/.env` only when this authenticated
 endpoint is called:

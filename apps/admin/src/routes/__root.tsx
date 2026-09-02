@@ -1,11 +1,15 @@
-import { Badge, Button, Sidebar, SidebarTrigger, Text } from "@cloudflare/kumo";
+import { Button, DropdownMenu, LinkButton, Sidebar } from "@cloudflare/kumo";
 import {
+  ArrowSquareOut,
   Books,
   BookmarkSimple,
   CloudArrowUp,
+  Code,
   Database,
   Gauge,
+  House,
   Key,
+  List,
   ListChecks,
   Monitor,
   Moon,
@@ -19,13 +23,17 @@ import {
   Scripts,
   useRouterState,
 } from "@tanstack/react-router";
-import { useSyncExternalStore, type ComponentType } from "react";
+import { useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 
 import "../styles/globals.css";
 
 const themeScript = `(function(){try{var p=localStorage.getItem("theme-mode");var m=p;if(p==="system"||p!=="light"&&p!=="dark"){m=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.dataset.mode=m;document.documentElement.style.colorScheme=m;}catch(e){}})()`;
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const GITHUB_HREF = "https://github.com/jfalava/manifold";
+const BRAND_TITLE = "MANIFOLD";
+const BRAND_SUBTITLE = "admin";
+const DOCUMENT_TITLE = "MANIFOLD admin";
 
 interface NavItem {
   label: string;
@@ -76,8 +84,16 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Manga Sync admin" },
+      { title: DOCUMENT_TITLE },
+      {
+        name: "description",
+        content:
+          "Manifold admin — library, sync operations, and infrastructure on manifold.jfa.dev.",
+      },
+      { name: "theme-color", content: "oklch(0.511 0.262 276.966)" },
+      { name: "author", content: "Jorge Fernando Álava" },
     ],
+    links: [{ rel: "me", href: "https://github.com/jfalava" }],
   }),
   component: RootDocument,
 });
@@ -98,27 +114,100 @@ function RootDocument() {
   );
 }
 
+/**
+ * jfa SiteHeader (full-bleed) — matches common/site-header anatomy with Kumo
+ * primitives instead of react-aria. Always outside the max-w-screen-2xl shell.
+ */
+function SiteHeader({ children }: { readonly children?: ReactNode }) {
+  return (
+    <header className="site-header sticky top-0 z-30 shrink-0 border-b border-kumo-line bg-kumo-canvas">
+      <div className="flex min-h-11 items-center justify-between gap-4 px-2 sm:gap-6 sm:px-3 lg:gap-8 lg:px-4">
+        <div className="flex min-w-0 items-center gap-1">
+          <LinkButton
+            href={`${base}/`}
+            aria-label="Home"
+            variant="ghost"
+            size="sm"
+            // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- external Kumo Button prop; not an owned symbol
+            shape="square"
+            icon={House}
+            className="text-kumo-subtle hover:text-kumo-default"
+          />
+          <a
+            href={`${base}/`}
+            aria-label={`${BRAND_TITLE} by JFA`}
+            className="flex min-w-0 items-baseline gap-3 truncate no-underline lg:pr-4"
+          >
+            <span className="shrink-0 text-sm font-bold tracking-tight text-kumo-brand">
+              <span className="hidden sm:inline">/{BRAND_TITLE}</span>
+              <span className="inline sm:hidden">/{BRAND_TITLE}</span>
+              <span className="hidden pl-0.5 text-xs tracking-tight sm:inline">by JFA</span>
+            </span>
+            <span className="hidden text-[11px] text-kumo-subtle/75 sm:inline">/</span>
+            <span className="hidden truncate text-[11px] text-kumo-subtle sm:inline">
+              {BRAND_SUBTITLE}
+            </span>
+          </a>
+        </div>
+
+        <nav className="flex shrink-0 items-center gap-1" aria-label="Admin navigation">
+          {children}
+          <LinkButton
+            href={GITHUB_HREF}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="View source on GitHub"
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 px-2 text-kumo-subtle hover:text-kumo-default"
+          >
+            <Code className="size-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Source</span>
+            <ArrowSquareOut className="hidden size-4 lg:inline" aria-hidden="true" />
+          </LinkButton>
+        </nav>
+      </div>
+    </header>
+  );
+}
+
 function DashboardShell() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
+  // Controlled so the full-bleed SiteHeader can toggle without nesting inside
+  // Sidebar.Provider (contained mode positions the rail absolute to the wrapper).
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
-    <div className="min-h-svh">
-      <div className="mx-auto flex h-svh max-w-screen-2xl border-x border-kumo-line">
-        <Sidebar.Provider collapsible="icon" defaultOpen contained className="h-full min-h-0">
-          <Sidebar className="h-full">
-            <Sidebar.Header>
-              <div className="flex w-full items-center gap-2">
-                <SidebarTrigger />
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <Text as="span" bold>
-                    Manga Sync
-                  </Text>
-                  <Badge variant="beta">admin</Badge>
-                </div>
-              </div>
-            </Sidebar.Header>
+    <div className="flex min-h-svh flex-col">
+      {/* Full-bleed header — never nested inside the content frame */}
+      <SiteHeader>
+        <ThemeToggle />
+        <Button
+          variant="ghost"
+          size="sm"
+          // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- external Kumo Button prop; not an owned symbol
+          shape="square"
+          icon={List}
+          aria-label={sidebarOpen ? "Collapse navigation" : "Open navigation"}
+          aria-expanded={sidebarOpen}
+          aria-controls="admin-sidebar"
+          className="text-kumo-subtle hover:text-kumo-default"
+          onClick={() => setSidebarOpen((open) => !open)}
+        />
+      </SiteHeader>
+
+      {/* Centered application canvas with vertical rules (jfa layout frame) */}
+      <div className="mx-auto flex min-h-0 w-full max-w-screen-2xl flex-1 border-x border-kumo-line">
+        <Sidebar.Provider
+          collapsible="icon"
+          contained
+          open={sidebarOpen}
+          onOpenChange={setSidebarOpen}
+          className="h-full min-h-0"
+        >
+          <Sidebar id="admin-sidebar" className="h-full border-r-0">
             <Sidebar.Content>
               {navGroups.map((group) => (
                 <Sidebar.Group key={group.label}>
@@ -146,9 +235,6 @@ function DashboardShell() {
                 </Sidebar.Group>
               ))}
             </Sidebar.Content>
-            <Sidebar.Footer className="h-auto min-h-12 py-2">
-              <ThemeToggle />
-            </Sidebar.Footer>
             <Sidebar.Rail />
           </Sidebar>
           <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
@@ -225,41 +311,61 @@ function subscribeThemeMode(onChange: () => void): () => void {
   };
 }
 
+const themeLabels = {
+  light: "Light",
+  dark: "Dark",
+  system: "System",
+} as const satisfies Record<ThemeMode, string>;
+
+/** Header theme control — matches jfa ThemeToggle (icon + label, dropdown). */
 function ThemeToggle() {
-  const preference = useSyncExternalStore(subscribeThemeMode, getStoredTheme, () => "system");
+  const preference: ThemeMode = useSyncExternalStore(
+    subscribeThemeMode,
+    getStoredTheme,
+    (): ThemeMode => "system",
+  );
+
+  const ThemeIcon = preference === "light" ? Sun : preference === "dark" ? Moon : Monitor;
+  const label = themeLabels[preference];
 
   return (
-    <div className="flex items-center gap-1">
-      <Button
-        variant={preference === "light" ? "primary" : "ghost"}
-        size="sm"
-        // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- external Kumo Button prop; not an owned symbol
-        shape="square"
-        icon={Sun}
-        aria-label="Light mode"
-        aria-pressed={preference === "light"}
-        onClick={() => applyThemeMode("light")}
+    <DropdownMenu>
+      <DropdownMenu.Trigger
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 px-2 text-kumo-subtle hover:text-kumo-default"
+            aria-label={`Theme: ${label}`}
+          >
+            <ThemeIcon className="size-4" aria-hidden="true" />
+            <span className="hidden sm:inline">{label}</span>
+          </Button>
+        }
       />
-      <Button
-        variant={preference === "dark" ? "primary" : "ghost"}
-        size="sm"
-        // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- external Kumo Button prop; not an owned symbol
-        shape="square"
-        icon={Moon}
-        aria-label="Dark mode"
-        aria-pressed={preference === "dark"}
-        onClick={() => applyThemeMode("dark")}
-      />
-      <Button
-        variant={preference === "system" ? "primary" : "ghost"}
-        size="sm"
-        // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- external Kumo Button prop; not an owned symbol
-        shape="square"
-        icon={Monitor}
-        aria-label="System mode"
-        aria-pressed={preference === "system"}
-        onClick={() => applyThemeMode("system")}
-      />
-    </div>
+      <DropdownMenu.Content>
+        <DropdownMenu.Item
+          icon={Sun}
+          selected={preference === "light"}
+          onClick={() => applyThemeMode("light")}
+        >
+          Light
+        </DropdownMenu.Item>
+        <DropdownMenu.Item
+          icon={Moon}
+          selected={preference === "dark"}
+          onClick={() => applyThemeMode("dark")}
+        >
+          Dark
+        </DropdownMenu.Item>
+        <DropdownMenu.Item
+          icon={Monitor}
+          selected={preference === "system"}
+          onClick={() => applyThemeMode("system")}
+        >
+          System
+        </DropdownMenu.Item>
+      </DropdownMenu.Content>
+    </DropdownMenu>
   );
 }

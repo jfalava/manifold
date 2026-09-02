@@ -1,5 +1,5 @@
 /**
- * df-admin bindings deployed via iac/alchemy.run.ts. Augments the global
+ * manifold-admin bindings deployed via iac/alchemy.run.ts. Augments the global
  * `Cloudflare.Env` from @cloudflare/workers-types — the same shape
  * `wrangler types` generates. Keep in sync when bindings change.
  *
