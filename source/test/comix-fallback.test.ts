@@ -4,7 +4,9 @@ import type { SourceManga } from "@paperback/types";
 import type { JsonObject } from "@manifold/json";
 import {
   chapterItemsFromCapture,
+  clearanceCookiesOnly,
   isComixChapterId,
+  normalizeClearanceCookie,
   pickComixMatch,
   rawComixChapterId,
   toSyncComixChapters,
@@ -94,5 +96,54 @@ describe("toSyncComixChapters", () => {
     expect(isComixChapterId("comix:8295088")).toBe(true);
     expect(isComixChapterId("df2e5603-uuid")).toBe(false);
     expect(rawComixChapterId("comix:8295088")).toBe("8295088");
+  });
+});
+
+describe("normalizeClearanceCookie", () => {
+  it("pins empty domain to comix.to so CookieStorage can attach it", () => {
+    const cookie = normalizeClearanceCookie({
+      name: "cf_clearance",
+      value: "abc",
+      domain: "",
+      path: "/",
+    });
+    expect(cookie).toEqual({
+      name: "cf_clearance",
+      value: "abc",
+      domain: "comix.to",
+      path: "/",
+    });
+  });
+
+  it("keeps leading-dot comix domains and drops foreign hosts", () => {
+    expect(
+      normalizeClearanceCookie({
+        name: "cf_clearance",
+        value: "x",
+        domain: ".comix.to",
+      })?.domain,
+    ).toBe("comix.to");
+    expect(
+      normalizeClearanceCookie({
+        name: "cf_clearance",
+        value: "x",
+        domain: "mangadex.org",
+      }),
+    ).toBeUndefined();
+    expect(
+      normalizeClearanceCookie({ name: "cf_clearance", value: "", domain: "comix.to" }),
+    ).toBeUndefined();
+  });
+
+  it("filters clearanceCookiesOnly to normalized unique values", () => {
+    const cookies = clearanceCookiesOnly([
+      { name: "session", value: "1", domain: "comix.to" },
+      { name: "cf_clearance", value: "tok", domain: "" },
+      { name: "cf_clearance", value: "tok", domain: "comix.to" },
+      { name: "cf_clearance", value: "other", domain: "evil.test" },
+    ]);
+    expect(cookies).toEqual([
+      { name: "cf_clearance", value: "tok", domain: "comix.to", path: "/" },
+    ]);
   });
 });

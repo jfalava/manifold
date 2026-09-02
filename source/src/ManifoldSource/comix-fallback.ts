@@ -169,8 +169,55 @@ export interface ComixSession {
 // Login/session cookies make comix demand CSRF tokens; only clearance is
 // useful for anonymous device-side traffic. Capture write-backs must not
 // replace a good jar with the full WebView store.
-const clearanceCookiesOnly = (cookies: readonly Cookie[]): Cookie[] =>
-  cookies.filter((cookie) => cookie.name === "cf_clearance" && cookie.value.length > 0);
+// Harvested cf_clearance sometimes arrives with an empty domain; CookieStorage
+// then never attaches it to comix.to requests. Always pin domain/path.
+const COMIX_COOKIE_HOST = "comix.to";
+
+export const normalizeClearanceCookie = (cookie: Cookie): Cookie | undefined => {
+  const value = cookie.value?.trim() ?? "";
+  if (cookie.name !== "cf_clearance" || value.length === 0) {return undefined;}
+  const domainRaw = (cookie.domain ?? "").trim().replace(/^\./, "").toLowerCase();
+  // Shared WK store is multi-domain — keep only comix.to clearance.
+  if (
+    domainRaw.length > 0 &&
+    domainRaw !== COMIX_COOKIE_HOST &&
+    !domainRaw.endsWith(`.${COMIX_COOKIE_HOST}`)
+  ) {
+    return undefined;
+  }
+  const domain =
+    domainRaw.length === 0
+      ? COMIX_COOKIE_HOST
+      : domainRaw.replace(/^www\./, "") || COMIX_COOKIE_HOST;
+  const pathRaw = cookie.path && cookie.path.length > 0 ? cookie.path : "/";
+  const path = pathRaw.startsWith("/") ? pathRaw : `/${pathRaw}`;
+  return {
+    name: "cf_clearance",
+    value,
+    domain,
+    path,
+    ...(cookie.expires instanceof Date && !Number.isNaN(cookie.expires.getTime())
+      ? { expires: cookie.expires }
+      : {}),
+    ...(cookie.created instanceof Date && !Number.isNaN(cookie.created.getTime())
+      ? { created: cookie.created }
+      : {}),
+  };
+};
+
+export const clearanceCookiesOnly = (cookies: readonly Cookie[]): Cookie[] => {
+  const out: Cookie[] = [];
+  const seen = new Set<string>();
+  for (const cookie of cookies) {
+    const normalized = normalizeClearanceCookie(cookie);
+    if (!normalized) {continue;}
+    const key = `${normalized.value}|${normalized.domain}|${normalized.path}`;
+    if (seen.has(key)) {continue;}
+    seen.add(key);
+    out.push(normalized);
+  }
+  return out;
+};
 
 /** Merge clearance from a WebView round-trip without wiping or adding junk. */
 const adoptClearanceCookies = (
@@ -211,16 +258,17 @@ const clearanceHeader = (cookies: readonly Cookie[]): Record<string, string> => 
 const CHALLENGE_COOLDOWN_MS = 45_000;
 let comixCooldownUntil = 0;
 // Set when captures prove the WebView session is broken (no page state) and
-// self-healing failed; every queued capture then fails fast until a bypass
-// completes or a capture succeeds again.
-let sessionBroken = false;
+// self-healing failed. Must expire with the cooldown — a permanent flag plus
+// Discover soft-fail left My Updates · Comix empty forever after one miss
+// while hasComixBrowserSession() still skipped the bypass banner.
+let sessionBrokenUntil = 0;
 
 export const comixChallenged = (): boolean =>
-  Date.now() < comixCooldownUntil || sessionBroken;
+  Date.now() < Math.max(comixCooldownUntil, sessionBrokenUntil);
 
 export const resetComixCooldown = (): void => {
   comixCooldownUntil = 0;
-  sessionBroken = false;
+  sessionBrokenUntil = 0;
 };
 
 const requestHtml = async (
@@ -348,7 +396,7 @@ const captureViaSiteBundle = async (
     }`,
   );
   if (hasPayload(wrapped)) {
-    sessionBroken = false;
+    sessionBrokenUntil = 0;
     return wrapped.r;
   }
   // No payload at all: either the inject never settled (killed webview) or
@@ -366,10 +414,10 @@ const captureViaSiteBundle = async (
     wrapped = await attempt();
   }
   if (hasPayload(wrapped)) {
-    sessionBroken = false;
+    sessionBrokenUntil = 0;
     return wrapped.r;
   }
-  sessionBroken = true;
+  sessionBrokenUntil = Date.now() + CHALLENGE_COOLDOWN_MS;
   comixCooldownUntil = Date.now() + CHALLENGE_COOLDOWN_MS;
   throw new CloudflareError(
     {

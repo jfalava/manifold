@@ -80,6 +80,8 @@ import {
   type UpdateCard,
 } from "./discover-sections.js";
 import {
+  clearanceCookiesOnly,
+  comixChallenged,
   createComixFallback,
   isComixChapterId,
   resetComixCooldown,
@@ -130,8 +132,7 @@ const COMIX_ORIGIN_HOST = "comix.to";
 
 // Session/login cookies make comix.to's backend demand CSRF tokens on its
 // API ("Missing token."); anonymous access needs only the clearance cookie.
-const clearanceCookiesOnly = (cookies: readonly Cookie[]): Cookie[] =>
-  cookies.filter((cookie) => cookie.name === "cf_clearance");
+// clearanceCookiesOnly (comix-fallback) also pins empty domains to comix.to.
 
 // CookieStorageInterceptor only persists cookies with `expires` (stateManager
 // filters `cookies.filter(x=>x.expires)`), so a session cf_clearance would be
@@ -140,12 +141,15 @@ const clearanceCookiesOnly = (cookies: readonly Cookie[]): Cookie[] =>
 const CF_CLEARANCE_PERSIST_KEY = "manifold-cf-clearance-v1";
 const COMIX_SESSION_ACTION_KEY = "manifold-comix-session-action-v1";
 const persistCfClearance = (cookies: readonly Cookie[]): void => {
-  const hit = cookies.find((cookie) => cookie.name === "cf_clearance");
+  const hit = clearanceCookiesOnly(cookies)[0];
   if (!hit) {return;}
   try {
     Application.setState(
       JSON.stringify({
-        ...hit,
+        name: hit.name,
+        value: hit.value,
+        domain: hit.domain,
+        path: hit.path ?? "/",
         expires: hit.expires instanceof Date ? hit.expires.toISOString() : hit.expires,
       }),
       CF_CLEARANCE_PERSIST_KEY,
@@ -558,12 +562,8 @@ export class ManifoldSourceImpl implements
 
   private comixClearanceCookie(): Cookie | undefined {
     const now = Date.now();
-    return this.cookieStorage.cookies.find((cookie) => {
-      if (cookie.name !== "cf_clearance" || !cookie.value) {return false;}
-      const domain = cookie.domain ?? COMIX_ORIGIN_HOST;
-      if (domain !== COMIX_ORIGIN_HOST && !domain.endsWith(`.${COMIX_ORIGIN_HOST}`)) {
-        return false;
-      }
+    // Jar is clearance-only + domain-normalized on every write.
+    return clearanceCookiesOnly(this.cookieStorage.cookies).find((cookie) => {
       if (cookie.expires instanceof Date && !Number.isNaN(cookie.expires.getTime())) {
         return cookie.expires.getTime() > now;
       }
@@ -1263,16 +1263,30 @@ export class ManifoldSourceImpl implements
     // Only force the bypass sheet when we have no clearance at all. Mid-board
     // challenges soft-fail per card (Discover often omits the banner). Use
     // Settings `force` / `adopt` when the board stays empty after a solve.
-    if (section.id === "my-updates-comix" && !this.hasComixBrowserSession()) {
-      console.log("[manifold] comix updates: no cf_clearance — requesting bypass");
-      throw new CloudflareError(
-        await comixBypassRequest(),
-        "Comix Cloudflare check required — complete the browser challenge",
-      );
-    }
+    // Before throwing, try once to pull clearance from the shared WK store —
+    // the app harvest often dies with WKError right after a successful solve
+    // and leaves cf_clearance only in that store, so the next open would
+    // otherwise re-prompt forever even though the challenge already stuck.
     if (section.id === "my-updates-comix") {
+      // Prefer a silent adopt from the shared WK store before throwing the
+      // banner — the app harvest often dies with WKError right after a solve
+      // and leaves cf_clearance only in that store, so the next open would
+      // otherwise re-prompt forever even though the challenge already stuck.
+      if (!this.hasComixBrowserSession()) {
+        const adopted = await this.adoptComixClearanceFromStore();
+        console.log(
+          `[manifold] comix updates: adopt before board=${adopted} session=${this.hasComixBrowserSession()}`,
+        );
+      }
+      if (!this.hasComixBrowserSession()) {
+        console.log("[manifold] comix updates: no cf_clearance — requesting bypass");
+        throw new CloudflareError(
+          await comixBypassRequest(),
+          "Comix Cloudflare check required — complete the browser challenge",
+        );
+      }
       console.log(
-        `[manifold] comix updates: session=${this.hasComixBrowserSession() ? "ok" : "missing"}`,
+        `[manifold] comix updates: session=${this.hasComixBrowserSession() ? "ok" : "missing"} challenged=${comixChallenged()}`,
       );
     }
     const context =
