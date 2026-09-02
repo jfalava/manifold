@@ -29,32 +29,42 @@
   /* jfa primary violet — also used by non-Kumo utilities */
   --color-primary: oklch(0.511 0.262 276.966);
   --color-primary-foreground: oklch(0.985 0 0);
+
+  /*
+   * Kumo brand tokens default to CF orange (#f6821f). Override in @theme
+   * (unlayered) so they beat theme-kumo.css — @layer base alone loses that fight.
+   */
+  --color-kumo-brand: oklch(0.511 0.262 276.966);
+  --color-kumo-brand-hover: oklch(0.45 0.24 276.966);
+  --text-color-kumo-brand: oklch(0.511 0.262 276.966);
 }
 
 /*
  * Override Kumo brand (primary action) with jfa violet.
- * Selectors mirror theme-kumo.css so light/dark both pick up the brand.
+ * Selectors mirror theme-kumo.css. Unlayered so they beat Kumo's @layer base
+ * orange text token; dark mode still needs data-mode selectors.
  */
+/* Unlayered — must beat Kumo @layer base orange (#f6821f) on :root / data-theme. */
+:root,
+[data-theme="kumo"] {
+  --color-kumo-brand: oklch(0.511 0.262 276.966);
+  --color-kumo-brand-hover: oklch(0.45 0.24 276.966);
+  --text-color-kumo-brand: oklch(0.511 0.262 276.966);
+}
+
+:root[data-mode="dark"],
+[data-mode="dark"]:not([data-theme]),
+[data-mode="dark"] [data-theme="kumo"],
+[data-theme="kumo"][data-mode="dark"],
+[data-theme="kumo"] [data-mode="dark"] {
+  --color-kumo-brand: oklch(0.673 0.182 276.935);
+  --color-kumo-brand-hover: oklch(0.74 0.16 276.935);
+  --text-color-kumo-brand: oklch(0.673 0.182 276.935);
+  --color-primary: oklch(0.673 0.182 276.935);
+  --color-primary-foreground: oklch(0.15 0 0);
+}
+
 @layer base {
-  :root,
-  [data-theme="kumo"] {
-    --color-kumo-brand: oklch(0.511 0.262 276.966);
-    --color-kumo-brand-hover: oklch(0.45 0.24 276.966);
-    --text-color-kumo-brand: oklch(0.511 0.262 276.966);
-  }
-
-  :root[data-mode="dark"],
-  [data-mode="dark"]:not([data-theme]),
-  [data-mode="dark"] [data-theme="kumo"],
-  [data-theme="kumo"][data-mode="dark"],
-  [data-theme="kumo"] [data-mode="dark"] {
-    --color-kumo-brand: oklch(0.673 0.182 276.935);
-    --color-kumo-brand-hover: oklch(0.74 0.16 276.935);
-    --text-color-kumo-brand: oklch(0.673 0.182 276.935);
-    --color-primary: oklch(0.673 0.182 276.935);
-    --color-primary-foreground: oklch(0.15 0 0);
-  }
-
   html {
     @apply min-w-[320px] bg-kumo-canvas font-sans;
   }

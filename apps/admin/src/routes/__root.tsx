@@ -16,6 +16,7 @@ import {
   Queue,
   Sun,
 } from "@phosphor-icons/react";
+import { formatForDisplay, HotkeysProvider, useHotkey } from "@tanstack/react-hotkeys";
 import {
   createRootRoute,
   HeadContent,
@@ -23,7 +24,12 @@ import {
   Scripts,
   useRouterState,
 } from "@tanstack/react-router";
-import { useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
+import {
+  useState,
+  useSyncExternalStore,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 
 import "../styles/globals.css";
 
@@ -34,6 +40,22 @@ const GITHUB_HREF = "https://github.com/jfalava/manifold";
 const BRAND_TITLE = "MANIFOLD";
 const BRAND_SUBTITLE = "admin";
 const DOCUMENT_TITLE = "MANIFOLD admin";
+const SIDEBAR_HOTKEY = "Mod+B";
+
+const SIDEBAR_SHORTCUT_SSR = formatForDisplay(SIDEBAR_HOTKEY, { platform: "windows" });
+
+function subscribeSidebarShortcut(): () => void {
+  // Platform is fixed for the session; nothing to subscribe to.
+  return () => undefined;
+}
+
+function getSidebarShortcut(): string {
+  return formatForDisplay(SIDEBAR_HOTKEY);
+}
+
+function getSidebarShortcutServer(): string {
+  return SIDEBAR_SHORTCUT_SSR;
+}
 
 interface NavItem {
   label: string;
@@ -107,7 +129,13 @@ function RootDocument() {
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
-        <DashboardShell />
+        <HotkeysProvider
+          defaultOptions={{
+            hotkey: { preventDefault: true },
+          }}
+        >
+          <DashboardShell />
+        </HotkeysProvider>
         <Scripts />
       </body>
     </html>
@@ -116,7 +144,7 @@ function RootDocument() {
 
 /**
  * jfa SiteHeader (full-bleed) — matches common/site-header anatomy with Kumo
- * primitives instead of react-aria. Always outside the max-w-screen-2xl shell.
+ * primitives instead of react-aria. Full-bleed above the left-rail + content row.
  */
 function SiteHeader({ children }: { readonly children?: ReactNode }) {
   return (
@@ -179,35 +207,60 @@ function DashboardShell() {
   // Sidebar.Provider (contained mode positions the rail absolute to the wrapper).
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
+  useHotkey(
+    SIDEBAR_HOTKEY,
+    () => {
+      setSidebarOpen((open) => !open);
+    },
+    {
+      meta: { name: "Toggle sidebar", description: "Open or close the admin navigation" },
+    },
+  );
+
+  const sidebarLabel = sidebarOpen ? "Collapse sidebar" : "Open sidebar";
+  const sidebarShortcut = useSyncExternalStore(
+    subscribeSidebarShortcut,
+    getSidebarShortcut,
+    getSidebarShortcutServer,
+  );
+
   return (
-    <div className="flex min-h-svh flex-col">
+    <div className="flex h-svh flex-col overflow-hidden">
       {/* Full-bleed header — never nested inside the content frame */}
       <SiteHeader>
         <ThemeToggle />
         <Button
           variant="ghost"
           size="sm"
-          // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- external Kumo Button prop; not an owned symbol
-          shape="square"
           icon={List}
-          aria-label={sidebarOpen ? "Collapse navigation" : "Open navigation"}
+          aria-label={`${sidebarLabel} (${sidebarShortcut})`}
+          aria-keyshortcuts="Control+B Meta+B"
           aria-expanded={sidebarOpen}
           aria-controls="admin-sidebar"
-          className="text-kumo-subtle hover:text-kumo-default"
+          className="gap-1.5 px-2 text-kumo-subtle hover:text-kumo-default"
           onClick={() => setSidebarOpen((open) => !open)}
-        />
+        >
+          <span className="hidden sm:inline">{sidebarOpen ? "Collapse" : "Menu"}</span>
+          <kbd className="hidden items-center rounded border border-kumo-line bg-kumo-fill px-1.5 py-0.5 text-[0.625rem] font-medium text-kumo-subtle lg:inline-flex">
+            {sidebarShortcut}
+          </kbd>
+        </Button>
       </SiteHeader>
 
-      {/* Centered application canvas with vertical rules (jfa layout frame) */}
-      <div className="mx-auto flex min-h-0 w-full max-w-screen-2xl flex-1 border-x border-kumo-line">
+      {/*
+        Sidebar flush to the left edge of the viewport.
+        Main scrolls independently; page body is max-w centered until the
+        viewport is narrower than the content max, then it fills full width.
+      */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar.Provider
           collapsible="icon"
           contained
           open={sidebarOpen}
           onOpenChange={setSidebarOpen}
-          className="h-full min-h-0"
+          className="min-h-0 min-w-0 flex-1"
         >
-          <Sidebar id="admin-sidebar" className="h-full border-r-0">
+          <Sidebar id="admin-sidebar" className="h-full min-h-0 border-r border-kumo-line">
             <Sidebar.Content>
               {navGroups.map((group) => (
                 <Sidebar.Group key={group.label}>
@@ -235,10 +288,11 @@ function DashboardShell() {
                 </Sidebar.Group>
               ))}
             </Sidebar.Content>
-            <Sidebar.Rail />
           </Sidebar>
-          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
-            <Outlet />
+          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8">
+              <Outlet />
+            </div>
           </main>
         </Sidebar.Provider>
       </div>
