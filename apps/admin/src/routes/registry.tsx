@@ -1,4 +1,5 @@
 import { Badge, Banner, Button, Dialog, Input, Select, Text } from "@cloudflare/kumo";
+import { XIcon } from "@phosphor-icons/react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useTable, type ColumnDef, type SortingState } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -173,12 +174,23 @@ function EntryEditor({
 
   return (
     <div className="grid gap-5">
-      <div className="grid gap-1">
-        <Dialog.Title className="flex items-center gap-2">
-          {entry.title}
-          {dead && <Badge variant="error">tombstoned</Badge>}
-        </Dialog.Title>
-        <Dialog.Description className="font-mono text-[0.85em]">{entry.id}</Dialog.Description>
+      <div className="sticky top-0 z-10 -mx-6 -mt-6 flex items-start gap-3 border-b border-kumo-line bg-kumo-base px-6 pt-6 pb-3">
+        <div className="grid min-w-0 flex-1 gap-1">
+          <Dialog.Title className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate">{entry.title}</span>
+            {dead && <Badge variant="error">tombstoned</Badge>}
+          </Dialog.Title>
+          <Dialog.Description className="truncate font-mono text-[0.85em]">
+            {entry.id}
+          </Dialog.Description>
+        </div>
+        <Dialog.Close
+          render={(props) => (
+            <Button {...props} size="sm" variant="ghost" aria-label="Close" className="shrink-0">
+              <XIcon className="size-4" aria-hidden="true" />
+            </Button>
+          )}
+        />
       </div>
 
       <div className="grid gap-2">
@@ -816,7 +828,7 @@ function EntriesTable({
       {pager}
 
       <Dialog.Root open={editorOpen && editing !== undefined} onOpenChange={setEditorOpen}>
-        <Dialog size="lg" className="p-6">
+        <Dialog size="lg" className="max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto p-6">
           {editing && (
             <EntryEditor
               key={editing.id}

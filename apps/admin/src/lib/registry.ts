@@ -528,9 +528,7 @@ export const startMalOAuth = createServerFn({ method: "POST" }).handler(
     const start = await call<{
       readonly provider: "mal";
       readonly authorizationUrl: string;
-    }>(
-      `/v1/auth/mal/start?return=${encodeURIComponent("/admin/credentials")}`,
-    );
+    }>(`/v1/auth/mal/start?return=${encodeURIComponent("/admin/credentials")}`);
     if (!isStringValue(start.authorizationUrl) || start.authorizationUrl.length === 0) {
       throw new Error("OAuth start for mal returned no authorization URL");
     }

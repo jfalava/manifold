@@ -93,6 +93,38 @@
   }
 }
 
+/*
+ * iOS Safari zooms when a focused control is under 16px. Kumo's text-base token
+ * is 14px and ships as a utility on Input/Select — unlayered so this floor wins
+ * over @layer utilities.
+ */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not(
+    [type="hidden"]
+  ):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),
+textarea,
+select,
+[contenteditable="true"],
+[data-slot="input"],
+[role="combobox"],
+button[role="combobox"] {
+  font-size: 16px;
+}
+
+/*
+ * Kumo Dialog is overflow-hidden + fixed-centered. On ~390px phones tall
+ * content can push footer Close off-screen. Cap height and allow scroll so
+ * dismiss controls stay reachable (pair with sticky header close buttons).
+ * Unlayered to beat Kumo's overflow-hidden utility when className merge fails.
+ */
+[role="dialog"],
+[role="alertdialog"] {
+  max-height: min(90dvh, calc(100dvh - 2rem));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* jfa title treatment — page titles only (not dialog/content h2–h3) */
 @layer base {
   main h1,

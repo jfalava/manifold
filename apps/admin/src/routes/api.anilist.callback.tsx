@@ -48,7 +48,11 @@ function AniListCallbackPage() {
   useEffect(() => {
     const capture = readHash();
     // Drop the fragment so a refresh cannot re-import the bearer.
-    globalThis.history.replaceState({}, "", globalThis.location.pathname + globalThis.location.search);
+    globalThis.history.replaceState(
+      {},
+      "",
+      globalThis.location.pathname + globalThis.location.search,
+    );
 
     if (capture.kind === "error") {
       // oxlint-disable-next-line react/set-state-in-effect -- one-shot OAuth return
@@ -58,7 +62,9 @@ function AniListCallbackPage() {
     }
     if (capture.kind === "empty") {
       setStatus("error");
-      setDetail("No access_token in the URL. Use Credentials → paste token, or try Authorize again.");
+      setDetail(
+        "No access_token in the URL. Use Credentials → paste token, or try Authorize again.",
+      );
       return;
     }
 

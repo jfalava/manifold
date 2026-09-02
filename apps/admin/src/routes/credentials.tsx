@@ -1,4 +1,5 @@
 import { Badge, Banner, Button, Dialog, Input, Surface, Table, Text } from "@cloudflare/kumo";
+import { XIcon } from "@phosphor-icons/react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 
@@ -342,15 +343,31 @@ function CredentialsPage() {
           }
         }}
       >
-        <Dialog size="sm" className="p-6">
+        <Dialog size="sm" className="max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto p-6">
           <div className="grid gap-4">
-            <div className="grid gap-1">
-              <Dialog.Title>Paste AniList token</Dialog.Title>
-              <Dialog.Description>
-                Same idea as the tracker settings field. Paste an access token from AniList, the
-                tracker, or the device page. Admin stores it encrypted on the Durable Object and
-                never calls AniList from the Worker.
-              </Dialog.Description>
+            <div className="sticky top-0 z-10 -mx-6 -mt-6 flex items-start gap-3 border-b border-kumo-line bg-kumo-base px-6 pt-6 pb-3">
+              <div className="grid min-w-0 flex-1 gap-1">
+                <Dialog.Title>Paste AniList token</Dialog.Title>
+                <Dialog.Description>
+                  Same idea as the tracker settings field. Paste an access token from AniList, the
+                  tracker, or the device page. Admin stores it encrypted on the Durable Object and
+                  never calls AniList from the Worker.
+                </Dialog.Description>
+              </div>
+              <Dialog.Close
+                render={(props) => (
+                  <Button
+                    {...props}
+                    size="sm"
+                    variant="ghost"
+                    aria-label="Close"
+                    className="shrink-0"
+                    disabled={acting !== undefined}
+                  >
+                    <XIcon className="size-4" aria-hidden="true" />
+                  </Button>
+                )}
+              />
             </div>
             <Input
               type="password"
@@ -401,9 +418,8 @@ function CredentialsPage() {
 
       <p className="text-sm opacity-60">
         Admin holds <code className="text-xs">MANIFOLD_TOKEN</code> (Secrets Store) for API calls —
-        the browser never sees the bearer. MangaDex uses{" "}
-        <code className="text-xs">MANGADEX_*</code> on the sync Worker. AniList uses client{" "}
-        <code className="text-xs">49218</code> (implicit) →{" "}
+        the browser never sees the bearer. MangaDex uses <code className="text-xs">MANGADEX_*</code>{" "}
+        on the sync Worker. AniList uses client <code className="text-xs">49218</code> (implicit) →{" "}
         <code className="text-xs">/admin/api/anilist/callback</code>.
       </p>
     </div>
