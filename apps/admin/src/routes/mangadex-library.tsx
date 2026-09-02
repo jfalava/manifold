@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTable, type ColumnDef, type SortingState } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { MangaDexLibraryPending } from "../components/loading";
 import {
   adminTableFeatures,
   DataTable,
@@ -504,6 +505,10 @@ function MangaDexLibraryPage() {
       onPageSizeChange={changePageSize}
     />
   );
+
+  if (loading && items.length === 0) {
+    return <MangaDexLibraryPending />;
+  }
 
   return (
     <div className="grid gap-6">

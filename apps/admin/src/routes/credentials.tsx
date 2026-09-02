@@ -2,6 +2,7 @@ import { Badge, Banner, Button, Surface, Table, Text } from "@cloudflare/kumo";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 
+import { TableSkeleton } from "../components/loading";
 import {
   AUTH_PROVIDERS,
   disconnectAuth,
@@ -97,6 +98,9 @@ function CredentialsPage() {
       {notice !== undefined && <Banner variant="default" title="Updated" description={notice} />}
 
       <Surface>
+        {connections === undefined && busy ? (
+          <TableSkeleton columns={5} rows={3} />
+        ) : (
         <Table>
           <Table.Header>
             <Table.Row>
@@ -122,13 +126,9 @@ function CredentialsPage() {
                     </div>
                   </Table.Cell>
                   <Table.Cell>
-                    {connections === undefined && busy ? (
-                      <Badge variant="neutral">loading…</Badge>
-                    ) : (
-                      <Badge variant={connected ? "success" : "warning"}>
-                        {connected ? "connected" : "disconnected"}
-                      </Badge>
-                    )}
+                    <Badge variant={connected ? "success" : "warning"}>
+                      {connected ? "connected" : "disconnected"}
+                    </Badge>
                   </Table.Cell>
                   <Table.Cell>{formatWhen(row?.expiresAt)}</Table.Cell>
                   <Table.Cell>{formatWhen(row?.updatedAt)}</Table.Cell>
@@ -192,6 +192,7 @@ function CredentialsPage() {
             })}
           </Table.Body>
         </Table>
+        )}
       </Surface>
 
       <p className="text-sm opacity-60">

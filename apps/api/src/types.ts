@@ -7,10 +7,13 @@ import type {
   ListEvent,
   ListState,
   MangaDexLibraryItem,
+  MangaDexLibrarySummary,
   NukeEntryInput,
+  OpsSummary,
   OAuthProvider,
   ReadingProgress,
   RecordReadInput,
+  RegistrySummary,
   ResolveEntryInput,
   SetChapterSourceInput,
   SetListStateInput,
@@ -53,6 +56,7 @@ export interface ManifoldSyncStub {
   retryFailedSync(): Promise<{ retried: number }>;
   backfillMangaDexShelf(): Promise<{ enqueued: number }>;
   mangaDexLibrary(status?: string): Promise<readonly MangaDexLibraryItem[]>;
+  mangaDexLibrarySummary(): Promise<MangaDexLibrarySummary>;
   mangaDexCurrentUser(): Promise<{ id: string; name?: string }>;
   mangaDexReadMarkers(mangaDexId: string): Promise<readonly string[]>;
   mangaDexFeed(limit: number, offset: number): Promise<MangaDexPaged<MangaDexChapter>>;
@@ -64,6 +68,7 @@ export interface ManifoldSyncStub {
     input: readonly ResolveEntryInput[] | ResolveEntryInput,
   ): Promise<readonly CanonicalEntry[]>;
   listRegistry(limit?: number, offset?: number): Promise<readonly RegistryListEntry[]>;
+  registrySummary(): Promise<RegistrySummary>;
   unlinkProvider(entryId: string, provider: string): Promise<CanonicalEntry>;
   setListState(entryId: string, input: SetListStateInput): Promise<ListState>;
   getListState(entryId: string): Promise<ListState | undefined>;
@@ -81,6 +86,7 @@ export interface ManifoldSyncStub {
   completeOps(input: CompleteOpsInput): Promise<{ updated: number }>;
   retryOp(opId: string): Promise<SyncOp | undefined>;
   listOps(state?: string, target?: string, limit?: number): Promise<readonly SyncOp[]>;
+  opsSummary(limit?: number): Promise<OpsSummary>;
 }
 
 /** Worker binding that may be a plain string (local dev) or a Secrets Store secret. */

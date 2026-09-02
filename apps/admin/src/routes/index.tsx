@@ -1,26 +1,28 @@
 import { Badge, Banner, LayerCard, Meter, Table, Text } from "@cloudflare/kumo";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 
-import { OverviewPending } from "../components/loading";
-import { getAnalyticsSnapshot, WORKER_CATALOG } from "../lib/analytics";
+import {
+  InfrastructureWidgetsSkeleton,
+  LibraryWidgetsSkeleton,
+  StatCardSkeleton,
+} from "../components/loading";
+import {
+  getAnalyticsSnapshot,
+  WORKER_CATALOG,
+  type AnalyticsSnapshot,
+} from "../lib/analytics";
 import {
   getLibraryOverview,
   TRACKER_PROVIDERS,
-  type MangaDexSummary,
+  type LibraryOverview,
   type OpsSummary,
   type RegistrySummary,
 } from "../lib/registry";
+import { useLoad, type LoadState } from "../lib/use-load";
 
 export const Route = createFileRoute("/")({
   component: OverviewPage,
-  pendingComponent: OverviewPending,
-  loader: async () => {
-    const [snapshot, library] = await Promise.all([getAnalyticsSnapshot(), getLibraryOverview()]);
-    return { snapshot, library };
-  },
-  // The server fns are cached (KV + stale-while-revalidate); keep loader
-  // data warm client-side too so tab hops don't refetch.
-  staleTime: 60_000,
 });
 
 /** Fixed display order for list-status distributions; unknown keys follow. */
@@ -48,7 +50,8 @@ function orderedStatuses(statuses: Record<string, number>): [string, number][] {
 }
 
 function OverviewPage() {
-  const { snapshot, library } = Route.useLoaderData();
+  const library = useLoad(getLibraryOverview);
+  const analytics = useLoad(getAnalyticsSnapshot);
 
   return (
     <div className="grid gap-6">
@@ -58,109 +61,87 @@ function OverviewPage() {
         </Text>
         <Text>Library and infrastructure health for manifold.jfa.dev.</Text>
       </div>
-      {!snapshot.ok && (
-        <Banner
-          variant="alert"
-          title="Analytics unavailable"
-          description={snapshot.reason ?? "Worker analytics could not be loaded."}
-        />
+
+      {library.status === "error" && (
+        <Banner variant="alert" title="Library data unavailable" description={library.message} />
       )}
-      {library.errors.length > 0 && (
+      {library.status === "ready" && library.value.errors.length > 0 && (
         <Banner
           variant="alert"
           title="Library data incomplete"
           description={
-            library.errors.some((message) => message.includes("not connected"))
-              ? `${library.errors.join(" · ")} Open Credentials to connect MangaDex from deployment secrets.`
-              : library.errors.join(" · ")
+            library.value.errors.some((message) => message.includes("not connected"))
+              ? `${library.value.errors.join(" · ")} Open Credentials to connect MangaDex from deployment secrets.`
+              : library.value.errors.join(" · ")
           }
         />
       )}
+      {analytics.status === "error" && (
+        <Banner
+          variant="alert"
+          title="Analytics unavailable"
+          description={analytics.message}
+        />
+      )}
+      {analytics.status === "ready" && !analytics.value.ok && (
+        <Banner
+          variant="alert"
+          title="Analytics unavailable"
+          description={analytics.value.reason ?? "Worker analytics could not be loaded."}
+        />
+      )}
 
-      <LibrarySection registry={library.registry} ops={library.ops} mangadex={library.mangadex} />
-
-      <div className="grid gap-1.5">
-        <Text as="h2" variant="heading">
-          Infrastructure
-        </Text>
-      </div>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <StatCard
-          label="Workers"
-          value={String(WORKER_CATALOG.length)}
-          hint="deployed workers and sites"
-        />
-        <StatCard
-          label="Requests (24h)"
-          value={formatCount(snapshot.totalRequests)}
-          hint={`${snapshot.totalErrors.toLocaleString("en")} errors across the df stack`}
-        />
-        <StatCard
-          label="Durable Object requests (24h)"
-          value={formatCount(snapshot.doRequests)}
-          hint="ManifoldSync namespace"
-        />
-      </div>
-      <div className="grid gap-1.5">
-        <Text as="h2" variant="heading">
-          Worker status
-        </Text>
-        <LayerCard>
-          <Table>
-            <Table.Header>
-              <Table.Row>
-                <Table.Head>Worker</Table.Head>
-                <Table.Head>Kind</Table.Head>
-                <Table.Head>Health</Table.Head>
-                <Table.Head>Requests (24h)</Table.Head>
-                <Table.Head>Errors (24h)</Table.Head>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {WORKER_CATALOG.map((worker) => {
-                const traffic = snapshot.workerTraffic[worker.logical];
-                return (
-                  <Table.Row key={worker.logical}>
-                    <Table.Cell>{worker.logical}</Table.Cell>
-                    <Table.Cell>{worker.kind}</Table.Cell>
-                    <Table.Cell>
-                      <Badge variant={healthVariant(traffic)}>{healthLabel(traffic)}</Badge>
-                    </Table.Cell>
-                    <Table.Cell>{traffic ? formatCount(traffic.requests) : "—"}</Table.Cell>
-                    <Table.Cell>{traffic ? formatCount(traffic.errors) : "—"}</Table.Cell>
-                  </Table.Row>
-                );
-              })}
-            </Table.Body>
-          </Table>
-        </LayerCard>
-        {snapshot.ok && (
-          <p className="text-sm opacity-60">
-            Updated {new Date(snapshot.fetchedAt).toLocaleTimeString("en")} from Cloudflare GraphQL
-            analytics.
-          </p>
-        )}
-      </div>
+      <LibrarySection state={library} />
+      <InfrastructureSection state={analytics} />
     </div>
   );
 }
 
 // ------------------------------------------------------------------
-// Library widgets
+// Library widgets — paint independently of analytics
 // ------------------------------------------------------------------
 
-function LibrarySection({
-  registry,
-  ops,
-  mangadex,
-}: {
-  registry: RegistrySummary | null;
-  ops: OpsSummary | null;
-  mangadex: MangaDexSummary | null;
-}) {
-  const attention = ops
-    ? (ops.states.pending ?? 0) + (ops.states.blocked ?? 0) + (ops.states.failed ?? 0)
-    : 0;
+function libraryParts(state: LoadState<LibraryOverview>): {
+  readonly registry: RegistrySummary | null;
+  readonly ops: OpsSummary | null;
+  readonly mangadex: LibraryOverview["mangadex"];
+} | null {
+  if (state.status === "loading") {
+    return null;
+  }
+  if (state.status === "error") {
+    return { registry: null, ops: null, mangadex: null };
+  }
+  return {
+    registry: state.value.registry,
+    ops: state.value.ops,
+    mangadex: state.value.mangadex,
+  };
+}
+
+function attentionCount(ops: OpsSummary | null): number {
+  if (ops === null) {
+    return 0;
+  }
+  return (ops.states.pending ?? 0) + (ops.states.blocked ?? 0) + (ops.states.failed ?? 0);
+}
+
+function LibrarySection({ state }: { readonly state: LoadState<LibraryOverview> }): ReactNode {
+  const parts = libraryParts(state);
+  if (parts === null) {
+    return <LibraryWidgetsSkeleton />;
+  }
+
+  const { registry, ops, mangadex } = parts;
+  const attention = attentionCount(ops);
+  const coverage =
+    registry !== null && registry.active > 0
+      ? percent(registry.fullyLinked, registry.active)
+      : "—";
+  const mangadexFooter =
+    mangadex !== null && mangadex.rated > 0
+      ? `${mangadex.rated.toLocaleString("en")} rated · mean ${(mangadex.meanRating ?? 0).toFixed(1)}/10`
+      : undefined;
 
   return (
     <div className="grid gap-4">
@@ -178,9 +159,7 @@ function LibrarySection({
         />
         <StatCard
           label="Full tracker coverage"
-          value={
-            registry && registry.active > 0 ? percent(registry.fullyLinked, registry.active) : "—"
-          }
+          value={coverage}
           hint={
             registry
               ? `${registry.fullyLinked.toLocaleString("en")} entries on all ${TRACKER_PROVIDERS.length} trackers`
@@ -218,11 +197,7 @@ function LibrarySection({
           entries={mangadex ? orderedStatuses(mangadex.statuses) : []}
           total={mangadex?.total ?? 0}
           emptyText="MangaDex library unavailable."
-          footer={
-            mangadex && mangadex.rated > 0
-              ? `${mangadex.rated.toLocaleString("en")} rated · mean ${(mangadex.meanRating ?? 0).toFixed(1)}/10`
-              : undefined
-          }
+          footer={mangadexFooter}
         />
         <OpsHealthCard ops={ops} />
       </div>
@@ -375,6 +350,110 @@ function StatCard({
   );
 }
 
+// ------------------------------------------------------------------
+// Infrastructure widgets — paint independently of library
+// ------------------------------------------------------------------
+
+function InfrastructureSection({
+  state,
+}: {
+  readonly state: LoadState<AnalyticsSnapshot>;
+}): ReactNode {
+  if (state.status === "loading") {
+    return <InfrastructureWidgetsSkeleton />;
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className="grid gap-6">
+        <div className="grid gap-1.5">
+          <Text as="h2" variant="heading">
+            Infrastructure
+          </Text>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <StatCard
+            label="Workers"
+            value={String(WORKER_CATALOG.length)}
+            hint="deployed workers and sites"
+          />
+          <StatCardSkeleton />
+          <StatCardSkeleton />
+        </div>
+      </div>
+    );
+  }
+
+  const snapshot = state.value;
+
+  return (
+    <div className="grid gap-6">
+      <div className="grid gap-1.5">
+        <Text as="h2" variant="heading">
+          Infrastructure
+        </Text>
+      </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <StatCard
+          label="Workers"
+          value={String(WORKER_CATALOG.length)}
+          hint="deployed workers and sites"
+        />
+        <StatCard
+          label="Requests (24h)"
+          value={formatCount(snapshot.totalRequests)}
+          hint={`${snapshot.totalErrors.toLocaleString("en")} errors across the df stack`}
+        />
+        <StatCard
+          label="Durable Object requests (24h)"
+          value={formatCount(snapshot.doRequests)}
+          hint="ManifoldSync namespace"
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <Text as="h2" variant="heading">
+          Worker status
+        </Text>
+        <LayerCard>
+          <Table>
+            <Table.Header>
+              <Table.Row>
+                <Table.Head>Worker</Table.Head>
+                <Table.Head>Kind</Table.Head>
+                <Table.Head>Health</Table.Head>
+                <Table.Head>Requests (24h)</Table.Head>
+                <Table.Head>Errors (24h)</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {WORKER_CATALOG.map((worker) => {
+                const traffic = snapshot.ok ? snapshot.workerTraffic[worker.logical] : undefined;
+                return (
+                  <Table.Row key={worker.logical}>
+                    <Table.Cell>{worker.logical}</Table.Cell>
+                    <Table.Cell>{worker.kind}</Table.Cell>
+                    <Table.Cell>
+                      <Badge variant={healthVariant(traffic)}>{healthLabel(traffic)}</Badge>
+                    </Table.Cell>
+                    <Table.Cell>{traffic ? formatCount(traffic.requests) : "—"}</Table.Cell>
+                    <Table.Cell>{traffic ? formatCount(traffic.errors) : "—"}</Table.Cell>
+                  </Table.Row>
+                );
+              })}
+            </Table.Body>
+          </Table>
+        </LayerCard>
+        {snapshot.ok && (
+          <p className="text-sm opacity-60">
+            Updated {new Date(snapshot.fetchedAt).toLocaleTimeString("en")} from Cloudflare GraphQL
+            analytics.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function healthVariant(
   traffic: { requests: number; errors: number } | undefined,
 ): "success" | "warning" | "neutral" {
@@ -398,3 +477,4 @@ function formatCount(value: number): string {
 function percent(part: number, whole: number): string {
   return `${((part / whole) * 100).toFixed(0)}%`;
 }
+

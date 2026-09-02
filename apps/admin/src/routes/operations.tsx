@@ -607,7 +607,7 @@ function UpdateFailuresTable({
           >
             All sources ({failures.length})
           </FilterToggle>
-          {[...bySource.keys()].sort().map((value) => (
+          {[...bySource.keys()].toSorted().map((value) => (
             <FilterToggle
               key={value}
               active={sourceFilters.has(value)}
@@ -629,7 +629,7 @@ function UpdateFailuresTable({
           >
             All reasons
           </FilterToggle>
-          {[...byReason.keys()].sort().map((value) => (
+          {[...byReason.keys()].toSorted().map((value) => (
             <FilterToggle
               key={value}
               active={reasonFilters.has(value)}

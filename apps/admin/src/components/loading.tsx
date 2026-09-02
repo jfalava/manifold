@@ -49,7 +49,27 @@ export function StatCardSkeleton(): ReactNode {
   );
 }
 
-/** Page chrome shown while a route loader is pending. */
+/** Meter / distribution widget skeleton for Overview cards. */
+export function MeterCardSkeleton({ bars = 5 }: { readonly bars?: number }): ReactNode {
+  return (
+    <LayerCard className="px-5 py-4">
+      <div className="grid content-start gap-3">
+        <SkeletonLine minWidth={96} maxWidth={160} blockHeight={16} className="rounded" />
+        {Array.from({ length: bars }).map((_, index) => (
+          <div key={index} className="grid gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <SkeletonLine minWidth={48} maxWidth={96} blockHeight={14} className="rounded" />
+              <SkeletonLine minWidth={24} maxWidth={40} blockHeight={14} className="rounded" />
+            </div>
+            <SkeletonLine minWidth={120} maxWidth={280} blockHeight={8} className="w-full rounded" />
+          </div>
+        ))}
+      </div>
+    </LayerCard>
+  );
+}
+
+/** Page chrome shown while a route loader is pending or client data boots. */
 export function PagePending({
   title,
   description,
@@ -75,16 +95,37 @@ export function PagePending({
 export function OverviewPending(): ReactNode {
   return (
     <PagePending title="Overview" description="Library and infrastructure health for manifold.jfa.dev.">
+      <LibraryWidgetsSkeleton />
+      <InfrastructureWidgetsSkeleton />
+    </PagePending>
+  );
+}
+
+export function LibraryWidgetsSkeleton(): ReactNode {
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-1.5">
+        <Text as="h2" variant="heading">
+          Library
+        </Text>
+      </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
-          <StatCardSkeleton key={index} />
+          <StatCardSkeleton key={`stat-${index}`} />
         ))}
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
-          <StatCardSkeleton key={index} />
+          <MeterCardSkeleton key={`meter-${index}`} />
         ))}
       </div>
+    </div>
+  );
+}
+
+export function InfrastructureWidgetsSkeleton(): ReactNode {
+  return (
+    <div className="grid gap-6">
       <div className="grid gap-1.5">
         <Text as="h2" variant="heading">
           Infrastructure
@@ -92,13 +133,18 @@ export function OverviewPending(): ReactNode {
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {Array.from({ length: 3 }).map((_, index) => (
-          <StatCardSkeleton key={index} />
+          <StatCardSkeleton key={`infra-${index}`} />
         ))}
       </div>
-      <Surface>
-        <TableSkeleton columns={5} rows={5} />
-      </Surface>
-    </PagePending>
+      <div className="grid gap-1.5">
+        <Text as="h2" variant="heading">
+          Worker status
+        </Text>
+        <Surface>
+          <TableSkeleton columns={5} rows={5} />
+        </Surface>
+      </div>
+    </div>
   );
 }
 
@@ -173,6 +219,69 @@ export function DurableObjectsPending(): ReactNode {
           </div>
         </Surface>
       </div>
+    </PagePending>
+  );
+}
+
+export function RegistryPending(): ReactNode {
+  return (
+    <PagePending
+      title="Canonical registry"
+      description="Provider-neutral entries with tracker bindings and list state."
+    >
+      <Surface>
+        <TableSkeleton columns={8} rows={10} />
+      </Surface>
+    </PagePending>
+  );
+}
+
+export function OperationsPending(): ReactNode {
+  return (
+    <PagePending
+      title="Sync operations"
+      description="Queued provider operations, registry mutation log, and on-device My Updates probe failures."
+    >
+      <Surface>
+        <TableSkeleton columns={7} rows={8} />
+      </Surface>
+    </PagePending>
+  );
+}
+
+export function MangaDexLibraryPending(): ReactNode {
+  return (
+    <PagePending
+      title="MangaDex library"
+      description="Followed titles cached locally. Status edits hit MangaDex immediately."
+    >
+      <div className="flex flex-wrap gap-1.5">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <SkeletonLine
+            key={index}
+            minWidth={72}
+            maxWidth={120}
+            blockHeight={28}
+            className="rounded-full"
+          />
+        ))}
+      </div>
+      <Surface>
+        <TableSkeleton columns={7} rows={10} />
+      </Surface>
+    </PagePending>
+  );
+}
+
+export function CredentialsPending(): ReactNode {
+  return (
+    <PagePending
+      title="Credentials"
+      description="Upstream tracker tokens stored on the personal Durable Object."
+    >
+      <Surface>
+        <TableSkeleton columns={5} rows={3} />
+      </Surface>
     </PagePending>
   );
 }

@@ -15,7 +15,10 @@ import type {
   ListEvent,
   ListState,
   MangaDexLibraryItem,
+  MangaDexLibrarySummary,
   OAuthProvider,
+  OpsSummary,
+  RegistrySummary,
   ReadingProgress,
   SyncOp,
   UpdateProbeFailure,
@@ -58,6 +61,7 @@ export type JsonResponseBody =
   | { readonly failures: readonly UpdateProbeFailure[] }
   | { readonly id: string; readonly name?: string }
   | { readonly library: readonly MangaDexLibraryItem[] }
+  | { readonly summary: MangaDexLibrarySummary | RegistrySummary | OpsSummary }
   | { readonly ok: true; readonly build?: string; readonly environment?: string; readonly state?: ListState }
   | { readonly ops: readonly SyncOp[] }
   | { readonly progress: ReadingProgress | null }

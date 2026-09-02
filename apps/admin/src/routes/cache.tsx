@@ -3,12 +3,10 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { CachePending } from "../components/loading";
 import { getCacheSnapshot } from "../lib/analytics";
+import { useLoad } from "../lib/use-load";
 
 export const Route = createFileRoute("/cache")({
   component: CachePage,
-  pendingComponent: CachePending,
-  loader: () => getCacheSnapshot(),
-  staleTime: 60_000,
 });
 
 /** cacheStatus → badge variant; "none" is normal for worker-generated responses. */
@@ -29,7 +27,27 @@ function statusBadgeVariant(status: string): "success" | "warning" | "info" | "n
 }
 
 function CachePage() {
-  const snapshot = Route.useLoaderData();
+  const state = useLoad(getCacheSnapshot);
+
+  if (state.status === "loading") {
+    return <CachePending />;
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className="grid gap-6">
+        <div className="grid gap-1.5">
+          <Text as="h1" variant="heading">
+            Cache
+          </Text>
+          <Text>Edge cache behaviour on manifold.jfa.dev over the last window.</Text>
+        </div>
+        <Banner variant="alert" title="Cache analytics unavailable" description={state.message} />
+      </div>
+    );
+  }
+
+  const snapshot = state.value;
 
   return (
     <div className="grid gap-6">

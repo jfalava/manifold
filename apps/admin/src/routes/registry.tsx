@@ -46,6 +46,15 @@ const CHAPTER_SOURCES = [
   { value: "comix", label: "Force Comix" },
 ] as const satisfies readonly { value: ChapterSource; label: string }[];
 
+const parseChapterSource = (value: string): ChapterSource | undefined => {
+  for (const option of CHAPTER_SOURCES) {
+    if (option.value === value) {
+      return option.value;
+    }
+  }
+  return undefined;
+};
+
 const STATUS_BADGES = {
   reading: "info",
   re_reading: "info",
@@ -250,7 +259,12 @@ function EntryEditor({
             <span className="opacity-60">Override</span>
             <Select
               value={chapterSource}
-              onValueChange={(value) => setChapterSource(String(value) as ChapterSource)}
+              onValueChange={(value) => {
+                const next = parseChapterSource(String(value));
+                if (next !== undefined) {
+                  setChapterSource(next);
+                }
+              }}
             >
               {CHAPTER_SOURCES.map((option) => (
                 <Select.Option key={option.value} value={option.value}>

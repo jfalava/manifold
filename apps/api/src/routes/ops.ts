@@ -49,6 +49,13 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
         const input = yield* Schema.decodeUnknownEffect(CompleteOpsInput)(raw);
         return json(yield* tryPromise(() => sync.completeOps(input)));
       }
+      if (path.length === 3 && path[2] === "summary" && request.method === "GET") {
+        return json({
+          summary: yield* tryPromise(() =>
+            sync.opsSummary(Number(url.searchParams.get("limit") ?? 200) || 200),
+          ),
+        });
+      }
       if (path.length === 2 && request.method === "GET") {
         return json({
           ops: yield* tryPromise(() =>

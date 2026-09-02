@@ -34,6 +34,9 @@ import {
   type ChapterSource,
   type SyncOp,
   type MangaDexLibraryItem,
+  type MangaDexLibrarySummary,
+  type OpsSummary,
+  type RegistrySummary,
   type ReportUpdateFailuresInput,
   type UpdateProbeFailure,
   type UpsertEntryInput,
@@ -768,6 +771,111 @@ export class ManifoldSync extends DurableObject<Env> {
     return data;
   }
 
+  /**
+   * Compact MangaDex shelf metrics for the admin Overview.
+   * Uses readingStatuses + ratings + local link lookups only — never listManga
+   * batches — so a cold Overview stays fast even on a large personal library.
+   * Reuses mdLibraryCache when fresh so a prior full library load still wins.
+   */
+  async mangaDexLibrarySummary(): Promise<MangaDexLibrarySummary> {
+    const accessToken = await this.getAuthAccessToken("mangadex");
+    const client = createMangaDexClient({ accessToken });
+
+    // Prefer the hydrated library cache when fresh — Overview then avoids any
+    // upstream round-trip beyond what a prior full load already paid.
+    if (
+      this.mdLibraryCache &&
+      Date.now() - this.mdLibraryCache.at < ManifoldSync.MD_LIBRARY_TTL_MS
+    ) {
+      const data = this.mdLibraryCache.data;
+      const statusCounts = new Map<string, number>();
+      let rated = 0;
+      let ratingSum = 0;
+      let linkedToRegistry = 0;
+      let sawRatingFlag = false;
+      for (const row of data) {
+        const status = row.status === "" ? "unset" : row.status;
+        statusCounts.set(status, (statusCounts.get(status) ?? 0) + 1);
+        if (row.hasRating !== undefined) {
+          sawRatingFlag = true;
+        }
+        if (row.hasRating === true && row.rating !== undefined) {
+          rated += 1;
+          ratingSum += row.rating;
+        }
+        if (row.entryId !== null) {
+          linkedToRegistry += 1;
+        }
+      }
+      if (!sawRatingFlag && data.length > 0) {
+        try {
+          const batch = await Effect.runPromise(
+            client.getRatings(data.map((row) => row.mangaDexId)),
+          );
+          rated = 0;
+          ratingSum = 0;
+          for (const entry of Object.values(batch)) {
+            rated += 1;
+            ratingSum += entry.rating;
+          }
+        } catch {
+          // Best-effort ratings for overview.
+        }
+      }
+      return {
+        total: data.length,
+        statuses: Object.fromEntries(statusCounts),
+        rated,
+        meanRating: rated > 0 ? ratingSum / rated : null,
+        linkedToRegistry,
+      };
+    }
+
+    const statuses = await Effect.runPromise(client.readingStatuses());
+    const mangaDexIds = Object.keys(statuses);
+    const statusCounts = new Map<string, number>();
+    for (const status of Object.values(statuses)) {
+      statusCounts.set(status, (statusCounts.get(status) ?? 0) + 1);
+    }
+
+    let rated = 0;
+    let ratingSum = 0;
+    try {
+      const batch = await Effect.runPromise(client.getRatings(mangaDexIds));
+      for (const entry of Object.values(batch)) {
+        rated += 1;
+        ratingSum += entry.rating;
+      }
+    } catch {
+      // Best-effort — overview still works without mean rating.
+    }
+
+    let linkedToRegistry = 0;
+    for (let index = 0; index < mangaDexIds.length; index += 100) {
+      const chunk = mangaDexIds.slice(index, index + 100);
+      if (chunk.length === 0) {
+        continue;
+      }
+      const placeholders = chunk.map(() => "?").join(",");
+      const rows = this.ctx.storage.sql
+        .exec<{ external_id: string }>(
+          `SELECT external_id FROM provider_links
+           WHERE provider = 'mangadex' AND external_id IN (${placeholders})`,
+          ...chunk,
+        )
+        .toArray();
+      linkedToRegistry += rows.length;
+    }
+
+    return {
+      total: mangaDexIds.length,
+      statuses: Object.fromEntries(statusCounts),
+      rated,
+      meanRating: rated > 0 ? ratingSum / rated : null,
+      linkedToRegistry,
+    };
+  }
+
   async mangaDexFeed(
     limit: number,
     offset: number,
@@ -924,6 +1032,92 @@ export class ManifoldSync extends DurableObject<Env> {
         }
         return results;
       })
+    );
+  }
+
+  /**
+   * SQL aggregates for the admin Overview — avoids paging every registry entry
+   * over the admin↔API hop just to count statuses and provider coverage.
+   */
+  async registrySummary(): Promise<RegistrySummary> {
+    return Effect.runSync(
+      Effect.sync(() => {
+        const total =
+          this.ctx.storage.sql
+            .exec<{ count: number }>("SELECT COUNT(*) AS count FROM canonical_entries")
+            .toArray()[0]?.count ?? 0;
+        const tombstoned =
+          this.ctx.storage.sql
+            .exec<{ count: number }>(
+              "SELECT COUNT(*) AS count FROM canonical_entries WHERE tombstoned_at IS NOT NULL",
+            )
+            .toArray()[0]?.count ?? 0;
+        const active = total - tombstoned;
+
+        const statusRows = this.ctx.storage.sql
+          .exec<{ status: string | null; count: number }>(
+            `SELECT ls.status AS status, COUNT(*) AS count
+             FROM canonical_entries ce
+             LEFT JOIN list_state ls ON ls.entry_id = ce.id
+             WHERE ce.tombstoned_at IS NULL
+             GROUP BY ls.status`,
+          )
+          .toArray();
+        const statuses: Record<string, number> = {};
+        for (const row of statusRows) {
+          const key = row.status && row.status.length > 0 ? row.status : "unset";
+          statuses[key] = (statuses[key] ?? 0) + row.count;
+        }
+
+        const providerRows = this.ctx.storage.sql
+          .exec<{ provider: string; count: number }>(
+            `SELECT pl.provider AS provider, COUNT(DISTINCT pl.entry_id) AS count
+             FROM provider_links pl
+             JOIN canonical_entries ce ON ce.id = pl.entry_id
+             WHERE ce.tombstoned_at IS NULL
+             GROUP BY pl.provider`,
+          )
+          .toArray();
+        const providerCounts: Record<string, number> = {};
+        for (const row of providerRows) {
+          providerCounts[row.provider] = row.count;
+        }
+
+        const fullyLinked =
+          this.ctx.storage.sql
+            .exec<{ count: number }>(
+              `SELECT COUNT(*) AS count FROM (
+                 SELECT ce.id AS id
+                 FROM canonical_entries ce
+                 JOIN provider_links pl ON pl.entry_id = ce.id
+                 WHERE ce.tombstoned_at IS NULL
+                   AND pl.provider IN ('anilist', 'mal', 'mangadex')
+                 GROUP BY ce.id
+                 HAVING COUNT(DISTINCT pl.provider) = 3
+               ) AS fully_linked`,
+            )
+            .toArray()[0]?.count ?? 0;
+
+        const unlinked =
+          this.ctx.storage.sql
+            .exec<{ count: number }>(
+              `SELECT COUNT(*) AS count
+               FROM canonical_entries ce
+               LEFT JOIN provider_links pl ON pl.entry_id = ce.id
+               WHERE ce.tombstoned_at IS NULL AND pl.entry_id IS NULL`,
+            )
+            .toArray()[0]?.count ?? 0;
+
+        return {
+          total,
+          active,
+          tombstoned,
+          statuses,
+          providerCounts,
+          fullyLinked,
+          unlinked,
+        };
+      }),
     );
   }
 
@@ -1355,6 +1549,56 @@ export class ManifoldSync extends DurableObject<Env> {
           .toArray();
         return rows.map((row) => toOp(row));
       })
+    );
+  }
+
+  /**
+   * Compact outbox metrics for the admin Overview over the same recent window
+   * as GET /v1/ops (newest N ops), without shipping full op payloads.
+   */
+  async opsSummary(limit = 200): Promise<OpsSummary> {
+    return Effect.runSync(
+      Effect.sync(() => {
+        const safeLimit = Math.min(500, Math.max(1, Math.trunc(limit)));
+        const rows = this.ctx.storage.sql
+          .exec<{
+            state: string;
+            created_at: number;
+            updated_at: number;
+            last_error: string | null;
+          }>(
+            `SELECT state, created_at, updated_at, last_error
+             FROM sync_ops
+             ORDER BY id DESC
+             LIMIT ?`,
+            safeLimit,
+          )
+          .toArray();
+        const states = new Map<string, number>();
+        let oldestPendingAt: number | null = null;
+        let lastFailedError: string | null = null;
+        let lastFailedAt = 0;
+        for (const row of rows) {
+          states.set(row.state, (states.get(row.state) ?? 0) + 1);
+          if (row.state === "pending" && (oldestPendingAt === null || row.created_at < oldestPendingAt)) {
+            oldestPendingAt = row.created_at;
+          }
+          if (
+            (row.state === "failed" || row.state === "blocked") &&
+            row.last_error !== null &&
+            row.updated_at > lastFailedAt
+          ) {
+            lastFailedAt = row.updated_at;
+            lastFailedError = row.last_error;
+          }
+        }
+        return {
+          total: rows.length,
+          states: Object.fromEntries(states),
+          oldestPendingAt,
+          lastFailedError,
+        };
+      }),
     );
   }
 

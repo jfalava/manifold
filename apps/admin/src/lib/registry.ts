@@ -426,106 +426,26 @@ export interface LibraryOverview {
   readonly errors: readonly string[];
 }
 
-const summarizeRegistry = (entries: readonly RegistryEntry[]): RegistrySummary => {
-  const active = entries.filter((entry) => entry.tombstoned !== true);
-  const statuses = new Map<string, number>();
-  const providerCounts = new Map<string, number>();
-  let fullyLinked = 0;
-  let unlinked = 0;
-  for (const entry of active) {
-    const status = entry.state?.status ?? "unset";
-    statuses.set(status, (statuses.get(status) ?? 0) + 1);
-    for (const link of entry.providers) {
-      providerCounts.set(link.provider, (providerCounts.get(link.provider) ?? 0) + 1);
-    }
-    if (
-      TRACKER_PROVIDERS.every((provider) =>
-        entry.providers.some((link) => link.provider === provider),
-      )
-    ) {
-      fullyLinked += 1;
-    }
-    if (entry.providers.length === 0) {
-      unlinked += 1;
-    }
-  }
-  return {
-    total: entries.length,
-    active: active.length,
-    tombstoned: entries.length - active.length,
-    statuses: Object.fromEntries(statuses),
-    providerCounts: Object.fromEntries(providerCounts),
-    fullyLinked,
-    unlinked,
-  };
-};
-
-const summarizeOps = (ops: readonly SyncOpItem[]): OpsSummary => {
-  const states = new Map<string, number>();
-  let oldestPendingAt: number | null = null;
-  let lastFailedError: string | null = null;
-  let lastFailedAt = 0;
-  for (const op of ops) {
-    states.set(op.state, (states.get(op.state) ?? 0) + 1);
-    if (op.state === "pending" && (oldestPendingAt === null || op.createdAt < oldestPendingAt)) {
-      oldestPendingAt = op.createdAt;
-    }
-    if (
-      (op.state === "failed" || op.state === "blocked") &&
-      op.lastError !== undefined &&
-      op.updatedAt > lastFailedAt
-    ) {
-      lastFailedAt = op.updatedAt;
-      lastFailedError = op.lastError;
-    }
-  }
-  return {
-    total: ops.length,
-    states: Object.fromEntries(states),
-    oldestPendingAt,
-    lastFailedError,
-  };
-};
-
-const summarizeMangaDex = (library: readonly MangaDexLibraryItem[]): MangaDexSummary => {
-  const statuses = new Map<string, number>();
-  let rated = 0;
-  let ratingSum = 0;
-  let linkedToRegistry = 0;
-  for (const item of library) {
-    const status = item.status === "" ? "unset" : item.status;
-    statuses.set(status, (statuses.get(status) ?? 0) + 1);
-    if (item.rating !== undefined) {
-      rated += 1;
-      ratingSum += item.rating;
-    }
-    if (item.entryId !== null) {
-      linkedToRegistry += 1;
-    }
-  }
-  return {
-    total: library.length,
-    statuses: Object.fromEntries(statuses),
-    rated,
-    meanRating: rated > 0 ? ratingSum / rated : null,
-    linkedToRegistry,
-  };
-};
-
 /**
  * Compact registry / ops / MangaDex-shelf metrics for the Overview page.
- * Everything is reduced server-side so the dashboard payload stays small
- * even though the registry is paged in full, and the result is cached
- * (KV + in-isolate) with stale-while-revalidate — see server-cache.ts.
+ * Hits dedicated summary endpoints so a cold dashboard never pays for full
+ * MangaDex title/cover hydration or paging the entire registry over the wire.
+ * Result is cached (KV + in-isolate) with stale-while-revalidate — see server-cache.ts.
  */
 export const getLibraryOverview = createServerFn({ method: "GET" }).handler(
   (): Promise<LibraryOverview> =>
-    cachedJson("library-overview:v1", async () => {
-      const [registry, ops, library] = await Promise.all([
-        capture("registry", loadAllEntries),
-        capture("ops", () => call<{ ops: readonly SyncOpItem[] }>("/v1/ops?limit=200")),
+    cachedJson("library-overview:v2", async () => {
+      const [registry, ops, mangadex] = await Promise.all([
+        capture("registry", () =>
+          call<{ summary: RegistrySummary }>("/v1/registry/summary").then((body) => body.summary),
+        ),
+        capture("ops", () =>
+          call<{ summary: OpsSummary }>("/v1/ops/summary?limit=200").then((body) => body.summary),
+        ),
         capture("mangadex library", () =>
-          call<{ library: readonly MangaDexLibraryItem[] }>("/v1/mangadex/library"),
+          call<{ summary: MangaDexSummary }>("/v1/mangadex/library/summary").then(
+            (body) => body.summary,
+          ),
         ),
       ]);
       const errors: string[] = [];
@@ -535,14 +455,14 @@ export const getLibraryOverview = createServerFn({ method: "GET" }).handler(
       if (!ops.ok) {
         errors.push(`ops: ${ops.error}`);
       }
-      if (!library.ok) {
-        errors.push(`mangadex library: ${library.error}`);
+      if (!mangadex.ok) {
+        errors.push(`mangadex library: ${mangadex.error}`);
       }
       const overview: LibraryOverview = {
         fetchedAt: new Date().toISOString(),
-        registry: registry.ok ? summarizeRegistry(registry.value) : null,
-        ops: ops.ok ? summarizeOps(ops.value.ops) : null,
-        mangadex: library.ok ? summarizeMangaDex(library.value.library ?? []) : null,
+        registry: registry.ok ? registry.value : null,
+        ops: ops.ok ? ops.value : null,
+        mangadex: mangadex.ok ? mangadex.value : null,
         errors,
       };
       return { value: overview, cacheable: errors.length === 0 };
@@ -564,13 +484,23 @@ export type AuthConnection = {
 
 export const AUTH_PROVIDERS = ["anilist", "mal", "mangadex"] as const;
 
-const isAuthProvider = (value: string): value is AuthProvider =>
-  (AUTH_PROVIDERS as readonly string[]).includes(value);
+const isAuthProvider = (value: string): value is AuthProvider => {
+  for (const provider of AUTH_PROVIDERS) {
+    if (provider === value) {
+      return true;
+    }
+  }
+  return false;
+};
 
 export const loadAuthConnections = createServerFn({ method: "GET" }).handler(
   async (): Promise<readonly AuthConnection[]> => {
-    const body = await call<readonly AuthConnection[]>("/v1/auth");
-    return Array.isArray(body) ? body : [];
+    const body = await call<readonly AuthConnection[] | { readonly error: string }>("/v1/auth");
+    if (!Array.isArray(body)) {
+      return [];
+    }
+    // Owned /v1/auth contract — elements are AuthConnection rows.
+    return trusted<readonly AuthConnection[]>(body);
   },
 );
 
@@ -587,6 +517,7 @@ export const loginMangaDex = createServerFn({ method: "POST" }).handler(
     // Library overview caches a failed mangadex snapshot until soft TTL;
     // drop it so Overview reflects the new connection immediately.
     await invalidateCachedJson("library-overview:v1");
+    await invalidateCachedJson("library-overview:v2");
     return connection;
   },
 );
@@ -594,13 +525,15 @@ export const loginMangaDex = createServerFn({ method: "POST" }).handler(
 export const disconnectAuth = createServerFn({ method: "POST" })
   .validator((data: { provider: AuthProvider }) => data)
   .handler(async ({ data }): Promise<AuthConnection> => {
-    if (!isAuthProvider(data.provider)) {
-      throw new Error(`Unknown auth provider: ${data.provider}`);
+    const provider = data.provider;
+    if (!isAuthProvider(provider)) {
+      throw new Error(`Unknown auth provider: ${String(provider)}`);
     }
     await call<{ provider: AuthProvider; connected: boolean }>(
-      `/v1/auth/${encodeURIComponent(data.provider)}`,
+      `/v1/auth/${encodeURIComponent(provider)}`,
       { method: "DELETE" },
     );
     await invalidateCachedJson("library-overview:v1");
-    return { provider: data.provider, connected: false };
+    await invalidateCachedJson("library-overview:v2");
+    return { provider, connected: false };
   });

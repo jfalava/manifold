@@ -3,12 +3,10 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { RequestsPending } from "../components/loading";
 import { getAnalyticsSnapshot, type LogicalWorker } from "../lib/analytics";
+import { useLoad } from "../lib/use-load";
 
 export const Route = createFileRoute("/requests")({
   component: RequestsPage,
-  pendingComponent: RequestsPending,
-  loader: () => getAnalyticsSnapshot(),
-  staleTime: 60_000,
 });
 
 const workerOrder: LogicalWorker[] = [
@@ -19,7 +17,27 @@ const workerOrder: LogicalWorker[] = [
 ];
 
 function RequestsPage() {
-  const snapshot = Route.useLoaderData();
+  const state = useLoad(getAnalyticsSnapshot);
+
+  if (state.status === "loading") {
+    return <RequestsPending />;
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className="grid gap-6">
+        <div className="grid gap-1.5">
+          <Text as="h1" variant="heading">
+            Requests
+          </Text>
+          <Text>Traffic across the router, sync API, and catalog.</Text>
+        </div>
+        <Banner variant="alert" title="Request analytics unavailable" description={state.message} />
+      </div>
+    );
+  }
+
+  const snapshot = state.value;
 
   const hours = Array.from(
     new Set(workerOrder.flatMap((worker) => snapshot.hourly[worker].map((point) => point.hour))),

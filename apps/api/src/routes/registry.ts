@@ -29,6 +29,19 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
       });
     }
 
+    if (
+      path[0] === "v1" &&
+      path[1] === "registry" &&
+      path.length === 3 &&
+      path[2] === "summary" &&
+      request.method === "GET"
+    ) {
+      const sync = env.MANIFOLD_SYNC.getByName("default");
+      return json({
+        summary: yield* tryPromise(() => sync.registrySummary()),
+      });
+    }
+
     if (path[0] === "v1" && path[1] === "events" && path.length === 2 && request.method === "GET") {
       const sync = env.MANIFOLD_SYNC.getByName("default");
       return json({

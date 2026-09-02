@@ -242,6 +242,38 @@ export interface MangaDexLibraryItem {
   readonly ratingCreatedAt?: string;
 }
 
+/** Compact MangaDex shelf metrics for the admin Overview (no titles/covers). */
+export interface MangaDexLibrarySummary {
+  readonly total: number;
+  readonly statuses: Record<string, number>;
+  readonly rated: number;
+  readonly meanRating: number | null;
+  /** Shelf items already resolved to a canonical registry entry. */
+  readonly linkedToRegistry: number;
+}
+
+/** Compact registry metrics for the admin Overview (SQL aggregates, no entry rows). */
+export interface RegistrySummary {
+  readonly total: number;
+  readonly active: number;
+  readonly tombstoned: number;
+  /** Active entries by list status; entries without list state count as "unset". */
+  readonly statuses: Record<string, number>;
+  /** Active entries linked to each provider. */
+  readonly providerCounts: Record<string, number>;
+  /** Active entries linked to every tracker provider (anilist + mal + mangadex). */
+  readonly fullyLinked: number;
+  /** Active entries with no provider links at all. */
+  readonly unlinked: number;
+}
+
+/** Compact outbox metrics for the admin Overview (recent window, not full op rows). */
+export interface OpsSummary {
+  readonly total: number;
+  readonly states: Record<string, number>;
+  readonly oldestPendingAt: number | null;
+  readonly lastFailedError: string | null;
+}
 
 export interface AuthConnection {
   readonly provider: AuthProvider;

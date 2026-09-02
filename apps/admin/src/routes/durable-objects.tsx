@@ -1,18 +1,14 @@
-import { Badge, Banner, Surface, Table, Text } from "@cloudflare/kumo";
+import { Badge, Banner, SkeletonLine, Surface, Table, Text } from "@cloudflare/kumo";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 
-import { DurableObjectsPending } from "../components/loading";
-import { getAnalyticsSnapshot } from "../lib/analytics";
-import { getLibraryOverview } from "../lib/registry";
+import { TableSkeleton } from "../components/loading";
+import { getAnalyticsSnapshot, type AnalyticsSnapshot } from "../lib/analytics";
+import { getLibraryOverview, type OpsSummary } from "../lib/registry";
+import { useLoad, type LoadState } from "../lib/use-load";
 
 export const Route = createFileRoute("/durable-objects")({
   component: DurableObjectsPage,
-  pendingComponent: DurableObjectsPending,
-  loader: async () => {
-    const [snapshot, library] = await Promise.all([getAnalyticsSnapshot(), getLibraryOverview()]);
-    return { snapshot, ops: library.ops };
-  },
-  staleTime: 60_000,
 });
 
 const OPS_BADGES = {
@@ -27,7 +23,8 @@ function opsBadgeVariant(state: string): "success" | "warning" | "error" | "neut
 }
 
 function DurableObjectsPage() {
-  const { snapshot, ops } = Route.useLoaderData();
+  const analytics = useLoad(getAnalyticsSnapshot);
+  const library = useLoad(getLibraryOverview);
 
   return (
     <div className="grid gap-6">
@@ -37,14 +34,47 @@ function DurableObjectsPage() {
         </Text>
         <Text>Live instances and storage for each DO class bound to the sync worker.</Text>
       </div>
-      {!snapshot.ok && (
+      {analytics.status === "error" && (
+        <Banner variant="alert" title="Analytics unavailable" description={analytics.message} />
+      )}
+      {analytics.status === "ready" && !analytics.value.ok && (
         <Banner
           variant="alert"
           title="Analytics unavailable"
-          description={snapshot.reason ?? "Worker analytics could not be loaded."}
+          description={analytics.value.reason ?? "Worker analytics could not be loaded."}
         />
       )}
-      <Surface>
+      {library.status === "error" && (
+        <Banner variant="alert" title="Outbox data unavailable" description={library.message} />
+      )}
+
+      <DoInstancesCard state={analytics} />
+      <OutboxHealthCard
+        state={
+          library.status === "loading"
+            ? { status: "loading" }
+            : library.status === "error"
+              ? { status: "error", message: library.message }
+              : {
+                  status: "ready",
+                  value: library.value.ops,
+                }
+        }
+      />
+    </div>
+  );
+}
+
+function DoInstancesCard({
+  state,
+}: {
+  readonly state: LoadState<AnalyticsSnapshot>;
+}): ReactNode {
+  return (
+    <Surface>
+      {state.status === "loading" ? (
+        <TableSkeleton columns={4} rows={3} />
+      ) : (
         <Table>
           <Table.Header>
             <Table.Row>
@@ -58,48 +88,81 @@ function DurableObjectsPage() {
             <Table.Row>
               <Table.Cell>ManifoldSync</Table.Cell>
               <Table.Cell>personal sync singleton</Table.Cell>
-              <Table.Cell>{snapshot.ok ? formatCount(snapshot.doRequests) : "—"}</Table.Cell>
-              <Table.Cell>{formatBytes(snapshot.doStoredBytes)}</Table.Cell>
+              <Table.Cell>
+                {state.status === "ready" && state.value.ok
+                  ? formatCount(state.value.doRequests)
+                  : "—"}
+              </Table.Cell>
+              <Table.Cell>
+                {state.status === "ready" ? formatBytes(state.value.doStoredBytes) : "—"}
+              </Table.Cell>
             </Table.Row>
           </Table.Body>
         </Table>
-      </Surface>
-      <div className="grid gap-1.5">
-        <Text as="h2" variant="heading">
-          Outbox health
-        </Text>
-        <Surface className="px-5 py-4">
-          {ops === null ? (
-            <Badge variant="neutral">ops unavailable</Badge>
-          ) : (
-            <div className="grid gap-3">
-              <div className="flex flex-wrap gap-1.5">
-                {Object.entries(ops.states)
-                  .toSorted((a, b) => b[1] - a[1])
-                  .map(([state, count]) => (
-                    <Badge key={state} variant={opsBadgeVariant(state)}>
-                      {state} {count.toLocaleString("en")}
-                    </Badge>
-                  ))}
-                {ops.total === 0 && <Badge variant="neutral">no recent ops</Badge>}
-              </div>
-              {ops.oldestPendingAt !== null && (
-                <p className="text-sm opacity-60">
-                  Oldest pending op since {new Date(ops.oldestPendingAt).toLocaleString()}.
-                </p>
-              )}
-              {ops.lastFailedError !== null && (
-                <p className="text-sm text-kumo-danger">
-                  Last failure: <span className="break-all">{ops.lastFailedError}</span>
-                </p>
-              )}
-              <Link to="/operations" className="text-sm underline opacity-60 hover:opacity-100">
-                Open operations →
-              </Link>
+      )}
+    </Surface>
+  );
+}
+
+function OutboxHealthCard({
+  state,
+}: {
+  readonly state: LoadState<OpsSummary | null>;
+}): ReactNode {
+  return (
+    <div className="grid gap-1.5">
+      <Text as="h2" variant="heading">
+        Outbox health
+      </Text>
+      <Surface className="px-5 py-4">
+        {state.status === "loading" && (
+          <div className="grid gap-3">
+            <div className="flex flex-wrap gap-1.5">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <SkeletonLine
+                  key={index}
+                  minWidth={64}
+                  maxWidth={110}
+                  blockHeight={24}
+                  className="rounded-full"
+                />
+              ))}
             </div>
-          )}
-        </Surface>
-      </div>
+            <SkeletonLine minWidth={180} maxWidth={280} blockHeight={14} className="rounded" />
+          </div>
+        )}
+        {state.status === "error" && <Badge variant="neutral">ops unavailable</Badge>}
+        {state.status === "ready" && state.value === null && (
+          <Badge variant="neutral">ops unavailable</Badge>
+        )}
+        {state.status === "ready" && state.value !== null && (
+          <div className="grid gap-3">
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(state.value.states)
+                .toSorted((a, b) => b[1] - a[1])
+                .map(([stateName, count]) => (
+                  <Badge key={stateName} variant={opsBadgeVariant(stateName)}>
+                    {stateName} {count.toLocaleString("en")}
+                  </Badge>
+                ))}
+              {state.value.total === 0 && <Badge variant="neutral">no recent ops</Badge>}
+            </div>
+            {state.value.oldestPendingAt !== null && (
+              <p className="text-sm opacity-60">
+                Oldest pending op since {new Date(state.value.oldestPendingAt).toLocaleString()}.
+              </p>
+            )}
+            {state.value.lastFailedError !== null && (
+              <p className="text-sm text-kumo-danger">
+                Last failure: <span className="break-all">{state.value.lastFailedError}</span>
+              </p>
+            )}
+            <Link to="/operations" className="text-sm underline opacity-60 hover:opacity-100">
+              Open operations →
+            </Link>
+          </div>
+        )}
+      </Surface>
     </div>
   );
 }

@@ -30,6 +30,11 @@ export const handleMangaDex = (ctx: RouteContext): RouteEffect =>
         library: yield* tryPromise(() => sync.mangaDexLibrary(status)),
       });
     }
+    if (path.length === 4 && path[2] === "library" && path[3] === "summary" && request.method === "GET") {
+      return json({
+        summary: yield* tryPromise(() => sync.mangaDexLibrarySummary()),
+      });
+    }
     if (path.length === 3 && path[2] === "stats" && request.method === "POST") {
       const raw = yield* parseJson(request);
       const idsField = isJsonObject(raw) ? raw.ids : undefined;
