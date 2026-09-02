@@ -1,20 +1,19 @@
 import { Button, DropdownMenu, LinkButton, Sidebar } from "@cloudflare/kumo";
 import {
-  ArrowSquareOut,
-  Books,
-  BookmarkSimple,
-  CloudArrowUp,
-  Code,
-  Database,
-  Gauge,
-  House,
-  Key,
-  List,
-  ListChecks,
-  Monitor,
-  Moon,
-  Queue,
-  Sun,
+  ArrowSquareOutIcon,
+  BooksIcon,
+  BookmarkSimpleIcon,
+  CloudArrowUpIcon,
+  CodeIcon,
+  DatabaseIcon,
+  GaugeIcon,
+  KeyIcon,
+  ListIcon,
+  ListChecksIcon,
+  MonitorIcon,
+  MoonIcon,
+  QueueIcon,
+  SunIcon,
 } from "@phosphor-icons/react";
 import { formatForDisplay, HotkeysProvider, useHotkey } from "@tanstack/react-hotkeys";
 import {
@@ -24,12 +23,7 @@ import {
   Scripts,
   useRouterState,
 } from "@tanstack/react-router";
-import {
-  useState,
-  useSyncExternalStore,
-  type ComponentType,
-  type ReactNode,
-} from "react";
+import { useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 
 import "../styles/globals.css";
 
@@ -71,32 +65,32 @@ interface NavGroup {
 const navGroups: NavGroup[] = [
   {
     label: "Dashboard",
-    items: [{ label: "Overview", path: "/", icon: Gauge }],
+    items: [{ label: "Overview", path: "/", icon: GaugeIcon }],
   },
   {
     label: "Library",
     items: [
-      { label: "Registry", path: "/registry", icon: Books },
+      { label: "Registry", path: "/registry", icon: BooksIcon },
       {
         label: "MangaDex Library",
         path: "/mangadex-library",
-        icon: BookmarkSimple,
+        icon: BookmarkSimpleIcon,
       },
     ],
   },
   {
     label: "Operations",
     items: [
-      { label: "Sync operations", path: "/operations", icon: Queue },
-      { label: "Credentials", path: "/credentials", icon: Key },
+      { label: "Sync operations", path: "/operations", icon: QueueIcon },
+      { label: "Credentials", path: "/credentials", icon: KeyIcon },
     ],
   },
   {
     label: "Infrastructure",
     items: [
-      { label: "Durable Objects", path: "/durable-objects", icon: Database },
-      { label: "Cache", path: "/cache", icon: CloudArrowUp },
-      { label: "Requests", path: "/requests", icon: ListChecks },
+      { label: "Durable Objects", path: "/durable-objects", icon: DatabaseIcon },
+      { label: "Cache", path: "/cache", icon: CloudArrowUpIcon },
+      { label: "Requests", path: "/requests", icon: ListChecksIcon },
     ],
   },
 ];
@@ -151,24 +145,14 @@ function SiteHeader({ children }: { readonly children?: ReactNode }) {
     <header className="site-header sticky top-0 z-30 shrink-0 border-b border-kumo-line bg-kumo-canvas">
       <div className="flex min-h-11 items-center justify-between gap-4 px-2 sm:gap-6 sm:px-3 lg:gap-8 lg:px-4">
         <div className="flex min-w-0 items-center gap-1">
-          <LinkButton
-            href={`${base}/`}
-            aria-label="Home"
-            variant="ghost"
-            size="sm"
-            // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- external Kumo Button prop; not an owned symbol
-            shape="square"
-            icon={House}
-            className="text-kumo-subtle hover:text-kumo-default"
-          />
           <a
             href={`${base}/`}
             aria-label={`${BRAND_TITLE} by JFA`}
             className="flex min-w-0 items-baseline gap-3 truncate no-underline lg:pr-4"
           >
             <span className="shrink-0 text-sm font-bold tracking-tight text-kumo-brand">
-              <span className="hidden sm:inline">{BRAND_TITLE}/admin</span>
-              <span className="inline sm:hidden">{BRAND_TITLE}/admin</span>
+              <span className="hidden sm:inline">{BRAND_TITLE}</span>
+              <span className="inline sm:hidden">{BRAND_TITLE}</span>
               <span className="hidden pl-0.5 text-xs tracking-tight sm:inline">by JFA</span>
             </span>
             <span className="hidden text-[11px] text-kumo-subtle/75 sm:inline">/</span>
@@ -189,9 +173,9 @@ function SiteHeader({ children }: { readonly children?: ReactNode }) {
             size="sm"
             className="gap-1.5 px-2 text-kumo-subtle hover:text-kumo-default"
           >
-            <Code className="size-4" aria-hidden="true" />
+            <CodeIcon className="size-4" aria-hidden="true" />
             <span className="hidden sm:inline">Source</span>
-            <ArrowSquareOut className="hidden size-4 lg:inline" aria-hidden="true" />
+            <ArrowSquareOutIcon className="hidden size-4 lg:inline" aria-hidden="true" />
           </LinkButton>
         </nav>
       </div>
@@ -232,7 +216,7 @@ function DashboardShell() {
         <Button
           variant="ghost"
           size="sm"
-          icon={List}
+          icon={ListIcon}
           aria-label={`${sidebarLabel} (${sidebarShortcut})`}
           aria-keyshortcuts="Control+B Meta+B"
           aria-expanded={sidebarOpen}
@@ -379,7 +363,8 @@ function ThemeToggle() {
     (): ThemeMode => "system",
   );
 
-  const ThemeIcon = preference === "light" ? Sun : preference === "dark" ? Moon : Monitor;
+  const ThemeIcon =
+    preference === "light" ? SunIcon : preference === "dark" ? MoonIcon : MonitorIcon;
   const label = themeLabels[preference];
 
   return (
@@ -399,21 +384,21 @@ function ThemeToggle() {
       />
       <DropdownMenu.Content>
         <DropdownMenu.Item
-          icon={Sun}
+          icon={SunIcon}
           selected={preference === "light"}
           onClick={() => applyThemeMode("light")}
         >
           Light
         </DropdownMenu.Item>
         <DropdownMenu.Item
-          icon={Moon}
+          icon={MoonIcon}
           selected={preference === "dark"}
           onClick={() => applyThemeMode("dark")}
         >
           Dark
         </DropdownMenu.Item>
         <DropdownMenu.Item
-          icon={Monitor}
+          icon={MonitorIcon}
           selected={preference === "system"}
           onClick={() => applyThemeMode("system")}
         >
