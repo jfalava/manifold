@@ -38,8 +38,8 @@ const themeScript = `(function(){try{var p=localStorage.getItem("theme-mode");va
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const GITHUB_HREF = "https://github.com/jfalava/manifold";
 const BRAND_TITLE = "MANIFOLD";
-const BRAND_SUBTITLE = "admin";
-const DOCUMENT_TITLE = "MANIFOLD admin";
+const BRAND_SUBTITLE = "Admin Panel";
+const DOCUMENT_TITLE = "MANIFOLD/admin";
 const SIDEBAR_HOTKEY = "Mod+B";
 
 const SIDEBAR_SHORTCUT_SSR = formatForDisplay(SIDEBAR_HOTKEY, { platform: "windows" });
@@ -167,8 +167,8 @@ function SiteHeader({ children }: { readonly children?: ReactNode }) {
             className="flex min-w-0 items-baseline gap-3 truncate no-underline lg:pr-4"
           >
             <span className="shrink-0 text-sm font-bold tracking-tight text-kumo-brand">
-              <span className="hidden sm:inline">/{BRAND_TITLE}</span>
-              <span className="inline sm:hidden">/{BRAND_TITLE}</span>
+              <span className="hidden sm:inline">{BRAND_TITLE}/admin</span>
+              <span className="inline sm:hidden">{BRAND_TITLE}/admin</span>
               <span className="hidden pl-0.5 text-xs tracking-tight sm:inline">by JFA</span>
             </span>
             <span className="hidden text-[11px] text-kumo-subtle/75 sm:inline">/</span>
