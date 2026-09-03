@@ -61,8 +61,7 @@
         "@types/node": "26.4.0",
         "@types/react": "19.2.18",
         "@types/react-dom": "19.2.5",
-        "@types/cli-progress": "3.11.6",
-        "bun-types": "^1.4.0"
+        "@types/cli-progress": "3.11.6"
       },
       "docs": {
         "@cloudflare/nimbus-docs": "0.11.0",
