@@ -528,21 +528,29 @@ export class ManifoldSourceImpl implements
   }
 
   async saveCloudflareBypassCookies(cookies: Cookie[]): Promise<void> {
-    const filtered = clearanceCookiesOnly(cookies);
-    // Empty harvest must not wipe a still-valid jar (app WKError path).
-    if (filtered.length === 0) {
-      this.noteComixSessionAction("save: empty harvest (kept existing)");
-      return;
-    }
-    this.cookieStorage.cookies = filtered;
-    persistCfClearance(filtered);
-    this.noteComixSessionAction(`saved ${filtered.length} clearance`);
+    // Paperback may still call the deprecated harvest path after a manga-entry
+    // challenge. It must share the full recovery + cooldown reset of
+    // cloudflareBypassCompleted — otherwise CF stays "challenged" for 45s and
+    // chapter refresh keeps failing while Settings `force` appears to work.
+    await this.applyComixBypassCookies(cookies, "save");
   }
 
   async cloudflareBypassCompleted(
     _request: Request,
     cookies: Cookie[],
     _localStorage: Record<string, string>,
+  ): Promise<void> {
+    await this.applyComixBypassCookies(cookies, "complete");
+  }
+
+  /**
+   * Apply cookies harvested after a Cloudflare challenge sheet closes.
+   * Shared by deprecated `saveCloudflareBypassCookies` and
+   * `cloudflareBypassCompleted` so manga-entry refresh cannot skip recovery.
+   */
+  private async applyComixBypassCookies(
+    cookies: Cookie[],
+    source: "save" | "complete",
   ): Promise<void> {
     const harvested = clearanceCookiesOnly(cookies);
     let resolved = harvested;
@@ -595,11 +603,19 @@ export class ManifoldSourceImpl implements
 
     this.cookieStorage.cookies = resolved;
     if (resolved.length > 0) {persistCfClearance(resolved);}
+    // Always clear cooldown after a completed challenge sheet — even when the
+    // harvest was empty. Leaving sessionBroken/cooldown set is what made
+    // manga-entry CF refresh look broken while Settings `force` worked
+    // (force resets cooldown before throwing a fresh CloudflareError).
     resetComixCooldown();
     this.noteComixSessionAction(
-      resolved.length > 0 ? `bypass complete:${resolved.length}` : "bypass complete: empty",
+      resolved.length > 0
+        ? `bypass ${source}:${resolved.length}`
+        : `bypass ${source}: empty`,
     );
-    console.log(`[manifold] comix bypass complete:${this.cookieStorage.cookies.length}`);
+    console.log(
+      `[manifold] comix bypass ${source}:${this.cookieStorage.cookies.length}`,
+    );
   }
 
   private comixClearanceCookie(): Cookie | undefined {
@@ -1431,7 +1447,31 @@ export class ManifoldSourceImpl implements
         : undefined;
     if (comixPageId) {
       console.log(`[manifold] chapters source:${sourceManga.mangaId}:comix-direct:${comixPageId}`);
-      return finalize(await this.comix.fetchChaptersByHid(comixPageId, sourceManga));
+      // Same adopt-before-throw posture as My Updates · Comix: after a solved
+      // challenge the app harvest often dies with WKError and leaves
+      // cf_clearance only in the shared WK store. Without adopting here,
+      // chapter refresh re-throws CloudflareError forever even though force
+      // (which resets cooldown) looks fine.
+      if (!this.hasComixBrowserSession()) {
+        const adopted = await this.adoptComixClearanceFromStore();
+        console.log(
+          `[manifold] comix-direct: adopt before chapters=${adopted} session=${this.hasComixBrowserSession()}`,
+        );
+      }
+      try {
+        return finalize(await this.comix.fetchChaptersByHid(comixPageId, sourceManga));
+      } catch (error) {
+        if (!(error instanceof CloudflareError)) {throw error;}
+        // One more silent adopt after a challenge mid-fetch, then rethrow so
+        // Paperback still opens the bypass sheet with a bare-origin request.
+        if (!this.hasComixBrowserSession()) {
+          await this.adoptComixClearanceFromStore();
+        }
+        throw new CloudflareError(
+          await comixBypassRequest(),
+          "Comix Cloudflare bypass — complete the browser challenge",
+        );
+      }
     }
 
     const loadMangadex = async (): Promise<Chapter[]> => {
