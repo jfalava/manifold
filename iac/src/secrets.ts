@@ -63,9 +63,9 @@ const readIacEnv = (): Map<string, string> => {
 
 const iacEnv = readIacEnv();
 
+/** Secret value from process env or iac/.env under the bare MANIFOLD_* name. */
 const managedSecretValue = (secretName: string): string | undefined =>
-  readProcessEnv(`ALCHEMY_SECRET_${secretName}`) ??
-  iacEnv.get(`ALCHEMY_SECRET_${secretName}`);
+  readProcessEnv(secretName) ?? iacEnv.get(secretName);
 
 /**
  * Resolves a secret value for local development (`alchemy dev`) as a
@@ -75,11 +75,11 @@ const managedSecretValue = (secretName: string): string | undefined =>
 export const localSecretValue = (
   secretName: string
 ): Redacted.Redacted<string> => {
-  const value = managedSecretValue(secretName) ?? iacEnv.get(secretName);
+  const value = managedSecretValue(secretName);
 
   if (value === undefined || value === "") {
     throw new Error(
-      `Missing local secret ${secretName}. Set ALCHEMY_SECRET_${secretName} in iac/.env.`
+      `Missing local secret ${secretName}. Set ${secretName} in iac/.env.`
     );
   }
 
@@ -88,10 +88,10 @@ export const localSecretValue = (
 
 /**
  * Declares the secrets explicitly supplied for this Alchemy run as Secrets
- * Store Secret resources. Values use the ALCHEMY_SECRET_ prefix so ordinary
- * runtime environment variables never rotate a Cloudflare secret. Names
- * without a supplied value are skipped — they must already exist in the
- * account store for their bindings to resolve.
+ * Store Secret resources. Values come from the bare MANIFOLD_* env names in
+ * iac/.env (or the process environment). Names without a supplied value are
+ * skipped — they must already exist in the account store for their bindings
+ * to resolve.
  */
 export const defineManagedSecrets = Effect.fn("defineManagedSecrets")(
   function* (store: SecretsStoreResource, secretNames: readonly string[]) {

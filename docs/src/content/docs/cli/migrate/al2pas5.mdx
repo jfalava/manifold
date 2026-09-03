@@ -1,0 +1,124 @@
+---
+title: al2pas5
+description: Generate a Paperback .pas5 backup from the AniList manga list.
+sidebar:
+  order: 4
+---
+
+```text
+bun run manifold migrate al2pas5 [flags]
+```
+
+Builds a Paperback `.pas5` archive with **ManifoldSource** and **ManifoldTracker** per title. When the personal registry already has MangaDex or Comix links, those provider IDs are stamped into the backup. Unresolved titles fall back to `anilist:<id>`.
+
+## Flags
+
+### `--apply`
+
+Write the generated `.pas5` archive. Without this flag, the command reports
+the titles and output it would generate without writing the archive.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold migrate al2pas5 --apply
+```
+
+### `--tabs <value>`
+
+Choose which AniList statuses become Paperback library tabs. Use `auto` to
+include the default status set, `none` to create no status tabs, or pass a
+comma-separated list of `reading`, `paused`, `dropped`, `completed`, and
+`planning`.
+
+- Default: `auto`
+
+Example:
+
+```text
+bun run manifold migrate al2pas5 --tabs reading,completed
+```
+
+### `--base <path>`
+
+Seed the generated archive from an existing `.pas5` export. Existing tab IDs
+are reused when possible, which helps preserve device tab references.
+
+- Default: no base archive
+
+Example:
+
+```text
+bun run manifold migrate al2pas5 --base ./Paperback-Backup.pas5
+```
+
+### `--out <path>`
+
+Set the path for the generated archive.
+
+- Default: `Paperback-Generated.<date>.<time>.pas5`
+
+Example:
+
+```text
+bun run manifold migrate al2pas5 --out ./backups/manifold.pas5
+```
+
+### `--limit <n>`
+
+Generate entries for only the first `n` titles. This is useful for a canary
+archive before exporting the complete AniList list.
+
+- Default: no limit
+
+Example:
+
+```text
+bun run manifold migrate al2pas5 --limit 10
+```
+
+### `--anilist-token <token>`
+
+AniList access token used to fetch the manga list. Falls back to
+`MANIFOLD_ANILIST_TOKEN`.
+
+Example:
+
+```text
+bun run manifold migrate al2pas5 --anilist-token "$MANIFOLD_ANILIST_TOKEN"
+```
+
+### `--api-token <token>`
+
+Personal API token used to resolve registry UUIDs and provider links. Falls
+back to `MANIFOLD_TOKEN`.
+
+Example:
+
+```text
+bun run manifold migrate al2pas5 --api-token "$MANIFOLD_TOKEN"
+```
+
+### `--api-origin <url>`
+
+Personal API origin used for registry lookups.
+
+- Default: `https://manifold.jfa.dev/api` (or `MANIFOLD_API_ORIGIN`)
+
+Example:
+
+```text
+bun run manifold migrate al2pas5 --api-origin https://manifold.example/api
+```
+
+## Usage
+
+```text
+bun run manifold migrate al2pas5
+bun run manifold migrate al2pas5 --apply
+bun run manifold migrate al2pas5 --apply --base ./Paperback-Backup.pas5 --tabs reading,completed
+```
+
+`--tabs` filters which AniList statuses become library tabs. With `--base`, existing tab IDs are reused when possible; restoring the generated archive on a device may **replace** the on-device library — keep a copy of the original backup.

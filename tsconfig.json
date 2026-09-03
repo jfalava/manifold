@@ -10,8 +10,8 @@
     { "path": "./packages/paperback-runtime" },
     { "path": "./source" },
     { "path": "./tracker" },
-    { "path": "./apps/api" },
-    { "path": "./apps/router" },
-    { "path": "./apps/cli" }
+    { "path": "./api" },
+    { "path": "./router" },
+    { "path": "./cli" }
   ]
 }

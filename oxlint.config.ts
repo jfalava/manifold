@@ -3,7 +3,7 @@ import { defineConfig, type DummyRuleMap } from "oxlint";
 // Oxlint rejects relative jsPlugins specifiers inside configs consumed via
 // `extends`, so the base exposes a factory and each workspace registers the
 // plugins itself with a path prefix relative to its own directory
-// (".." for workspace roots, "../.." for apps/* and packages/*).
+// (".." for workspace roots like api/cli/admin/docs/router/source/tracker/iac, "../.." for packages/*).
 //
 // Effect plugin is opt-in: only packages with a direct `effect` dependency
 // should pass `{ effect: true }` (skill: install-anti-slop).

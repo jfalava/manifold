@@ -1,0 +1,113 @@
+---
+title: mangadex
+description: Prefill MangaDex provider links on canonical registry rows.
+sidebar:
+  order: 2
+---
+
+```text
+bun run manifold registry mangadex [flags]
+```
+
+Backfills missing `mangadex` provider links. Matching runs on the Worker (vector + live search) — **no local MangaDex secrets** are required. Dry-run until `--apply`.
+
+## Flags
+
+### `--apply`
+
+Write matched MangaDex provider links to the registry. Without this flag, the
+command resolves titles and reports results without changing rows.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold registry mangadex --apply
+```
+
+### `--limit <n>`
+
+Attempt at most `n` unmatched registry rows. Filtering happens before the
+limit is applied.
+
+- Default: all unmatched rows
+
+Example:
+
+```text
+bun run manifold registry mangadex --limit 50
+```
+
+### `--status <statuses>`
+
+Filter rows by their `state.status` before applying `--limit`. Use `auto` for
+every status, or pass a comma-separated list such as `reading,completed`.
+`reading` also includes `re_reading`.
+
+- Default: `auto`
+
+Example:
+
+```text
+bun run manifold registry mangadex --status reading,completed
+```
+
+### `--delay <milliseconds>`
+
+Wait this many milliseconds between MangaDex resolve calls. Increase it when
+you want to reduce request pressure on the upstream service.
+
+- Default: `800`
+
+Example:
+
+```text
+bun run manifold registry mangadex --delay 1200
+```
+
+### `--api-token <token>`
+
+Personal API token used to read and update registry rows. Falls back to
+`MANIFOLD_TOKEN`.
+
+Example:
+
+```text
+bun run manifold registry mangadex --api-token "$MANIFOLD_TOKEN"
+```
+
+### `--api-origin <url>`
+
+Personal API origin containing the registry.
+
+- Default: `https://manifold.jfa.dev/api` (or `MANIFOLD_API_ORIGIN`)
+
+Example:
+
+```text
+bun run manifold registry mangadex --api-origin https://manifold.example/api
+```
+
+### `--anilist-token <token>`
+
+Optional AniList access token used to add English, romaji, native, and synonym
+aliases to searches. Falls back to `MANIFOLD_ANILIST_TOKEN`.
+
+Example:
+
+```text
+bun run manifold registry mangadex --anilist-token "$MANIFOLD_ANILIST_TOKEN"
+```
+
+`--status` filters `row.state.status` before `--limit`. `reading` expands to `reading,re_reading`. `auto` includes every status.
+
+## Usage
+
+```text
+bun run manifold registry mangadex
+bun run manifold registry mangadex --status reading,completed --limit 50
+bun run manifold registry mangadex --apply
+```
+
+Rows without an AniList or MAL id are skipped. Ambiguous / not-found / tombstoned results are not written. The summary counts linked, ambiguous, not_found, skipped, and errors.

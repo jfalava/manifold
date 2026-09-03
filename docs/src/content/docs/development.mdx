@@ -1,0 +1,42 @@
+---
+title: Development
+description: Tooling, install, test, and deploy commands for the monorepo.
+sidebar:
+  order: 4
+---
+
+## Tooling
+
+- Bun workspaces
+- TypeScript project references
+- Effect (see root `package.json` catalogs)
+- Alchemy for Cloudflare infrastructure as code
+- Vitest for deploy-free unit tests
+
+Secrets for local CLI work live in `cli/.env` (see `cli/.env.example`). Deploy secrets live in `iac/.env`.
+
+## Commands
+
+```text
+bun install
+bun run typecheck
+bun run test
+bun run test:oauth
+bun run test:canonical
+bun run test:paperback
+bun run build:docs
+bun run plan
+bun run deploy
+bun run manifold <subcommand>
+```
+
+`plan` and `deploy` always rebuild the Paperback catalog first. Review the
+Alchemy plan before deploying. Non-interactive deploys:
+
+```text
+bun run deploy -- --yes
+```
+
+There is no Wrangler deploy script in this repository — Alchemy owns production.
+
+CLI migrations and maintenance are documented under [CLI](/cli/).

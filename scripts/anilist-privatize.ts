@@ -2,8 +2,8 @@
  * Marks every manga list entry on an AniList account as private.
  *
  * Usage:
- *   bun scripts/anilist-privatize.ts --token <ANILIST_TOKEN> [--dry-run]
- *   ANILIST_TOKEN=<...> bun scripts/anilist-privatize.ts [--dry-run]
+ *   bun scripts/anilist-privatize.ts --token <MANIFOLD_ANILIST_TOKEN> [--dry-run]
+ *   MANIFOLD_ANILIST_TOKEN=<...> bun scripts/anilist-privatize.ts [--dry-run]
  *
  * A fresh token can be captured at:
  *   https://manifold.jfa.dev/api/v1/auth/anilist/device
@@ -40,7 +40,7 @@ const parseArgs = (): CliArgs => {
       dryRun = true;
     }
   }
-  return { token: token ?? process.env.ANILIST_TOKEN, dryRun };
+  return { token: token ?? process.env.MANIFOLD_ANILIST_TOKEN, dryRun };
 };
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -80,7 +80,7 @@ const gql = async <A>(
 const main = async (): Promise<void> => {
   const { token, dryRun } = parseArgs();
   if (!token) {
-    console.error("Missing token. Pass --token <TOKEN> or set ANILIST_TOKEN.");
+    console.error("Missing token. Pass --token <TOKEN> or set MANIFOLD_ANILIST_TOKEN.");
     process.exitCode = 1;
     return;
   }

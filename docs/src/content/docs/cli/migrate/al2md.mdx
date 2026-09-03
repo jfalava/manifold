@@ -1,0 +1,135 @@
+---
+title: anilist-to-mangadex
+description: Bring MangaDex statuses and chapter markers up to parity with AniList.
+sidebar:
+  order: 2
+---
+
+```text
+bun run manifold migrate anilist-to-mangadex [flags]
+```
+
+Also registered as `manifold migrate migrate` (Effect command name). The historical `al2md` script name in `cli` is not the CLI path.
+
+Fetches your AniList manga list, matches titles on MangaDex, then sets reading status and optionally marks chapters up to AniList progress. Runs entirely locally because AniList blocks Cloudflare Worker IPs.
+
+## Flags
+
+### `--anilist-token <token>`
+
+AniList access token used to read the source manga list. The flag is optional
+when `MANIFOLD_ANILIST_TOKEN` is set.
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --anilist-token "$MANIFOLD_ANILIST_TOKEN"
+```
+
+### `--apply`
+
+Write statuses and chapter read markers to MangaDex. Without this flag, the
+command only reports what it would change.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --apply
+```
+
+### `--skip-progress`
+
+Update reading statuses but do not backfill MangaDex chapter read markers from
+AniList progress.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --skip-progress
+```
+
+### `--mangadex-client-id <id>`
+
+OAuth client ID for the MangaDex password grant. Falls back to
+`MANIFOLD_MANGADEX_CLIENT_ID`.
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --mangadex-client-id "$MANIFOLD_MANGADEX_CLIENT_ID"
+```
+
+### `--mangadex-client-secret <secret>`
+
+OAuth client secret for the MangaDex password grant. Falls back to
+`MANIFOLD_MANGADEX_CLIENT_SECRET`.
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --mangadex-client-secret "$MANIFOLD_MANGADEX_CLIENT_SECRET"
+```
+
+### `--mangadex-username <username>`
+
+MangaDex account username for the password grant. Falls back to
+`MANIFOLD_MANGADEX_USERNAME`.
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --mangadex-username "$MANIFOLD_MANGADEX_USERNAME"
+```
+
+### `--mangadex-password <password>`
+
+MangaDex account password for the password grant. Falls back to
+`MANIFOLD_MANGADEX_PASSWORD`.
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mangadex --mangadex-password "$MANIFOLD_MANGADEX_PASSWORD"
+```
+
+All four MangaDex credential flags are required together. This command accepts
+the OAuth password grant only; it does not accept a MangaDex personal token.
+
+## Matching and status map
+
+Per AniList entry:
+
+1. MangaDex `links.al` direct hit
+2. Normalized title search
+
+AniList → MangaDex status mapping:
+
+| AniList   | MangaDex       |
+| --------- | -------------- |
+| CURRENT   | `reading`      |
+| REPEATING | `re_reading`   |
+| PAUSED    | `on_hold`      |
+| PLANNING  | `plan_to_read` |
+| COMPLETED | `completed`    |
+| DROPPED   | `dropped`      |
+
+Chapter backfill marks read every chapter numbered up to the AniList progress
+value (unless `--skip-progress`).
+
+## Workflow
+
+```text
+bun run manifold migrate anilist-to-mangadex
+bun run manifold migrate anilist-to-mangadex --apply
+```
+
+Unmatched titles and per-title failures leave a non-zero exit code. Prefer a dry-run first on a large list. Secrets live in `cli/.env` — see `cli/.env.example`.
+
+<Aside type="caution" title="Credentials">
+  Unlike `md2al`, this path does not accept a MangaDex personal token. You need
+  the OAuth client + username/password grant env vars.
+</Aside>

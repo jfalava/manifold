@@ -13,7 +13,7 @@
         "typescript": "catalog:build",
       },
     },
-    "apps/admin": {
+    "admin": {
       "name": "@manifold/admin",
       "dependencies": {
         "@cloudflare/kumo": "catalog:cloudflare",
@@ -46,7 +46,7 @@
         "wrangler": "catalog:cloudflare",
       },
     },
-    "apps/api": {
+    "api": {
       "name": "@manifold/api",
       "dependencies": {
         "@effect/platform-bun": "catalog:effect",
@@ -70,7 +70,7 @@
         "vitest": "catalog:build",
       },
     },
-    "apps/cli": {
+    "cli": {
       "name": "@manifold/cli",
       "bin": {
         "manifold": "./index.ts",
@@ -94,7 +94,7 @@
         "vitest": "catalog:build",
       },
     },
-    "apps/docs": {
+    "docs": {
       "name": "@manifold/docs",
       "dependencies": {
         "@cloudflare/nimbus-docs": "catalog:docs",
@@ -125,19 +125,6 @@
         "tailwindcss": "catalog:styling",
         "typescript": "6.0.2",
         "wrangler": "4.127.0",
-      },
-    },
-    "apps/router": {
-      "name": "@manifold/router",
-      "dependencies": {
-        "hono": "catalog:cloudflare",
-      },
-      "devDependencies": {
-        "@cloudflare/workers-types": "catalog:cloudflare",
-        "bun-types": "catalog:types",
-        "oxlint": "catalog:build",
-        "oxlint-tsgolint": "catalog:build",
-        "typescript": "catalog:build",
       },
     },
     "iac": {
@@ -242,8 +229,22 @@
         "vitest": "catalog:build",
       },
     },
+    "router": {
+      "name": "@manifold/router",
+      "dependencies": {
+        "hono": "catalog:cloudflare",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "catalog:cloudflare",
+        "bun-types": "catalog:types",
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
+        "typescript": "catalog:build",
+      },
+    },
     "source": {
       "name": "@manifold/source",
+      "version": "2026.9.4-1",
       "dependencies": {
         "@manifold/canonical": "workspace:*",
         "@manifold/json": "workspace:*",
@@ -809,17 +810,17 @@
 
     "@libsql/win32-x64-msvc": ["@libsql/win32-x64-msvc@0.5.29", "", { "os": "win32", "cpu": "x64" }, "sha512-4/0CvEdhi6+KjMxMaVbFM2n2Z44escBRoEYpR+gZg64DdetzGnYm8mcNLcoySaDJZNaBd6wz5DNdgRmcI4hXcg=="],
 
-    "@manifold/admin": ["@manifold/admin@workspace:apps/admin"],
+    "@manifold/admin": ["@manifold/admin@workspace:admin"],
 
-    "@manifold/api": ["@manifold/api@workspace:apps/api"],
+    "@manifold/api": ["@manifold/api@workspace:api"],
 
     "@manifold/canonical": ["@manifold/canonical@workspace:packages/canonical"],
 
-    "@manifold/cli": ["@manifold/cli@workspace:apps/cli"],
+    "@manifold/cli": ["@manifold/cli@workspace:cli"],
 
     "@manifold/comix": ["@manifold/comix@workspace:packages/comix"],
 
-    "@manifold/docs": ["@manifold/docs@workspace:apps/docs"],
+    "@manifold/docs": ["@manifold/docs@workspace:docs"],
 
     "@manifold/iac": ["@manifold/iac@workspace:iac"],
 
@@ -833,7 +834,7 @@
 
     "@manifold/paperback-runtime": ["@manifold/paperback-runtime@workspace:packages/paperback-runtime"],
 
-    "@manifold/router": ["@manifold/router@workspace:apps/router"],
+    "@manifold/router": ["@manifold/router@workspace:router"],
 
     "@manifold/source": ["@manifold/source@workspace:source"],
 

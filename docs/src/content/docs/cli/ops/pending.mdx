@@ -1,0 +1,46 @@
+---
+title: pending
+description: List pending, failed, and blocked personal API ops.
+sidebar:
+  order: 1
+---
+
+```text
+bun run manifold ops pending [flags]
+```
+
+Read-only triage for the personal API op log. Prints every non-completed op (up to 200 per state) with id, kind, origin, attempt count, and last error.
+
+## Flags
+
+### `--api-token <token>`
+
+Personal API token used to read the op log. Falls back to `MANIFOLD_TOKEN`.
+
+Example:
+
+```text
+bun run manifold ops pending --api-token "$MANIFOLD_TOKEN"
+```
+
+### `--api-origin <url>`
+
+Personal API origin to query.
+
+- Default: `https://manifold.jfa.dev/api` (or `MANIFOLD_API_ORIGIN`)
+
+Example:
+
+```text
+bun run manifold ops pending --api-origin https://manifold.example/api
+```
+
+## Usage
+
+```text
+bun run manifold ops pending
+```
+
+Ops auto-retry up to 5 attempts before landing in `blocked`. Use [retry](/cli/ops/retry/) to re-queue one.
+
+Remember where ops execute: `mangadex:*` drains on the Worker; `anilist:*` waits for your device.

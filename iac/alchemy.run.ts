@@ -3,7 +3,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Output from "alchemy/Output";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
-import type { ManifoldSync as ManifoldSyncClass } from "../apps/api/src/manifold-sync";
+import type { ManifoldSync as ManifoldSyncClass } from "../api/src/manifold-sync";
 
 import { defineManagedSecrets } from "./src/secrets";
 
@@ -18,15 +18,15 @@ export const SharedSecretsStore = Cloudflare.SecretsStore.Store(
  * redirect base URL) remain plain vars sourced from iac/.env. */
 const SYNC_SECRET_NAMES = [
   "MANIFOLD_TOKEN",
-  "OAUTH_TOKEN_ENCRYPTION_SECRET",
-  "ANILIST_CLIENT_SECRET",
-  "MAL_CLIENT_SECRET",
-  "MANGADEX_CLIENT_SECRET",
-  "MANGADEX_USERNAME",
-  "MANGADEX_PASSWORD"
+  "MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET",
+  "MANIFOLD_ANILIST_CLIENT_SECRET",
+  "MANIFOLD_MAL_CLIENT_SECRET",
+  "MANIFOLD_MANGADEX_CLIENT_SECRET",
+  "MANIFOLD_MANGADEX_USERNAME",
+  "MANIFOLD_MANGADEX_PASSWORD"
 ] as const;
 
-const MANAGED_SECRET_NAMES = [...SYNC_SECRET_NAMES, "ADMIN_PANEL_ANALYTICS_API"];
+const MANAGED_SECRET_NAMES = [...SYNC_SECRET_NAMES, "MANIFOLD_ADMIN_PANEL_ANALYTICS_API"];
 
 const CF_ACCOUNT_ID = "cb3d0c5cb46f4e801b0b7f4cc3fc78d3";
 
@@ -73,7 +73,7 @@ const debugObservability = {
 
 export const ManifoldApi = Cloudflare.Worker("ManifoldApi", {
   name: "manifold-api",
-  main: "../apps/api/src/index.ts",
+  main: "../api/src/index.ts",
   workersDev: false,
   observability: debugObservability,
   compatibility: {
@@ -81,7 +81,7 @@ export const ManifoldApi = Cloudflare.Worker("ManifoldApi", {
     flags: ["nodejs_compat"]
   },
   assets: {
-    directory: "../apps/api/catalog-assets",
+    directory: "../api/catalog-assets",
     runWorkerFirst: true,
   },
   env: {
@@ -89,10 +89,10 @@ export const ManifoldApi = Cloudflare.Worker("ManifoldApi", {
     MANGADEX_INDEX: MangaDexIndex,
     MANIFOLD_SYNC: ManifoldSync,
     ENVIRONMENT: "production",
-    OAUTH_REDIRECT_BASE_URL: Config.string("OAUTH_REDIRECT_BASE_URL"),
-    ANILIST_CLIENT_ID: Config.string("ANILIST_CLIENT_ID"),
-    MAL_CLIENT_ID: Config.string("MAL_CLIENT_ID"),
-    MANGADEX_CLIENT_ID: Config.string("MANGADEX_CLIENT_ID")
+    MANIFOLD_OAUTH_REDIRECT_BASE_URL: Config.string("MANIFOLD_OAUTH_REDIRECT_BASE_URL"),
+    MANIFOLD_ANILIST_CLIENT_ID: Config.string("MANIFOLD_ANILIST_CLIENT_ID"),
+    MANIFOLD_MAL_CLIENT_ID: Config.string("MANIFOLD_MAL_CLIENT_ID"),
+    MANIFOLD_MANGADEX_CLIENT_ID: Config.string("MANIFOLD_MANGADEX_CLIENT_ID")
   }
 });
 
@@ -100,7 +100,7 @@ export const Worker = ManifoldApi;
 
 export const ManifoldDocsAssets = Cloudflare.Website.StaticSite("ManifoldDocsAssets", {
   name: "manifold-docs-assets",
-  cwd: "../apps/docs",
+  cwd: "../docs",
   command: "bun run build",
   outdir: "dist",
   workersDev: false,
@@ -115,7 +115,7 @@ export type WorkerEnv = Cloudflare.InferEnv<typeof ManifoldApi>;
 
 export const ManifoldDocs = Cloudflare.Worker("ManifoldDocs", {
   name: "manifold-docs",
-  main: "../apps/docs/src/worker.ts",
+  main: "../docs/src/worker.ts",
   workersDev: false,
   observability: debugObservability,
   compatibility: {
@@ -136,7 +136,7 @@ export const AdminCache = Cloudflare.KV.Namespace("AdminCache", {
 
 export const ManifoldAdmin = Cloudflare.Website.Vite("ManifoldAdmin", {
   name: "manifold-admin",
-  rootDir: "../apps/admin",
+  rootDir: "../admin",
   workersDev: false,
   observability: debugObservability,
   memo: {
@@ -154,7 +154,7 @@ export const ManifoldAdmin = Cloudflare.Website.Vite("ManifoldAdmin", {
 
 export const ManifoldRouter = Cloudflare.Worker("ManifoldRouter", {
   name: "manifold-router",
-  main: "../apps/router/src/index.ts",
+  main: "../router/src/index.ts",
   domain: "manifold.jfa.dev",
   workersDev: false,
   observability: debugObservability,
@@ -181,9 +181,9 @@ export default Alchemy.Stack(
     yield* MangaDexMalMetadataIndex;
 
     // The store is account-scoped and already exists; the provider adopts it
-    // and never deletes it. Values supplied via ALCHEMY_SECRET_<NAME> entries
-    // in iac/.env are provisioned into the store; SyncApi binds its own
-    // subset as `secrets_store_secret` bindings.
+    // and never deletes it. Values supplied via MANIFOLD_* entries in iac/.env
+    // are provisioned into the store; SyncApi binds its own subset as
+    // `secrets_store_secret` bindings.
     const sharedSecretsStore = yield* SharedSecretsStore;
     const syncApiResource = yield* ManifoldApi;
     yield* defineManagedSecrets(sharedSecretsStore, MANAGED_SECRET_NAMES);
@@ -202,8 +202,8 @@ export default Alchemy.Stack(
       bindings: [
         {
           type: "secrets_store_secret" as const,
-          name: "ADMIN_PANEL_ANALYTICS_API",
-          secretName: "ADMIN_PANEL_ANALYTICS_API",
+          name: "MANIFOLD_ADMIN_PANEL_ANALYTICS_API",
+          secretName: "MANIFOLD_ADMIN_PANEL_ANALYTICS_API",
           storeId: sharedSecretsStore.storeId
         },
         {

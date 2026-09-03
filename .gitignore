@@ -11,7 +11,7 @@ coverage
 *.pulse
 source/bundles/
 tracker/bundles/
-apps/api/catalog-assets/
+api/catalog-assets/
 *.pas5
 .tanstack
 .wrangler
@@ -20,3 +20,4 @@ Paperback-Archive.*
 paperback-backup-example
 .tmp
 .amp/portals/
+.env
