@@ -137,6 +137,13 @@ export const AdminCache = Cloudflare.KV.Namespace("AdminCache", {
 export const ManifoldAdmin = Cloudflare.Website.Vite("ManifoldAdmin", {
   name: "manifold-admin",
   rootDir: "../admin",
+  // Same pattern as jfa.dev keweke: explicit server entry + assets config.
+  // runWorkerFirst: true so service-binding traffic (router → ADMIN.fetch)
+  // always hits src/server.ts, which serves client files via env.ASSETS.
+  main: "src/server.ts",
+  assets: {
+    runWorkerFirst: true
+  },
   workersDev: false,
   observability: debugObservability,
   memo: {

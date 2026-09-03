@@ -20,5 +20,7 @@ declare namespace Cloudflare {
     MANIFOLD_API_ORIGIN?: string;
     SYNC_API?: Fetcher;
     ADMIN_CACHE?: KVNamespace;
+    /** Client build output — required when reached via service binding. */
+    ASSETS?: Fetcher;
   }
 }

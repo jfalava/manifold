@@ -12,7 +12,8 @@
 @import "@fontsource/google-sans-code/600.css";
 @import "@fontsource/google-sans-code/700.css";
 
-@source "../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+/* From src/styles → ../../node_modules = admin/node_modules (not src/node_modules). */
+@source "../../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
 @import "@cloudflare/kumo/styles/tailwind";
 @import "tailwindcss";
 
