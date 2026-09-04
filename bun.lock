@@ -79,6 +79,7 @@
       "dependencies": {
         "@effect/platform-bun": "catalog:effect",
         "@manifold/canonical": "workspace:*",
+        "@manifold/contract": "workspace:*",
         "@manifold/json": "workspace:*",
         "@manifold/mangadex": "workspace:*",
         "cli-progress": "catalog:cli",

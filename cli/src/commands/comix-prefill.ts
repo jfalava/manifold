@@ -32,6 +32,7 @@ import {
   waitForEnterInFrame,
   type RunContext,
 } from "@/ui";
+import { RegistryEntry, RegistryListResponse } from "@manifold/contract";
 import { apiCall, apiConfig, type ApiConfig, type RegistryRow } from "@/commands/toolbox";
 
 const SEARCH_DELAY_MS = 1_500;
@@ -195,9 +196,12 @@ export const comixPrefillCommand = Command.make("comix", {
               let page: readonly RegistryRow[];
               const allRows: RegistryRow[] = [];
               do {
-                const body = await apiCall<{ entries: readonly RegistryRow[] }>(
+                const body = await apiCall(
                   config,
                   `/v1/registry?limit=${PAGE_SIZE}&offset=${offset}`,
+                  "GET",
+                  undefined,
+                  RegistryListResponse,
                 );
                 page = body.entries;
                 allRows.push(...page);
@@ -358,6 +362,7 @@ export const comixPrefillCommand = Command.make("comix", {
                         `/v1/entries/${encodeURIComponent(row.id)}/providers`,
                         "POST",
                         { provider: "comix", externalId: hid, title: row.title },
+                        RegistryEntry,
                       );
                     }
                     const slug = match?.slug !== undefined ? `-${match.slug.slice(0, 12)}` : "";

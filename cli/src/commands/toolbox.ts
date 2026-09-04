@@ -1,5 +1,14 @@
-import { Effect, Option } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
+import {
+  decodeResponse,
+  ListState,
+  OpsListResponse,
+  RegistryEntriesResponse,
+  RegistryListEntry,
+  RegistryListResponse,
+  SyncOp,
+} from "@manifold/contract";
 import { errorMessage, isJsonObject, type JsonValue } from "@manifold/json";
 
 import {
@@ -65,20 +74,27 @@ export const apiCall = async <A>(
   config: ApiConfig,
   path: string,
   method = "GET",
-  body?: JsonValue
+  body?: JsonValue,
+  schema?: Schema.ConstraintDecoder<A>,
 ): Promise<A> => {
   const response = await fetch(`${config.origin}${path}`, {
     method,
     headers: {
       accept: "application/json",
       authorization: `Bearer ${config.token}`,
-      ...(!(body === undefined) && { "content-type": "application/json" })
+      ...(!(body === undefined) && { "content-type": "application/json" }),
     },
-    ...(!(body === undefined) && { body: JSON.stringify(body) })
+    ...(!(body === undefined) && { body: JSON.stringify(body) }),
   });
   const text = await response.text();
-  // SAFETY: API JSON body is decoded via isJsonObject below, then asserted to A
-  const parsed: unknown = text.length > 0 ? JSON.parse(text) : undefined;
+  let parsed: unknown = undefined;
+  if (text.length > 0) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = text;
+    }
+  }
   if (!response.ok) {
     const message =
       isJsonObject(parsed) && parsed.error !== undefined
@@ -86,16 +102,19 @@ export const apiCall = async <A>(
         : `HTTP ${response.status}`;
     throw new Error(message);
   }
-  // SAFETY: value matches A at this call site
+  if (schema !== undefined) {
+    const decoded = decodeResponse(schema, parsed, path);
+    if (decoded === undefined) {
+      throw new Error(`Personal API response failed schema decode (${path})`);
+    }
+    return decoded;
+  }
+  // SAFETY: untyped call sites trust wire until migrated
   return parsed as A;
 };
 
-export interface RegistryRow {
-  readonly id: string;
-  readonly title: string;
-  readonly providers: readonly { readonly provider: string; readonly externalId: string }[];
-  readonly state?: { readonly status?: string; readonly score?: number };
-}
+/** Registry list row (compat alias for contract RegistryListEntry). */
+export type RegistryRow = RegistryListEntry;
 
 export const registryByAnilistId = async (
   config: ApiConfig
@@ -105,9 +124,12 @@ export const registryByAnilistId = async (
   let page: readonly RegistryRow[];
   const all: RegistryRow[] = [];
   do {
-    const body = await apiCall<{ entries: readonly RegistryRow[] }>(
+    const body = await apiCall(
       config,
       `/v1/registry?limit=${PAGE_SIZE}&offset=${offset}`,
+      "GET",
+      undefined,
+      RegistryListResponse,
     );
     page = body.entries;
     all.push(...page);
@@ -156,15 +178,13 @@ export const opsCommand = Command.make("ops").pipe(
               const config = apiConfig(apiOrigin, apiToken);
               let total = 0;
               for (const state of ["pending", "failed", "blocked"] as const) {
-                const body = await apiCall<{
-                  ops: readonly {
-                    opId: string;
-                    kind: string;
-                    origin: string;
-                    attempts: number;
-                    lastError?: string;
-                  }[];
-                }>(config, `/v1/ops?state=${state}&limit=200`);
+                const body = await apiCall(
+                  config,
+                  `/v1/ops?state=${state}&limit=200`,
+                  "GET",
+                  undefined,
+                  OpsListResponse,
+                );
                 frameDetail(`${state}: ${body.ops.length}`);
                 for (const op of body.ops) {
                   frameDetail(
@@ -204,7 +224,13 @@ export const opsCommand = Command.make("ops").pipe(
                 return;
               }
               const config = apiConfig(apiOrigin, apiToken);
-              await apiCall(config, `/v1/ops/${encodeURIComponent(opId)}/retry`, "POST");
+              await apiCall(
+                config,
+                `/v1/ops/${encodeURIComponent(opId)}/retry`,
+                "POST",
+                undefined,
+                SyncOp,
+              );
               closeFrame(`reset to pending: ${opId}`);
             } catch (error) {
               abortFrame();
@@ -309,12 +335,7 @@ export const importCommand = Command.make("import", {
 
           const config = apiConfig(apiOrigin, apiToken);
 
-          const resolved = await apiCall<{
-            entries: readonly {
-              id: string;
-              providers: readonly { provider: string; externalId: string }[];
-            }[];
-          }>(
+          const resolved = await apiCall(
             config,
             "/v1/canonical/resolve-batch",
             "POST",
@@ -323,6 +344,7 @@ export const importCommand = Command.make("import", {
               providerId: String(entry.mediaId),
               title: entry.title,
             })),
+            RegistryEntriesResponse,
           );
 
           let imported = 0;
@@ -336,6 +358,7 @@ export const importCommand = Command.make("import", {
               `/v1/entries/${encodeURIComponent(row.id)}/list-state`,
               "POST",
               { status, origin: "migration", appliedRemotely: true },
+              ListState,
             );
             imported += 1;
           }

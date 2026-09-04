@@ -14,39 +14,17 @@ import {
   openFrame,
   type RunContext,
 } from "@/ui";
-import { apiCall, apiConfig, type ApiConfig } from "@/commands/toolbox";
+import {
+  MangaDexMatchResult,
+  type MangaDexMatchResult as MangaDexMatchResultBody,
+  RegistryEntry,
+  RegistryListResponse,
+} from "@manifold/contract";
+import { apiCall, apiConfig, type ApiConfig, type RegistryRow } from "@/commands/toolbox";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Registry row as returned by GET /v1/registry — canonical_entries + provider_links.
-interface FullRegistryRow {
-  readonly id: string;
-  readonly provider: string;
-  readonly providerId: string;
-  readonly title: string;
-  readonly providers: readonly { readonly provider: string; readonly externalId: string }[];
-  readonly state?: { readonly status?: string; readonly score?: number };
-  readonly tombstoned?: boolean;
-}
-
-interface MangaDexMatchCandidate {
-  readonly externalId: string;
-  readonly title: string;
-  readonly score: number;
-  readonly anilistId?: string;
-  readonly myAnimeListId?: string;
-}
-
-interface MangaDexMatchResult {
-  readonly canonicalId: string;
-  readonly status: "matched" | "ambiguous" | "not_found";
-  readonly candidates: readonly MangaDexMatchCandidate[];
-  readonly externalId?: string;
-  readonly title?: string;
-  readonly method?: string;
-  readonly score?: number;
-  readonly margin?: number;
-}
+type FullRegistryRow = RegistryRow;
 
 interface MangadexCtx extends RunContext {
   unmatched: FullRegistryRow[];
@@ -130,9 +108,12 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
             let page: readonly FullRegistryRow[];
             const allRows: FullRegistryRow[] = [];
             do {
-              const body = await apiCall<{ entries: readonly FullRegistryRow[] }>(
+              const body = await apiCall(
                 config,
                 `/v1/registry?limit=${PAGE_SIZE}&offset=${offset}`,
+                "GET",
+                undefined,
+                RegistryListResponse,
               );
               page = body.entries;
               allRows.push(...page);
@@ -198,11 +179,11 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                 continue;
               }
 
-              let result: MangaDexMatchResult;
+              let result: MangaDexMatchResultBody;
               try {
                 const titles = await loadRegistrySearchTitles(row, { anilistToken: anilist });
                 const [primary, ...aliases] = titles;
-                result = await apiCall<MangaDexMatchResult>(
+                result = await apiCall(
                   config,
                   "/v1/canonical/mangadex/resolve",
                   "POST",
@@ -224,6 +205,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                     ),
                     persistSearchResults: apply,
                   },
+                  MangaDexMatchResult,
                 );
               } catch {
                 ctx.errors += 1;
@@ -241,6 +223,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                     `/v1/entries/${encodeURIComponent(row.id)}/providers`,
                     "POST",
                     { provider: "mangadex", externalId: result.externalId, title: row.title },
+                    RegistryEntry,
                   );
                 }
                 const method = result.method ? ` ${result.method}` : "";
