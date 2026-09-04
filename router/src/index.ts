@@ -49,6 +49,70 @@ const forwardBinding =
   (binding: keyof Env): Handler<App> =>
   async (c) => c.env[binding].fetch(c.req.raw);
 
+/**
+ * Explicit docs allowlist (same idea as jfa.dev's router mounts).
+ * Unknown paths return 418 before any service-binding hop so bots do not
+ * burn docs-worker compute on wp-admin / wordpress probes.
+ *
+ * Keep in sync with docs content top-level sections + static build outputs.
+ */
+const DOCS_EXACT_PATHS = new Set([
+  "/",
+  "/index.md",
+  "/index.mdx",
+  "/404",
+  "/404.html",
+  "/llms.txt",
+  "/llms-full.txt",
+  "/robots.txt",
+  "/og.png",
+  "/favicon.ico",
+  "/favicon-16x16.png",
+  "/favicon-32x32.png",
+  "/apple-touch-icon.png",
+  "/android-chrome-192x192.png",
+  "/android-chrome-512x512.png",
+  "/site.webmanifest",
+  "/sitemap-0.xml",
+  "/sitemap-index.xml",
+]);
+
+/** Prefixes that own a whole docs subtree. */
+const DOCS_PREFIXES = [
+  "/architecture",
+  "/auth",
+  "/cli",
+  "/development",
+  "/install",
+  "/og",
+  "/_astro",
+  "/_nimbus",
+  "/pagefind",
+  "/fonts",
+] as const;
+
+export function isDocsPath(pathname: string): boolean {
+  if (DOCS_EXACT_PATHS.has(pathname)) {
+    return true;
+  }
+
+  for (const prefix of DOCS_PREFIXES) {
+    if (pathname === prefix || pathname.startsWith(`${prefix}/`)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+const forwardDocs: Handler<App> = async (c) => {
+  const pathname = new URL(c.req.url).pathname;
+  if (!isDocsPath(pathname)) {
+    return c.text("I'm a teapot", 418);
+  }
+  return c.env.DOCS_WORKER.fetch(c.req.raw);
+};
+
 export default new Hono<App>()
   .all("/api", forwardStripped("/api", "SYNC_API"))
   .all("/api/*", forwardStripped("/api", "SYNC_API"))
@@ -57,4 +121,4 @@ export default new Hono<App>()
   .all("/paperback/*", forwardStripped("/paperback", "SYNC_API"))
   .all("/admin", forwardBinding("ADMIN"))
   .all("/admin/*", forwardBinding("ADMIN"))
-  .all("*", forwardBinding("DOCS_WORKER"));
+  .all("*", forwardDocs);

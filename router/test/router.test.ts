@@ -89,10 +89,28 @@ test("paperback paths forward to sync api with prefix stripped", async () => {
   expect(calls.SYNC_API[0]?.search).toBe("");
 });
 
-test("everything else forwards untouched to docs", async () => {
-  const { response, calls } = request("https://df.example/workers/router/");
+test("known docs paths forward untouched to docs", async () => {
+  const { response, calls } = request("https://df.example/architecture/");
   await response;
-  expect(calls.DOCS_WORKER.map((call) => call.pathname)).toEqual(["/workers/router/"]);
+  expect(calls.DOCS_WORKER.map((call) => call.pathname)).toEqual(["/architecture/"]);
+});
+
+test("docs home and static assets forward to docs", async () => {
+  for (const path of ["/", "/llms.txt", "/_astro/client.js", "/pagefind/pagefind.js"]) {
+    const { response, calls } = request(`https://df.example${path}`);
+    await response;
+    expect(calls.DOCS_WORKER.map((call) => call.pathname)).toContain(path);
+  }
+});
+
+test("unknown paths return 418 without hitting docs", async () => {
+  const { response, calls } = request("https://df.example/blog/wp/v2/users");
+  const resolved = await response;
+  expect(resolved.status).toBe(418);
+  expect(await resolved.text()).toBe("I'm a teapot");
+  expect(calls.DOCS_WORKER).toEqual([]);
+  expect(calls.SYNC_API).toEqual([]);
+  expect(calls.ADMIN).toEqual([]);
 });
 
 test("/admin paths forward with prefix intact", async () => {
