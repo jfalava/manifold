@@ -18,13 +18,15 @@
     "@fontsource/google-sans-code": "catalog:fonts",
     "@fontsource/ibm-plex-sans": "catalog:fonts",
     "@fontsource/zilla-slab": "catalog:fonts",
+    "@manifold/contract": "workspace:*",
     "@phosphor-icons/react": "catalog:ui",
     "@tanstack/react-hotkeys": "catalog:tanstack",
     "@tanstack/react-router": "catalog:tanstack",
     "@tanstack/react-start": "catalog:tanstack",
     "@tanstack/react-table": "catalog:tanstack",
     "react": "catalog:react",
-    "react-dom": "catalog:react"
+    "react-dom": "catalog:react",
+    "effect": "catalog:effect"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "catalog:cloudflare",

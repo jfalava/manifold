@@ -1,4 +1,35 @@
 import { createServerFn } from "@tanstack/react-start";
+import { Schema } from "effect";
+import {
+  AuthConnection as AuthConnectionSchema,
+  type AuthConnection as ContractAuthConnection,
+  AuthConnectionsResponse,
+  AuthDisconnectedResponse,
+  type AuthProvider as ContractAuthProvider,
+  type ChapterSource as ContractChapterSource,
+  decodeResponse,
+  EventsListResponse,
+  ListState,
+  MangaDexLibraryResponse,
+  type MangaDexLibrarySummary as ContractMangaDexLibrarySummary,
+  MangaDexLibrarySummaryResponse,
+  MangaDexStatsResponse,
+  OAuthStart,
+  OkResponse,
+  OkWithListStateResponse,
+  OpsListResponse,
+  type OpsSummary as ContractOpsSummary,
+  OpsSummaryResponse,
+  RegistryEntry as ContractRegistryEntry,
+  type RegistryListEntry,
+  RegistryListResponse,
+  type RegistrySummary as ContractRegistrySummary,
+  RegistrySummaryResponse,
+  SyncOp,
+  UpdateFailuresListResponse,
+  type UpdateProbeFailure,
+  type ListEvent,
+} from "@manifold/contract";
 
 import { isFunctionValue, isJsonObject, isStringValue, type SecretHandle } from "./guards";
 import type { MangaDexLibraryItem, MangaDexReadingStatus, MangaDexStat } from "./mangadex";
@@ -7,74 +38,14 @@ import { trusted } from "./trusted-cast";
 
 const MANIFOLD_API_ORIGIN = "https://manifold.jfa.dev/api";
 
-export interface RegistryLink {
-  readonly provider: string;
-  readonly externalId: string;
-  readonly title?: string;
-  readonly updatedAt: number;
-}
-
-export interface RegistryListState {
-  readonly entryId: string;
-  readonly status?: string;
-  readonly score?: number;
-  readonly notes?: string;
-  readonly startedAt?: string;
-  readonly completedAt?: string;
-  readonly volumeProgress?: number;
-  readonly mediaListEntryId?: number;
-  readonly updatedAt: number;
-}
-
-// Type aliases (not interfaces) so TanStack Table v9's `TData extends Record<string, any>` constraint accepts them
-export type ChapterSource = "auto" | "mangadex" | "comix";
-
-export type RegistryEntry = {
-  readonly id: string;
-  readonly provider: string;
-  readonly providerId: string;
-  readonly title: string;
-  readonly createdAt: number;
-  readonly updatedAt: number;
-  readonly providers: readonly RegistryLink[];
-  readonly state?: RegistryListState;
-  readonly tombstoned?: boolean;
-  /** Chapter list pin. Omitted or auto = device heuristic. */
-  readonly chapterSource?: ChapterSource;
-};
-
-export type SyncOpItem = {
-  readonly id: number;
-  readonly opId: string;
-  readonly target: string;
-  readonly kind: string;
-  readonly origin: string;
-  readonly payload: Record<string, string | number | boolean | null>;
-  readonly state: string;
-  readonly attempts: number;
-  readonly lastError?: string;
-  readonly createdAt: number;
-  readonly updatedAt: number;
-};
-
-export type ListEventItem = {
-  readonly id: number;
-  readonly entryId: string;
-  readonly kind: string;
-  readonly origin: string;
-  readonly detail?: Record<string, string | number | boolean | null>;
-  readonly createdAt: number;
-};
-
-export type UpdateProbeFailureItem = {
-  readonly id: number;
-  readonly entryId?: string;
-  readonly title: string;
-  readonly source: string;
-  readonly reason: string;
-  readonly detail?: string;
-  readonly createdAt: number;
-};
+// Type aliases (not interfaces) so TanStack Table v9 accepts them as TData.
+export type ChapterSource = ContractChapterSource;
+export type RegistryLink = RegistryListEntry["providers"][number];
+export type RegistryListState = NonNullable<RegistryListEntry["state"]>;
+export type RegistryEntry = RegistryListEntry;
+export type SyncOpItem = SyncOp;
+export type ListEventItem = ListEvent;
+export type UpdateProbeFailureItem = UpdateProbeFailure;
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: secret binding comes from untyped workers env; parsed at I/O boundary
 async function resolveSecret(binding: unknown): Promise<string> {
@@ -115,6 +86,7 @@ const workersEnv = async (): Promise<(typeof import("cloudflare:workers"))["env"
 
 const call = async <A>(
   path: string,
+  schema: Schema.ConstraintDecoder<A>,
   init?: { readonly method?: string; readonly body?: unknown },
 ): Promise<A> => {
   const env = await workersEnv();
@@ -170,7 +142,11 @@ const call = async <A>(
         : `HTTP ${response.status}`;
     throw new Error(message);
   }
-  return trusted<A>(body);
+  const decoded = decodeResponse(schema, body, path);
+  if (decoded === undefined) {
+    throw new Error(`Personal API response failed schema decode (${path})`);
+  }
+  return decoded;
 };
 
 export interface LoadRegistryResult {
@@ -208,8 +184,9 @@ const loadAllEntries = async (): Promise<readonly RegistryEntry[]> => {
   const pageSize = 500;
   const all: RegistryEntry[] = [];
   for (let offset = 0; ; offset += pageSize) {
-    const page = await call<{ entries: readonly RegistryEntry[] }>(
+    const page = await call(
       `/v1/registry?limit=${pageSize}&offset=${offset}`,
+      RegistryListResponse,
     );
     all.push(...page.entries);
     if (page.entries.length < pageSize) {
@@ -229,10 +206,10 @@ export const loadRegistry = createServerFn({ method: "GET" }).handler(
 export const loadOperations = createServerFn({ method: "GET" }).handler(
   async (): Promise<LoadOperationsResult> => {
     const [ops, events, updateFailures] = await Promise.all([
-      capture("ops", () => call<{ ops: readonly SyncOpItem[] }>("/v1/ops?limit=200")),
-      capture("events", () => call<{ events: readonly ListEventItem[] }>("/v1/events?limit=100")),
+      capture("ops", () => call("/v1/ops?limit=200", OpsListResponse)),
+      capture("events", () => call("/v1/events?limit=100", EventsListResponse)),
       capture("update-failures", () =>
-        call<{ failures: readonly UpdateProbeFailureItem[] }>("/v1/update-failures?limit=200"),
+        call("/v1/update-failures?limit=200", UpdateFailuresListResponse),
       ),
     ]);
     const errors: {
@@ -272,10 +249,14 @@ export const saveListState = createServerFn({ method: "POST" })
   .validator((data: ListStatePatch) => data)
   .handler(async ({ data }) => {
     const { entryId, ...patch } = data;
-    return call<{ ok: boolean }>(`/v1/entries/${encodeURIComponent(entryId)}/list-state`, {
-      method: "POST",
-      body: { ...patch, origin: "admin" },
-    });
+    return call(
+      `/v1/entries/${encodeURIComponent(entryId)}/list-state`,
+      ListState,
+      {
+        method: "POST",
+        body: { ...patch, origin: "admin" },
+      },
+    );
   });
 
 interface ChapterSourceInput {
@@ -286,10 +267,14 @@ interface ChapterSourceInput {
 export const saveChapterSource = createServerFn({ method: "POST" })
   .validator((data: ChapterSourceInput) => data)
   .handler(async ({ data }) =>
-    call<{ ok: boolean }>(`/v1/entries/${encodeURIComponent(data.entryId)}/chapter-source`, {
-      method: "POST",
-      body: { chapterSource: data.chapterSource, origin: "admin" },
-    }),
+    call(
+      `/v1/entries/${encodeURIComponent(data.entryId)}/chapter-source`,
+      ContractRegistryEntry,
+      {
+        method: "POST",
+        body: { chapterSource: data.chapterSource, origin: "admin" },
+      },
+    ),
   );
 
 interface BindInput {
@@ -301,10 +286,14 @@ interface BindInput {
 export const bindProvider = createServerFn({ method: "POST" })
   .validator((data: BindInput) => data)
   .handler(async ({ data }) =>
-    call<{ ok: boolean }>(`/v1/entries/${encodeURIComponent(data.entryId)}/providers`, {
-      method: "POST",
-      body: { provider: data.provider, externalId: data.externalId },
-    }),
+    call(
+      `/v1/entries/${encodeURIComponent(data.entryId)}/providers`,
+      ContractRegistryEntry,
+      {
+        method: "POST",
+        body: { provider: data.provider, externalId: data.externalId },
+      },
+    ),
   );
 
 interface UnlinkInput {
@@ -315,8 +304,9 @@ interface UnlinkInput {
 export const unlinkProvider = createServerFn({ method: "POST" })
   .validator((data: UnlinkInput) => data)
   .handler(async ({ data }) =>
-    call<{ ok: boolean }>(
+    call(
       `/v1/entries/${encodeURIComponent(data.entryId)}/unlink/${data.provider}`,
+      ContractRegistryEntry,
       { method: "POST" },
     ),
   );
@@ -324,18 +314,24 @@ export const unlinkProvider = createServerFn({ method: "POST" })
 export const nukeEntry = createServerFn({ method: "POST" })
   .validator((data: { entryId: string }) => data)
   .handler(async ({ data }) =>
-    call<{ ok: boolean }>(`/v1/entries/${encodeURIComponent(data.entryId)}/delete`, {
-      method: "POST",
-      body: { origin: "admin" },
-    }),
+    call(
+      `/v1/entries/${encodeURIComponent(data.entryId)}/delete`,
+      OkWithListStateResponse,
+      {
+        method: "POST",
+        body: { origin: "admin" },
+      },
+    ),
   );
 
 export const retryOp = createServerFn({ method: "POST" })
   .validator((data: { opId: string }) => data)
   .handler(async ({ data }) =>
-    call<{ ok: boolean }>(`/v1/ops/${encodeURIComponent(data.opId)}/retry`, {
-      method: "POST",
-    }),
+    call(
+      `/v1/ops/${encodeURIComponent(data.opId)}/retry`,
+      SyncOp,
+      { method: "POST" },
+    ),
   );
 
 export const loadMangaDexLibrary = createServerFn({ method: "POST" })
@@ -346,8 +342,17 @@ export const loadMangaDexLibrary = createServerFn({ method: "POST" })
       status === undefined
         ? "/v1/mangadex/library"
         : `/v1/mangadex/library?status=${encodeURIComponent(status)}`;
-    const body = await call<{ library: readonly MangaDexLibraryItem[] }>(path);
-    return body.library ?? [];
+    const body = await call(path, MangaDexLibraryResponse);
+    return body.library.map((item) => ({
+      mangaDexId: item.mangaDexId,
+      status: item.status,
+      entryId: item.entryId,
+      ...(item.title !== undefined && { title: item.title }),
+      ...(item.coverUrl !== undefined && { coverUrl: item.coverUrl }),
+      ...(item.hasRating !== undefined && { hasRating: item.hasRating }),
+      ...(item.rating !== undefined && { rating: item.rating }),
+      ...(item.ratingCreatedAt !== undefined && { ratingCreatedAt: item.ratingCreatedAt }),
+    }));
   });
 
 /**
@@ -361,18 +366,18 @@ export const loadMangaDexStats = createServerFn({ method: "POST" })
     if (ids.length === 0) {
       return {};
     }
-    const body = await call<{ stats: Record<string, MangaDexStat> }>("/v1/mangadex/stats", {
+    const body = await call("/v1/mangadex/stats", MangaDexStatsResponse, {
       method: "POST",
       body: { ids },
     });
-    return body.stats ?? {};
+    return body.stats;
   });
 
 /** Pass "unset" to clear the reading status (null on the MangaDex API). */
 export const setMangaDexStatus = createServerFn({ method: "POST" })
   .validator((data: { mangaDexId: string; status: MangaDexReadingStatus | "unset" }) => data)
   .handler(async ({ data }) => {
-    await call<void>(`/v1/mangadex/status/${data.mangaDexId}`, {
+    await call(`/v1/mangadex/status/${data.mangaDexId}`, OkResponse, {
       method: "POST",
       body: { status: data.status === "unset" ? null : data.status },
     });
@@ -385,35 +390,9 @@ export const setMangaDexStatus = createServerFn({ method: "POST" })
 /** Providers a canonical entry can be bound to; "full coverage" = all three trackers. */
 export const TRACKER_PROVIDERS = ["anilist", "mal", "mangadex"] as const;
 
-export interface RegistrySummary {
-  readonly total: number;
-  readonly active: number;
-  readonly tombstoned: number;
-  /** Active entries by list status; entries without list state count as "unset". */
-  readonly statuses: Record<string, number>;
-  /** Active entries linked to each provider. */
-  readonly providerCounts: Record<string, number>;
-  /** Active entries linked to every tracker provider (anilist + mal + mangadex). */
-  readonly fullyLinked: number;
-  /** Active entries with no provider links at all. */
-  readonly unlinked: number;
-}
-
-export interface OpsSummary {
-  readonly total: number;
-  readonly states: Record<string, number>;
-  readonly oldestPendingAt: number | null;
-  readonly lastFailedError: string | null;
-}
-
-export interface MangaDexSummary {
-  readonly total: number;
-  readonly statuses: Record<string, number>;
-  readonly rated: number;
-  readonly meanRating: number | null;
-  /** Shelf items already resolved to a canonical registry entry. */
-  readonly linkedToRegistry: number;
-}
+export type RegistrySummary = ContractRegistrySummary;
+export type OpsSummary = ContractOpsSummary;
+export type MangaDexSummary = ContractMangaDexLibrarySummary;
 
 export interface LibraryOverview {
   readonly fetchedAt: string;
@@ -434,13 +413,13 @@ export const getLibraryOverview = createServerFn({ method: "GET" }).handler(
     cachedJson("library-overview:v2", async () => {
       const [registry, ops, mangadex] = await Promise.all([
         capture("registry", () =>
-          call<{ summary: RegistrySummary }>("/v1/registry/summary").then((body) => body.summary),
+          call("/v1/registry/summary", RegistrySummaryResponse).then((body) => body.summary),
         ),
         capture("ops", () =>
-          call<{ summary: OpsSummary }>("/v1/ops/summary?limit=200").then((body) => body.summary),
+          call("/v1/ops/summary?limit=200", OpsSummaryResponse).then((body) => body.summary),
         ),
         capture("mangadex library", () =>
-          call<{ summary: MangaDexSummary }>("/v1/mangadex/library/summary").then(
+          call("/v1/mangadex/library/summary", MangaDexLibrarySummaryResponse).then(
             (body) => body.summary,
           ),
         ),
@@ -470,14 +449,8 @@ export const getLibraryOverview = createServerFn({ method: "GET" }).handler(
 // Upstream auth connections (AniList / MAL / MangaDex)
 // ------------------------------------------------------------------
 
-export type AuthProvider = "anilist" | "mal" | "mangadex";
-
-export type AuthConnection = {
-  readonly provider: AuthProvider;
-  readonly connected: boolean;
-  readonly expiresAt?: number;
-  readonly updatedAt?: number;
-};
+export type AuthProvider = ContractAuthProvider;
+export type AuthConnection = ContractAuthConnection;
 
 export const AUTH_PROVIDERS = ["anilist", "mal", "mangadex"] as const;
 
@@ -492,12 +465,13 @@ const isAuthProvider = (value: string): value is AuthProvider => {
 
 export const loadAuthConnections = createServerFn({ method: "GET" }).handler(
   async (): Promise<readonly AuthConnection[]> => {
-    const body = await call<readonly AuthConnection[] | { readonly error: string }>("/v1/auth");
-    if (!Array.isArray(body)) {
+    try {
+      return await call("/v1/auth", AuthConnectionsResponse);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      console.error(`[admin/registry] auth connections failed: ${message}`);
       return [];
     }
-    // Owned /v1/auth contract — elements are AuthConnection rows.
-    return trusted<readonly AuthConnection[]>(body);
   },
 );
 
@@ -508,7 +482,7 @@ export const loadAuthConnections = createServerFn({ method: "GET" }).handler(
  */
 export const loginMangaDex = createServerFn({ method: "POST" }).handler(
   async (): Promise<AuthConnection> => {
-    const connection = await call<AuthConnection>("/v1/auth/mangadex/login", {
+    const connection = await call("/v1/auth/mangadex/login", AuthConnectionSchema, {
       method: "POST",
     });
     // Library overview caches a failed mangadex snapshot until soft TTL;
@@ -525,10 +499,10 @@ export const loginMangaDex = createServerFn({ method: "POST" }).handler(
  */
 export const startMalOAuth = createServerFn({ method: "POST" }).handler(
   async (): Promise<{ readonly authorizationUrl: string }> => {
-    const start = await call<{
-      readonly provider: "mal";
-      readonly authorizationUrl: string;
-    }>(`/v1/auth/mal/start?return=${encodeURIComponent("/admin/credentials")}`);
+    const start = await call(
+      `/v1/auth/mal/start?return=${encodeURIComponent("/admin/credentials")}`,
+      OAuthStart,
+    );
     if (!isStringValue(start.authorizationUrl) || start.authorizationUrl.length === 0) {
       throw new Error("OAuth start for mal returned no authorization URL");
     }
@@ -548,8 +522,9 @@ export const importAniListToken = createServerFn({ method: "POST" })
     if (!accessToken) {
       throw new Error("AniList access token is empty");
     }
-    const connection = await call<AuthConnection>(
+    const connection = await call(
       "/v1/auth/anilist/token",
+      AuthConnectionSchema,
       data.expiresIn !== undefined && data.expiresIn > 0
         ? { method: "POST", body: { accessToken, expiresIn: data.expiresIn } }
         : { method: "POST", body: { accessToken } },
@@ -582,8 +557,9 @@ export const disconnectAuth = createServerFn({ method: "POST" })
     if (!isAuthProvider(provider)) {
       throw new Error(`Unknown auth provider: ${String(provider)}`);
     }
-    await call<{ provider: AuthProvider; connected: boolean }>(
+    await call(
       `/v1/auth/${encodeURIComponent(provider)}`,
+      AuthDisconnectedResponse,
       { method: "DELETE" },
     );
     await invalidateCachedJson("library-overview:v1");
