@@ -100,9 +100,9 @@ export class ResponseEncodeError extends Error {
   }
 }
 
-export const jsonEncoded = <E extends JsonResponseBody>(
-  schema: Schema.ConstraintEncoder<E>,
-  value: unknown,
+export const jsonEncoded = <S extends Schema.ConstraintEncoder<JsonResponseBody>>(
+  schema: S,
+  value: S["Type"],
   status = 200,
 ): Response => {
   try {

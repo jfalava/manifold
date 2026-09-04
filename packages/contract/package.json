@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@manifold/json": "workspace:*",
     "effect": "catalog:effect"
   },
   "devDependencies": {

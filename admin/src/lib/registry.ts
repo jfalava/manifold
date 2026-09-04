@@ -31,7 +31,7 @@ import {
   type ListEvent,
 } from "@manifold/contract";
 
-import { isFunctionValue, isJsonObject, isStringValue, type SecretHandle } from "./guards";
+import { isFunctionValue, isJsonObject, isJsonValue, isStringValue, type SecretHandle } from "./guards";
 import type { MangaDexLibraryItem, MangaDexReadingStatus, MangaDexStat } from "./mangadex";
 import { cachedJson, invalidateCachedJson } from "./server-cache";
 import { trusted } from "./trusted-cast";
@@ -127,21 +127,25 @@ const call = async <A>(
     ? binding.fetch(new Request(target, requestInit))
     : fetch(target, requestInit));
   const text = await response.text();
-  let body: unknown = undefined;
+  let raw: unknown = undefined;
   try {
-    body = text.length > 0 ? JSON.parse(text) : undefined;
+    raw = text.length > 0 ? JSON.parse(text) : undefined;
   } catch {
-    body = text;
+    raw = text;
   }
   if (!response.ok) {
     const message =
-      isJsonObject(body) && "error" in body
-        ? isStringValue(body.error)
-          ? body.error
-          : JSON.stringify(body.error)
+      isJsonObject(raw) && "error" in raw
+        ? isStringValue(raw.error)
+          ? raw.error
+          : JSON.stringify(raw.error)
         : `HTTP ${response.status}`;
     throw new Error(message);
   }
+  if (raw !== undefined && !isJsonValue(raw)) {
+    throw new Error(`Personal API response is not JSON (${path})`);
+  }
+  const body = raw === undefined ? null : raw;
   const decoded = decodeResponse(schema, body, path);
   if (decoded === undefined) {
     throw new Error(`Personal API response failed schema decode (${path})`);

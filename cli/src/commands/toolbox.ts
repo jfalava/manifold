@@ -9,7 +9,7 @@ import {
   RegistryListResponse,
   SyncOp,
 } from "@manifold/contract";
-import { errorMessage, isJsonObject, type JsonValue } from "@manifold/json";
+import { errorMessage, isJsonObject, isJsonValue, type JsonValue } from "@manifold/json";
 
 import {
   fetchAniListMangaEntries,
@@ -87,22 +87,26 @@ export const apiCall = async <A>(
     ...(!(body === undefined) && { body: JSON.stringify(body) }),
   });
   const text = await response.text();
-  let parsed: unknown = undefined;
+  let raw: unknown = undefined;
   if (text.length > 0) {
     try {
-      parsed = JSON.parse(text);
+      raw = JSON.parse(text);
     } catch {
-      parsed = text;
+      raw = text;
     }
   }
   if (!response.ok) {
     const message =
-      isJsonObject(parsed) && parsed.error !== undefined
-        ? errorMessage(parsed.error)
+      isJsonObject(raw) && raw.error !== undefined
+        ? errorMessage(raw.error)
         : `HTTP ${response.status}`;
     throw new Error(message);
   }
   if (schema !== undefined) {
+    if (raw !== undefined && !isJsonValue(raw)) {
+      throw new Error(`Personal API response is not JSON (${path})`);
+    }
+    const parsed: JsonValue = raw === undefined ? null : raw;
     const decoded = decodeResponse(schema, parsed, path);
     if (decoded === undefined) {
       throw new Error(`Personal API response failed schema decode (${path})`);
@@ -110,7 +114,7 @@ export const apiCall = async <A>(
     return decoded;
   }
   // SAFETY: untyped call sites trust wire until migrated
-  return parsed as A;
+  return raw as A;
 };
 
 /** Registry list row (compat alias for contract RegistryListEntry). */

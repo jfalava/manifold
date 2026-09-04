@@ -25,7 +25,6 @@ import {
   RegistryEntriesResponse,
   RegistryEntry,
   type RegistryProvider,
-  ReportUpdateFailuresInput,
   UpdatedCountResponse,
   UpdateProbeFailureInput,
   type UpdateProbeReason,
@@ -246,7 +245,7 @@ const identityToCanonical = (value: CanonicalIdentityBody): CanonicalEntry => ({
 
 const requireDecoded = <T>(
   schema: Schema.ConstraintDecoder<T>,
-  body: unknown,
+  body: JsonValue,
   label: string,
 ): T => {
   const decoded = decodeResponse(schema, body, label);
