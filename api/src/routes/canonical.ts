@@ -1,17 +1,27 @@
 import { Effect, Schema } from "effect";
+import {
+  CanonicalIdentity,
+  CanonicalSearchResponse,
+  EntryByProviderResponse,
+  ErrorBody,
+  MangaDexMatchInput,
+  MangaDexMatchResult,
+  RegistryEntriesResponse,
+  RegistryEntry,
+  ResolveEntryInput,
+} from "@manifold/contract";
+import { isJsonArray } from "@manifold/json";
 import { getCanonical, searchCanonical, type CanonicalProviderFilter } from "../canonical";
-import { ResolveEntryInput } from "../domain";
 import {
   attempt,
-  json,
+  jsonEncoded,
   parseJson,
   routeId,
   tryPromise,
   type RouteContext,
   type RouteEffect,
 } from "../http";
-import { MangaDexMatchInput, resolveMangaDex } from "../mangadex-match";
-import { isJsonArray } from "@manifold/json";
+import { resolveMangaDex } from "../mangadex-match";
 
 const canonicalProvider = (value: string | null): CanonicalProviderFilter | undefined => {
   if (value === null || value === "all") {return "all";}
@@ -32,16 +42,18 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
 
     if (path[2] === "search" && path.length === 3 && request.method === "GET") {
       const query = url.searchParams.get("q")?.trim() ?? "";
-      if (!query) {return json({ error: "Query parameter q is required" }, 400);}
+      if (!query) {return jsonEncoded(ErrorBody, { error: "Query parameter q is required" }, 400);}
       const provider = canonicalProvider(url.searchParams.get("provider"));
-      if (!provider) {return json({ error: "provider must be all, anilist, or mal" }, 400);}
+      if (!provider) {
+        return jsonEncoded(ErrorBody, { error: "provider must be all, anilist, or mal" }, 400);
+      }
 
       const result = yield* tryPromise(() =>
         searchCanonical(env, query, provider, searchLimit(url.searchParams.get("limit"))),
       );
       const failedProviders = result.providers.filter((item) => item.error !== undefined);
       const status = failedProviders.length === result.providers.length ? 502 : 200;
-      return json(result, status);
+      return jsonEncoded(CanonicalSearchResponse, result, status);
     }
 
     if (
@@ -52,14 +64,17 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
     ) {
       const raw = yield* parseJson(request);
       const input = yield* Schema.decodeUnknownEffect(MangaDexMatchInput)(raw);
-      return json(yield* tryPromise(() => resolveMangaDex(env, input)));
+      return jsonEncoded(
+        MangaDexMatchResult,
+        yield* tryPromise(() => resolveMangaDex(env, input)),
+      );
     }
 
     if (path[2] === "resolve" && path.length === 3 && request.method === "POST") {
       const sync = env.MANIFOLD_SYNC.getByName("default");
       const raw = yield* parseJson(request);
       const input = yield* Schema.decodeUnknownEffect(ResolveEntryInput)(raw);
-      return json(yield* tryPromise(() => sync.resolveEntry(input)));
+      return jsonEncoded(RegistryEntry, yield* tryPromise(() => sync.resolveEntry(input)));
     }
 
     if (path[2] === "resolve-batch" && path.length === 3 && request.method === "POST") {
@@ -67,12 +82,12 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
       const raw = yield* parseJson(request);
       if (isJsonArray(raw)) {
         const input = yield* Schema.decodeUnknownEffect(Schema.Array(ResolveEntryInput))(raw);
-        return json({
+        return jsonEncoded(RegistryEntriesResponse, {
           entries: yield* tryPromise(() => sync.resolveEntries(input)),
         });
       }
       const input = yield* Schema.decodeUnknownEffect(ResolveEntryInput)(raw);
-      return json({
+      return jsonEncoded(RegistryEntriesResponse, {
         entries: yield* tryPromise(() => sync.resolveEntries(input)),
       });
     }
@@ -85,16 +100,21 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
     ) {
       const sync = env.MANIFOLD_SYNC.getByName("default");
       const entry = yield* tryPromise(() => sync.entryByProvider("mangadex", routeId(path[4])));
-      return entry ? json(entry) : json({ entry: null });
+      return jsonEncoded(EntryByProviderResponse, { entry: entry ?? null });
     }
 
     if (path.length === 4 && request.method === "GET") {
       const provider = canonicalProvider(path[2]);
-      if (!provider || provider === "all") {return json({ error: "Unknown canonical provider" }, 404);}
+      if (!provider || provider === "all") {
+        return jsonEncoded(ErrorBody, { error: "Unknown canonical provider" }, 404);
+      }
       const outcome = yield* attempt(() => getCanonical(env, provider, routeId(path[3])));
-      if (!outcome.ok) {return json({ error: outcome.error.message }, 502);}
-      return outcome.value ? json(outcome.value) : json({ error: "Not found" }, 404);
+      if (!outcome.ok) {return jsonEncoded(ErrorBody, { error: outcome.error.message }, 502);}
+      return outcome.value
+        ? jsonEncoded(CanonicalIdentity, outcome.value)
+        : jsonEncoded(ErrorBody, { error: "Not found" }, 404);
     }
 
     return null;
   });
+

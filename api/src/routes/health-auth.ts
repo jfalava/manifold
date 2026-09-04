@@ -1,9 +1,17 @@
 import { Effect } from "effect";
+import {
+  AuthConnection,
+  AuthConnectionsResponse,
+  AuthDisconnectedResponse,
+  ErrorBody,
+  HealthResponse,
+  OAuthStart,
+} from "@manifold/contract";
 import { isJsonObject, isString, numberField } from "@manifold/json";
 import {
   adminOAuthReturnPath,
   authProvider,
-  json,
+  jsonEncoded,
   oauthProvider,
   oauthRedirectUri,
   parseJson,
@@ -75,7 +83,7 @@ const anilistImplicitReturnPage = `<!DOCTYPE html>
 export const handleHealth = (ctx: RouteContext): RouteEffect =>
   Effect.sync(() => {
     if (ctx.request.method === "GET" && ctx.url.pathname === "/health") {
-      return json({ ok: true, environment: ctx.env.ENVIRONMENT, build: "p1-oauth-fix-2" });
+      return jsonEncoded(HealthResponse, { ok: true as const, environment: ctx.env.ENVIRONMENT, build: "p1-oauth-fix-2" });
     }
     return null;
   });
@@ -99,11 +107,11 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
 
     if (path.length === 2 && request.method === "GET") {
       const sync = env.MANIFOLD_SYNC.getByName("default");
-      return json(yield* tryPromise(() => sync.listAuthConnections()));
+      return jsonEncoded(AuthConnectionsResponse, yield* tryPromise(() => sync.listAuthConnections()));
     }
 
     const provider = authProvider(path[2]);
-    if (!provider) {return json({ error: "Unknown auth provider" }, 404);}
+    if (!provider) {return jsonEncoded(ErrorBody, { error: "Unknown auth provider" }, 404);}
 
     const sync = env.MANIFOLD_SYNC.getByName("default");
     if (
@@ -112,7 +120,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
       path[3] === "login" &&
       request.method === "POST"
     ) {
-      return json(yield* tryPromise(() => sync.loginMangaDex()));
+      return jsonEncoded(AuthConnection, yield* tryPromise(() => sync.loginMangaDex()));
     }
 
     // Browser-minted bearer (AniList implicit / paste). Worker never exchanges
@@ -125,14 +133,15 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
     ) {
       const body = yield* parseJson(request);
       if (!isJsonObject(body) || !isString(body.accessToken)) {
-        return json({ error: "Body must include accessToken string" }, 400);
+        return jsonEncoded(ErrorBody, { error: "Body must include accessToken string" }, 400);
       }
       const accessToken = body.accessToken.trim();
       if (!accessToken) {
-        return json({ error: "accessToken is empty" }, 400);
+        return jsonEncoded(ErrorBody, { error: "accessToken is empty" }, 400);
       }
       const expiresIn = numberField(body, "expiresIn");
-      return json(
+      return jsonEncoded(
+        AuthConnection,
         yield* tryPromise(() =>
           sync.importAuthToken(
             "anilist",
@@ -153,7 +162,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
       // server fn asks for JSON so it can hand the URL to window.location.
       const accept = request.headers.get("accept") ?? "";
       if (accept.includes("application/json")) {
-        return json(start);
+        return jsonEncoded(OAuthStart, start);
       }
       return new Response(null, {
         status: 302,
@@ -177,7 +186,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
             headers: { "content-type": "text/html", "cache-control": "no-store" },
           });
         }
-        return json({ error: "OAuth callback is missing state" }, 400);
+        return jsonEncoded(ErrorBody, { error: "OAuth callback is missing state" }, 400);
       }
       if (error) {
         const cancelled = yield* tryPromise(() => sync.cancelOAuthSession(oauth, state));
@@ -190,11 +199,11 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
             },
           });
         }
-        return json({ error: "OAuth authorization was denied", provider: oauth }, 400);
+        return jsonEncoded(ErrorBody, { error: "OAuth authorization was denied", provider: oauth }, 400);
       }
 
       const code = url.searchParams.get("code");
-      if (!code) {return json({ error: "OAuth callback is missing code" }, 400);}
+      if (!code) {return jsonEncoded(ErrorBody, { error: "OAuth callback is missing code" }, 400);}
       const connection = yield* tryPromise(() => sync.completeOAuthSession(oauth, state, code));
       if (connection.returnPath) {
         return new Response(null, {
@@ -205,17 +214,17 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
           },
         });
       }
-      return json(connection);
+      return jsonEncoded(AuthConnection, connection);
     }
 
     if (path.length === 3 && request.method === "GET") {
-      return json(yield* tryPromise(() => sync.getAuthConnection(provider)));
+      return jsonEncoded(AuthConnection, yield* tryPromise(() => sync.getAuthConnection(provider)));
     }
 
     if (path.length === 3 && request.method === "DELETE") {
       yield* tryPromise(() => sync.disconnectAuth(provider));
-      return json({ provider, connected: false });
+      return jsonEncoded(AuthDisconnectedResponse, { provider, connected: false as const });
     }
 
-    return json({ error: "Not found" }, 404);
+    return jsonEncoded(ErrorBody, { error: "Not found" }, 404);
   });

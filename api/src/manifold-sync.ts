@@ -14,7 +14,8 @@ import { readSecret } from "./read-secret";
 import {
   type AuthConnection,
   type AuthProvider,
-  type CanonicalEntry,
+  type RegistryEntry,
+  type RegistryListEntry,
   type CompleteOpsInput,
   type LinkProviderInput,
   type ListEvent,
@@ -374,7 +375,7 @@ export class ManifoldSync extends DurableObject<Env> {
     return token.access_token;
   }
 
-  async upsertEntry(input: UpsertEntryInput): Promise<CanonicalEntry> {
+  async upsertEntry(input: UpsertEntryInput): Promise<RegistryEntry> {
     const timestamp = now();
     this.ctx.storage.sql.exec(
       `INSERT INTO canonical_entries
@@ -397,7 +398,7 @@ export class ManifoldSync extends DurableObject<Env> {
     return stored;
   }
 
-  async listEntries(): Promise<readonly CanonicalEntry[]> {
+  async listEntries(): Promise<readonly RegistryEntry[]> {
     return Effect.runSync(
       Effect.sync(() => {
         const rows = this.ctx.storage.sql
@@ -405,12 +406,12 @@ export class ManifoldSync extends DurableObject<Env> {
           .toArray();
         return rows
           .map((row) => this.readEntry(row.id))
-          .filter((entry): entry is CanonicalEntry => entry !== undefined);
+          .filter((entry): entry is RegistryEntry => entry !== undefined);
       })
     );
   }
 
-  async getEntry(entryId: string): Promise<CanonicalEntry | undefined> {
+  async getEntry(entryId: string): Promise<RegistryEntry | undefined> {
     return Effect.runSync(Effect.sync(() => this.readEntry(entryId, false)));
   }
 
@@ -939,7 +940,7 @@ export class ManifoldSync extends DurableObject<Env> {
     this.mdLibraryCache = undefined;
   }
 
-  async entryByProvider(provider: string, externalId: string): Promise<CanonicalEntry | undefined> {
+  async entryByProvider(provider: string, externalId: string): Promise<RegistryEntry | undefined> {
     return Effect.runSync(
       Effect.sync(() => {
         const row = this.ctx.storage.sql
@@ -987,18 +988,18 @@ export class ManifoldSync extends DurableObject<Env> {
   // Registry: provider-neutral entries keyed by minted UUIDs.
   // ------------------------------------------------------------------
 
-  async resolveEntry(input: ResolveEntryInput): Promise<CanonicalEntry> {
+  async resolveEntry(input: ResolveEntryInput): Promise<RegistryEntry> {
     return this.resolveEntrySync(input);
   }
 
   async resolveEntries(
     input: readonly ResolveEntryInput[] | ResolveEntryInput,
-  ): Promise<readonly CanonicalEntry[]> {
+  ): Promise<readonly RegistryEntry[]> {
     const requests = Array.isArray(input) ? input : [input];
     return requests.map((request) => this.resolveEntrySync(request));
   }
 
-  private resolveEntrySync(request: ResolveEntryInput): CanonicalEntry {
+  private resolveEntrySync(request: ResolveEntryInput): RegistryEntry {
     const timestamp = now();
     // Tombstoned rows are dead lifecycles: a nuked title coming back gets a
     // fresh registry row, never the corpse. History stays in the admin view.
@@ -1050,14 +1051,12 @@ export class ManifoldSync extends DurableObject<Env> {
     return minted;
   }
 
-  async listRegistry(limit = 500, offset = 0): Promise<
-    readonly (CanonicalEntry & { readonly state?: ListState; readonly tombstoned?: boolean })[]
-  > {
+  async listRegistry(limit = 500, offset = 0): Promise<readonly RegistryListEntry[]> {
     const safeLimit = Math.min(5000, Math.max(1, Math.trunc(limit)));
     const safeOffset = Math.max(0, Math.trunc(offset));
     return Effect.runSync(
       Effect.sync(() => {
-        const results: (CanonicalEntry & {
+        const results: (RegistryEntry & {
           state?: ListState;
           tombstoned?: boolean;
         })[] = [];
@@ -1170,7 +1169,7 @@ export class ManifoldSync extends DurableObject<Env> {
 
   // Binding moves the link: a provider id points at exactly one entry, so a
   // re-bind steals it from wherever it hung before.
-  async linkProvider(entryId: string, input: LinkProviderInput): Promise<CanonicalEntry> {
+  async linkProvider(entryId: string, input: LinkProviderInput): Promise<RegistryEntry> {
     const timestamp = now();
     this.requireEntry(entryId);
     const stolen = this.ctx.storage.sql
@@ -1211,7 +1210,7 @@ export class ManifoldSync extends DurableObject<Env> {
     return stored;
   }
 
-  async unlinkProvider(entryId: string, provider: string): Promise<CanonicalEntry> {
+  async unlinkProvider(entryId: string, provider: string): Promise<RegistryEntry> {
     this.requireEntry(entryId);
     this.ctx.storage.sql.exec(
       "DELETE FROM provider_links WHERE entry_id = ? AND provider = ?",
@@ -1335,7 +1334,7 @@ export class ManifoldSync extends DurableObject<Env> {
   async setChapterSource(
     entryId: string,
     input: SetChapterSourceInput,
-  ): Promise<CanonicalEntry> {
+  ): Promise<RegistryEntry> {
     this.requireEntry(entryId);
     const timestamp = now();
     const value: ChapterSource = input.chapterSource;
@@ -2165,7 +2164,7 @@ export class ManifoldSync extends DurableObject<Env> {
     );
   }
 
-  private readEntry(entryId: string, required = true): CanonicalEntry | undefined {
+  private readEntry(entryId: string, required = true): RegistryEntry | undefined {
     const row = this.ctx.storage.sql
       .exec<EntryRow>("SELECT * FROM canonical_entries WHERE id = ?", entryId)
       .toArray()[0];

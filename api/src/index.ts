@@ -2,9 +2,14 @@ import { Hono } from "hono";
 import { Effect, Schema } from "effect";
 import { catalogApp } from "./catalog";
 import {
+  ErrorBody,
+} from "@manifold/contract";
+import {
   authorized,
   isPublicOAuthRoute,
   json,
+  jsonEncoded,
+  ResponseEncodeError,
   tryPromise,
   type RouteContext,
 } from "./http";
@@ -34,7 +39,7 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
       !isPublicOAuthRoute(request.method, path) &&
       !(yield* tryPromise(() => authorized(request, env)))
     ) {
-      return json({ error: "Unauthorized" }, 401);
+      return jsonEncoded(ErrorBody, { error: "Unauthorized" }, 401);
     }
 
     const canonical = yield* handleCanonical(ctx);
@@ -47,13 +52,13 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
     if (ops) {return ops;}
     const auth = yield* handleAuth(ctx);
     if (auth) {return auth;}
-    return json({ error: "Not found" }, 404);
+    return jsonEncoded(ErrorBody, { error: "Not found" }, 404);
   });
 
 const app: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
   .use("*", async (c, next) => {
     if (new URL(c.req.url).hostname !== PUBLIC_HOSTNAME) {
-      return json({ error: "Not found" }, 404);
+      return jsonEncoded(ErrorBody, { error: "Not found" }, 404);
     }
     await next();
   })
@@ -62,11 +67,20 @@ const app: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
     try {
       return await Effect.runPromise(handle(c.req.raw, c.env));
     } catch (error) {
+      if (error instanceof ResponseEncodeError) {
+        // Avoid re-entering encode on the error path — plain json.
+        return json(
+          { error: "Internal server error", details: "Response failed schema encode" },
+          500,
+        );
+      }
       if (error instanceof Schema.SchemaError) {
-        return json({ error: "Invalid request", details: error.message }, 400);
+        console.error(`[manifold/api] schema error:${error.message}`);
+        return jsonEncoded(ErrorBody, { error: "Invalid request", details: error.message }, 400);
       }
       const message = error instanceof Error ? error.message : "Internal server error";
-      return json({ error: message }, 500);
+      console.error(`[manifold/api] request failed:${message}`);
+      return jsonEncoded(ErrorBody, { error: message }, 500);
     }
   });
 

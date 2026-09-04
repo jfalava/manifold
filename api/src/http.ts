@@ -1,4 +1,24 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
+import {
+  encodeResponse,
+  type AuthConnection,
+  type CanonicalSearchResponse,
+  type ListEvent,
+  type ListState,
+  type MangaDexEntryStat,
+  type MangaDexFeedPage,
+  type MangaDexLibraryItem,
+  type MangaDexLibrarySummary,
+  type MangaDexMatchResult,
+  type OAuthStart,
+  type OpsSummary,
+  type ReadingProgress,
+  type RegistryEntry,
+  type RegistryListEntry,
+  type RegistrySummary,
+  type SyncOp,
+  type UpdateProbeFailure,
+} from "@manifold/contract";
 import {
   errorMessage,
   isJsonObject,
@@ -6,49 +26,30 @@ import {
   isString,
   type JsonValue,
 } from "@manifold/json";
-import type { MangaDexChapter, MangaDexPaged } from "@manifold/mangadex";
-import type { CanonicalSearchResponse } from "./canonical";
-import type {
-  AuthConnection,
-  AuthProvider,
-  CanonicalEntry,
-  ListEvent,
-  ListState,
-  MangaDexLibraryItem,
-  MangaDexLibrarySummary,
-  OAuthProvider,
-  OpsSummary,
-  RegistrySummary,
-  ReadingProgress,
-  SyncOp,
-  UpdateProbeFailure,
-} from "./domain";
-import type { MangaDexMatchResult } from "./mangadex-match";
-import type { MangaDexEntryStat } from "./mangadex-stats";
-import type { OAuthStart } from "./oauth";
+import type { AuthProvider, OAuthProvider } from "./domain";
 import { readSecret } from "./read-secret";
-import type { Env, RegistryListEntry } from "./types";
+import type { Env } from "./types";
 
 /** JSON-serializable HTTP bodies Response.json accepts from these routes. */
 export type JsonResponseBody =
   | JsonValue
   | AuthConnection
-  | CanonicalEntry
   | CanonicalSearchResponse
   | ListEvent
   | ListState
   | MangaDexLibraryItem
   | MangaDexMatchResult
-  | MangaDexPaged<MangaDexChapter>
+  | MangaDexFeedPage
   | OAuthStart
   | ReadingProgress
+  | RegistryEntry
   | RegistryListEntry
   | SyncOp
   | UpdateProbeFailure
   | readonly AuthConnection[]
-  | readonly CanonicalEntry[]
   | readonly ListEvent[]
   | readonly MangaDexLibraryItem[]
+  | readonly RegistryEntry[]
   | readonly RegistryListEntry[]
   | readonly SyncOp[]
   | readonly UpdateProbeFailure[]
@@ -57,8 +58,8 @@ export type JsonResponseBody =
   | { readonly connected: boolean; readonly provider: string }
   | { readonly details?: string; readonly error: string; readonly provider?: string }
   | { readonly enqueued: number }
-  | { readonly entries: readonly CanonicalEntry[] | readonly RegistryListEntry[] }
-  | { readonly entry: null }
+  | { readonly entries: readonly RegistryEntry[] | readonly RegistryListEntry[] }
+  | { readonly entry: RegistryEntry | null }
   | { readonly events: readonly ListEvent[] }
   | { readonly failures: readonly UpdateProbeFailure[] }
   | { readonly id: string; readonly name?: string }
@@ -87,6 +88,31 @@ export const json = (body: JsonResponseBody, status = 200): Response =>
     status,
     headers: { "cache-control": "no-store" },
   });
+
+/**
+ * Encode a domain value with an Effect Schema, then JSON-respond.
+ * Encode failures throw Schema.SchemaError (caught in index → 500).
+ */
+export class ResponseEncodeError extends Error {
+  readonly _tag = "ResponseEncodeError";
+  constructor(readonly details: string) {
+    super(`Response encode failed: ${details}`);
+  }
+}
+
+export const jsonEncoded = <E extends JsonResponseBody>(
+  schema: Schema.ConstraintEncoder<E>,
+  value: unknown,
+  status = 200,
+): Response => {
+  try {
+    return json(encodeResponse(schema, value), status);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    console.error(`[manifold/api] encode failed:${message}`);
+    throw new ResponseEncodeError(message);
+  }
+};
 
 export const parseJson = (request: Request): Effect.Effect<JsonValue, Error> =>
   Effect.tryPromise({

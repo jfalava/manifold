@@ -1,6 +1,6 @@
 import { isJsonObject, type JsonObject } from "@manifold/json";
 import type {
-  CanonicalEntry,
+  RegistryEntry,
   ListEvent,
   ListState,
   OpKind,
@@ -19,7 +19,7 @@ import type {
 
 export interface EntryRow extends Record<string, SqlStorageValue> {
   id: string;
-  provider: CanonicalEntry["provider"];
+  provider: RegistryEntry["provider"];
   provider_id: string;
   title: string;
   created_at: number;

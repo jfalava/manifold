@@ -53,6 +53,7 @@
         "@effect/platform-node": "catalog:effect",
         "@manifold/canonical": "workspace:*",
         "@manifold/comix": "workspace:*",
+        "@manifold/contract": "workspace:*",
         "@manifold/json": "workspace:*",
         "@manifold/mangadex": "workspace:*",
         "@manifold/source": "workspace:*",
@@ -165,6 +166,18 @@
         "oxlint": "catalog:build",
         "oxlint-tsgolint": "catalog:build",
         "typescript": "catalog:build",
+      },
+    },
+    "packages/contract": {
+      "name": "@manifold/contract",
+      "dependencies": {
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "oxlint": "catalog:build",
+        "oxlint-tsgolint": "catalog:build",
+        "typescript": "catalog:build",
+        "vitest": "catalog:build",
       },
     },
     "packages/json": {
@@ -818,6 +831,8 @@
     "@manifold/cli": ["@manifold/cli@workspace:cli"],
 
     "@manifold/comix": ["@manifold/comix@workspace:packages/comix"],
+
+    "@manifold/contract": ["@manifold/contract@workspace:packages/contract"],
 
     "@manifold/docs": ["@manifold/docs@workspace:docs"],
 

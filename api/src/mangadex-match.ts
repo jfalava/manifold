@@ -1,4 +1,10 @@
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
+import {
+  type MangaDexMatchInput,
+  type MangaDexMatchCandidate,
+  type MangaDexMatchResult,
+  type MangaDexMatchMethod,
+} from "@manifold/contract";
 import {
   errorMessage,
   isFiniteNumber,
@@ -10,6 +16,8 @@ import {
 } from "@manifold/mangadex";
 import type { Ai, VectorizeIndex } from "@cloudflare/workers-types";
 import type { Env } from "./types";
+
+export type { MangaDexMatchInput, MangaDexMatchCandidate, MangaDexMatchResult, MangaDexMatchMethod };
 
 export const MANGADEX_EMBEDDING_MODEL = "@cf/qwen/qwen3-embedding-0.6b" as const;
 
@@ -27,58 +35,6 @@ const MATCH_CANDIDATE_LIMIT = 100;
  */
 interface VectorMetadata {
   [key: string]: string | number | boolean | string[];
-}
-
-export const MangaDexMatchInput = Schema.Struct({
-  id: Schema.NonEmptyString,
-  provider: Schema.Literals(["anilist", "mal"]),
-  providerId: Schema.NonEmptyString,
-  title: Schema.NonEmptyString,
-  aliases: Schema.Array(Schema.String),
-  persistSearchResults: Schema.optional(Schema.Boolean),
-  externalIds: Schema.optional(
-    Schema.Struct({
-      anilist: Schema.optional(Schema.NonEmptyString),
-      mal: Schema.optional(Schema.NonEmptyString),
-      mangadex: Schema.optional(Schema.NonEmptyString),
-    }),
-  ),
-  metadata: Schema.optional(
-    Schema.Struct({
-      chapters: Schema.optional(Schema.Number),
-      volumes: Schema.optional(Schema.Number),
-      startDate: Schema.optional(Schema.String),
-      endDate: Schema.optional(Schema.String),
-      status: Schema.optional(Schema.String),
-    }),
-  ),
-});
-
-export type MangaDexMatchInput = Schema.Schema.Type<typeof MangaDexMatchInput>;
-
-export type MangaDexMatchMethod =
-  | "cached"
-  | "anilist-link"
-  | "mal-link"
-  | "vectorize";
-
-export interface MangaDexMatchCandidate {
-  readonly externalId: string;
-  readonly title: string;
-  readonly score: number;
-  readonly anilistId?: string;
-  readonly myAnimeListId?: string;
-}
-
-export interface MangaDexMatchResult {
-  readonly canonicalId: string;
-  readonly status: "matched" | "ambiguous" | "not_found";
-  readonly candidates: readonly MangaDexMatchCandidate[];
-  readonly externalId?: string;
-  readonly title?: string;
-  readonly method?: MangaDexMatchMethod;
-  readonly score?: number;
-  readonly margin?: number;
 }
 
 export interface EmbeddedMangaDexCandidate {

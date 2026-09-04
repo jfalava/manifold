@@ -12,6 +12,7 @@
     { "path": "../packages/json" },
     { "path": "../packages/canonical" },
     { "path": "../packages/mangadex" },
-    { "path": "../packages/comix" }
+    { "path": "../packages/comix" },
+    { "path": "../packages/contract" }
   ]
 }
