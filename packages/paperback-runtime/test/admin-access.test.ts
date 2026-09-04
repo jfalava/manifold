@@ -110,10 +110,10 @@ describe("serialize/deserialize AdminAccessCookies", () => {
         expires: new Date(now + 120_000),
       },
     ];
-    const raw = serializeAdminAccessCookies(cookies);
+    const raw = serializeAdminAccessCookies(cookies, now);
     const restored = deserializeAdminAccessCookies(raw, now);
     expect(restored).toHaveLength(1);
-    expect(adminAccessCookiesToRequestMap(restored)).toEqual({ CF_Authorization: jwt });
+    expect(adminAccessCookiesToRequestMap(restored, now)).toEqual({ CF_Authorization: jwt });
     expect(formatAdminAccessStatus(restored, now)).toContain("ops@jfa.dev");
   });
 

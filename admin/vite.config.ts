@@ -181,9 +181,5 @@ export default defineConfig({
       "import/no-unassigned-import": ["warn", { allow: ["**/*.css"] }],
       ...antiSlopRules,
     },
-    options: {
-      typeAware: true,
-      typeCheck: true,
-    },
   },
 });

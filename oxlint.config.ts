@@ -1,4 +1,4 @@
-import { defineConfig, type DummyRuleMap } from "oxlint";
+import { defineConfig, type DummyRuleMap, type OxlintConfig } from "oxlint";
 
 // Oxlint rejects relative jsPlugins specifiers inside configs consumed via
 // `extends`, so the base exposes a factory and each workspace registers the
@@ -162,12 +162,11 @@ const builtinRules: DummyRuleMap = {
 // Strict application base: type-aware linting over the built-in plugins plus
 // the vendored anti-slop rules. Workspace configs spread this and add their
 // own jsPlugins registration and ignorePatterns.
-export default defineConfig({
-  jsPlugins: antiSlopJsPlugins("."),
-  options: {
-    typeAware: true,
-    typeCheck: true,
-  },
+//
+// NOTE: oxlint 1.81 rejects `options.typeAware` and `options.typeCheck` in any
+// config other than the root. Workspace configs must spread `baseConfig`
+// (which omits `options`), never copying `options` into child configs.
+export const baseConfig: OxlintConfig = {
   plugins: ["eslint", "react", "typescript", "unicorn", "oxc", "import", "promise"],
   env: {
     node: true,
@@ -191,5 +190,14 @@ export default defineConfig({
   rules: {
     ...builtinRules,
     ...antiSlopRules,
+  },
+};
+
+export default defineConfig({
+  ...baseConfig,
+  jsPlugins: antiSlopJsPlugins("."),
+  options: {
+    typeAware: true,
+    typeCheck: true,
   },
 });

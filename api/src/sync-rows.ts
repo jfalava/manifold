@@ -1,4 +1,4 @@
-import { isJsonObject, type JsonObject } from "@manifold/json";
+import { isFiniteNumber, isJsonObject, type JsonObject } from "@manifold/json";
 import type {
   RegistryEntry,
   ListEvent,
@@ -177,13 +177,25 @@ export const toUpdateProbeFailure = (row: UpdateProbeFailureRow): UpdateProbeFai
   createdAt: row.created_at,
 });
 
-const CANONICAL_PROVIDERS = new Set<RegistryEntry["provider"]>(["anilist", "mal", "local"]);
-const REGISTRY_PROVIDERS = new Set<ProviderLink["provider"]>([
+const CANONICAL_PROVIDERS: ReadonlySet<string> = new Set([
+  "anilist",
+  "mal",
+  "local",
+]);
+const REGISTRY_PROVIDERS: ReadonlySet<string> = new Set([
   "anilist",
   "mal",
   "mangadex",
   "comix",
 ]);
+
+const isRegistryProvider = (
+  provider: string,
+): provider is ProviderLink["provider"] => REGISTRY_PROVIDERS.has(provider);
+
+const isCanonicalProvider = (
+  provider: string,
+): provider is RegistryEntry["provider"] => CANONICAL_PROVIDERS.has(provider);
 
 const nonEmpty = (value: string | null | undefined): string | undefined => {
   if (value === null || value === undefined) {
@@ -194,7 +206,7 @@ const nonEmpty = (value: string | null | undefined): string | undefined => {
 };
 
 const finiteMs = (value: number | null | undefined, fallback: number): number =>
-  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  isFiniteNumber(value) ? value : fallback;
 
 /**
  * Build a wire-safe RegistryEntry from durable rows.
@@ -208,7 +220,7 @@ export const toRegistryEntry = (
   const nowMs = Date.now();
   const providers: ProviderLink[] = [];
   for (const link of providerRows) {
-    if (!REGISTRY_PROVIDERS.has(link.provider as ProviderLink["provider"])) {
+    if (!isRegistryProvider(link.provider)) {
       continue;
     }
     const externalId = nonEmpty(link.external_id);
@@ -217,15 +229,15 @@ export const toRegistryEntry = (
     }
     const title = nonEmpty(link.title);
     providers.push({
-      provider: link.provider as ProviderLink["provider"],
+      provider: link.provider,
       externalId,
       ...(title !== undefined && { title }),
       updatedAt: finiteMs(link.updated_at, nowMs),
     });
   }
 
-  const provider = CANONICAL_PROVIDERS.has(row.provider as RegistryEntry["provider"])
-    ? (row.provider as RegistryEntry["provider"])
+  const provider: RegistryEntry["provider"] = isCanonicalProvider(row.provider)
+    ? row.provider
     : "local";
   const providerId = nonEmpty(row.provider_id) ?? row.id;
   const title = nonEmpty(row.title) ?? providerId;

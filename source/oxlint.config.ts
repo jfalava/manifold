@@ -1,15 +1,16 @@
 import { defineConfig } from "oxlint";
 
-import base, {
+import {
   agentIgnores,
   antiSlopEffectRules,
   antiSlopJsPlugins,
+  baseConfig,
 } from "../oxlint.config.ts";
 
 // Object spread instead of oxlint `extends`: extends-based inheritance drops
 // env/globals/overrides from the parent config.
 export default defineConfig({
-  ...base,
+  ...baseConfig,
   jsPlugins: antiSlopJsPlugins("..", { effect: true }),
   ignorePatterns: [
     ...agentIgnores,
@@ -19,7 +20,7 @@ export default defineConfig({
     "dist/**",
   ],
   rules: {
-    ...base.rules,
+    ...baseConfig.rules,
     ...antiSlopEffectRules,
     // Paperback extension console is the only on-device debug surface.
     "no-console": ["error", { allow: ["log", "warn", "error", "info"] }],

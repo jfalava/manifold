@@ -39,7 +39,7 @@
     "@astrojs/check": "catalog:build",
     "@oxlint/plugins": "catalog:build",
     "@tailwindcss/vite": "catalog:styling",
-    "@typescript-eslint/parser": "8.68.0",
+    "@typescript-eslint/parser": "8.69.0",
     "eslint": "10.9.1",
     "eslint-plugin-astro": "3.1.0",
     "oxlint": "catalog:build",
@@ -49,6 +49,6 @@
     "satteri": "catalog:build",
     "tailwindcss": "catalog:styling",
     "typescript": "6.0.2",
-    "wrangler": "4.127.0"
+    "wrangler": "4.129.0"
   }
 }

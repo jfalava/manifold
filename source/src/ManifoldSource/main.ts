@@ -244,7 +244,7 @@ const readChapterListBody = (
         chapterId: row.chapterId,
         sourceManga,
         chapNum: row.chapNum,
-        ...(isString(row.langCode) && { langCode: row.langCode }),
+        langCode: isString(row.langCode) && row.langCode.length > 0 ? row.langCode : "en",
         ...(isString(row.title) && { title: row.title }),
         ...(isFiniteNumber(row.volume) && { volume: row.volume }),
         ...(isFiniteNumber(row.publishDate) && { publishDate: new Date(row.publishDate) }),

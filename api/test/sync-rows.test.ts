@@ -71,6 +71,7 @@ describe("toRegistryEntry", () => {
   it("coerces empty required strings so encode never fails", () => {
     const entry = toRegistryEntry(
       baseRow({
+        // SAFETY: Intentional corrupt provider value in test fixture to verify fallback to "local".
         provider: "not-a-provider" as EntryRow["provider"],
         provider_id: "  ",
         title: "",

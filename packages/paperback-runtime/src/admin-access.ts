@@ -219,13 +219,17 @@ export const filterAdminAccessCookies = (
 
 export const adminAccessCookiesToRequestMap = (
   cookies: readonly Cookie[],
+  nowMs: number = Date.now(),
 ): Record<string, string> =>
   Object.fromEntries(
-    filterAdminAccessCookies(cookies).map((cookie) => [cookie.name, cookie.value] as const),
+    filterAdminAccessCookies(cookies, nowMs).map((cookie) => [cookie.name, cookie.value] as const),
   );
 
-export const serializeAdminAccessCookies = (cookies: readonly Cookie[]): string => {
-  const payload: PersistedAccessCookie[] = filterAdminAccessCookies(cookies).map((cookie) => {
+export const serializeAdminAccessCookies = (
+  cookies: readonly Cookie[],
+  nowMs: number = Date.now(),
+): string => {
+  const payload: PersistedAccessCookie[] = filterAdminAccessCookies(cookies, nowMs).map((cookie) => {
     const base: PersistedAccessCookie = {
       name: cookie.name,
       value: cookie.value,
