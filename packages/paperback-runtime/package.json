@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "@manifold/canonical": "workspace:*",
+    "@manifold/contract": "workspace:*",
     "@manifold/json": "workspace:*",
-    "@paperback/types": "catalog:paperback"
+    "@paperback/types": "catalog:paperback",
+    "effect": "catalog:effect"
   },
   "devDependencies": {
     "oxlint": "catalog:build",

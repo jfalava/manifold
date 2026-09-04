@@ -18,6 +18,17 @@ describe("Paperback personal API client", () => {
             aliases: ["Example"],
             score: 1,
           }],
+          providers: [{
+            provider: "anilist",
+            results: [{
+              id: "anilist:1",
+              provider: "anilist",
+              providerId: "1",
+              title: "Example",
+              aliases: ["Example"],
+              score: 1,
+            }],
+          }],
         },
       };
     }, { origin: "https://personal.test/", token: "secret" });
@@ -146,5 +157,15 @@ describe("Paperback personal API client", () => {
         { title: "Local only", source: "Comix", reason: "comix_hid_miss" },
       ],
     });
+  });
+
+  it("soft-fails on schema-invalid success bodies", async () => {
+    const client = createPersonalApiClient(async () => ({
+      status: 200,
+      body: { nope: true },
+    }), { token: "secret" });
+
+    await expect(client.mangaDexLibrary()).resolves.toEqual([]);
+    await expect(client.resolveEntries([])).resolves.toEqual([]);
   });
 });
