@@ -79,6 +79,7 @@ import {
   toOp,
   toProgress,
   toUpdateProbeFailure,
+  toRegistryEntry,
 } from "./sync-rows";
 import { decryptToken, encryptToken } from "./token-crypto";
 import type { Env } from "./types";
@@ -2173,35 +2174,14 @@ export class ManifoldSync extends DurableObject<Env> {
       return undefined;
     }
 
-    const providers = this.ctx.storage.sql
+    const providerRows = this.ctx.storage.sql
       .exec<ProviderRow>(
         "SELECT provider, external_id, title, updated_at FROM provider_links WHERE entry_id = ? ORDER BY provider",
         entryId
       )
-      .toArray()
-      .map((provider) => ({
-        provider: provider.provider,
-        externalId: provider.external_id,
-        ...(!(provider.title === null) && { title: provider.title }),
-        updatedAt: provider.updated_at
-      }));
+      .toArray();
 
-    const rawChapterSource = row.chapter_source ?? null;
-    const chapterSource =
-      rawChapterSource === "mangadex" || rawChapterSource === "comix"
-        ? rawChapterSource
-        : undefined;
-
-    return {
-      id: row.id,
-      provider: row.provider,
-      providerId: row.provider_id,
-      title: row.title,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      providers,
-      ...(chapterSource && { chapterSource }),
-    };
+    return toRegistryEntry(row, providerRows);
   }
 
   private getProgressSync(entryId: string): ReadingProgress | undefined {

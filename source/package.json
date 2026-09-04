@@ -1,6 +1,6 @@
 {
   "name": "@manifold/source",
-  "version": "2026.09.04-4",
+  "version": "2026.09.04-5",
   "private": true,
   "type": "module",
   "exports": {

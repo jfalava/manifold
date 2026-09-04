@@ -176,3 +176,73 @@ export const toUpdateProbeFailure = (row: UpdateProbeFailureRow): UpdateProbeFai
   ...(row.detail !== null && { detail: row.detail }),
   createdAt: row.created_at,
 });
+
+const CANONICAL_PROVIDERS = new Set<RegistryEntry["provider"]>(["anilist", "mal", "local"]);
+const REGISTRY_PROVIDERS = new Set<ProviderLink["provider"]>([
+  "anilist",
+  "mal",
+  "mangadex",
+  "comix",
+]);
+
+const nonEmpty = (value: string | null | undefined): string | undefined => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const finiteMs = (value: number | null | undefined, fallback: number): number =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
+/**
+ * Build a wire-safe RegistryEntry from durable rows.
+ * Drops corrupt provider links and coerces empty required strings so response
+ * encode never 500s on historical DO data (empty external_id, bad provider, …).
+ */
+export const toRegistryEntry = (
+  row: EntryRow,
+  providerRows: readonly ProviderRow[],
+): RegistryEntry => {
+  const nowMs = Date.now();
+  const providers: ProviderLink[] = [];
+  for (const link of providerRows) {
+    if (!REGISTRY_PROVIDERS.has(link.provider as ProviderLink["provider"])) {
+      continue;
+    }
+    const externalId = nonEmpty(link.external_id);
+    if (!externalId) {
+      continue;
+    }
+    const title = nonEmpty(link.title);
+    providers.push({
+      provider: link.provider as ProviderLink["provider"],
+      externalId,
+      ...(title !== undefined && { title }),
+      updatedAt: finiteMs(link.updated_at, nowMs),
+    });
+  }
+
+  const provider = CANONICAL_PROVIDERS.has(row.provider as RegistryEntry["provider"])
+    ? (row.provider as RegistryEntry["provider"])
+    : "local";
+  const providerId = nonEmpty(row.provider_id) ?? row.id;
+  const title = nonEmpty(row.title) ?? providerId;
+  const rawChapterSource = row.chapter_source ?? null;
+  const chapterSource =
+    rawChapterSource === "mangadex" || rawChapterSource === "comix"
+      ? rawChapterSource
+      : undefined;
+
+  return {
+    id: nonEmpty(row.id) ?? row.id,
+    provider,
+    providerId,
+    title,
+    createdAt: finiteMs(row.created_at, nowMs),
+    updatedAt: finiteMs(row.updated_at, nowMs),
+    providers,
+    ...(chapterSource && { chapterSource }),
+  };
+};

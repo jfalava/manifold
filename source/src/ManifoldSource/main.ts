@@ -172,6 +172,120 @@ const bumpChapterSourceEpoch = (): void => {
   Application.setState(String(readChapterSourceEpoch() + 1), CHAPTER_SOURCE_EPOCH_KEY);
 };
 
+/** Full chapter-list body cache. Choice cache only stores provider/hid; this
+ * avoids re-hitting MangaDex / Comix WebView on every library refresh. */
+const CHAPTER_LIST_CACHE_PREFIX = "manifold.chapters-body:v1:";
+const CHAPTER_LIST_BODY_TTL_MS = 6 * 60 * 60 * 1000;
+const CHAPTER_LIST_BODY_MAX_CHARS = 400_000;
+
+type CachedChapterRow = {
+  readonly chapterId: string;
+  readonly langCode?: string;
+  readonly chapNum: number;
+  readonly title?: string;
+  readonly volume?: number;
+  readonly publishDate?: number;
+  readonly additionalInfo?: Record<string, string>;
+};
+
+const chapterListCacheKey = (mangaId: string, provider: string, externalId: string): string =>
+  `${CHAPTER_LIST_CACHE_PREFIX}${provider}:${externalId || mangaId}`;
+
+const serializeChapterRows = (chapters: readonly Chapter[]): CachedChapterRow[] =>
+  chapters.map((chapter) => ({
+    chapterId: chapter.chapterId,
+    ...(chapter.langCode !== undefined && { langCode: chapter.langCode }),
+    chapNum: chapter.chapNum,
+    ...(chapter.title !== undefined && { title: chapter.title }),
+    ...(chapter.volume !== undefined && { volume: chapter.volume }),
+    ...(chapter.publishDate instanceof Date &&
+      !Number.isNaN(chapter.publishDate.getTime()) && {
+        publishDate: chapter.publishDate.getTime(),
+      }),
+    ...(chapter.additionalInfo !== undefined && { additionalInfo: chapter.additionalInfo }),
+  }));
+
+const readChapterListBody = (
+  cacheKey: string,
+  sourceManga: SourceManga,
+): Chapter[] | undefined => {
+  const raw = Application.getState(cacheKey);
+  if (!isString(raw) || raw.length === 0) {
+    return undefined;
+  }
+  try {
+    // SAFETY: I/O JSON.parse of the chapter-list body cache blob.
+    const parsed: unknown = JSON.parse(raw);
+    if (!isJsonObject(parsed)) {
+      return undefined;
+    }
+    const cachedAt = parsed.t;
+    const ttl = parsed.ttl;
+    const rows = parsed.c;
+    if (!isFiniteNumber(cachedAt) || !isFiniteNumber(ttl) || !Array.isArray(rows)) {
+      return undefined;
+    }
+    if (Date.now() - cachedAt >= ttl) {
+      return undefined;
+    }
+    const chapters: Chapter[] = [];
+    for (const row of rows) {
+      if (!isJsonObject(row) || !isString(row.chapterId) || !isFiniteNumber(row.chapNum)) {
+        continue;
+      }
+      const additionalInfo = isJsonObject(row.additionalInfo)
+        ? Object.fromEntries(
+            Object.entries(row.additionalInfo).filter(
+              (entry): entry is [string, string] => isString(entry[1]),
+            ),
+          )
+        : undefined;
+      chapters.push({
+        chapterId: row.chapterId,
+        sourceManga,
+        chapNum: row.chapNum,
+        ...(isString(row.langCode) && { langCode: row.langCode }),
+        ...(isString(row.title) && { title: row.title }),
+        ...(isFiniteNumber(row.volume) && { volume: row.volume }),
+        ...(isFiniteNumber(row.publishDate) && { publishDate: new Date(row.publishDate) }),
+        ...(additionalInfo !== undefined &&
+          Object.keys(additionalInfo).length > 0 && { additionalInfo }),
+      });
+    }
+    return chapters.length > 0 ? chapters : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const writeChapterListBody = (
+  cacheKey: string,
+  chapters: readonly Chapter[],
+  ttlMs: number = CHAPTER_LIST_BODY_TTL_MS,
+): void => {
+  if (chapters.length === 0) {
+    return;
+  }
+  try {
+    const payload = JSON.stringify({
+      t: Date.now(),
+      ttl: ttlMs,
+      c: serializeChapterRows(chapters),
+    });
+    // Skip oversized payloads — better a miss than blowing Application state.
+    if (payload.length > CHAPTER_LIST_BODY_MAX_CHARS) {
+      console.log(
+        `[manifold] chapters body cache skip:${cacheKey}:chars=${payload.length}`,
+      );
+      return;
+    }
+    Application.setState(payload, cacheKey);
+  } catch (error) {
+    console.error(`[manifold] chapters body cache write failed:${errorMessage(error)}`);
+  }
+};
+
+
 // Session/login cookies make comix.to's backend demand CSRF tokens on its
 // API ("Missing token."); anonymous access needs only the clearance cookie.
 // clearanceCookiesOnly (comix-fallback) also pins empty domains to comix.to.
@@ -1447,6 +1561,14 @@ export class ManifoldSourceImpl implements
         : undefined;
     if (comixPageId) {
       console.log(`[manifold] chapters source:${sourceManga.mangaId}:comix-direct:${comixPageId}`);
+      const bodyKey = chapterListCacheKey(sourceManga.mangaId, "comix", comixPageId);
+      const cachedBody = readChapterListBody(bodyKey, sourceManga);
+      if (cachedBody) {
+        console.log(
+          `[manifold] chapters body cache hit:${sourceManga.mangaId}:comix-direct:${cachedBody.length}`,
+        );
+        return finalize(cachedBody);
+      }
       // Same adopt-before-throw posture as My Updates · Comix: after a solved
       // challenge the app harvest often dies with WKError and leaves
       // cf_clearance only in the shared WK store. Without adopting here,
@@ -1459,7 +1581,9 @@ export class ManifoldSourceImpl implements
         );
       }
       try {
-        return finalize(await this.comix.fetchChaptersByHid(comixPageId, sourceManga));
+        const chapters = await this.comix.fetchChaptersByHid(comixPageId, sourceManga);
+        writeChapterListBody(bodyKey, chapters);
+        return finalize(chapters);
       } catch (error) {
         if (!(error instanceof CloudflareError)) {throw error;}
         // One more silent adopt after a challenge mid-fetch, then rethrow so
@@ -1474,11 +1598,23 @@ export class ManifoldSourceImpl implements
       }
     }
 
-    const loadMangadex = async (): Promise<Chapter[]> => {
+    const loadMangadex = async (options?: { readonly bypassBodyCache?: boolean }): Promise<Chapter[]> => {
       if (provider?.provider !== "mangadex") {return [];}
+      const bodyKey = chapterListCacheKey(sourceManga.mangaId, "mangadex", provider.externalId);
+      if (!options?.bypassBodyCache) {
+        const cachedBody = readChapterListBody(bodyKey, sourceManga);
+        if (cachedBody) {
+          console.log(
+            `[manifold] chapters body cache hit:${sourceManga.mangaId}:mangadex:${cachedBody.length}`,
+          );
+          return cachedBody;
+        }
+      }
       try {
         const chapters = await Effect.runPromise(this.mangaDex.getChapters(provider.externalId));
-        return toMangaDexChapters(sourceManga, chapters);
+        const mapped = toMangaDexChapters(sourceManga, chapters);
+        writeChapterListBody(bodyKey, mapped);
+        return mapped;
       } catch (error) {
         console.error(
           `[manifold] mangadex chapters failed:${sourceManga.mangaId}:${errorMessage(error)}`,
@@ -1517,12 +1653,24 @@ export class ManifoldSourceImpl implements
       const resolved = await this.comix.resolveHid(titles);
       return resolved.hid;
     };
-    const loadComix = async (): Promise<Chapter[]> => {
+    const loadComix = async (options?: { readonly bypassBodyCache?: boolean }): Promise<Chapter[]> => {
       try {
         const hid = await resolveComixHid();
         if (!hid) {return [];}
         comixHid = hid;
-        return await this.comix.fetchChaptersByHid(hid, sourceManga);
+        const bodyKey = chapterListCacheKey(sourceManga.mangaId, "comix", hid);
+        if (!options?.bypassBodyCache) {
+          const cachedBody = readChapterListBody(bodyKey, sourceManga);
+          if (cachedBody) {
+            console.log(
+              `[manifold] chapters body cache hit:${sourceManga.mangaId}:comix:${cachedBody.length}`,
+            );
+            return cachedBody;
+          }
+        }
+        const chapters = await this.comix.fetchChaptersByHid(hid, sourceManga);
+        writeChapterListBody(bodyKey, chapters);
+        return chapters;
       } catch (error) {
         console.error(`[manifold] comix fallback failed:${sourceManga.mangaId}:${errorMessage(error)}`);
         // A Cloudflare challenge only kills the update when MangaDex has
@@ -1536,18 +1684,36 @@ export class ManifoldSourceImpl implements
         return [];
       }
     };
-    const loadComixCached = async (hid?: string): Promise<Chapter[]> => {
+    const loadComixCached = async (
+      hid?: string,
+      options?: { readonly bypassBodyCache?: boolean },
+    ): Promise<Chapter[]> => {
       if (hid) {
+        const bodyKey = chapterListCacheKey(sourceManga.mangaId, "comix", hid);
+        if (!options?.bypassBodyCache) {
+          const cachedBody = readChapterListBody(bodyKey, sourceManga);
+          if (cachedBody) {
+            console.log(
+              `[manifold] chapters body cache hit:${sourceManga.mangaId}:comix:${cachedBody.length}`,
+            );
+            comixHid = hid;
+            return cachedBody;
+          }
+        }
         try {
           const chapters = await this.comix.fetchChaptersByHid(hid, sourceManga);
-          if (chapters.length > 0) {return chapters;}
+          if (chapters.length > 0) {
+            comixHid = hid;
+            writeChapterListBody(bodyKey, chapters);
+            return chapters;
+          }
           console.log(`[manifold] comix cached hid empty, falling back to search:${sourceManga.mangaId}:${hid}`);
         } catch (error) {
           console.error(`[manifold] comix cached hid failed:${sourceManga.mangaId}:${errorMessage(error)}`);
           if (error instanceof CloudflareError) {throw error;}
         }
       }
-      return loadComix();
+      return loadComix(options);
     };
 
     // Force order: registry per-title pin (max prio) → device default → auto
