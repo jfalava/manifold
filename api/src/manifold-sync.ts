@@ -1027,11 +1027,15 @@ export class ManifoldSync extends DurableObject<Env> {
     }
 
     const id = crypto.randomUUID();
+    // canonical_entries.provider is CanonicalProvider (anilist|mal|local). Content
+    // providers (mangadex/comix) only live on provider_links — mint source stays local.
+    const mintProvider =
+      request.provider === "anilist" || request.provider === "mal" ? request.provider : "local";
     this.ctx.storage.sql.exec(
       `INSERT INTO canonical_entries (id, provider, provider_id, title, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
       id,
-      request.provider,
+      mintProvider,
       request.providerId,
       request.title,
       timestamp,

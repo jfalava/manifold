@@ -9,6 +9,11 @@
  *
  * Try the request path as-is (Vite `base: "/admin/"` keys), then the same path
  * with the mount stripped (if the upload manifest was un-prefixed).
+ *
+ * Only GET/HEAD hit ASSETS. POST/PUT/… (TanStack serverFns) must reach the
+ * Start handler with an unread body — `new Request(url, request)` shares the
+ * body stream, and ASSETS.fetch consumes it → "Cannot reconstruct a Request
+ * with a used body" / HTTP 500 on registry binds and other mutations.
  */
 import handler, { createServerEntry } from "@tanstack/react-start/server-entry";
 import { env } from "cloudflare:workers";
@@ -35,16 +40,26 @@ function isFetcher(value: unknown): value is AssetsFetcher {
 function withPathname(request: Request, pathname: string): Request {
   const url = new URL(request.url);
   url.pathname = pathname;
-  return new Request(url, request);
+  // Never forward the original body into ASSETS — static lookups are bodyless
+  // and cloning with `request` would tee/consume the stream for SSR/serverFns.
+  return new Request(url.toString(), {
+    method: request.method,
+    headers: request.headers,
+    redirect: "manual",
+  });
 }
 
 async function fetchStaticAsset(request: Request): Promise<Response | null> {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return null;
+  }
   if (!isFetcher(env.ASSETS)) {
     return null;
   }
 
   const pathname = new URL(request.url).pathname;
-  const candidates: Request[] = [request];
+  // Always synthesize body-free Requests so ASSETS never touches the inbound stream.
+  const candidates: Request[] = [withPathname(request, pathname)];
 
   if (pathname === MOUNT || pathname.startsWith(`${MOUNT}/`)) {
     const stripped = pathname.slice(MOUNT.length) || "/";
