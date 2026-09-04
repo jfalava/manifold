@@ -43,6 +43,8 @@ import {
   ANILIST_STATUS_KEY,
   ANILIST_VIEWER_ID_KEY,
   AniListUnauthorizedError,
+  clearAdminAccessCookies,
+  readAdminAccessStatus,
   MANIFOLD_API_STATUS_KEY,
   MANIFOLD_API_TOKEN_KEY,
   aniListRequest,
@@ -668,6 +670,7 @@ class TrackerSettingsForm extends Form {
 
   private pendingPersonalApiToken?: string;
   private pendingAniListToken?: string;
+  private pendingAdminCommand?: string;
 
   getSections() {
     // oxlint-disable-next-line typescript/no-this-alias -- Selector cannot resolve callback keys from polymorphic this
@@ -678,6 +681,7 @@ class TrackerSettingsForm extends Form {
     const aniListStatus = isString(storedAniListStatus)
       ? storedAniListStatus
       : "Not connected";
+    const adminStatus = readAdminAccessStatus();
     return [
       FlowSection(
         {
@@ -728,6 +732,27 @@ class TrackerSettingsForm extends Form {
           }),
         ],
       ),
+
+      FlowSection(
+        {
+          id: "tracker-admin",
+          header: "Admin panel",
+          footer:
+            "In-app admin browser is blocked on iOS 27 (Paperback SIGABRT laying out WebViewRow). Open https://manifold.jfa.dev/admin/ in Safari. Type clear + Save if a stored Access session label is stale.",
+        },
+        [
+          LabelRow("tracker-admin-status", {
+            title: "Access session",
+            value: adminStatus,
+            style: adminStatus === "No session" ? "warning" : "success",
+          }),
+          InputRow("tracker-admin-command", {
+            title: "Admin command (clear)",
+            value: "",
+            onValueChange: Application.Selector(selectorTarget, "adminCommandChanged"),
+          }),
+        ],
+      ),
     ];
   }
 
@@ -737,6 +762,10 @@ class TrackerSettingsForm extends Form {
 
   readonly aniListTokenChanged = async (value: string): Promise<void> => {
     this.pendingAniListToken = value;
+  };
+
+  readonly adminCommandChanged = async (value: string): Promise<void> => {
+    this.pendingAdminCommand = value;
   };
 
   readonly aniListOAuthSuccess = async (
@@ -782,8 +811,16 @@ class TrackerSettingsForm extends Form {
       }
     }
 
+    const adminCommand = this.pendingAdminCommand?.trim().toLowerCase();
     this.pendingPersonalApiToken = undefined;
     this.pendingAniListToken = undefined;
+    this.pendingAdminCommand = undefined;
+
+    if (adminCommand === "clear") {
+      clearAdminAccessCookies();
+      console.log("[ManifoldTracker] admin access:cleared");
+    }
+
     this.reloadForm();
   }
 }

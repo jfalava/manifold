@@ -61,3 +61,23 @@ export {
 export { drainAniListOps, maybeDrainAniListOps } from "./op-drain.js";
 
 export { toCanonicalSearchResult } from "./search-map.js";
+
+export {
+  MANIFOLD_ADMIN_ORIGIN,
+  MANIFOLD_ADMIN_URL,
+  ADMIN_ACCESS_PERSIST_KEY,
+  ADMIN_ACCESS_STATUS_KEY,
+  domainMatchesAdmin,
+  decodeJwtPayloadJson,
+  filterAdminAccessCookies,
+  adminAccessCookiesToRequestMap,
+  serializeAdminAccessCookies,
+  deserializeAdminAccessCookies,
+  formatAdminAccessStatus,
+  restoreAdminAccessCookies,
+  persistAdminAccessCookies,
+  clearAdminAccessCookies,
+  readAdminAccessStatus,
+  buildAdminWebViewRequest,
+} from "./admin-access.js";
+
