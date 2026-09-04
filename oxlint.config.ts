@@ -1,4 +1,4 @@
-import { defineConfig, type DummyRuleMap, type OxlintConfig } from "oxlint";
+import { defineConfig, type DummyRule, type DummyRuleMap, type OxlintConfig } from "oxlint";
 
 // Oxlint rejects relative jsPlugins specifiers inside configs consumed via
 // `extends`, so the base exposes a factory and each workspace registers the
@@ -44,7 +44,7 @@ export const agentIgnores = [
 // typeof is allowed only inside type-predicate parsers (`allowInTypeGuards`).
 // Remaining unknown params and Record<string, unknown> are errors: parse at I/O
 // into JsonObject / named domain types (`@manifold/json`).
-export const antiSlopRules: DummyRuleMap = {
+export const antiSlopRules: Record<string, DummyRule> = {
   "anti-slop/no-chained-type-assertions": "error",
   "anti-slop/no-conditional-empty-object-spread": "error",
   "anti-slop/no-known-value-widening": "error",
@@ -62,12 +62,12 @@ export const antiSlopRules: DummyRuleMap = {
   "anti-slop/require-safety-comment-for-type-assertion": "error",
 };
 
-export const antiSlopEffectRules: DummyRuleMap = {
+export const antiSlopEffectRules: Record<string, DummyRule> = {
   "anti-slop-effect/no-service-constructor-imports": "error",
 };
 
 /** Generic + Effect anti-slop rules for packages that depend on `effect`. */
-export const antiSlopRulesWithEffect: DummyRuleMap = {
+export const antiSlopRulesWithEffect: Record<string, DummyRule> = {
   ...antiSlopRules,
   ...antiSlopEffectRules,
 };
