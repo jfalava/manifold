@@ -159,13 +159,17 @@ describe("Paperback personal API client", () => {
     });
   });
 
-  it("soft-fails on schema-invalid success bodies", async () => {
+  it("rejects schema-invalid success bodies", async () => {
     const client = createPersonalApiClient(async () => ({
       status: 200,
       body: { nope: true },
     }), { token: "secret" });
 
-    await expect(client.mangaDexLibrary()).resolves.toEqual([]);
-    await expect(client.resolveEntries([])).resolves.toEqual([]);
+    await expect(client.mangaDexLibrary()).rejects.toEqual(
+      new PersonalApiError("Personal API response failed schema decode (mangadex.library)", 502),
+    );
+    await expect(client.resolveEntries([])).rejects.toEqual(
+      new PersonalApiError("Personal API response failed schema decode (canonical.resolveBatch)", 502),
+    );
   });
 });

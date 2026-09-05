@@ -248,11 +248,11 @@ const requireDecoded = <T>(
   body: JsonValue,
   label: string,
 ): T => {
-  const decoded = decodeResponse(schema, body, label);
-  if (decoded === undefined) {
+  try {
+    return decodeResponse(schema, body, label);
+  } catch {
     throw new PersonalApiError(`Personal API response failed schema decode (${label})`, 502);
   }
-  return decoded;
 };
 
 export const createPersonalApiClient = (
@@ -290,10 +290,7 @@ export const createPersonalApiClient = (
         `limit=${encodeURIComponent(String(limitValue(limit)))}`,
       ].join("&");
       const response = await rawRequest(`/v1/canonical/search?${params}`);
-      const body = decodeResponse(CanonicalSearchResponse, response.body, "canonical.search");
-      if (body === undefined) {
-        return { query: query.trim(), results: [] };
-      }
+      const body = requireDecoded(CanonicalSearchResponse, response.body, "canonical.search");
       return {
         query: body.query,
         results: body.results.map((hit) => ({
@@ -314,8 +311,8 @@ export const createPersonalApiClient = (
         const response = await rawRequest(
           `/v1/canonical/${encodeURIComponent(provider)}/${encodeURIComponent(providerId)}`,
         );
-        const body = decodeResponse(CanonicalIdentity, response.body, "canonical.get");
-        return body === undefined ? undefined : identityToCanonical(body);
+        const body = requireDecoded(CanonicalIdentity, response.body, "canonical.get");
+        return identityToCanonical(body);
       } catch (error) {
         if (error instanceof PersonalApiError && error.status === 404) {
           return undefined;
@@ -327,7 +324,7 @@ export const createPersonalApiClient = (
     getEntry: async (entryId) => {
       try {
         const response = await rawRequest(`/v1/entries/${encodeURIComponent(entryId)}`);
-        return decodeResponse(RegistryEntry, response.body, "entries.get");
+        return requireDecoded(RegistryEntry, response.body, "entries.get");
       } catch (error) {
         if (error instanceof PersonalApiError && error.status === 404) {
           return undefined;
@@ -378,8 +375,8 @@ export const createPersonalApiClient = (
 
     getProgress: async (entryId) => {
       const response = await rawRequest(`/v1/entries/${encodeURIComponent(entryId)}/progress`);
-      const body = decodeResponse(ProgressResponse, response.body, "entries.progress");
-      if (body === undefined || body.progress === null) {
+      const body = requireDecoded(ProgressResponse, response.body, "entries.progress");
+      if (body.progress === null) {
         return undefined;
       }
       return body.progress;
@@ -396,10 +393,7 @@ export const createPersonalApiClient = (
 
     mangaDexLibrary: async () => {
       const response = await rawRequest("/v1/mangadex/library");
-      const body = decodeResponse(MangaDexLibraryResponse, response.body, "mangadex.library");
-      if (body === undefined) {
-        return [];
-      }
+      const body = requireDecoded(MangaDexLibraryResponse, response.body, "mangadex.library");
       return body.library.map((item) => ({
         mangaDexId: item.mangaDexId,
         status: item.status,
@@ -409,10 +403,7 @@ export const createPersonalApiClient = (
 
     mangaDexFeed: async (limit, offset) => {
       const response = await rawRequest(`/v1/mangadex/feed?limit=${limit}&offset=${offset}`);
-      const body = decodeResponse(MangaDexFeedPage, response.body, "mangadex.feed");
-      if (body === undefined) {
-        return { items: [] };
-      }
+      const body = requireDecoded(MangaDexFeedPage, response.body, "mangadex.feed");
       return {
         items: body.items.map((item) => ({
           id: item.id,
@@ -440,8 +431,8 @@ export const createPersonalApiClient = (
       const response = await rawRequest(
         `/v1/canonical/by-provider/mangadex/${encodeURIComponent(mangaDexId)}`,
       );
-      const body = decodeResponse(EntryByProviderResponse, response.body, "canonical.byProvider");
-      if (body === undefined || body.entry === null) {
+      const body = requireDecoded(EntryByProviderResponse, response.body, "canonical.byProvider");
+      if (body.entry === null) {
         return undefined;
       }
       return body.entry;
@@ -466,14 +457,14 @@ export const createPersonalApiClient = (
           title: input.title,
         })),
       );
-      const body = decodeResponse(RegistryEntriesResponse, response.body, "canonical.resolveBatch");
-      return body === undefined ? [] : body.entries;
+      const body = requireDecoded(RegistryEntriesResponse, response.body, "canonical.resolveBatch");
+      return body.entries;
     },
 
     getListState: async (entryId) => {
       const response = await rawRequest(`/v1/entries/${encodeURIComponent(entryId)}/list-state`);
-      const body = decodeResponse(ListStateResponse, response.body, "entries.listState.get");
-      if (body === undefined || body.state === null) {
+      const body = requireDecoded(ListStateResponse, response.body, "entries.listState.get");
+      if (body.state === null) {
         return undefined;
       }
       return listStateFromContract(body.state);
@@ -499,10 +490,7 @@ export const createPersonalApiClient = (
       const response = await rawRequest(
         `/v1/ops/pending/anilist?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`,
       );
-      const body = decodeResponse(OpsListResponse, response.body, "ops.pending.anilist");
-      if (body === undefined) {
-        return [];
-      }
+      const body = requireDecoded(OpsListResponse, response.body, "ops.pending.anilist");
       return body.ops.map((op) => ({
         opId: op.opId,
         kind: op.kind,
@@ -514,8 +502,7 @@ export const createPersonalApiClient = (
 
     completeOps: async (results) => {
       const response = await rawRequest("/v1/ops/complete", "POST", { results });
-      const body = decodeResponse(UpdatedCountResponse, response.body, "ops.complete");
-      return body ?? { updated: 0 };
+      return requireDecoded(UpdatedCountResponse, response.body, "ops.complete");
     },
 
     reportUpdateFailures: async (failures) => {
@@ -533,8 +520,7 @@ export const createPersonalApiClient = (
             failure.detail.length > 0 && { detail: failure.detail }),
         })),
       });
-      const body = decodeResponse(RecordedCountResponse, response.body, "updateFailures.report");
-      return body ?? { recorded: 0 };
+      return requireDecoded(RecordedCountResponse, response.body, "updateFailures.report");
     },
   };
 };

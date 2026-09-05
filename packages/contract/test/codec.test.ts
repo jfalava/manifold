@@ -4,6 +4,7 @@ import {
   ListStateResponse,
   ProgressResponse,
   RegistryEntry,
+  ResponseDecodeError,
   encodeResponse,
   decodeResponse,
 } from "../src/index.ts";
@@ -48,7 +49,12 @@ describe("decodeResponse", () => {
     expect(decodeResponse(RegistryEntry, sampleEntry, "entry")).toEqual(sampleEntry);
   });
 
-  it("returns undefined and does not throw on garbage", () => {
-    expect(decodeResponse(RegistryEntry, { nope: true }, "entry")).toBeUndefined();
+  it("throws a labeled error on garbage", () => {
+    expect(() => decodeResponse(RegistryEntry, { nope: true }, "entry")).toThrow(
+      ResponseDecodeError,
+    );
+    expect(() => decodeResponse(RegistryEntry, { nope: true }, "entry")).toThrow(
+      "Response decode failed (entry)",
+    );
   });
 });

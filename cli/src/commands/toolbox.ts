@@ -107,11 +107,7 @@ export const apiCall = async <A>(
       throw new Error(`Personal API response is not JSON (${path})`);
     }
     const parsed: JsonValue = raw === undefined ? null : raw;
-    const decoded = decodeResponse(schema, parsed, path);
-    if (decoded === undefined) {
-      throw new Error(`Personal API response failed schema decode (${path})`);
-    }
-    return decoded;
+    return decodeResponse(schema, parsed, path);
   }
   // SAFETY: untyped call sites trust wire until migrated
   return raw as A;

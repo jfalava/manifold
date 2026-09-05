@@ -146,11 +146,7 @@ const call = async <A>(
     throw new Error(`Personal API response is not JSON (${path})`);
   }
   const body = raw === undefined ? null : raw;
-  const decoded = decodeResponse(schema, body, path);
-  if (decoded === undefined) {
-    throw new Error(`Personal API response failed schema decode (${path})`);
-  }
-  return decoded;
+  return decodeResponse(schema, body, path);
 };
 
 export interface LoadRegistryResult {

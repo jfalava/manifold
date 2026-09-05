@@ -12,18 +12,29 @@ export const encodeResponse = <S extends Schema.ConstraintEncoder<unknown>>(
 
 /**
  * Decode wire JSON into a domain value.
- * Client-side helper: returns undefined and logs on failure (graceful).
+ * Client-side: fail closed so malformed success bodies cannot look like absence.
  */
+export class ResponseDecodeError extends Error {
+  readonly _tag = "ResponseDecodeError";
+
+  constructor(
+    readonly label: string,
+    readonly details: string,
+  ) {
+    super(`Response decode failed (${label}): ${details}`);
+    this.name = "ResponseDecodeError";
+  }
+}
+
 export const decodeResponse = <T>(
   schema: Schema.ConstraintDecoder<T>,
   body: JsonValue,
   label: string,
-): T | undefined => {
+): T => {
   try {
     return Schema.decodeUnknownSync(schema)(body);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    console.error(`[manifold/contract] decode failed:${label}:${message}`);
-    return undefined;
+    throw new ResponseDecodeError(label, message);
   }
 };
