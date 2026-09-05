@@ -51,20 +51,27 @@ import {
   MANIFOLD_API_ORIGIN,
   MANIFOLD_API_STATUS_KEY,
   MANIFOLD_API_TOKEN_KEY,
+  aniListProviderCandidate,
   aniListRequest,
+  correlateProviderCandidates,
   configuredPersonalApi,
   errorMessage,
   fetchAniListLibrary,
   maybeDrainAniListOps,
+  mangaDexProviderCandidate,
+  parseProviderCandidateId,
+  parseProviderSearchInput,
+  providerCandidateId,
+  toProviderCandidateSearchResult,
   viewerQuery,
   type AniListViewer,
+  type ProviderCandidate,
   type UpdateProbeFailureInput,
   type UpdateProbeReason,
 } from "@manifold/paperback-runtime";
 import {
   isMangaDexHostedChapter,
   providerFromInfo,
-  toCanonicalSearchResult,
   toCanonicalSourceManga,
   toComixSourceManga,
   toMangaDexChapterDetails,
@@ -98,9 +105,35 @@ interface StoredPersonalEntry {
   readonly provider: string;
   readonly providerId: string;
   readonly title: string;
-  readonly providers: readonly { readonly provider: string; readonly externalId: string }[];
+  readonly providers: readonly {
+    readonly provider: string;
+    readonly externalId: string;
+    readonly title?: string;
+  }[];
   readonly chapterSource?: "auto" | "mangadex" | "comix";
 }
+
+const verifiedLinksOf = (
+  entry: StoredPersonalEntry | undefined,
+): NonNullable<ProviderCandidate["links"]> => {
+  const links: Array<NonNullable<ProviderCandidate["links"]>[number]> = [];
+  for (const link of entry?.providers ?? []) {
+    if (
+      link.provider !== "anilist" &&
+      link.provider !== "mal" &&
+      link.provider !== "mangadex" &&
+      link.provider !== "comix"
+    ) {
+      continue;
+    }
+    links.push({
+      provider: link.provider,
+      externalId: link.externalId,
+      ...(link.title && { title: link.title }),
+    });
+  }
+  return links;
+};
 
 const scheduledFetchResponse = (
   response: { readonly status: number; readonly headers: Record<string, string> },
@@ -571,6 +604,7 @@ export class ManifoldSourceImpl implements
   SearchResultsProviding,
   SettingsFormProviding {
   private readonly canonicalResults = new Map<string, CanonicalSearchResult>();
+  private readonly providerCandidates = new Map<string, ProviderCandidate>();
   private readonly cookieStorage = new SafeCookieStorage();
   // Cloudflare on comix.to is the stricter gate: 2 req/s.
   private readonly comixRateLimiter = new HostRateLimiter(
@@ -844,47 +878,89 @@ export class ManifoldSourceImpl implements
     _sortingOption: SortingOption | undefined,
   ): Promise<PagedResults<SearchResultItem>> {
     maybeDrainAniListOps();
-    const title = query.title.trim();
+    const search = parseProviderSearchInput(query.title);
+    const title = search.query;
     console.log(`[manifold] search:${title || "<empty>"}`);
     if (!title) {return { items: [] };}
 
-    let results;
-    try {
-      results = await Effect.runPromise(this.aniList.search(title, { limit: 25 }));
-    } catch (error) {
-      console.error(`[manifold] AniList search failed: ${errorMessage(error)}`);
-      throw error;
+    const personalApi = configuredPersonalApi();
+    const [registryResult, aniListResult, mangaDexResult, comixResult] = await Promise.allSettled([
+      search.scope === "all" || search.scope === "registry"
+        ? personalApi.searchRegistry(title, 25)
+        : Promise.resolve([]),
+      search.scope === "all" || search.scope === "anilist"
+        ? Effect.runPromise(this.aniList.search(title, { limit: 25 }))
+        : Promise.resolve([]),
+      search.scope === "all" || search.scope === "mangadex"
+        ? Effect.runPromise(this.mangaDex.search(title))
+        : Promise.resolve([]),
+      search.scope === "all" || search.scope === "comix"
+        ? this.comix.search(title)
+        : Promise.resolve([]),
+    ]);
+    const selectedResult = search.scope === "registry" ? registryResult :
+      search.scope === "anilist" ? aniListResult :
+      search.scope === "mangadex" ? mangaDexResult :
+      search.scope === "comix" ? comixResult : undefined;
+    if (selectedResult?.status === "rejected") {throw selectedResult.reason;}
+
+    const items: SearchResultItem[] = [];
+    const linkedKeys = new Set<string>();
+    if (registryResult.status === "fulfilled") {
+      for (const entry of registryResult.value) {
+        for (const link of entry.providers) {linkedKeys.add(`${link.provider}:${link.externalId}`);}
+        items.push({
+          mangaId: entry.id,
+          title: entry.title,
+          subtitle: `Registry · ${entry.providers.map((link) => link.provider).join(" + ")}`,
+          imageUrl: "",
+        });
+      }
+    } else {
+      console.error(`[manifold] registry search failed: ${errorMessage(registryResult.reason)}`);
     }
 
-    // Registry identity: every hit is minted/resolved to a provider-neutral
-    // UUID which becomes the Paperback manga id for the whole pipeline.
-    let mapped = results;
-    try {
-      const entries = await configuredPersonalApi().resolveEntries(
-        results.map((result) => ({
-          provider: "anilist" as const,
-          providerId: result.providerId,
-          title: result.title,
-        })),
-      );
-      const uuidByAnilist = new Map(
-        entries.flatMap((entry) => {
-          const link = entry.providers.find((provider) => provider.provider === "anilist");
-          return link ? [[link.externalId, entry.id] as const] : [];
-        }),
-      );
-      mapped = results.map((result) => {
-        const uuid = uuidByAnilist.get(result.providerId);
-        return uuid ? { ...result, id: uuid } : result;
-      });
-    } catch (error) {
-      console.error(`[manifold] registry resolve failed: ${errorMessage(error)}`);
+    const candidates: ProviderCandidate[] = [];
+    if (aniListResult.status === "fulfilled") {
+      for (const result of aniListResult.value) {
+        const candidate = aniListProviderCandidate(result);
+        const candidateId = providerCandidateId(candidate.provider, candidate.providerId);
+        this.canonicalResults.set(candidateId, result);
+        candidates.push(candidate);
+      }
+    } else {
+      console.error(`[manifold] AniList search failed: ${errorMessage(aniListResult.reason)}`);
+    }
+    if (mangaDexResult.status === "fulfilled") {
+      for (const manga of mangaDexResult.value.slice(0, 25)) {
+        candidates.push(mangaDexProviderCandidate(manga));
+      }
+    } else {
+      console.error(`[manifold] MangaDex search failed: ${errorMessage(mangaDexResult.reason)}`);
+    }
+    if (comixResult.status === "fulfilled") {
+      for (const manga of comixResult.value.slice(0, 25)) {
+        candidates.push({
+          provider: "comix",
+          providerId: manga.hid,
+          title: manga.title,
+          aliases: manga.aliases,
+          imageUrl: manga.imageUrl,
+        });
+      }
+    } else {
+      console.error(`[manifold] Comix search failed: ${errorMessage(comixResult.reason)}`);
     }
 
-    for (const entry of mapped) {this.canonicalResults.set(entry.id, entry);}
-    return {
-      items: mapped.map(toCanonicalSearchResult),
-    };
+    for (const candidate of correlateProviderCandidates(candidates)) {
+      if (linkedKeys.has(`${candidate.provider}:${candidate.providerId}`)) {continue;}
+      this.providerCandidates.set(
+        providerCandidateId(candidate.provider, candidate.providerId),
+        candidate,
+      );
+      items.push(toProviderCandidateSearchResult(candidate));
+    }
+    return { items };
   }
 
   async getAdvancedSearchForm(
@@ -895,15 +971,19 @@ export class ManifoldSourceImpl implements
 
   async getMangaDetails(mangaId: string): Promise<SourceManga> {
     maybeDrainAniListOps();
+    const parsedCandidate = parseProviderCandidateId(mangaId);
+    if (parsedCandidate) {
+      return this.getMangaDetailsFromCandidate(mangaId, parsedCandidate);
+    }
     // Feed/discover cards carry raw MangaDex ids; they land in the registry
     // as mangadex-first rows (the manual-bind case).
     if (mangaId.startsWith("mangadex:")) {
       return this.getMangaDetailsFromMangaDex(mangaId.slice("mangadex:".length));
     }
     // My Updates Comix winners carry `<hid>-<slug>` manga ids; resolve the
-    // title page's server-rendered initial-data instead of the registry.
+    // title page's server-rendered initial-data, then promote them into the registry.
     if (!UUID_RE.test(mangaId)) {
-      return this.comix.detailsByHid(mangaId);
+      return this.getMangaDetailsFromComix(mangaId);
     }
 
     const personalApi = configuredPersonalApi();
@@ -940,27 +1020,33 @@ export class ManifoldSourceImpl implements
       if (!resolved.hid) {
         throw new Error(`No MangaDex or Comix source found for ${entry.title}`);
       }
-      await personalApi.linkProvider(mangaId, {
+      const stored = await personalApi.getEntry(mangaId);
+      await personalApi.ingestCandidate({
         provider: "comix",
-        externalId: resolved.hid,
+        providerId: resolved.hid,
         title: entry.title,
+        links: verifiedLinksOf(stored),
       });
       console.log(`[manifold] Comix fallback match:${entry.title}:${resolved.hid}`);
       return toComixSourceManga(toCanonicalSourceManga(entry), resolved.hid);
     }
 
     const manga = await Effect.runPromise(this.mangaDex.getManga(mangaDexId));
-    const linked = await personalApi
-      .getEntry(mangaId)
-      .then((stored) => stored?.providers.find((provider) => provider.provider === "mangadex"))
-      .catch(() => undefined);
-    if (!linked || linked.externalId !== manga.id) {
-      await personalApi.linkProvider(mangaId, {
-        provider: "mangadex",
-        externalId: manga.id,
-        title: manga.title,
-      });
-    }
+    const stored = await personalApi.getEntry(mangaId);
+    await personalApi.ingestCandidate({
+      provider: "mangadex",
+      providerId: manga.id,
+      title: manga.title,
+      links: [
+        ...verifiedLinksOf(stored),
+        ...(manga.anilistId
+          ? [{ provider: "anilist" as const, externalId: manga.anilistId }]
+          : []),
+        ...(manga.myAnimeListId
+          ? [{ provider: "mal" as const, externalId: manga.myAnimeListId }]
+          : []),
+      ],
+    });
     return toMangaDexSourceManga(entry, manga);
   }
 
@@ -986,23 +1072,80 @@ export class ManifoldSourceImpl implements
     }
   }
 
+  private async getMangaDetailsFromCandidate(
+    candidateId: string,
+    parsed: { readonly provider: "anilist" | "mal" | "mangadex" | "comix"; readonly providerId: string },
+  ): Promise<SourceManga> {
+    const personalApi = configuredPersonalApi();
+    if (parsed.provider === "mangadex") {
+      return this.getMangaDetailsFromMangaDex(parsed.providerId);
+    }
+    if (parsed.provider === "comix") {
+      const candidate = this.providerCandidates.get(candidateId);
+      return this.getMangaDetailsFromComix(parsed.providerId, candidate?.title);
+    }
+    if (parsed.provider !== "anilist") {
+      throw new Error(`Unsupported provider candidate: ${parsed.provider}`);
+    }
+    const canonical = this.canonicalResults.get(candidateId) ??
+      await Effect.runPromise(this.aniList.getById(parsed.providerId));
+    if (!canonical) {throw new Error(`AniList title not found: ${parsed.providerId}`);}
+    const candidate = this.providerCandidates.get(candidateId);
+    const entry = await personalApi.ingestCandidate({
+      provider: "anilist",
+      providerId: parsed.providerId,
+      title: canonical.title,
+      ...(candidate?.links && { links: [...candidate.links] }),
+    });
+    this.canonicalResults.set(entry.id, { ...canonical, id: entry.id, score: 0 });
+    return this.getMangaDetails(entry.id);
+  }
+
+  private async getMangaDetailsFromComix(
+    mangaId: string,
+    candidateTitle?: string,
+  ): Promise<SourceManga> {
+    const details = await this.comix.detailsByHid(mangaId);
+    const providerId = details.mangaInfo.additionalInfo?.["manifold provider ID"] ??
+      mangaId.split("-")[0] ?? mangaId;
+    const entry = await configuredPersonalApi().ingestCandidate({
+      provider: "comix",
+      providerId,
+      title: candidateTitle ?? details.mangaInfo.primaryTitle,
+    });
+    return {
+      ...details,
+      mangaId: entry.id,
+      mangaInfo: {
+        ...details.mangaInfo,
+        additionalInfo: {
+          ...details.mangaInfo.additionalInfo,
+          "Canonical ID": entry.id,
+          "Canonical provider": "registry",
+        },
+      },
+    };
+  }
+
   /** Mangadex-first registry rows for feed cards with no canonical match yet. */
   private async getMangaDetailsFromMangaDex(mangaDexId: string): Promise<SourceManga> {
     const personalApi = configuredPersonalApi();
     const manga = await Effect.runPromise(this.mangaDex.getManga(mangaDexId));
-    const linked = await personalApi.entryByMangaDex(mangaDexId);
-    if (linked?.id) {
-      console.log(`[manifold] MangaDex reverse link:${manga.title}:${linked.id}`);
-      return buildMangaDexSourceManga(manga, linked.id);
-    }
-    // resolveEntry mints the UUID row and stamps its first provider link.
-    const minted = await personalApi.resolveEntry({
+    const entry = await personalApi.ingestCandidate({
       provider: "mangadex",
       providerId: mangaDexId,
       title: manga.title,
+      links: [
+        ...(manga.anilistId
+          ? [{ provider: "anilist" as const, externalId: manga.anilistId }]
+          : []),
+        ...(manga.myAnimeListId
+          ? [{ provider: "mal" as const, externalId: manga.myAnimeListId }]
+          : []),
+      ],
     });
-    console.log(`[manifold] MangaDex local entry:${manga.title}:${minted.id}`);
-    return buildMangaDexSourceManga(manga, minted.id);
+    console.log(`[manifold] MangaDex registry entry:${manga.title}:${entry.id}`);
+    return buildMangaDexSourceManga(manga, entry.id);
   }
 
   // Shared AniList fetch + registry UUID minting for discover's per-title
@@ -1056,6 +1199,47 @@ export class ManifoldSourceImpl implements
     }
   }
 
+  private async fetchTrackedLibraryFiltered(
+    allowed: ReadonlySet<string>,
+  ): Promise<ManifoldLibraryEntry[]> {
+    let tracked: ManifoldLibraryEntry[] = [];
+    const statefulAniListIds = new Set<string>();
+    try {
+      const registry = await configuredPersonalApi().listRegistry(5000, 0);
+      for (const entry of registry) {
+        const anilist = entry.providers.find((provider) => provider.provider === "anilist");
+        if (entry.state?.status && anilist) {
+          statefulAniListIds.add(anilist.externalId);
+        }
+        if (entry.tombstoned || !entry.state?.status || !allowed.has(entry.state.status)) {
+          continue;
+        }
+        const aliases = entry.providers.flatMap((provider) =>
+          provider.title && provider.title !== entry.title ? [provider.title] : []
+        );
+        tracked.push({
+          id: entry.id,
+          title: entry.title,
+          aliases: [...new Set(aliases)],
+          ...(anilist && { anilistId: anilist.externalId }),
+        });
+      }
+    } catch (error) {
+      console.error(`[manifold] registry library failed: ${errorMessage(error)}`);
+      return this.fetchAnilistLibraryFiltered(allowed);
+    }
+
+    // Keep AniList-only rows visible during partial imports, while an existing
+    // registry status remains authoritative for linked entries.
+    const fallback = await this.fetchAnilistLibraryFiltered(allowed);
+    tracked = tracked.concat(
+      fallback.filter((entry) =>
+        !entry.anilistId || !statefulAniListIds.has(entry.anilistId)
+      ),
+    );
+    return tracked;
+  }
+
   private syncContext(options?: {
     readonly mdProbeBudget?: { remaining: number };
     readonly comixProbeBudget?: { remaining: number };
@@ -1071,9 +1255,9 @@ export class ManifoldSourceImpl implements
     return {
       listManga: (opts) => Effect.runPromise(this.mangaDex.listManga(opts)),
       latestChapters: (opts) => Effect.runPromise(this.mangaDex.latestChapters(opts)),
-      getAnilistLibrary: () => this.fetchAnilistLibraryFiltered(COMIX_STATUSES),
+      getAnilistLibrary: () => this.fetchTrackedLibraryFiltered(COMIX_STATUSES),
       getAnilistLibraryForMangadex: () =>
-        this.fetchAnilistLibraryFiltered(MANGADEX_STATUSES),
+        this.fetchTrackedLibraryFiltered(MANGADEX_STATUSES),
       noteUpdateFailure: (entry, source, reason, detail) => {
         this.noteUpdateFailure(entry, source, reason, detail);
       },
@@ -1947,12 +2131,12 @@ class ManifoldAdvancedSearchForm extends AdvancedSearchForm {
         {
           id: "manga-sync-search",
           header: "Search filters",
-          footer: "manifold searches AniList titles and opens verified MangaDex chapters.",
+          footer: "Search all catalogs, or prefix a title with registry:, al:, md:, or comix:.",
         },
         [
           LabelRow("manga-sync-search-info", {
-            title: "No additional filters",
-            value: "Leave filters unchanged to search AniList canonical titles.",
+            title: "Provider prefixes",
+            value: "Default searches registry, AniList, MangaDex, and Comix.",
           }),
         ],
       ),

@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect";
 import {
   ErrorBody,
+  IngestCandidateInput,
   LinkProviderInput,
   ListState,
   ListStateResponse,
@@ -38,6 +39,35 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
       return jsonEncoded(RegistryListResponse, {
         entries: yield* tryPromise(() => sync.listRegistry(limit, offset)),
       });
+    }
+
+    if (
+      path[0] === "v1" &&
+      path[1] === "registry" &&
+      path[2] === "search" &&
+      path.length === 3 &&
+      request.method === "GET"
+    ) {
+      const query = url.searchParams.get("q")?.trim() ?? "";
+      if (!query) {return jsonEncoded(ErrorBody, { error: "Query parameter q is required" }, 400);}
+      const sync = env.MANIFOLD_SYNC.getByName("default");
+      const limit = Number(url.searchParams.get("limit") ?? 25) || 25;
+      return jsonEncoded(RegistryEntriesResponse, {
+        entries: yield* tryPromise(() => sync.searchRegistry(query, limit)),
+      });
+    }
+
+    if (
+      path[0] === "v1" &&
+      path[1] === "registry" &&
+      path[2] === "ingest" &&
+      path.length === 3 &&
+      request.method === "POST"
+    ) {
+      const sync = env.MANIFOLD_SYNC.getByName("default");
+      const raw = yield* parseJson(request);
+      const input = yield* Schema.decodeUnknownEffect(IngestCandidateInput)(raw);
+      return jsonEncoded(RegistryEntry, yield* tryPromise(() => sync.ingestCandidate(input)));
     }
 
     if (

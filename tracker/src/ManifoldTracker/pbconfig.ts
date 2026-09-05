@@ -16,5 +16,6 @@ export default {
     SourceIntents.MANAGED_COLLECTION_PROVIDING,
     SourceIntents.SETTINGS_FORM_PROVIDING,
     SourceIntents.SEARCH_RESULT_PROVIDING,
+    SourceIntents.CLOUDFLARE_BYPASS_PROVIDING,
   ],
 } satisfies ExtensionInfo;

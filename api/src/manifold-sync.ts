@@ -17,6 +17,7 @@ import {
   type RegistryEntry,
   type RegistryListEntry,
   type CompleteOpsInput,
+  type IngestCandidateInput,
   type LinkProviderInput,
   type ListEvent,
   type ListState,
@@ -1000,6 +1001,109 @@ export class ManifoldSync extends DurableObject<Env> {
     return requests.map((request) => this.resolveEntrySync(request));
   }
 
+  async ingestCandidate(input: IngestCandidateInput): Promise<RegistryEntry> {
+    const byProvider = new Map<string, LinkProviderInput>();
+    for (const link of [
+      {
+        provider: input.provider,
+        externalId: input.providerId,
+        title: input.title,
+      },
+      ...(input.links ?? []),
+    ]) {
+      const existing = byProvider.get(link.provider);
+      if (existing && existing.externalId !== link.externalId) {
+        throw new Error(
+          `Registry candidate has conflicting ${link.provider} ids: ` +
+            `${existing.externalId} and ${link.externalId}`,
+        );
+      }
+      byProvider.set(link.provider, link);
+    }
+    const links = [...byProvider.values()];
+    const matchingEntryIds = new Set<string>();
+    for (const link of links) {
+      for (const row of this.ctx.storage.sql
+        .exec<{ entry_id: string }>(
+          `SELECT pl.entry_id FROM provider_links pl
+           JOIN canonical_entries ce ON ce.id = pl.entry_id
+           WHERE pl.provider = ? AND pl.external_id = ? AND ce.tombstoned_at IS NULL`,
+          link.provider,
+          link.externalId,
+        )
+        .toArray()) {
+        matchingEntryIds.add(row.entry_id);
+      }
+    }
+    if (matchingEntryIds.size > 1) {
+      throw new Error(
+        `Registry candidate links belong to multiple entries: ${[...matchingEntryIds].join(", ")}`,
+      );
+    }
+
+    const timestamp = now();
+    const matchedId = [...matchingEntryIds][0];
+    const entryId = matchedId ?? crypto.randomUUID();
+    if (matchedId) {
+      const existingLinks = this.ctx.storage.sql
+        .exec<ProviderRow>(
+          "SELECT provider, external_id, title, updated_at FROM provider_links WHERE entry_id = ?",
+          entryId,
+        )
+        .toArray();
+      const existingByProvider = new Map(existingLinks.map((link) => [link.provider, link]));
+      for (const link of links) {
+        const existing = existingByProvider.get(link.provider);
+        if (existing && existing.external_id !== link.externalId) {
+          throw new Error(
+            `Registry entry ${entryId} already has ${link.provider}:${existing.external_id}`,
+          );
+        }
+      }
+      this.ctx.storage.sql.exec(
+        "UPDATE canonical_entries SET updated_at = ? WHERE id = ?",
+        timestamp,
+        entryId,
+      );
+    } else {
+      const mintProvider =
+        input.provider === "anilist" || input.provider === "mal" ? input.provider : "local";
+      this.ctx.storage.sql.exec(
+        `INSERT INTO canonical_entries (id, provider, provider_id, title, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        entryId,
+        mintProvider,
+        input.providerId,
+        input.title,
+        timestamp,
+        timestamp,
+      );
+    }
+
+    for (const link of links) {
+      this.ctx.storage.sql.exec(
+        `INSERT INTO provider_links (entry_id, provider, external_id, title, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(entry_id, provider) DO UPDATE SET
+           title = COALESCE(excluded.title, provider_links.title),
+           updated_at = excluded.updated_at`,
+        entryId,
+        link.provider,
+        link.externalId,
+        link.title ?? null,
+        timestamp,
+      );
+    }
+    this.appendEvent(entryId, "candidate.ingest", "device", {
+      provider: input.provider,
+      providerId: input.providerId,
+      linkedProviders: links.map((link) => link.provider),
+    });
+    const entry = this.readEntry(entryId);
+    if (!entry) {throw new Error(`Registry row not found after candidate ingest: ${entryId}`);}
+    return entry;
+  }
+
   private resolveEntrySync(request: ResolveEntryInput): RegistryEntry {
     const timestamp = now();
     // Tombstoned rows are dead lifecycles: a nuked title coming back gets a
@@ -1054,6 +1158,33 @@ export class ManifoldSync extends DurableObject<Env> {
     const minted = this.readEntry(id);
     if (!minted) {throw new Error(`Registry row not found after mint: ${id}`);}
     return minted;
+  }
+
+  async searchRegistry(query: string, limit = 25): Promise<readonly RegistryEntry[]> {
+    const normalized = query.trim();
+    if (!normalized) {return [];}
+    const safeLimit = Math.min(50, Math.max(1, Math.trunc(limit)));
+    const escaped = normalized.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+    const pattern = `%${escaped}%`;
+    const rows = this.ctx.storage.sql
+      .exec<EntryRow>(
+        `SELECT DISTINCT ce.* FROM canonical_entries ce
+         LEFT JOIN provider_links pl ON pl.entry_id = ce.id
+         WHERE ce.tombstoned_at IS NULL
+           AND (ce.title LIKE ? ESCAPE '\\' OR pl.title LIKE ? ESCAPE '\\')
+         ORDER BY CASE WHEN lower(ce.title) = lower(?) THEN 0 ELSE 1 END,
+                  ce.updated_at DESC
+         LIMIT ?`,
+        pattern,
+        pattern,
+        normalized,
+        safeLimit,
+      )
+      .toArray();
+    return rows.flatMap((row) => {
+      const entry = this.readEntry(row.id, false);
+      return entry ? [entry] : [];
+    });
   }
 
   async listRegistry(limit = 500, offset = 0): Promise<readonly RegistryListEntry[]> {

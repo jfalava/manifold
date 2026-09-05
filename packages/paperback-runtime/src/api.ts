@@ -11,6 +11,7 @@ import {
   CompleteOpsInput,
   decodeResponse,
   EntryByProviderResponse,
+  type IngestCandidateInput,
   ListState,
   ListStateResponse,
   MangaDexFeedPage,
@@ -24,6 +25,8 @@ import {
   RecordReadInput,
   RegistryEntriesResponse,
   RegistryEntry,
+  RegistryListResponse,
+  type RegistryListEntry,
   type RegistryProvider,
   UpdatedCountResponse,
   UpdateProbeFailureInput,
@@ -109,6 +112,15 @@ export interface PersonalApiClient {
     readonly results: readonly CanonicalSearchResult[];
   }>;
   readonly getEntry: (entryId: string) => Promise<PersonalEntry | undefined>;
+  readonly searchRegistry: (
+    query: string,
+    limit?: number,
+  ) => Promise<readonly PersonalEntry[]>;
+  readonly listRegistry: (
+    limit?: number,
+    offset?: number,
+  ) => Promise<readonly RegistryListEntry[]>;
+  readonly ingestCandidate: (input: IngestCandidateInput) => Promise<PersonalEntry>;
   readonly upsertEntry: (
     entry: Pick<CanonicalSearchResult, "id" | "provider" | "providerId" | "title">,
   ) => Promise<PersonalEntry>;
@@ -177,6 +189,7 @@ type PersonalApiPostBody =
   | { readonly results: CompleteOpsInput["results"] }
   | { readonly status: string | null }
   | { readonly origin: "device" }
+  | IngestCandidateInput
   | {
       readonly provider: string;
       readonly externalId: string;
@@ -331,6 +344,27 @@ export const createPersonalApiClient = (
         }
         throw error;
       }
+    },
+
+    searchRegistry: async (query, limit = 25) => {
+      const params = [
+        `q=${encodeURIComponent(query.trim())}`,
+        `limit=${encodeURIComponent(String(limitValue(limit)))}`,
+      ].join("&");
+      const response = await rawRequest(`/v1/registry/search?${params}`);
+      return requireDecoded(RegistryEntriesResponse, response.body, "registry.search").entries;
+    },
+
+    listRegistry: async (limit = 500, offset = 0) => {
+      const safeLimit = Math.min(5000, Math.max(1, Math.floor(limit)));
+      const safeOffset = Math.max(0, Math.floor(offset));
+      const response = await rawRequest(`/v1/registry?limit=${safeLimit}&offset=${safeOffset}`);
+      return requireDecoded(RegistryListResponse, response.body, "registry.list").entries;
+    },
+
+    ingestCandidate: async (input) => {
+      const response = await rawRequest("/v1/registry/ingest", "POST", input);
+      return requireDecoded(RegistryEntry, response.body, "registry.ingest");
     },
 
     upsertEntry: async (entry) => {

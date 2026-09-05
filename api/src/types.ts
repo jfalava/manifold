@@ -2,6 +2,7 @@ import type {
   AuthConnection,
   AuthProvider,
   CompleteOpsInput,
+  IngestCandidateInput,
   LinkProviderInput,
   ListEvent,
   ListState,
@@ -74,6 +75,8 @@ export interface ManifoldSyncStub {
   resolveEntries(
     input: readonly ResolveEntryInput[] | ResolveEntryInput,
   ): Promise<readonly RegistryEntry[]>;
+  ingestCandidate(input: IngestCandidateInput): Promise<RegistryEntry>;
+  searchRegistry(query: string, limit?: number): Promise<readonly RegistryEntry[]>;
   listRegistry(limit?: number, offset?: number): Promise<readonly RegistryListEntry[]>;
   registrySummary(): Promise<RegistrySummary>;
   unlinkProvider(entryId: string, provider: string): Promise<RegistryEntry>;

@@ -56,6 +56,55 @@ describe("Paperback personal API client", () => {
     );
   });
 
+  it("searches, lists, and ingests registry candidates", async () => {
+    const requests: Array<{ url: string; method: string; body?: string }> = [];
+    const entry = {
+      id: "11111111-1111-1111-1111-111111111111",
+      provider: "local",
+      providerId: "md-1",
+      title: "Example",
+      createdAt: 1,
+      updatedAt: 2,
+      providers: [{ provider: "mangadex", externalId: "md-1", updatedAt: 2 }],
+    };
+    const client = createPersonalApiClient(async (request) => {
+      requests.push(request);
+      if (request.url.includes("/v1/registry/ingest")) {
+        return { status: 200, body: entry };
+      }
+      if (request.url.includes("/v1/registry/search")) {
+        return { status: 200, body: { entries: [entry] } };
+      }
+      return {
+        status: 200,
+        body: { entries: [{ ...entry, state: { entryId: entry.id, status: "reading", updatedAt: 3 } }] },
+      };
+    }, { origin: "https://personal.test", token: "secret" });
+
+    await expect(client.searchRegistry(" Example ")).resolves.toEqual([entry]);
+    await expect(client.listRegistry(100, 2)).resolves.toMatchObject([
+      { id: entry.id, state: { status: "reading" } },
+    ]);
+    await expect(client.ingestCandidate({
+      provider: "mangadex",
+      providerId: "md-1",
+      title: "Example",
+      links: [{ provider: "anilist", externalId: "42" }],
+    })).resolves.toEqual(entry);
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://personal.test/v1/registry/search?q=Example&limit=25",
+      "https://personal.test/v1/registry?limit=100&offset=2",
+      "https://personal.test/v1/registry/ingest",
+    ]);
+    expect(JSON.parse(requests[2]?.body ?? "{}")).toEqual({
+      provider: "mangadex",
+      providerId: "md-1",
+      title: "Example",
+      links: [{ provider: "anilist", externalId: "42" }],
+    });
+  });
+
   it("reads progress and posts an idempotent chapter-read event", async () => {
     const requests: Array<{
       url: string;

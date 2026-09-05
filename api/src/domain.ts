@@ -9,6 +9,7 @@ export {
   ChapterSource,
   CompleteOpsInput,
   ContentProvider,
+  IngestCandidateInput,
   LinkProviderInput,
   ListEvent,
   ListState,

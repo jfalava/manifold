@@ -633,7 +633,51 @@ export interface ComixResolvedHid {
   readonly url?: string;
 }
 
+export interface ComixSearchCandidate {
+  readonly hid: string;
+  readonly mangaId: string;
+  readonly title: string;
+  readonly aliases: readonly string[];
+  readonly imageUrl: string;
+}
+
+const searchComixItems = async (
+  session: ComixSession,
+  query: string,
+  page: number,
+): Promise<readonly SearchItem[]> => {
+  const searchPage = `${COMIX_ORIGIN}/browse?page=${page}&keyword=${encodeURIComponent(query)}`;
+  const searchPayload = await captureViaSiteBundle(
+    session,
+    searchPage,
+    captureBootstrap(SEARCH_MATCHER),
+  );
+  const decoded = isString(searchPayload) ? parseJsonValue(searchPayload) : searchPayload;
+  const searchRoot = isJsonObject(decoded) ? decoded : undefined;
+  const result = isJsonObject(searchRoot?.result) ? searchRoot.result : undefined;
+  return isJsonArray(result?.items) ? result.items.filter(isJsonObject) : [];
+};
+
 export const createComixFallback = (session: ComixSession) => ({
+  async search(query: string, page = 1): Promise<readonly ComixSearchCandidate[]> {
+    const normalized = query.trim();
+    if (!normalized) {return [];}
+    const items = await searchComixItems(session, normalized, Math.max(1, Math.trunc(page)));
+    return items.flatMap((item) => {
+      const hid = asString(item.hid) || asString(item.hash_id);
+      const title = asString(item.title);
+      if (!hid || !title) {return [];}
+      const slug = asString(item.slug);
+      return [{
+        hid,
+        mangaId: slug ? `${hid}-${slug}` : hid,
+        title,
+        aliases: altTitlesOf(item.altTitles),
+        imageUrl: detailPosterUrl(item),
+      }];
+    });
+  },
+
   async findChapters(
     titles: readonly string[],
     sourceManga: SourceManga,
@@ -660,19 +704,7 @@ export const createComixFallback = (session: ComixSession) => ({
       if (!query) {continue;}
       if (++attemptedTitles > maxTitles) {break;}
       for (let page = 1; page <= maxPages; page += 1) {
-        const searchPage =
-          `${COMIX_ORIGIN}/browse?page=${page}&keyword=${encodeURIComponent(query)}`;
-        const searchPayload = await captureViaSiteBundle(
-          session,
-          searchPage,
-          captureBootstrap(SEARCH_MATCHER),
-        );
-        const decoded = isString(searchPayload)
-          ? parseJsonValue(searchPayload)
-          : searchPayload;
-        const searchRoot = isJsonObject(decoded) ? decoded : undefined;
-        const result = isJsonObject(searchRoot?.result) ? searchRoot.result : undefined;
-        const items = isJsonArray(result?.items) ? result.items.filter(isJsonObject) : [];
+        const items = await searchComixItems(session, query, page);
         for (const item of items) {
           const hid = asString(item.hid) || asString(item.hash_id);
           if (hid && !seenHids.has(hid)) {

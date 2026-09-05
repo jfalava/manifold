@@ -63,6 +63,20 @@ export { drainAniListOps, maybeDrainAniListOps } from "./op-drain.js";
 export { toCanonicalSearchResult } from "./search-map.js";
 
 export {
+  aniListProviderCandidate,
+  correlateProviderCandidates,
+  mangaDexProviderCandidate,
+  parseProviderSearchInput,
+  parseProviderCandidateId,
+  providerCandidateId,
+  toProviderCandidateSearchResult,
+  type ProviderCandidate,
+  type MangaDexCandidateInput,
+  type ProviderSearchInput,
+  type ProviderSearchScope,
+} from "./provider-candidate.js";
+
+export {
   MANIFOLD_ADMIN_ORIGIN,
   MANIFOLD_ADMIN_URL,
   ADMIN_ACCESS_PERSIST_KEY,
@@ -80,4 +94,3 @@ export {
   readAdminAccessStatus,
   buildAdminWebViewRequest,
 } from "./admin-access.js";
-

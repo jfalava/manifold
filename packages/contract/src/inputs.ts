@@ -51,6 +51,18 @@ export const ResolveEntryInput = Schema.Struct({
 });
 export type ResolveEntryInput = Schema.Schema.Type<typeof ResolveEntryInput>;
 
+/**
+ * A user-selected provider result. `links` contains only identities proven by
+ * provider metadata (for example MangaDex's AniList link), never title guesses.
+ */
+export const IngestCandidateInput = Schema.Struct({
+  provider: RegistryProvider,
+  providerId: Schema.NonEmptyString,
+  title: Schema.NonEmptyString,
+  links: Schema.optional(Schema.Array(LinkProviderInput)),
+});
+export type IngestCandidateInput = Schema.Schema.Type<typeof IngestCandidateInput>;
+
 export const RecordReadInput = Schema.Struct({
   eventId: Schema.optional(Schema.NonEmptyString),
   chapterKey: Schema.NonEmptyString,
