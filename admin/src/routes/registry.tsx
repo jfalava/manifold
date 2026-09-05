@@ -173,14 +173,14 @@ function EntryEditor({
   const chapterSourceDirty = chapterSource !== (entry.chapterSource ?? "auto");
 
   return (
-    <div className="grid gap-5">
-      <div className="sticky top-0 z-10 -mx-6 -mt-6 flex items-start gap-3 border-b border-kumo-line bg-kumo-base px-6 pt-6 pb-3">
+    <div className="grid min-w-0 gap-5">
+      <div className="sticky top-0 z-10 -mx-4 -mt-4 flex min-w-0 items-start gap-3 rounded-t-xl border-b border-kumo-line bg-kumo-base px-4 pt-4 pb-3 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6">
         <div className="grid min-w-0 flex-1 gap-1">
           <Dialog.Title className="flex min-w-0 items-center gap-2">
             <span className="min-w-0 truncate">{entry.title}</span>
             {dead && <Badge variant="error">tombstoned</Badge>}
           </Dialog.Title>
-          <Dialog.Description className="truncate font-mono text-[0.85em]">
+          <Dialog.Description className="min-w-0 font-mono text-xs break-all">
             {entry.id}
           </Dialog.Description>
         </div>
@@ -193,10 +193,10 @@ function EntryEditor({
         />
       </div>
 
-      <div className="grid gap-2">
+      <div className="grid min-w-0 gap-2">
         <Text bold>List state</Text>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="grid flex-1 gap-1 text-sm">
+        <div className="grid grid-cols-2 items-end gap-2 sm:flex sm:flex-wrap">
+          <label className="col-span-2 grid min-w-0 gap-1 text-sm sm:col-span-1 sm:min-w-36 sm:flex-1">
             <span className="opacity-60">Status</span>
             <Select value={status} onValueChange={(value) => setStatus(String(value))}>
               <Select.Option value="">— unchanged —</Select.Option>
@@ -207,7 +207,7 @@ function EntryEditor({
               ))}
             </Select>
           </label>
-          <label htmlFor="entry-editor-score" className="grid w-24 min-w-0 gap-1 text-sm">
+          <label htmlFor="entry-editor-score" className="grid min-w-0 gap-1 text-sm sm:w-24">
             <span className="opacity-60">Score</span>
             <Input
               id="entry-editor-score"
@@ -216,7 +216,7 @@ function EntryEditor({
               onChange={(event) => setScore(event.target.value)}
             />
           </label>
-          <label htmlFor="entry-editor-volumes" className="grid w-24 min-w-0 gap-1 text-sm">
+          <label htmlFor="entry-editor-volumes" className="grid min-w-0 gap-1 text-sm sm:w-24">
             <span className="opacity-60">Volumes</span>
             <Input
               id="entry-editor-volumes"
@@ -226,6 +226,7 @@ function EntryEditor({
             />
           </label>
           <Button
+            className="col-span-2 w-full sm:col-span-1 sm:w-auto"
             disabled={
               dead || (status === "" && score.trim() === "" && volumeProgress.trim() === "")
             }
@@ -258,14 +259,14 @@ function EntryEditor({
         </div>
       </div>
 
-      <div className="grid gap-2">
+      <div className="grid min-w-0 gap-2">
         <Text bold>Chapter source</Text>
         <span className="text-sm opacity-60">
           Pin which catalog the device loads for chapters. Force Comix when MangaDex is incomplete
           but still has enough chapters to skip the fallback.
         </span>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="grid flex-1 gap-1 text-sm">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+          <label className="grid w-full min-w-0 gap-1 text-sm sm:flex-1">
             <span className="opacity-60">Override</span>
             <Select
               value={chapterSource}
@@ -284,6 +285,7 @@ function EntryEditor({
             </Select>
           </label>
           <Button
+            className="w-full sm:w-auto"
             disabled={dead || !chapterSourceDirty}
             onClick={() => {
               onClose();
@@ -299,11 +301,11 @@ function EntryEditor({
         </div>
       </div>
 
-      <div className="grid gap-2">
+      <div className="grid min-w-0 gap-2">
         <Text bold>Provider links</Text>
-        <div className="grid gap-1.5">
+        <div className="grid min-w-0 gap-1.5">
           {entry.providers.map((link) => (
-            <div key={link.provider} className="flex items-center gap-2 text-sm">
+            <div key={link.provider} className="flex min-w-0 items-center gap-2 text-sm">
               <Badge variant="info">{link.provider}</Badge>
               <span className="min-w-0 flex-1 truncate font-mono text-[0.9em] opacity-70">
                 {link.externalId}
@@ -311,6 +313,7 @@ function EntryEditor({
               <Button
                 size="sm"
                 variant="ghost"
+                className="shrink-0"
                 onClick={() =>
                   void onAct(async () => {
                     await unlinkProvider({
@@ -330,7 +333,7 @@ function EntryEditor({
             <span className="text-sm opacity-40">No linked providers.</span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
           <Select value={provider} onValueChange={(value) => setProvider(String(value))}>
             {PROVIDERS.map((value) => (
               <Select.Option key={value} value={value}>
@@ -339,13 +342,14 @@ function EntryEditor({
             ))}
           </Select>
           <Input
-            className="flex-1"
+            className="w-full min-w-0 sm:flex-1"
             placeholder="External id"
             value={externalId}
             onChange={(event) => setExternalId(event.target.value)}
           />
           <Button
             variant="secondary"
+            className="w-full sm:w-auto"
             disabled={externalId.trim() === ""}
             onClick={() =>
               void onAct(async () => {
@@ -365,9 +369,10 @@ function EntryEditor({
         </div>
       </div>
 
-      <div className="flex items-center justify-between border-t border-kumo-line pt-4">
+      <div className="flex flex-col-reverse gap-2 border-t border-kumo-line pt-4 sm:flex-row sm:items-center sm:justify-between">
         <Button
           variant="destructive"
+          className="w-full sm:w-auto"
           disabled={dead}
           title="Delete the AniList entry and tombstone this row"
           onClick={() => {
@@ -381,7 +386,7 @@ function EntryEditor({
         </Button>
         <Dialog.Close
           render={(props) => (
-            <Button variant="secondary" {...props}>
+            <Button variant="secondary" {...props} className="w-full sm:w-auto">
               Close
             </Button>
           )}
@@ -828,7 +833,10 @@ function EntriesTable({
       {pager}
 
       <Dialog.Root open={editorOpen && editing !== undefined} onOpenChange={setEditorOpen}>
-        <Dialog size="lg" className="max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto p-6">
+        <Dialog
+          size="lg"
+          className="max-h-[min(90dvh,calc(100dvh-2rem))] w-[calc(100vw-2rem)] overflow-x-hidden overflow-y-auto p-4 sm:w-[32rem] sm:p-6"
+        >
           {editing && (
             <EntryEditor
               key={editing.id}
