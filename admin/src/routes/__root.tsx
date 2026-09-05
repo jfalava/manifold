@@ -29,6 +29,13 @@ import "../styles/globals.css";
 
 const themeScript = `(function(){try{var p=localStorage.getItem("theme-mode");var m=p;if(p==="system"||p!=="light"&&p!=="dark"){m=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.dataset.mode=m;document.documentElement.style.colorScheme=m;}catch(e){}})()`;
 
+/**
+ * Keep `--app-vv-*` in lockstep with `visualViewport` so Kumo dialogs stay
+ * inside iPhone 12 Safari's visible chrome (URL bar + toolbar overlay the
+ * layout viewport; 100vh/svh/dvh do not).
+ */
+const visualViewportScript = `(function(){function px(n){return n+"px"}function sync(){var r=document.documentElement;var vv=window.visualViewport;if(vv){r.style.setProperty("--app-vv-top",px(vv.offsetTop));r.style.setProperty("--app-vv-left",px(vv.offsetLeft));r.style.setProperty("--app-vv-width",px(vv.width));r.style.setProperty("--app-vv-height",px(vv.height));return}r.style.setProperty("--app-vv-top","0px");r.style.setProperty("--app-vv-left","0px");r.style.setProperty("--app-vv-width",px(window.innerWidth));r.style.setProperty("--app-vv-height",px(window.innerHeight))}sync();var vv=window.visualViewport;if(vv){vv.addEventListener("resize",sync);vv.addEventListener("scroll",sync)}window.addEventListener("resize",sync);window.addEventListener("orientationchange",sync)})()`;
+
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const GITHUB_HREF = "https://github.com/jfalava/manifold";
 const BRAND_TITLE = "MANIFOLD";
@@ -121,6 +128,8 @@ function RootDocument() {
         <HeadContent />
         {/* oxlint-disable-next-line react/no-danger -- must run inline before paint to avoid a theme flash; content is a static constant */}
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        {/* oxlint-disable-next-line react/no-danger -- visualViewport box must exist before the first dialog paint; content is a static constant */}
+        <script dangerouslySetInnerHTML={{ __html: visualViewportScript }} />
       </head>
       <body>
         <HotkeysProvider

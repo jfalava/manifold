@@ -835,7 +835,7 @@ function EntriesTable({
       <Dialog.Root open={editorOpen && editing !== undefined} onOpenChange={setEditorOpen}>
         <Dialog
           size="lg"
-          className="max-h-[min(90dvh,calc(100dvh-2rem))] w-[calc(100vw-2rem)] overflow-x-hidden overflow-y-auto p-4 sm:w-[32rem] sm:p-6"
+          className="w-[calc(100vw-2rem)] overflow-x-hidden overflow-y-auto p-4 sm:w-[32rem] sm:p-6"
         >
           {editing && (
             <EntryEditor

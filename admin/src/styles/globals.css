@@ -112,14 +112,31 @@ button[role="combobox"] {
 }
 
 /*
- * Kumo Dialog is overflow-hidden + fixed-centered. On ~390px phones tall
- * content can push footer Close off-screen. Cap height and allow scroll so
- * dismiss controls stay reachable (pair with sticky header close buttons).
- * Unlayered to beat Kumo's overflow-hidden utility when className merge fails.
+ * Visual viewport box — iPhone 12 Safari (minimum target) keeps URL + toolbar
+ * chrome over the layout viewport. 100vh/dvh/svh all lie there; visualViewport
+ * (synced onto these vars from __root.tsx) is the actually visible rectangle.
+ * 100vh then 100svh is the no-JS cascade fallback.
+ */
+:root {
+  --app-vv-top: 0px;
+  --app-vv-left: 0px;
+  --app-vv-width: 100vw;
+  --app-vv-height: 100vh;
+  --app-vv-height: 100svh;
+}
+
+/*
+ * Kumo Dialog is overflow-hidden + fixed at top/left 50% + translate -50%.
+ * Re-anchor to the visual viewport center and cap size so header Close and
+ * footer actions stay on-screen when Safari chrome is showing. Unlayered to
+ * beat Kumo's overflow-hidden / top-1/2 / left-1/2 utilities.
  */
 [role="dialog"],
 [role="alertdialog"] {
-  max-height: min(90dvh, calc(100dvh - 2rem));
+  top: calc(var(--app-vv-top) + (var(--app-vv-height) * 0.5));
+  left: calc(var(--app-vv-left) + (var(--app-vv-width) * 0.5));
+  max-width: calc(var(--app-vv-width) - 2rem);
+  max-height: calc(var(--app-vv-height) - 2rem);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;

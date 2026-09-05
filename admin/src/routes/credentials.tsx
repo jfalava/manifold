@@ -345,7 +345,7 @@ function CredentialsPage() {
       >
         <Dialog
           size="sm"
-          className="max-h-[min(90dvh,calc(100dvh-2rem))] w-[calc(100vw-2rem)] overflow-x-hidden overflow-y-auto p-4 sm:w-72 sm:p-6"
+          className="w-[calc(100vw-2rem)] overflow-x-hidden overflow-y-auto p-4 sm:w-72 sm:p-6"
         >
           <div className="grid min-w-0 gap-4">
             <div className="sticky top-0 z-10 -mx-4 -mt-4 flex min-w-0 items-start gap-3 rounded-t-xl border-b border-kumo-line bg-kumo-base px-4 pt-4 pb-3 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6">
