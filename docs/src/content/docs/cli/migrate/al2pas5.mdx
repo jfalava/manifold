@@ -9,7 +9,12 @@ sidebar:
 bun run manifold migrate al2pas5 [flags]
 ```
 
-Builds a Paperback `.pas5` archive with **ManifoldSource** and **ManifoldTracker** per title. When the personal registry already has MangaDex or Comix links, those provider IDs are stamped into the backup. Unresolved titles fall back to `anilist:<id>`.
+Builds a source-free Paperback `.pas5` archive. Every imported title has a
+canonical registry UUID, at least one registry-linked native **MangaDex** or
+**Comix** attachment, and **ManifoldTracker**. Native providers own reading and
+chapter updates; the tracker owns canonical progress synchronization.
+
+Titles without a registry UUID or a linked native content provider are skipped.
 
 ## Flags
 
@@ -44,7 +49,12 @@ bun run manifold migrate al2pas5 --tabs reading,completed
 ### `--base <path>`
 
 Seed the generated archive from an existing `.pas5` export. Existing tab IDs
-are reused when possible, which helps preserve device tab references.
+are reused when possible, which helps preserve device tab references. Titles
+already present in the backup are enriched with missing MangaDex and Comix
+attachments. Existing attachments with a different provider ID and ambiguous
+matches are reported and left unchanged. All ManifoldSource attachments are
+removed, orphan source/info rows are pruned, and libraries left with only a
+tracker are dropped.
 
 - Default: no base archive
 
@@ -121,4 +131,8 @@ bun run manifold migrate al2pas5 --apply
 bun run manifold migrate al2pas5 --apply --base ./Paperback-Backup.pas5 --tabs reading,completed
 ```
 
-`--tabs` filters which AniList statuses become library tabs. With `--base`, existing tab IDs are reused when possible; restoring the generated archive on a device may **replace** the on-device library — keep a copy of the original backup.
+`--tabs` filters which AniList statuses become library tabs. Install the
+MangaDex and Comix extensions before restoring an archive that contains their
+attachments. With `--base`, existing tab IDs are reused when possible;
+restoring the generated archive on a device may **replace** the on-device
+library — keep a copy of the original backup.

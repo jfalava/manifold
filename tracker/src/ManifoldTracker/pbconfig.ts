@@ -6,7 +6,7 @@ export default {
   name: "manifold: tracker",
   icon: "icon.png",
   description:
-    "manifold tracker: AniList list status, managed collections, and read progress.",
+    "Canonical registry, managed collections, and progress sync for native providers.",
   contentRating: ContentRating.MATURE,
   developers: [{ name: "manifold" }],
   language: "en",

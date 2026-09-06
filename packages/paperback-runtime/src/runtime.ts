@@ -40,7 +40,7 @@ export const secureStateString = (key: string): string | undefined => {
 export const configuredPersonalApi = (): PersonalApiClient => {
   const token = secureStateString(MANIFOLD_API_TOKEN_KEY);
   if (!token) {
-    throw new Error("Set the API token in manifold: source settings first");
+    throw new Error("Set the API token in manifold: tracker settings first");
   }
   return createPersonalApiClient(scheduledPersonalRequester, {
     origin: MANIFOLD_API_ORIGIN,

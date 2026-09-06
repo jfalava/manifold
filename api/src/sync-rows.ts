@@ -12,9 +12,6 @@ import type {
   ProviderLink,
   ReadingProgress,
   SyncOp,
-  UpdateProbeFailure,
-  UpdateProbeReason,
-  UpdateProbeSource,
 } from "./domain";
 
 export interface EntryRow extends Record<string, SqlStorageValue> {
@@ -25,7 +22,6 @@ export interface EntryRow extends Record<string, SqlStorageValue> {
   created_at: number;
   updated_at: number;
   tombstoned_at: number | null;
-  chapter_source: string | null;
 }
 
 export interface ProviderRow extends Record<string, SqlStorageValue> {
@@ -77,16 +73,6 @@ export interface ListEventRow extends Record<string, SqlStorageValue> {
   entry_id: string;
   kind: string;
   origin: OpOrigin;
-  detail: string | null;
-  created_at: number;
-}
-
-export interface UpdateProbeFailureRow extends Record<string, SqlStorageValue> {
-  id: number;
-  entry_id: string | null;
-  title: string;
-  source: UpdateProbeSource;
-  reason: UpdateProbeReason;
   detail: string | null;
   created_at: number;
 }
@@ -167,16 +153,6 @@ export const toListEvent = (row: ListEventRow): ListEvent => ({
   createdAt: row.created_at,
 });
 
-export const toUpdateProbeFailure = (row: UpdateProbeFailureRow): UpdateProbeFailure => ({
-  id: row.id,
-  ...(row.entry_id !== null && { entryId: row.entry_id }),
-  title: row.title,
-  source: row.source,
-  reason: row.reason,
-  ...(row.detail !== null && { detail: row.detail }),
-  createdAt: row.created_at,
-});
-
 const CANONICAL_PROVIDERS: ReadonlySet<string> = new Set([
   "anilist",
   "mal",
@@ -241,11 +217,6 @@ export const toRegistryEntry = (
     : "local";
   const providerId = nonEmpty(row.provider_id) ?? row.id;
   const title = nonEmpty(row.title) ?? providerId;
-  const rawChapterSource = row.chapter_source ?? null;
-  const chapterSource =
-    rawChapterSource === "mangadex" || rawChapterSource === "comix"
-      ? rawChapterSource
-      : undefined;
 
   return {
     id: nonEmpty(row.id) ?? row.id,
@@ -255,6 +226,5 @@ export const toRegistryEntry = (
     createdAt: finiteMs(row.created_at, nowMs),
     updatedAt: finiteMs(row.updated_at, nowMs),
     providers,
-    ...(chapterSource && { chapterSource }),
   };
 };

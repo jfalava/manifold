@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const workingDirectory = process.cwd();
-const root = existsSync(resolve(workingDirectory, "source"))
+const root = existsSync(resolve(workingDirectory, "tracker"))
   ? workingDirectory
   : resolve(workingDirectory, "..");
 const docsDirectory = resolve(root, "docs");

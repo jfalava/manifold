@@ -17,7 +17,6 @@
     "@manifold/contract": "workspace:*",
     "@manifold/json": "workspace:*",
     "@manifold/mangadex": "workspace:*",
-    "@manifold/source": "workspace:*",
     "@manifold/tracker": "workspace:*",
     "effect": "catalog:effect",
     "hono": "catalog:cloudflare"

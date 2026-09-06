@@ -9,7 +9,6 @@ coverage
 *.tsbuildinfo
 *.realm
 *.pulse
-source/bundles/
 tracker/bundles/
 api/catalog-assets/
 *.pas5

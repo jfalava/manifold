@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Manga Sync">
-  <rect width="256" height="256" rx="48" fill="#2563eb"/>
-  <path d="M55 64h62c20 0 36 16 36 36v94c-9-8-21-12-34-12H55V64Z" fill="#fff"/>
-  <path d="M201 64h-35c-20 0-36 16-36 36v94c9-8 21-12 34-12h37V64Z" fill="#dbeafe"/>
-  <path d="M77 96h48M77 122h42M77 148h31" stroke="#2563eb" stroke-width="12" stroke-linecap="round"/>
-</svg>

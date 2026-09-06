@@ -3,7 +3,6 @@ import { Schema } from "effect";
 import {
   AuthProvider,
   CanonicalProvider,
-  ChapterSource,
   ContentProvider,
   ListStatus,
   MangaDexMatchMethod,
@@ -13,8 +12,6 @@ import {
   OpState,
   OpTarget,
   RegistryProvider,
-  UpdateProbeReason,
-  UpdateProbeSource,
 } from "./literals";
 
 export const ProviderLink = Schema.Struct({
@@ -47,7 +44,6 @@ export const RegistryEntry = Schema.Struct({
   createdAt: Schema.Number,
   updatedAt: Schema.Number,
   providers: Schema.Array(ProviderLink),
-  chapterSource: Schema.optional(ChapterSource),
 });
 export type RegistryEntry = Schema.Schema.Type<typeof RegistryEntry>;
 
@@ -60,7 +56,6 @@ export const RegistryListEntry = Schema.Struct({
   createdAt: Schema.Number,
   updatedAt: Schema.Number,
   providers: Schema.Array(ProviderLink),
-  chapterSource: Schema.optional(ChapterSource),
   state: Schema.optional(ListState),
   tombstoned: Schema.optional(Schema.Boolean),
 });
@@ -102,17 +97,6 @@ export const SyncOp = Schema.Struct({
   updatedAt: Schema.Number,
 });
 export type SyncOp = Schema.Schema.Type<typeof SyncOp>;
-
-export const UpdateProbeFailure = Schema.Struct({
-  id: Schema.Number,
-  entryId: Schema.optional(Schema.NonEmptyString),
-  title: Schema.NonEmptyString,
-  source: UpdateProbeSource,
-  reason: UpdateProbeReason,
-  detail: Schema.optional(Schema.String),
-  createdAt: Schema.Number,
-});
-export type UpdateProbeFailure = Schema.Schema.Type<typeof UpdateProbeFailure>;
 
 export const MangaDexLibraryItem = Schema.Struct({
   mangaDexId: Schema.NonEmptyString,

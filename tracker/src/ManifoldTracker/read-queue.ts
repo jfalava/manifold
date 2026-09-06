@@ -18,26 +18,23 @@ export interface ReadQueueDeps {
   readonly pushProgress: (sourceManga: SourceManga, chapterNumber: number) => Promise<boolean>;
 }
 
-const COMIX_PREFIX = "comix:";
-
 interface ChapterProvenance {
   readonly provider: "mangadex" | "comix";
   readonly chapterKey: string;
-  readonly upstreamChapterId: string;
 }
 
-const chapterProvenance = (sourceChapterId: string): ChapterProvenance =>
-  sourceChapterId.startsWith(COMIX_PREFIX)
-    ? {
-        provider: "comix",
-        chapterKey: sourceChapterId,
-        upstreamChapterId: sourceChapterId.slice(COMIX_PREFIX.length),
-      }
-    : {
-        provider: "mangadex",
-        chapterKey: `mangadex:${sourceChapterId}`,
-        upstreamChapterId: sourceChapterId,
-      };
+const chapterProvenance = (
+  chapterSourceId: string,
+  sourceChapterId: string,
+): ChapterProvenance => {
+  if (chapterSourceId === "MangaDex") {
+    return { provider: "mangadex", chapterKey: `mangadex:${sourceChapterId}` };
+  }
+  if (chapterSourceId === "Comix") {
+    return { provider: "comix", chapterKey: `comix:${sourceChapterId}` };
+  }
+  throw new Error(`Unsupported chapter source: ${chapterSourceId}`);
+};
 
 export const processReadActions = async (
   actions: readonly TrackedMangaChapterReadAction[],
@@ -54,14 +51,16 @@ export const processReadActions = async (
     try {
       const sourceChapterId = action.readChapter?.chapterId ?? action.chapterId;
       if (!sourceChapterId) {throw new Error("Chapter read action has no source chapter ID");}
+      if (!action.chapterMangaId) {throw new Error("Chapter read action has no source manga ID");}
 
-      const provenance = chapterProvenance(sourceChapterId);
+      const provenance = chapterProvenance(action.chapterSourceId, sourceChapterId);
       await deps.recordRead(action.sourceManga.mangaId, {
         eventId: action.id,
         chapterKey: provenance.chapterKey,
         chapterNumber: action.chapterNum,
         provider: provenance.provider,
-        sourceChapterId: provenance.upstreamChapterId,
+        sourceMangaId: action.chapterMangaId,
+        sourceChapterId,
         readAt: action.creationDate.getTime(),
         ...(!(action.chapterVolume === undefined) && { volumeNumber: action.chapterVolume }),
       });

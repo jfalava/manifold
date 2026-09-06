@@ -30,17 +30,13 @@ import {
   type ReadingProgress,
   type RecordReadInput,
   type ResolveEntryInput,
-  type SetChapterSourceInput,
   type SetListStateInput,
   type SetMangaDexStatusInput,
-  type ChapterSource,
   type SyncOp,
   type MangaDexLibraryItem,
   type MangaDexLibrarySummary,
   type OpsSummary,
   type RegistrySummary,
-  type ReportUpdateFailuresInput,
-  type UpdateProbeFailure,
   type UpsertEntryInput,
 } from "./domain";
 import {
@@ -74,12 +70,10 @@ import {
   type OpRow,
   type ProgressRow,
   type ProviderRow,
-  type UpdateProbeFailureRow,
   toListEvent,
   toListState,
   toOp,
   toProgress,
-  toUpdateProbeFailure,
   toRegistryEntry,
 } from "./sync-rows";
 import { decryptToken, encryptToken } from "./token-crypto";
@@ -450,14 +444,12 @@ export class ManifoldSync extends DurableObject<Env> {
       // row's live successor; with none, resurrect the corpse.
       const successor = this.ctx.storage.sql
         .exec<{ entry_id: string }>(
-          `SELECT pl2.entry_id FROM provider_links pl
-           JOIN provider_links pl2
-             ON pl2.provider = pl.provider AND pl2.external_id = pl.external_id
-           JOIN canonical_entries ce ON ce.id = pl2.entry_id
-           WHERE pl.entry_id = ? AND pl2.entry_id <> ? AND ce.tombstoned_at IS NULL
+          `SELECT pl.entry_id FROM provider_links pl
+           JOIN canonical_entries ce ON ce.id = pl.entry_id
+           WHERE pl.provider = ? AND pl.external_id = ? AND ce.tombstoned_at IS NULL
            LIMIT 1`,
-          targetEntryId,
-          targetEntryId,
+          input.provider,
+          input.sourceMangaId,
         )
         .toArray()[0];
       if (successor) {
@@ -470,6 +462,52 @@ export class ManifoldSync extends DurableObject<Env> {
         );
         this.appendEvent(targetEntryId, "list.resurrect", "device", {});
       }
+    }
+
+    const providerLink = this.ctx.storage.sql
+      .exec<{ external_id: string }>(
+        "SELECT external_id FROM provider_links WHERE entry_id = ? AND provider = ? LIMIT 1",
+        targetEntryId,
+        input.provider,
+      )
+      .toArray()[0];
+    if (providerLink && providerLink.external_id !== input.sourceMangaId) {
+      throw new Error(
+        `Registry entry ${targetEntryId} has ${input.provider}:${providerLink.external_id}, not ${input.sourceMangaId}`,
+      );
+    }
+    if (!providerLink) {
+      const owner = this.ctx.storage.sql
+        .exec<{ entry_id: string }>(
+          "SELECT entry_id FROM provider_links WHERE provider = ? AND external_id = ? LIMIT 1",
+          input.provider,
+          input.sourceMangaId,
+        )
+        .toArray()[0];
+      if (owner && owner.entry_id !== targetEntryId) {
+        throw new Error(
+          `${input.provider}:${input.sourceMangaId} belongs to registry entry ${owner.entry_id}`,
+        );
+      }
+      const timestamp = now();
+      this.ctx.storage.sql.exec(
+        `INSERT INTO provider_links
+           (entry_id, provider, external_id, title, updated_at)
+         VALUES (?, ?, ?, NULL, ?)`,
+        targetEntryId,
+        input.provider,
+        input.sourceMangaId,
+        timestamp,
+      );
+      this.ctx.storage.sql.exec(
+        "UPDATE canonical_entries SET updated_at = ? WHERE id = ?",
+        timestamp,
+        targetEntryId,
+      );
+      this.appendEvent(targetEntryId, "link.observed", "device", {
+        provider: input.provider,
+        externalId: input.sourceMangaId,
+      });
     }
 
     const existingEvent = this.ctx.storage.sql
@@ -528,8 +566,8 @@ export class ManifoldSync extends DurableObject<Env> {
           readAt,
           ...(input.chapterNumber !== undefined && { chapterNumber: input.chapterNumber }),
           ...(input.volumeNumber !== undefined && { volumeNumber: input.volumeNumber }),
-          ...(input.provider !== undefined && { provider: input.provider }),
-          ...(input.sourceChapterId !== undefined && { sourceChapterId: input.sourceChapterId }),
+          provider: input.provider,
+          sourceChapterId: input.sourceChapterId,
         };
         this.enqueueOp({
           opId: eventId,
@@ -1467,31 +1505,6 @@ export class ManifoldSync extends DurableObject<Env> {
     return Effect.runSync(Effect.sync(() => this.readListState(entryId)));
   }
 
-  async setChapterSource(
-    entryId: string,
-    input: SetChapterSourceInput,
-  ): Promise<RegistryEntry> {
-    this.requireEntry(entryId);
-    const timestamp = now();
-    const value: ChapterSource = input.chapterSource;
-    // `auto` clears the pin so the device falls back to its heuristic.
-    const stored = value === "auto" ? null : value;
-    this.ctx.storage.sql.exec(
-      "UPDATE canonical_entries SET chapter_source = ?, updated_at = ? WHERE id = ?",
-      stored,
-      timestamp,
-      entryId,
-    );
-    this.appendEvent(entryId, "chapter_source.set", input.origin ?? "admin", {
-      chapterSource: value,
-    });
-    const entry = this.readEntry(entryId);
-    if (!entry) {
-      throw new Error(`Canonical entry not found after chapter source: ${entryId}`);
-    }
-    return entry;
-  }
-
   // Removal is a full nuke: the AniList entry is deleted outright and the
   // registry row is tombstoned so history survives upstream.
   async nukeEntry(entryId: string, input: NukeEntryInput): Promise<ListState | undefined> {
@@ -1552,86 +1565,6 @@ export class ManifoldSync extends DurableObject<Env> {
         ).map((row) => toListEvent(row));
         return rows;
       })
-    );
-  }
-
-  async reportUpdateFailures(input: ReportUpdateFailuresInput): Promise<{ recorded: number }> {
-    return Effect.runSync(
-      Effect.sync(() => {
-        const failures = input.failures.slice(0, 100);
-        const timestamp = now();
-        let recorded = 0;
-        for (const failure of failures) {
-          const title = failure.title.trim();
-          if (title.length === 0) {continue;}
-          const entryId = failure.entryId?.trim() || null;
-          const detail = failure.detail?.trim() || null;
-          this.ctx.storage.sql.exec(
-            `INSERT INTO update_probe_failures
-               (entry_id, title, source, reason, detail, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            entryId,
-            title.slice(0, 300),
-            failure.source,
-            failure.reason,
-            detail === null ? null : detail.slice(0, 1000),
-            timestamp,
-          );
-          recorded += 1;
-        }
-        // Keep the newest 2k rows so Discover boards cannot grow the DO unbounded.
-        // SQLite forbids deleting from a table while a plain subquery reads it;
-        // bound the cutoff id in a nested SELECT instead.
-        this.ctx.storage.sql.exec(
-          `DELETE FROM update_probe_failures
-           WHERE id < COALESCE((
-             SELECT MIN(keep_id) FROM (
-               SELECT id AS keep_id
-               FROM update_probe_failures
-               ORDER BY id DESC
-               LIMIT 2000
-             )
-           ), 0)`,
-        );
-        return { recorded };
-      }),
-    );
-  }
-
-  async listUpdateFailures(options?: {
-    readonly source?: string;
-    readonly reason?: string;
-    readonly entryId?: string;
-    readonly limit?: number;
-  }): Promise<readonly UpdateProbeFailure[]> {
-    return Effect.runSync(
-      Effect.sync(() => {
-        const limit = Math.min(500, Math.max(1, options?.limit ?? 200));
-        const clauses: string[] = [];
-        const params: Array<string | number> = [];
-        if (options?.source) {
-          clauses.push("source = ?");
-          params.push(options.source);
-        }
-        if (options?.reason) {
-          clauses.push("reason = ?");
-          params.push(options.reason);
-        }
-        if (options?.entryId) {
-          clauses.push("entry_id = ?");
-          params.push(options.entryId);
-        }
-        const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-        params.push(limit);
-        const rows = this.ctx.storage.sql
-          .exec<UpdateProbeFailureRow>(
-            `SELECT * FROM update_probe_failures ${where} ORDER BY id DESC LIMIT ?`,
-            ...params,
-          )
-          .toArray()
-          .map((row) => toUpdateProbeFailure(row));
-        return rows;
-      }),
     );
   }
 
@@ -2054,10 +1987,10 @@ export class ManifoldSync extends DurableObject<Env> {
     }
     try {
       this.ctx.storage.sql.exec(
-        "ALTER TABLE canonical_entries ADD COLUMN chapter_source TEXT"
+        "ALTER TABLE canonical_entries DROP COLUMN chapter_source"
       );
     } catch {
-      // Column already exists.
+      // Column is absent on source-free registries.
     }
     try {
       this.ctx.storage.sql.exec(
@@ -2170,21 +2103,7 @@ export class ManifoldSync extends DurableObject<Env> {
       CREATE INDEX IF NOT EXISTS list_events_entry
         ON list_events (entry_id, id);
 
-      CREATE TABLE IF NOT EXISTS update_probe_failures (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        entry_id TEXT,
-        title TEXT NOT NULL,
-        source TEXT NOT NULL,
-        reason TEXT NOT NULL,
-        detail TEXT,
-        created_at INTEGER NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS update_probe_failures_created
-        ON update_probe_failures (created_at DESC);
-
-      CREATE INDEX IF NOT EXISTS update_probe_failures_entry
-        ON update_probe_failures (entry_id, created_at DESC);
+      DROP TABLE IF EXISTS update_probe_failures;
     `);
     this.migrateLegacyOutbox();
   }

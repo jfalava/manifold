@@ -208,7 +208,6 @@ export const getSourceMangaInManagedCollection = async (
   return items.map((item) => {
     const entry = byAnilist.get(item.anilistId);
     const uuid = entry?.id;
-    const mdLink = entry?.providers.find((provider) => provider.provider === "mangadex");
     return {
       mangaId: uuid ?? `anilist:${item.anilistId}`,
       mangaInfo: {
@@ -221,15 +220,6 @@ export const getSourceMangaInManagedCollection = async (
           ...(uuid && { "Canonical ID": uuid }),
           "Canonical provider": "registry",
           "AniList ID": item.anilistId,
-          // Stamp the verified reading provider so getChapters goes straight
-          // to MangaDex for collection-added titles instead of falling into
-          // the Comix path (whose Cloudflare challenge fails library
-          // updates for titles that are on MangaDex).
-          ...(mdLink && {
-                "manifold provider": "mangadex",
-                "manifold provider ID": mdLink.externalId,
-                ...(mdLink.title && { "manifold provider title": mdLink.title }),
-              }),
         },
       },
     };

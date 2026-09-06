@@ -9,7 +9,6 @@
     { "path": "./packages/contract" },
     { "path": "./packages/paperback-comix" },
     { "path": "./packages/paperback-runtime" },
-    { "path": "./source" },
     { "path": "./tracker" },
     { "path": "./api" },
     { "path": "./router" },

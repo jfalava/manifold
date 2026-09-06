@@ -17,7 +17,6 @@ import {
   type RegistryListEntry,
   type RegistrySummary,
   type SyncOp,
-  type UpdateProbeFailure,
 } from "@manifold/contract";
 import {
   errorMessage,
@@ -45,14 +44,12 @@ export type JsonResponseBody =
   | RegistryEntry
   | RegistryListEntry
   | SyncOp
-  | UpdateProbeFailure
   | readonly AuthConnection[]
   | readonly ListEvent[]
   | readonly MangaDexLibraryItem[]
   | readonly RegistryEntry[]
   | readonly RegistryListEntry[]
   | readonly SyncOp[]
-  | readonly UpdateProbeFailure[]
   | Record<string, MangaDexEntryStat>
   | { readonly chapters: readonly string[] }
   | { readonly connected: boolean; readonly provider: string }
@@ -61,7 +58,6 @@ export type JsonResponseBody =
   | { readonly entries: readonly RegistryEntry[] | readonly RegistryListEntry[] }
   | { readonly entry: RegistryEntry | null }
   | { readonly events: readonly ListEvent[] }
-  | { readonly failures: readonly UpdateProbeFailure[] }
   | { readonly id: string; readonly name?: string }
   | { readonly library: readonly MangaDexLibraryItem[] }
   | { readonly summary: MangaDexLibrarySummary | RegistrySummary | OpsSummary }
@@ -71,7 +67,6 @@ export type JsonResponseBody =
   | { readonly retried: number }
   | { readonly state: ListState | null }
   | { readonly stats: Record<string, MangaDexEntryStat> }
-  | { readonly recorded: number }
   | { readonly updated: number };
 
 export interface RouteContext {

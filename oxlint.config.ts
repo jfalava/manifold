@@ -3,7 +3,7 @@ import { defineConfig, type DummyRule, type DummyRuleMap, type OxlintConfig } fr
 // Oxlint rejects relative jsPlugins specifiers inside configs consumed via
 // `extends`, so the base exposes a factory and each workspace registers the
 // plugins itself with a path prefix relative to its own directory
-// (".." for workspace roots like api/cli/admin/docs/router/source/tracker/iac, "../.." for packages/*).
+// (".." for workspace roots like api/cli/admin/docs/router/tracker/iac, "../.." for packages/*).
 //
 // Effect plugin is opt-in: only packages with a direct `effect` dependency
 // should pass `{ effect: true }` (skill: install-anti-slop).
@@ -175,7 +175,7 @@ export const baseConfig: OxlintConfig = {
   },
   globals: {
     Bun: "readonly",
-    // Paperback extension runtime injects Application; source/tracker/paperback-*
+    // Paperback extension runtime injects Application; tracker/paperback-*
     // packages call it as a free global (see @paperback/types).
     Application: "readonly",
   },

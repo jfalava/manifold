@@ -5,7 +5,6 @@ const root = resolve(import.meta.dirname, "../..");
 const destination = resolve(import.meta.dirname, "../catalog-assets");
 
 const plugins = [
-  { packageName: "source", id: "ManifoldSource" },
   { packageName: "tracker", id: "ManifoldTracker" },
 ] as const;
 

@@ -1,11 +1,10 @@
 import { Hono } from "hono";
-import { catalog as sourceCatalog } from "@manifold/source/catalog";
 import { catalog as trackerCatalog } from "@manifold/tracker/catalog";
 import type { Env } from "./types";
 
 const STABLE = "/extensions/0.9/stable";
 
-const extensions = [sourceCatalog, trackerCatalog] as const;
+const extensions = [trackerCatalog] as const;
 
 const byId = (id: string) => extensions.find((entry) => entry.id === id);
 
@@ -17,7 +16,7 @@ const versioningBody = () => ({
   },
   repository: {
     name: "manifold",
-    description: "manifold: source and tracker",
+    description: "manifold: canonical registry and tracker",
   },
   sources: extensions.map((entry) => ({
     ...entry.info,

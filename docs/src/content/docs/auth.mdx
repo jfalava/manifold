@@ -1,12 +1,13 @@
 ---
 title: Authentication
-description: AniList, MyAnimeList, MangaDex, and device-local Comix access.
+description: Personal API, tracker, and upstream provider authentication.
 sidebar:
   order: 2
 ---
 
-Manifold keeps upstream credentials on the personal Durable Object. Tokens are
-encrypted before storage. Comix never uses Worker-side cookies.
+Manifold keeps server-side upstream credentials on the personal Durable Object.
+Tokens are encrypted before storage. Native Paperback providers manage their
+own provider sessions separately.
 
 ## Supported providers
 
@@ -15,25 +16,26 @@ encrypted before storage. Comix never uses Worker-side cookies.
 | AniList     | Browser OAuth (device / PIN flows for CLI)         |
 | MyAnimeList | Browser OAuth                                      |
 | MangaDex    | Personal-client (password grant or personal token) |
-| Comix       | Paperback in-app browser on the device             |
+| Comix       | Native Comix extension on the device               |
 
 ## Sync API tokens
 
-The Paperback source and CLI talk to the personal API with `MANIFOLD_TOKEN`.
-That token authorizes access
-to your Durable Object — it is not an upstream AniList/MangaDex password.
+ManifoldTracker and the CLI talk to the personal API with `MANIFOLD_TOKEN`.
+Set it in the tracker settings for Paperback and pass it through the CLI flag
+or environment variable for local commands. It authorizes access to your
+Durable Object; it is not an upstream AniList/MangaDex password.
 
 Upstream OAuth tokens (AniList, MAL, MangaDex) are obtained through the API's
 auth routes and stored encrypted on the DO. Worker egress cannot call AniList
 reliably (IP blocks), which is why AniList **writes** from migrations and
 `anilist:*` ops run on your machine or device.
 
-## Comix is device-local
+## Provider sessions are provider-owned
 
-Comix access is established inside Paperback's in-app browser (Turnstile /
-Cloudflare clearance). Those cookies stay on the device. The CLI Comix prefill
-uses a local headed Chrome session for the same reason — it does not paste
-`cf_clearance` into Worker `fetch`.
+Comix access is established by the native Comix extension inside Paperback.
+Those cookies stay on the device. The CLI registry resolver may use a local
+headed Chrome session for the same reason; it does not paste `cf_clearance`
+into Worker `fetch`.
 
 <Aside type="caution" title="Do not copy cookies into the Worker">
   Comix session cookies must not be uploaded to the personal API or canonical

@@ -19,10 +19,8 @@ import {
   bindProvider,
   loadRegistry,
   nukeEntry,
-  saveChapterSource,
   saveListState,
   unlinkProvider,
-  type ChapterSource,
   type RegistryEntry,
 } from "../lib/registry";
 
@@ -40,21 +38,6 @@ const STATUSES = [
 ] as const;
 
 const PROVIDERS = ["anilist", "mal", "mangadex", "comix"] as const;
-
-const CHAPTER_SOURCES = [
-  { value: "auto", label: "Auto (device heuristic)" },
-  { value: "mangadex", label: "Force MangaDex" },
-  { value: "comix", label: "Force Comix" },
-] as const satisfies readonly { value: ChapterSource; label: string }[];
-
-const parseChapterSource = (value: string): ChapterSource | undefined => {
-  for (const option of CHAPTER_SOURCES) {
-    if (option.value === value) {
-      return option.value;
-    }
-  }
-  return undefined;
-};
 
 const STATUS_BADGES = {
   reading: "info",
@@ -168,9 +151,7 @@ function EntryEditor({
   const [volumeProgress, setVolumeProgress] = useState(
     entry.state?.volumeProgress !== undefined ? String(entry.state.volumeProgress) : "",
   );
-  const [chapterSource, setChapterSource] = useState<ChapterSource>(entry.chapterSource ?? "auto");
   const dead = entry.tombstoned === true;
-  const chapterSourceDirty = chapterSource !== (entry.chapterSource ?? "auto");
 
   return (
     <div className="grid min-w-0 gap-5">
@@ -255,48 +236,6 @@ function EntryEditor({
             }}
           >
             Save
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid min-w-0 gap-2">
-        <Text bold>Chapter source</Text>
-        <span className="text-sm opacity-60">
-          Pin which catalog the device loads for chapters. Force Comix when MangaDex is incomplete
-          but still has enough chapters to skip the fallback.
-        </span>
-        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
-          <label className="grid w-full min-w-0 gap-1 text-sm sm:flex-1">
-            <span className="opacity-60">Override</span>
-            <Select
-              value={chapterSource}
-              onValueChange={(value) => {
-                const next = parseChapterSource(String(value));
-                if (next !== undefined) {
-                  setChapterSource(next);
-                }
-              }}
-            >
-              {CHAPTER_SOURCES.map((option) => (
-                <Select.Option key={option.value} value={option.value}>
-                  {option.label}
-                </Select.Option>
-              ))}
-            </Select>
-          </label>
-          <Button
-            className="w-full sm:w-auto"
-            disabled={dead || !chapterSourceDirty}
-            onClick={() => {
-              onClose();
-              void onAct(async () => {
-                await saveChapterSource({
-                  data: { entryId: entry.id, chapterSource },
-                });
-              });
-            }}
-          >
-            Save source
           </Button>
         </div>
       </div>
@@ -409,9 +348,6 @@ function EntriesTable({
   const [statusFilters, setStatusFilters] = useState<ReadonlySet<string>>(() => new Set());
   // Empty set = no provider filtering (the "All" chip), matching the status filter.
   const [providerFilters, setProviderFilters] = useState<ReadonlySet<string>>(() => new Set());
-  const [chapterSourceFilters, setChapterSourceFilters] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
   const [sorting, setSorting] = useState<SortingState>([]);
   const [editingId, setEditingId] = useState<string>();
   const [editorOpen, setEditorOpen] = useState(false);
@@ -515,15 +451,6 @@ function EntriesTable({
     );
   }, [missingByProvider]);
 
-  const byChapterSource = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const entry of entries) {
-      const key = entry.chapterSource ?? "auto";
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    return counts;
-  }, [entries]);
-
   const filtered = useMemo(() => {
     const needle = filter.trim().toLowerCase();
     return entries.filter((entry) => {
@@ -542,12 +469,6 @@ function EntriesTable({
           return false;
         }
       }
-      if (chapterSourceFilters.size !== 0) {
-        const key = entry.chapterSource ?? "auto";
-        if (!chapterSourceFilters.has(key)) {
-          return false;
-        }
-      }
       if (needle === "") {
         return true;
       }
@@ -557,7 +478,7 @@ function EntriesTable({
         entry.providers.some((link) => link.externalId.toLowerCase().includes(needle))
       );
     });
-  }, [entries, filter, statusFilters, providerFilters, chapterSourceFilters]);
+  }, [entries, filter, statusFilters, providerFilters]);
 
   const pageIndex = safePageIndex(filtered.length);
 
@@ -573,16 +494,6 @@ function EntriesTable({
 
   const toggleProviderFilter = useCallback((value: string) => {
     setProviderFilters((current) => {
-      const next = new Set(current);
-      if (!next.delete(value)) {
-        next.add(value);
-      }
-      return next;
-    });
-  }, []);
-
-  const toggleChapterSourceFilter = useCallback((value: string) => {
-    setChapterSourceFilters((current) => {
       const next = new Set(current);
       if (!next.delete(value)) {
         next.add(value);
@@ -630,18 +541,6 @@ function EntriesTable({
             {row.original.providers.length === 0 && <span className="text-sm opacity-40">—</span>}
           </div>
         ),
-      },
-      {
-        id: "chapterSource",
-        accessorFn: (row) => row.chapterSource ?? "auto",
-        header: "Chapters",
-        cell: ({ row }) => {
-          const value = row.original.chapterSource ?? "auto";
-          if (value === "auto") {
-            return <span className="text-sm opacity-40">auto</span>;
-          }
-          return <Badge variant={value === "comix" ? "warning" : "info"}>{value}</Badge>;
-        },
       },
       {
         id: "status",
@@ -784,35 +683,6 @@ function EntriesTable({
               onClick={() => toggleProviderFilter(value)}
             >
               {value} ({missingByProvider.get(value) ?? 0})
-            </FilterToggle>
-          );
-        })}
-      </fieldset>
-
-      <fieldset className="m-0 flex flex-wrap items-center gap-1.5 border-0 p-0">
-        <legend className="sr-only">Chapter source filter</legend>
-        <span className="text-sm opacity-60">Chapter source:</span>
-        <FilterToggle
-          active={chapterSourceFilters.size === 0}
-          variant="neutral"
-          onClick={() => setChapterSourceFilters(new Set())}
-        >
-          All
-        </FilterToggle>
-        {CHAPTER_SOURCES.map((option) => {
-          const count = byChapterSource.get(option.value) ?? 0;
-          if (option.value === "auto" && count === 0) {
-            return null;
-          }
-          const active = chapterSourceFilters.has(option.value);
-          return (
-            <FilterToggle
-              key={option.value}
-              active={active}
-              variant={option.value === "comix" ? "warning" : "neutral"}
-              onClick={() => toggleChapterSourceFilter(option.value)}
-            >
-              {option.value} ({count})
             </FilterToggle>
           );
         })}

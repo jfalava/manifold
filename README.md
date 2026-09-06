@@ -1,6 +1,8 @@
 # Manifold
 
-An experimental [Paperback](https://paperback.moe/) extension that uses multiple sources to build a feed with no missing chapter gaps, powered by your own catalog and backed by multiple manga providers.
+An experimental canonical manga registry and [Paperback](https://paperback.moe/)
+tracker. Manifold keeps identity, provider links, list state, and progress in one
+place while native MangaDex and Comix extensions own reading and chapter updates.
 
 > [!WARNING]
 > This is **very** experimental and requires your own [infrastructure](https://manifold.jfa.dev/architecture/).

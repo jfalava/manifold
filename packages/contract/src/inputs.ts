@@ -2,13 +2,10 @@ import { Schema } from "effect";
 
 import {
   CanonicalProvider,
-  ChapterSource,
   ContentProvider,
   ListStatus,
   OpOrigin,
   RegistryProvider,
-  UpdateProbeReason,
-  UpdateProbeSource,
 } from "./literals";
 
 export const SetListStateInput = Schema.Struct({
@@ -38,12 +35,6 @@ export const LinkProviderInput = Schema.Struct({
 });
 export type LinkProviderInput = Schema.Schema.Type<typeof LinkProviderInput>;
 
-export const SetChapterSourceInput = Schema.Struct({
-  chapterSource: ChapterSource,
-  origin: Schema.optional(OpOrigin),
-});
-export type SetChapterSourceInput = Schema.Schema.Type<typeof SetChapterSourceInput>;
-
 export const ResolveEntryInput = Schema.Struct({
   provider: RegistryProvider,
   providerId: Schema.NonEmptyString,
@@ -68,8 +59,9 @@ export const RecordReadInput = Schema.Struct({
   chapterKey: Schema.NonEmptyString,
   chapterNumber: Schema.optional(Schema.Number),
   volumeNumber: Schema.optional(Schema.Number),
-  provider: Schema.optional(ContentProvider),
-  sourceChapterId: Schema.optional(Schema.NonEmptyString),
+  provider: ContentProvider,
+  sourceMangaId: Schema.NonEmptyString,
+  sourceChapterId: Schema.NonEmptyString,
   readAt: Schema.optional(Schema.Number),
 });
 export type RecordReadInput = Schema.Schema.Type<typeof RecordReadInput>;
@@ -95,20 +87,6 @@ export const NukeEntryInput = Schema.Struct({
   origin: Schema.optional(OpOrigin),
 });
 export type NukeEntryInput = Schema.Schema.Type<typeof NukeEntryInput>;
-
-export const UpdateProbeFailureInput = Schema.Struct({
-  entryId: Schema.optional(Schema.NonEmptyString),
-  title: Schema.NonEmptyString,
-  source: UpdateProbeSource,
-  reason: UpdateProbeReason,
-  detail: Schema.optional(Schema.String),
-});
-export type UpdateProbeFailureInput = Schema.Schema.Type<typeof UpdateProbeFailureInput>;
-
-export const ReportUpdateFailuresInput = Schema.Struct({
-  failures: Schema.Array(UpdateProbeFailureInput),
-});
-export type ReportUpdateFailuresInput = Schema.Schema.Type<typeof ReportUpdateFailuresInput>;
 
 export const MangaDexMatchInput = Schema.Struct({
   id: Schema.NonEmptyString,

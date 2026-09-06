@@ -10,7 +10,6 @@ const baseRow = (overrides: Partial<EntryRow> = {}): EntryRow => ({
   created_at: 1,
   updated_at: 2,
   tombstoned_at: null,
-  chapter_source: null,
   ...overrides,
 });
 
@@ -75,14 +74,12 @@ describe("toRegistryEntry", () => {
         provider: "not-a-provider" as EntryRow["provider"],
         provider_id: "  ",
         title: "",
-        chapter_source: "auto",
       }),
       [],
     );
     expect(entry.provider).toBe("local");
     expect(entry.providerId).toBe(entry.id);
     expect(entry.title).toBe(entry.id);
-    expect(entry.chapterSource).toBeUndefined();
     expect(() => encodeResponse(RegistryEntry, entry)).not.toThrow();
   });
 });

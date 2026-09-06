@@ -314,8 +314,6 @@ export class ManifoldTrackerSource
               ...details.mangaInfo.additionalInfo,
               "Canonical ID": stored.id,
               "Canonical provider": "registry",
-              "manifold provider": "comix",
-              "manifold provider ID": parsedCandidate.providerId,
             },
           },
         };
@@ -340,9 +338,6 @@ export class ManifoldTrackerSource
 
     const stored = await personalApi.getEntry(mangaId).catch(() => undefined);
     const anilistLink = aniLinkOf(stored);
-    const mdLink = stored?.providers.find((provider) => provider.provider === "mangadex");
-    const comixLink = stored?.providers.find((provider) => provider.provider === "comix");
-    const contentLink = mdLink ?? comixLink;
     return {
       mangaId: entry.id,
       mangaInfo: {
@@ -357,11 +352,6 @@ export class ManifoldTrackerSource
           "Canonical ID": entry.id,
           "Canonical provider": "registry",
           ...(anilistLink && { "AniList ID": anilistLink }),
-          ...(contentLink && {
-                "manifold provider": contentLink.provider,
-                "manifold provider ID": contentLink.externalId,
-                ...(contentLink.title && { "manifold provider title": contentLink.title }),
-              }),
         },
       },
     };
@@ -384,8 +374,6 @@ export class ManifoldTrackerSource
           "Canonical ID": entryId,
           "Canonical provider": "registry",
           ...(anilistId && { "AniList ID": anilistId }),
-          "manifold provider": candidate.provider,
-          "manifold provider ID": candidate.providerId,
         },
       },
     };

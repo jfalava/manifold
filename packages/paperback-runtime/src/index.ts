@@ -18,9 +18,6 @@ export {
   type PersonalMangaDexLibraryItem,
   type PersonalFeedChapter,
   type PersonalApiClient,
-  type UpdateProbeSource,
-  type UpdateProbeReason,
-  type UpdateProbeFailureInput,
 } from "./api.js";
 
 export {

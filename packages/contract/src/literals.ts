@@ -6,10 +6,6 @@ export type CanonicalProvider = Schema.Schema.Type<typeof CanonicalProvider>;
 export const ContentProvider = Schema.Literals(["mangadex", "comix"]);
 export type ContentProvider = Schema.Schema.Type<typeof ContentProvider>;
 
-/** Per-entry chapter list pin. `auto` = device heuristic. */
-export const ChapterSource = Schema.Literals(["auto", "mangadex", "comix"]);
-export type ChapterSource = Schema.Schema.Type<typeof ChapterSource>;
-
 /** Providers that appear in registry links. */
 export const RegistryProvider = Schema.Literals(["anilist", "mal", "mangadex", "comix"]);
 export type RegistryProvider = Schema.Schema.Type<typeof RegistryProvider>;
@@ -47,19 +43,6 @@ export type OpOrigin = Schema.Schema.Type<typeof OpOrigin>;
 
 export const OpState = Schema.Literals(["pending", "completed", "failed", "blocked"]);
 export type OpState = Schema.Schema.Type<typeof OpState>;
-
-export const UpdateProbeSource = Schema.Literals(["MD", "Comix"]);
-export type UpdateProbeSource = Schema.Schema.Type<typeof UpdateProbeSource>;
-
-export const UpdateProbeReason = Schema.Literals([
-  "md_unresolved",
-  "md_no_hosted_chapter",
-  "comix_hid_miss",
-  "comix_empty",
-  "cloudflare",
-  "error",
-]);
-export type UpdateProbeReason = Schema.Schema.Type<typeof UpdateProbeReason>;
 
 export const MangaDexMatchStatus = Schema.Literals(["matched", "ambiguous", "not_found"]);
 export type MangaDexMatchStatus = Schema.Schema.Type<typeof MangaDexMatchStatus>;

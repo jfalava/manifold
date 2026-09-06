@@ -22,11 +22,15 @@ const action = (
   chapterId: string,
   chapterNum: number | undefined,
   mangaId = "anilist:141756",
+  chapterSourceId = "MangaDex",
+  chapterMangaId = "manga-id",
 ): TrackedMangaChapterReadAction =>
   // SAFETY: test fixture supplies the TrackedMangaChapterReadAction fields processReadActions reads
   ({
     id,
     chapterId,
+    chapterSourceId,
+    chapterMangaId,
     ...(!(chapterNum === undefined) && { chapterNum }),
     creationDate: new Date(0),
     sourceManga: manga(mangaId),
@@ -108,12 +112,15 @@ describe("processReadActions", () => {
     expect(pushProgress).not.toHaveBeenCalled();
   });
 
-  it("routes comix-prefixed chapters as comix provider reads", async () => {
+  it("routes reads from their native chapter source and manga IDs", async () => {
     const recordRead = vi.fn().mockResolvedValue({});
     const pushProgress = vi.fn().mockResolvedValue(true);
 
     await processReadActions(
-      [action("a", "comix:8295088", 12), action("b", "df2e5603-uuid", 13)],
+      [
+        action("a", "8295088", 12, "anilist:141756", "Comix", "comix-manga"),
+        action("b", "df2e5603-uuid", 13, "anilist:141756", "MangaDex", "md-manga"),
+      ],
       { recordRead, pushProgress },
     );
 
@@ -121,11 +128,13 @@ describe("processReadActions", () => {
     expect(recordRead.mock.calls[0]?.[1]).toMatchObject({
       provider: "comix",
       chapterKey: "comix:8295088",
+      sourceMangaId: "comix-manga",
       sourceChapterId: "8295088",
     });
     expect(recordRead.mock.calls[1]?.[1]).toMatchObject({
       provider: "mangadex",
       chapterKey: "mangadex:df2e5603-uuid",
+      sourceMangaId: "md-manga",
       sourceChapterId: "df2e5603-uuid",
     });
     // AniList progress is keyed by the anilist-canonical manga either way.
@@ -136,5 +145,19 @@ describe("processReadActions", () => {
       | undefined;
     expect(progressCall?.[0]?.mangaId).toBe("anilist:141756");
     expect(progressCall?.[1]).toBe(13);
+  });
+
+  it("rejects unknown chapter sources instead of treating them as MangaDex", async () => {
+    const recordRead = vi.fn().mockResolvedValue({});
+    const pushProgress = vi.fn().mockResolvedValue(true);
+
+    const result = await processReadActions(
+      [action("bad", "chapter", 1, "anilist:1", "OtherSource")],
+      { recordRead, pushProgress },
+    );
+
+    expect(result).toEqual({ successfulItems: [], failedItems: ["bad"] });
+    expect(recordRead).not.toHaveBeenCalled();
+    expect(pushProgress).not.toHaveBeenCalled();
   });
 });

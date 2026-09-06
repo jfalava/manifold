@@ -58,7 +58,6 @@
         "@manifold/contract": "workspace:*",
         "@manifold/json": "workspace:*",
         "@manifold/mangadex": "workspace:*",
-        "@manifold/source": "workspace:*",
         "@manifold/tracker": "workspace:*",
         "effect": "catalog:effect",
         "hono": "catalog:cloudflare",
@@ -261,32 +260,14 @@
         "typescript": "catalog:build",
       },
     },
-    "source": {
-      "name": "@manifold/source",
-      "version": "2026.9.4-5",
+    "tracker": {
+      "name": "@manifold/tracker",
+      "version": "2026.9.5",
       "dependencies": {
         "@manifold/canonical": "workspace:*",
         "@manifold/json": "workspace:*",
         "@manifold/mangadex": "workspace:*",
         "@manifold/paperback-comix": "workspace:*",
-        "@manifold/paperback-runtime": "workspace:*",
-        "@paperback/types": "catalog:paperback",
-        "effect": "catalog:effect",
-      },
-      "devDependencies": {
-        "@paperback/toolchain": "catalog:paperback",
-        "oxlint": "catalog:build",
-        "oxlint-tsgolint": "catalog:build",
-        "typescript": "catalog:build",
-        "vitest": "catalog:build",
-      },
-    },
-    "tracker": {
-      "name": "@manifold/tracker",
-      "version": "2026.9.4-6",
-      "dependencies": {
-        "@manifold/canonical": "workspace:*",
-        "@manifold/json": "workspace:*",
         "@manifold/paperback-runtime": "workspace:*",
         "@paperback/types": "catalog:paperback",
         "effect": "catalog:effect",
@@ -855,8 +836,6 @@
     "@manifold/paperback-runtime": ["@manifold/paperback-runtime@workspace:packages/paperback-runtime"],
 
     "@manifold/router": ["@manifold/router@workspace:router"],
-
-    "@manifold/source": ["@manifold/source@workspace:source"],
 
     "@manifold/tracker": ["@manifold/tracker@workspace:tracker"],
 

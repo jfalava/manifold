@@ -1,7 +1,8 @@
 {
   "name": "@manifold/tracker",
-  "version": "2026.09.05",
+  "version": "2026.09.11",
   "private": true,
+  "description": "Canonical registry and progress orchestration for native Paperback providers",
   "type": "module",
   "exports": {
     "./catalog": "./src/catalog.ts"

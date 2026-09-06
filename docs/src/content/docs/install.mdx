@@ -1,39 +1,62 @@
 ---
 title: Install
-description: Install the Manifold source repository and complete first-run setup.
+description: Install native reading providers, ManifoldTracker, and a source-free library backup.
 sidebar:
   order: 3
 ---
 
-## Source repository
+## Reading providers
 
-Add this URL in Paperback under **Settings → Extensions → Add repository**:
+Add the Inkdex repository in Paperback under **Settings → Extensions → Add
+repository**:
+
+```text
+https://inkdex.github.io/extensions/0.9/stable
+```
+
+Install the native **MangaDex** and **Comix** extensions from it. They own
+chapter discovery, updates, Cloudflare handling, and reading.
+
+## ManifoldTracker
+
+Add the Manifold repository:
 
 ```text
 https://manifold.jfa.dev/paperback/extensions/0.9/stable/
 ```
 
-The repository publishes the unified Manifold source (MangaDex, then Comix).
-Manifest:
+Install **ManifoldTracker**, open its settings, and set the personal API token
+from `MANIFOLD_TOKEN`. The token stays in Paperback secure state.
+
+## Import the library
+
+Generate a source-free `.pas5` backup, using a current Paperback export as the
+base when migrating an existing library:
 
 ```text
-https://manifold.jfa.dev/paperback/extensions/0.9/stable/versioning.json
+bun run manifold migrate al2pas5 --apply --base ./Paperback-Backup.pas5
 ```
 
-## First-run setup
+Restore the generated archive in Paperback. Each eligible library entry is
+attached to:
 
-1. Install the source from the repository above.
-2. Open its settings and set **`MANIFOLD_TOKEN`** from the production Alchemy
-   environment. The source stores it in Paperback secure state and uses it only
-   for the personal API.
-3. Search and open titles as usual. Opening a result creates the personal entry
-   if needed, then links MangaDex when available; Comix is used when MangaDex
-   has no match.
+- its registry-linked native MangaDex and/or Comix source;
+- ManifoldTracker, using the canonical registry UUID.
 
-## Comix Cloudflare check
+Entries without a canonical UUID or a linked native content provider are not
+created. Existing base entries are enriched when they can be matched; obsolete
+ManifoldSource attachments and providerless remnants are removed.
 
-When Comix presents a challenge, use **Open Comix** in the source settings and
-complete it in Paperback's in-app browser. Cookies remain on the device.
+<Aside type="caution" title="Keep the original backup">
+  Restoring a `.pas5` archive may replace the on-device library. Keep the
+  original export until the migrated library has been checked.
+</Aside>
+
+## How updates flow
+
+Paperback asks the native provider for chapters. ManifoldTracker receives the
+provider's exact source and manga IDs, records the read against the canonical
+entry, and fans progress out through the Durable Object outbox.
 
 ## Surfaces
 
@@ -44,10 +67,8 @@ complete it in Paperback's in-app browser. Cookies remain on the device.
 | Health        | `https://manifold.jfa.dev/api/health`                       |
 | Repository    | `https://manifold.jfa.dev/paperback/extensions/0.9/stable/` |
 
-Read progress syncs through the source: finish a chapter on a library title and
-the source queues the read to the personal API
-
 ```text
-Paperback → POST /api/v1/entries/:entryId/read
-         → Durable Object outbox → MangaDex POST /manga/:mangaId/read
+MangaDex / Comix → Paperback library entry → ManifoldTracker
+                 → POST /api/v1/entries/:entryId/read
+                 → Durable Object outbox → linked trackers/providers
 ```

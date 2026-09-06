@@ -5,8 +5,13 @@ sidebar:
   order: 1
 ---
 
-Manifold is personal-first synchronization for a unified Paperback source. One
-public hostname serves documentation, the sync API, and the Paperback catalog.
+Manifold is a personal canonical registry and synchronization control plane.
+One public hostname serves documentation, the sync API, and a tracker-only
+Paperback catalog. Native provider extensions remain responsible for content.
+
+The registry UUID is the stable identity. AniList, MangaDex, Comix, and other
+IDs are links on that identity, not competing sources of truth. List state and
+progress are stored canonically and synchronized outward.
 
 ## Production surface
 
@@ -16,7 +21,7 @@ Deployments go through Alchemy (`iac/`).
 | Worker           | Role                                                 |
 | ---------------- | ---------------------------------------------------- |
 | `ManifoldRouter` | Owns `manifold.jfa.dev`; routes by path              |
-| `SyncApi`        | HTTP API, personal Durable Object, Paperback catalog |
+| `SyncApi`        | HTTP API, personal Durable Object, tracker catalog   |
 | `ManifoldDocs`   | Static Nimbus documentation site                     |
 
 The router mounts:
@@ -27,27 +32,27 @@ The router mounts:
 | `/api/*`       | Sync API (`SyncApi`)                                |
 | `/paperback/*` | Paperback catalog / extension artifacts (`SyncApi`) |
 
-Provider cookies for Comix stay on the device inside Paperback's in-app browser.
-They are never sent through the sync API.
+Native MangaDex and Comix extensions own chapter refresh and provider-specific
+sessions. ManifoldTracker uses the native chapter source and manga IDs as read
+provenance; it does not guess a provider from chapter IDs.
 
 ## Workspace layout
 
 ```text
 iac/                      Alchemy stack and production deployment
-router/              Path router and Worker service bindings
-api/                 Sync API, ManifoldSync DO, Paperback catalog
-cli/                 manifold CLI
-docs/                This documentation site
-admin/               Internal admin panel
-packages/canonical/       AniList/MAL identity and progress contracts
+router/                   Path router and Worker service bindings
+api/                      Sync API, ManifoldSync DO, tracker catalog
+cli/                      Registry and source-free PAS5 tooling
+docs/                     This documentation site
+admin/                    Internal registry and operations panel
+packages/canonical/       Canonical identity and progress contracts
 packages/mangadex/        MangaDex API adapter
-packages/comix/           Comix browser-backed adapter
-packages/paperback-*/     Shared Paperback plugin runtime pieces
-source/                   ManifoldSource content extension
-tracker/                  ManifoldTracker tracker extension
+packages/comix/           Comix adapter
+packages/paperback-*/     Shared Paperback tracker runtime pieces
+tracker/                  ManifoldTracker orchestration extension
 ```
 
 Only `iac` owns production deployment. `plan` and `deploy` rebuild the
-Paperback catalog first — bundle outputs are gitignored, so Alchemy's build
+tracker catalog first — bundle outputs are gitignored, so Alchemy's build
 cache alone cannot detect extension changes. Non-interactive deploys need
 `bun run deploy -- --yes`.

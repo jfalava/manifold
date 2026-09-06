@@ -18,7 +18,6 @@ import {
   RegistryListEntry,
   RegistrySummary,
   SyncOp,
-  UpdateProbeFailure,
 } from "./entities";
 import { AuthProvider } from "./literals";
 
@@ -81,11 +80,6 @@ export const EventsListResponse = Schema.Struct({
   events: Schema.Array(ListEvent),
 });
 export type EventsListResponse = Schema.Schema.Type<typeof EventsListResponse>;
-
-export const UpdateFailuresListResponse = Schema.Struct({
-  failures: Schema.Array(UpdateProbeFailure),
-});
-export type UpdateFailuresListResponse = Schema.Schema.Type<typeof UpdateFailuresListResponse>;
 
 export const MangaDexLibraryResponse = Schema.Struct({
   library: Schema.Array(MangaDexLibraryItem),

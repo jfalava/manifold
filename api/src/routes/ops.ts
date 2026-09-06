@@ -5,11 +5,8 @@ import {
   ErrorBody,
   OpsListResponse,
   OpsSummaryResponse,
-  RecordedCountResponse,
-  ReportUpdateFailuresInput,
   RetriedCountResponse,
   SyncOp,
-  UpdateFailuresListResponse,
   UpdatedCountResponse,
 } from "@manifold/contract";
 import {
@@ -24,32 +21,6 @@ import {
 export const handleOps = (ctx: RouteContext): RouteEffect =>
   Effect.gen(function* () {
     const { path, request, env, url } = ctx;
-
-    if (path[0] === "v1" && path[1] === "update-failures") {
-      const sync = env.MANIFOLD_SYNC.getByName("default");
-      if (path.length === 2 && request.method === "GET") {
-        return jsonEncoded(UpdateFailuresListResponse, {
-          failures: yield* tryPromise(() =>
-            sync.listUpdateFailures({
-              source: url.searchParams.get("source") ?? undefined,
-              reason: url.searchParams.get("reason") ?? undefined,
-              entryId: url.searchParams.get("entryId") ?? undefined,
-              limit: Number(url.searchParams.get("limit") ?? 200) || 200,
-            }),
-          ),
-        });
-      }
-      if (path.length === 2 && request.method === "POST") {
-        const raw = yield* parseJson(request);
-        const input = yield* Schema.decodeUnknownEffect(ReportUpdateFailuresInput)(raw);
-        return jsonEncoded(
-          RecordedCountResponse,
-          yield* tryPromise(() => sync.reportUpdateFailures(input)),
-          201,
-        );
-      }
-      return jsonEncoded(ErrorBody, { error: "Not found" }, 404);
-    }
 
     if (path[0] === "v1" && path[1] === "ops") {
       const sync = env.MANIFOLD_SYNC.getByName("default");

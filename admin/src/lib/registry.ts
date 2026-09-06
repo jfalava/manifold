@@ -6,7 +6,6 @@ import {
   AuthConnectionsResponse,
   AuthDisconnectedResponse,
   type AuthProvider as ContractAuthProvider,
-  type ChapterSource as ContractChapterSource,
   decodeResponse,
   EventsListResponse,
   ListState,
@@ -26,8 +25,6 @@ import {
   type RegistrySummary as ContractRegistrySummary,
   RegistrySummaryResponse,
   SyncOp,
-  UpdateFailuresListResponse,
-  type UpdateProbeFailure,
   type ListEvent,
 } from "@manifold/contract";
 
@@ -39,13 +36,11 @@ import { trusted } from "./trusted-cast";
 const MANIFOLD_API_ORIGIN = "https://manifold.jfa.dev/api";
 
 // Type aliases (not interfaces) so TanStack Table v9 accepts them as TData.
-export type ChapterSource = ContractChapterSource;
 export type RegistryLink = RegistryListEntry["providers"][number];
 export type RegistryListState = NonNullable<RegistryListEntry["state"]>;
 export type RegistryEntry = RegistryListEntry;
 export type SyncOpItem = SyncOp;
 export type ListEventItem = ListEvent;
-export type UpdateProbeFailureItem = UpdateProbeFailure;
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: secret binding comes from untyped workers env; parsed at I/O boundary
 async function resolveSecret(binding: unknown): Promise<string> {
@@ -157,11 +152,9 @@ export interface LoadRegistryResult {
 export interface LoadOperationsResult {
   readonly ops: readonly SyncOpItem[];
   readonly events: readonly ListEventItem[];
-  readonly updateFailures: readonly UpdateProbeFailureItem[];
   readonly errors: {
     readonly ops?: string;
     readonly events?: string;
-    readonly updateFailures?: string;
   };
 }
 
@@ -205,17 +198,13 @@ export const loadRegistry = createServerFn({ method: "GET" }).handler(
 
 export const loadOperations = createServerFn({ method: "GET" }).handler(
   async (): Promise<LoadOperationsResult> => {
-    const [ops, events, updateFailures] = await Promise.all([
+    const [ops, events] = await Promise.all([
       capture("ops", () => call("/v1/ops?limit=200", OpsListResponse)),
       capture("events", () => call("/v1/events?limit=100", EventsListResponse)),
-      capture("update-failures", () =>
-        call("/v1/update-failures?limit=200", UpdateFailuresListResponse),
-      ),
     ]);
     const errors: {
       ops?: string;
       events?: string;
-      updateFailures?: string;
     } = {}; // oxlint-disable-line anti-slop/no-known-value-widening -- SAFETY: errors map starts empty and is populated conditionally; anonymous type is intentionally widened from empty object
     if (!ops.ok) {
       errors.ops = ops.error;
@@ -223,13 +212,9 @@ export const loadOperations = createServerFn({ method: "GET" }).handler(
     if (!events.ok) {
       errors.events = events.error;
     }
-    if (!updateFailures.ok) {
-      errors.updateFailures = updateFailures.error;
-    }
     return {
       ops: ops.ok ? ops.value.ops : [],
       events: events.ok ? events.value.events : [],
-      updateFailures: updateFailures.ok ? updateFailures.value.failures : [],
       errors,
     };
   },
@@ -258,24 +243,6 @@ export const saveListState = createServerFn({ method: "POST" })
       },
     );
   });
-
-interface ChapterSourceInput {
-  readonly entryId: string;
-  readonly chapterSource: ChapterSource;
-}
-
-export const saveChapterSource = createServerFn({ method: "POST" })
-  .validator((data: ChapterSourceInput) => data)
-  .handler(async ({ data }) =>
-    call(
-      `/v1/entries/${encodeURIComponent(data.entryId)}/chapter-source`,
-      ContractRegistryEntry,
-      {
-        method: "POST",
-        body: { chapterSource: data.chapterSource, origin: "admin" },
-      },
-    ),
-  );
 
 interface BindInput {
   readonly entryId: string;
