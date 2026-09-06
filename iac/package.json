@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "alchemy dev",
     "plan": "alchemy plan",
-    "deploy": "bun ../api/scripts/protected-deploy.ts deploy",
-    "destroy": "bun ../api/scripts/protected-deploy.ts destroy",
+    "deploy": "alchemy deploy",
+    "destroy": "alchemy destroy",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit"
   },

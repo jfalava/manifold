@@ -5,7 +5,6 @@ import {
   isJsonObject,
   stringField,
   type JsonObject,
-  type JsonValue,
 } from "@manifold/json";
 import {
   createMangaDexClient,
@@ -523,18 +522,6 @@ export class ManifoldSync extends DurableObject<Env> {
       object.uploaded.getTime(),
       object.size,
     );
-  }
-
-  /** Recovery Worker only: importing a local archive never replaces live data. */
-  async restoreRegistryData(input: JsonValue): Promise<void> {
-    const backup = parseRegistryBackup(input);
-    await this.validateBackupKey(backup);
-    for (const table of REGISTRY_BACKUP_TABLE_NAMES) {
-      if (this.ctx.storage.sql.exec(`SELECT 1 FROM ${table} LIMIT 1`).toArray().length > 0) {
-        throw new Error("Offline recovery requires an empty registry");
-      }
-    }
-    this.applyRegistryBackup(backup);
   }
 
   async resumeRegistrySync(): Promise<void> {

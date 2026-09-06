@@ -82,12 +82,7 @@
     "plan:api": "bun run plan",
     "deploy:api": "bun run deploy",
     "destroy:api": "bun run destroy",
-    "backup": "bun api/scripts/registry-recovery.ts backup",
-    "backup:verify": "bun api/scripts/registry-recovery.ts verify",
-    "backup:bootstrap-sql": "bun api/scripts/registry-recovery.ts bootstrap-sql",
-    "backup:pack": "bun api/scripts/registry-recovery.ts pack",
-    "recovery:prepare": "bun api/scripts/registry-recovery.ts prepare",
-    "recovery:restore": "bun api/scripts/registry-recovery.ts restore",
+    "backup": "bun api/scripts/backup.ts",
     "inspect:realm": "node scripts/inspect-paperback-realm.mjs",
     "manifold": "bun run --cwd cli manifold"
   },

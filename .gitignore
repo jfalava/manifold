@@ -20,5 +20,4 @@ paperback-backup-example
 .tmp
 .amp/portals/
 .backups/
-.recovery/
 .env

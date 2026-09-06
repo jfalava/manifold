@@ -90,7 +90,6 @@ export interface ManifoldSyncStub {
   backupRegistry(): Promise<RegistryBackupMetadata>;
   listBackups(): Promise<readonly RegistryBackupMetadata[]>;
   restoreBackup(key: string): Promise<RegistryBackupMetadata>;
-  restoreRegistryData(input: import("@manifold/json").JsonValue): Promise<void>;
   resumeRegistrySync(): Promise<void>;
 }
 

@@ -10,32 +10,21 @@ place while native MangaDex and Comix extensions own reading and chapter updates
 ## Protecting and backing up the registry
 
 The `ManifoldApi` host for the `ManifoldSync` Durable Object namespace and the
-private R2 backup bucket are configured with Alchemy's
-`RemovalPolicy.retain()`. Removing or renaming either declaration, or
-destroying the Alchemy stack, therefore does not ask Cloudflare to delete the
-underlying data. It does not protect against deliberate deletion through the
-Cloudflare API/dashboard or direct storage deletion. The pinned Alchemy
-provider also aborts before upload if a deploy ever tries to send
-`ManifoldSync` in `deleted_classes`.
+private R2 backup bucket use Alchemy `RemovalPolicy.retain()`, so stack
+teardown does not delete them. The pinned Alchemy provider also aborts before
+upload if a deploy would put `ManifoldSync` in `deleted_classes`.
 
-Backups contain all ten persistent registry tables, including encrypted OAuth
-tokens. Daily R2 snapshots run at 03:00 UTC after deployment. `bun run deploy`
-and `bun run destroy` first create a fresh snapshot, verify its checksum, and
-restore it into an isolated local SQLite Durable Object. They also write a
-private archive outside Cloudflare with the snapshot, original secrets, and a
-self-contained recovery Worker. Deployment stops if any step fails.
-
-Archives default to `.backups/`. Set `MANIFOLD_BACKUP_DIR` in `iac/.env` to a
-backup disk or backed-up directory. Archives contain secrets and are written
-with owner-only permissions. Keep them private. R2 copies survive loss of the
-local machine; independent archives survive loss of the Cloudflare account.
+Backups cover all ten persistent registry tables (including encrypted OAuth
+tokens). After deployment, a daily R2 snapshot runs at 03:00 UTC. Create one on
+demand with the authenticated API or:
 
 ```sh
 bun run backup
-bun run backup:verify /absolute/path/to/ARCHIVE.recovery.json.gz
 ```
 
-The authenticated API also supports R2 snapshots:
+That posts a fresh R2 snapshot and writes a local JSON copy under `.backups/`
+(or `MANIFOLD_BACKUP_DIR`). Deploy and destroy are ordinary Alchemy commands;
+they do not require a local archive.
 
 ```sh
 curl -H "Authorization: Bearer $MANIFOLD_TOKEN" \
@@ -51,12 +40,16 @@ curl -X POST -H "Authorization: Bearer $MANIFOLD_TOKEN" \
   https://manifold.jfa.dev/api/v1/backups/restore
 ```
 
-Restore first backs up the current state and verifies the original token
-encryption key. Provider sync stays paused until explicitly resumed. Managed
-Secrets Store secrets are retained along with the Worker and bucket.
+Restore validates the encryption-key fingerprint, snapshots the current state
+to R2 first, then replaces tables in one transaction. Provider sync stays paused
+until you resume it:
 
-See [the recovery runbook](docs/registry-recovery.md) for the first deployment,
-restoring into a fresh namespace without Alchemy or the existing API, and
-resuming sync. SQLite Durable Object point-in-time recovery covers the past
-30 days as an additional recovery option. Inspect `bun run plan` before
-`CI=1 bun run deploy -- --yes`.
+```sh
+curl -X POST -H "Authorization: Bearer $MANIFOLD_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"confirm":true}' \
+  https://manifold.jfa.dev/api/v1/backups/resume
+```
+
+Cloudflare SQLite Durable Object [point-in-time recovery](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/#pitr-point-in-time-recovery-api)
+covers about the last 30 days while the original namespace still exists. Inspect
+`bun run plan` before `bun run deploy -- --yes`.

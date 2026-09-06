@@ -7,9 +7,6 @@ import * as Effect from "effect/Effect";
 import type { ManifoldSync as ManifoldSyncClass } from "../api/src/manifold-sync";
 
 import { defineManagedSecrets } from "./src/secrets";
-import { requireDeploymentArchive } from "../api/scripts/deployment-protection";
-
-await requireDeploymentArchive();
 
 // This is binding metadata for the ManifoldApi host, not a standalone
 // resource. ManifoldApi is retained below, and the pinned Alchemy provider
@@ -17,7 +14,7 @@ await requireDeploymentArchive();
 export const ManifoldSync = Cloudflare.DurableObject<ManifoldSyncClass>("ManifoldSync");
 
 // Backups are independently retained so a stack teardown cannot remove the
-// recovery path along with the Worker.
+// R2 recovery path along with the Worker.
 export const RegistryBackups = Cloudflare.R2.Bucket("RegistryBackups", {
   name: "manifold-registry-backups"
 }).pipe(RemovalPolicy.retain());
