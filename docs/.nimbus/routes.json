@@ -20,7 +20,8 @@
     "/cli/stale-status",
     "/cli/unfollow-dropped",
     "/development",
-    "/install"
+    "/install",
+    "/registry-recovery"
   ],
   "opaqueNamespaces": []
 }

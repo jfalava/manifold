@@ -1,0 +1,46 @@
+diff --git a/lib/Cloudflare/Workers/WorkerProvider.js b/lib/Cloudflare/Workers/WorkerProvider.js
+index ed5ca79..66c9c18 100644
+--- a/lib/Cloudflare/Workers/WorkerProvider.js
++++ b/lib/Cloudflare/Workers/WorkerProvider.js
+@@ -2562,14 +2562,17 @@ export const LiveWorkerProvider = () => Provider.effect(Worker, Effect.gen(funct
+             newTag: newMigrationTag,
+             newClasses,
+             deletedClasses,
+             renamedClasses,
+             transferredClasses,
+             newSqliteClasses,
+         };
++        if (name === "manifold-api" && deletedClasses.includes("ManifoldSync")) {
++            throw new Error("Refusing to delete manifold-api/ManifoldSync: Durable Object class deletion is blocked.");
++        }
+         const metadataContainers = [...containerClassNames].map((className) => ({
+             className,
+         }));
+         const compatibility = getCompatibility(news);
+         const tailConsumers = resolveTailConsumers(news.tailConsumers);
+         const streamingTailConsumers = resolveTailConsumers(news.streamingTailConsumers);
+         const metadata = {
+diff --git a/src/Cloudflare/Workers/WorkerProvider.ts b/src/Cloudflare/Workers/WorkerProvider.ts
+index d0d549a..a37f9f7 100644
+--- a/src/Cloudflare/Workers/WorkerProvider.ts
++++ b/src/Cloudflare/Workers/WorkerProvider.ts
+@@ -3555,14 +3555,19 @@ export const LiveWorkerProvider = () =>
+           newTag: newMigrationTag,
+           newClasses,
+           deletedClasses,
+           renamedClasses,
+           transferredClasses,
+           newSqliteClasses,
+         };
++        if (name === "manifold-api" && deletedClasses.includes("ManifoldSync")) {
++          throw new Error(
++            "Refusing to delete manifold-api/ManifoldSync: Durable Object class deletion is blocked.",
++          );
++        }
+ 
+         const metadataContainers = [...containerClassNames].map(
+           (className) => ({
+             className,
+           }),
+         );
+ 
