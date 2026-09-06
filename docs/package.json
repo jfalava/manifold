@@ -22,33 +22,33 @@
     "preview": "astro preview"
   },
   "dependencies": {
-    "@cloudflare/nimbus-docs": "catalog:docs",
+    "@cloudflare/nimbus-docs": "0.12.0",
     "@fontsource/google-sans-code": "catalog:fonts",
     "@fontsource/ibm-plex-sans": "catalog:fonts",
     "@fontsource/zilla-slab": "catalog:fonts",
-    "@iconify-json/ph": "catalog:docs",
+    "@iconify-json/ph": "1.2.2",
     "@manifold/json": "workspace:*",
-    "astro": "catalog:docs",
+    "astro": "~7.3.1",
     "astro-icon": "1.2.0",
-    "astro-og-canvas": "catalog:docs",
-    "canvaskit-wasm": "catalog:docs",
-    "clsx": "catalog:styling",
-    "tailwind-merge": "catalog:styling"
+    "astro-og-canvas": "0.13.1",
+    "canvaskit-wasm": "0.42.0",
+    "clsx": "2.1.1",
+    "tailwind-merge": "3.6.0"
   },
   "devDependencies": {
-    "@astrojs/check": "catalog:build",
+    "@astrojs/check": "0.9.10",
+    "@astrojs/compiler": "4.0.0",
     "@oxlint/plugins": "catalog:build",
     "@tailwindcss/vite": "catalog:styling",
     "@typescript-eslint/parser": "8.69.0",
-    "eslint": "10.9.1",
+    "eslint": "10.10.0",
     "eslint-plugin-astro": "3.1.0",
     "oxlint": "catalog:build",
-    "pagefind": "catalog:build",
+    "pagefind": "1.5.2",
     "prettier": "3.9.6",
     "prettier-plugin-astro": "0.14.1",
-    "satteri": "catalog:build",
+    "satteri": "0.10.5",
     "tailwindcss": "catalog:styling",
-    "typescript": "6.0.2",
-    "wrangler": "4.129.0"
+    "typescript": "6.0.2"
   }
 }
