@@ -104,18 +104,20 @@ export const drainAniListOps = async (): Promise<void> => {
     mediaListEntryId?: number;
   }[] = [];
   for (const op of ops) {
+    let mediaListEntryId: number | undefined;
     try {
-      const mediaListEntryId = await executeOp(token, op, mediaListEntryIds);
-      results.push({ opId: op.opId, ok: true, ...(mediaListEntryId !== undefined && { mediaListEntryId }) });
-      const drainedAnilistId = op.payload["anilistId"];
-      console.info(
-        `[manifold] drained op:${op.kind}:${isString(drainedAnilistId) ? drainedAnilistId : ""}`,
-      );
+      mediaListEntryId = await executeOp(token, op, mediaListEntryIds);
     } catch (cause) {
       const message = errorMessage(cause);
       console.error(`[manifold] drain failed:${op.kind}:${message}`);
       results.push({ opId: op.opId, ok: false, error: message });
+      continue;
     }
+    results.push({ opId: op.opId, ok: true, ...(mediaListEntryId !== undefined && { mediaListEntryId }) });
+    const drainedAnilistId = op.payload["anilistId"];
+    console.log(
+      `[manifold] drained op:${op.kind}:${isString(drainedAnilistId) ? drainedAnilistId : ""}`,
+    );
   }
 
   try {

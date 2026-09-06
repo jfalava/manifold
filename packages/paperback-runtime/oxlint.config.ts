@@ -14,5 +14,7 @@ export default defineConfig({
   rules: {
     ...baseConfig.rules,
     ...antiSlopEffectRules,
+    // Paperback's JSCore console has log/warn/error, but no info method.
+    "no-console": ["error", { allow: ["log", "warn", "error"] }],
   },
 });

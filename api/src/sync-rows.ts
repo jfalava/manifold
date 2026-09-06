@@ -117,6 +117,25 @@ export const toProgress = (row: ProgressRow): ReadingProgress => ({
   version: row.version,
 });
 
+/**
+ * Reading progress means the furthest known chapter, not the most recently
+ * tapped chapter. Paperback can deliver a newly marked batch out of chapter
+ * order, and rereading an older chapter must not move progress backwards.
+ */
+export const shouldAdvanceProgress = (
+  current: Pick<ProgressRow, "chapter_number" | "read_at"> | undefined,
+  chapterNumber: number | undefined,
+  readAt: number,
+): boolean => {
+  if (!current) {return true;}
+  if (chapterNumber === undefined) {
+    return current.chapter_number === null && readAt >= current.read_at;
+  }
+  if (current.chapter_number === null) {return true;}
+  return chapterNumber > current.chapter_number ||
+    (chapterNumber === current.chapter_number && readAt >= current.read_at);
+};
+
 export const toOp = (row: OpRow): SyncOp => ({
   id: row.id,
   opId: row.op_id,

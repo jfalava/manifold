@@ -262,7 +262,7 @@
     },
     "tracker": {
       "name": "@manifold/tracker",
-      "version": "2026.9.5",
+      "version": "2026.9.12",
       "dependencies": {
         "@manifold/canonical": "workspace:*",
         "@manifold/json": "workspace:*",

@@ -106,7 +106,7 @@ function RegistryPage() {
           <Text as="h1" variant="heading">
             Canonical registry
           </Text>
-          <Text>Provider-neutral entries with tracker bindings and list state.</Text>
+          <Text>Provider-neutral entries with tracker bindings, list state, and reading progress.</Text>
         </div>
         <Button onClick={() => void refresh()} disabled={busy}>
           {busy ? "Working…" : "Refresh"}
@@ -586,6 +586,31 @@ function EntriesTable({
         ),
       },
       {
+        id: "progress",
+        accessorFn: (row) => row.progress?.chapterNumber ?? -1,
+        header: "Progress",
+        cell: ({ row }) => {
+          const progress = row.original.progress;
+          if (!progress) {return <span className="opacity-40">—</span>;}
+          const chapter = progress.chapterNumber;
+          const volume = progress.volumeNumber;
+          return (
+            <div
+              className="grid whitespace-nowrap"
+              title={`Last read ${new Date(progress.readAt).toLocaleString()}`}
+            >
+              <span className="tabular-nums">
+                {chapter === undefined ? "Read" : `Ch. ${chapter}`}
+                {volume === undefined ? "" : ` · Vol. ${volume}`}
+              </span>
+              {progress.provider && (
+                <span className="text-xs capitalize opacity-50">{progress.provider}</span>
+              )}
+            </div>
+          );
+        },
+      },
+      {
         id: "actions",
         header: "",
         enableSorting: false,
@@ -693,7 +718,7 @@ function EntriesTable({
         table={table}
         emptyText="No registry entries match."
         loading={loading}
-        skeletonColumns={6}
+        skeletonColumns={7}
         renderRow={(row, cells) => (
           <HoverCoverRow key={row.id} src={coverForEntry(row.original)}>
             {cells}

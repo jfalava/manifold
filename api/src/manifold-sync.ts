@@ -70,6 +70,7 @@ import {
   type OpRow,
   type ProgressRow,
   type ProviderRow,
+  shouldAdvanceProgress,
   toListEvent,
   toListState,
   toOp,
@@ -530,33 +531,33 @@ export class ManifoldSync extends DurableObject<Env> {
       );
 
       const current = this.ctx.storage.sql
-        .exec<{ version: number }>("SELECT version FROM progress_state WHERE entry_id = ?", targetEntryId)
+        .exec<ProgressRow>("SELECT * FROM progress_state WHERE entry_id = ?", targetEntryId)
         .toArray()[0];
-      const nextVersion = (current?.version ?? 0) + 1;
-
-      this.ctx.storage.sql.exec(
-        `INSERT INTO progress_state
-           (entry_id, chapter_key, chapter_number, volume_number, provider,
-            source_chapter_id, read_at, version)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(entry_id) DO UPDATE SET
-           chapter_key = excluded.chapter_key,
-           chapter_number = excluded.chapter_number,
-           volume_number = excluded.volume_number,
-           provider = excluded.provider,
-           source_chapter_id = excluded.source_chapter_id,
-           read_at = excluded.read_at,
-           version = excluded.version
-         WHERE excluded.read_at >= progress_state.read_at`,
-        targetEntryId,
-        input.chapterKey,
-        input.chapterNumber ?? null,
-        input.volumeNumber ?? null,
-        input.provider ?? null,
-        input.sourceChapterId ?? null,
-        readAt,
-        nextVersion,
-      );
+      if (shouldAdvanceProgress(current, input.chapterNumber, readAt)) {
+        const nextVersion = (current?.version ?? 0) + 1;
+        this.ctx.storage.sql.exec(
+          `INSERT INTO progress_state
+             (entry_id, chapter_key, chapter_number, volume_number, provider,
+              source_chapter_id, read_at, version)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(entry_id) DO UPDATE SET
+             chapter_key = excluded.chapter_key,
+             chapter_number = excluded.chapter_number,
+             volume_number = excluded.volume_number,
+             provider = excluded.provider,
+             source_chapter_id = excluded.source_chapter_id,
+             read_at = excluded.read_at,
+             version = excluded.version`,
+          targetEntryId,
+          input.chapterKey,
+          input.chapterNumber ?? null,
+          input.volumeNumber ?? null,
+          input.provider ?? null,
+          input.sourceChapterId ?? null,
+          readAt,
+          nextVersion,
+        );
+      }
 
       if (input.provider === "mangadex" && input.sourceChapterId) {
         const payload: JsonObject = {
@@ -1232,6 +1233,7 @@ export class ManifoldSync extends DurableObject<Env> {
       Effect.sync(() => {
         const results: (RegistryEntry & {
           state?: ListState;
+          progress?: ReadingProgress;
           tombstoned?: boolean;
         })[] = [];
         for (const row of this.ctx.storage.sql
@@ -1244,9 +1246,11 @@ export class ManifoldSync extends DurableObject<Env> {
           const entry = this.readEntry(row.id, false);
           if (!entry) {continue;}
           const state = this.readListState(row.id);
+          const progress = this.getProgressSync(row.id);
           results.push({
             ...entry,
             ...(state && { state }),
+            ...(progress && { progress }),
             ...(row.tombstoned_at !== null && { tombstoned: true })
           });
         }

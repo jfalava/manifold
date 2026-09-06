@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { encodeResponse, RegistryEntry } from "@manifold/contract";
-import { toRegistryEntry, type EntryRow, type ProviderRow } from "../src/sync-rows.js";
+import {
+  shouldAdvanceProgress,
+  toRegistryEntry,
+  type EntryRow,
+  type ProviderRow,
+} from "../src/sync-rows.js";
 
 const baseRow = (overrides: Partial<EntryRow> = {}): EntryRow => ({
   id: "ae13e11b-9e53-45db-8d72-18b7c07bb377",
@@ -81,5 +86,21 @@ describe("toRegistryEntry", () => {
     expect(entry.providerId).toBe(entry.id);
     expect(entry.title).toBe(entry.id);
     expect(() => encodeResponse(RegistryEntry, entry)).not.toThrow();
+  });
+});
+
+describe("shouldAdvanceProgress", () => {
+  it("keeps the furthest chapter when a read batch arrives out of order", () => {
+    const current = { chapter_number: 22, read_at: 100 };
+
+    expect(shouldAdvanceProgress(current, 1.1, 200)).toBe(false);
+    expect(shouldAdvanceProgress(current, 23, 50)).toBe(true);
+  });
+
+  it("uses read time to break ties and order progress without chapter numbers", () => {
+    expect(shouldAdvanceProgress({ chapter_number: 22, read_at: 100 }, 22, 99)).toBe(false);
+    expect(shouldAdvanceProgress({ chapter_number: 22, read_at: 100 }, 22, 100)).toBe(true);
+    expect(shouldAdvanceProgress({ chapter_number: null, read_at: 100 }, undefined, 101)).toBe(true);
+    expect(shouldAdvanceProgress({ chapter_number: 22, read_at: 100 }, undefined, 101)).toBe(false);
   });
 });

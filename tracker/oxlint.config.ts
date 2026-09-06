@@ -22,7 +22,7 @@ export default defineConfig({
   rules: {
     ...baseConfig.rules,
     ...antiSlopEffectRules,
-    // Paperback extension console is the only on-device debug surface.
-    "no-console": ["error", { allow: ["log", "warn", "error", "info"] }],
+    // Paperback's JSCore console has log/warn/error, but no info method.
+    "no-console": ["error", { allow: ["log", "warn", "error"] }],
   },
 });

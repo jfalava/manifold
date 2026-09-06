@@ -47,20 +47,6 @@ export const RegistryEntry = Schema.Struct({
 });
 export type RegistryEntry = Schema.Schema.Type<typeof RegistryEntry>;
 
-/** Registry list row includes optional list state + tombstone flag. */
-export const RegistryListEntry = Schema.Struct({
-  id: Schema.NonEmptyString,
-  provider: CanonicalProvider,
-  providerId: Schema.NonEmptyString,
-  title: Schema.NonEmptyString,
-  createdAt: Schema.Number,
-  updatedAt: Schema.Number,
-  providers: Schema.Array(ProviderLink),
-  state: Schema.optional(ListState),
-  tombstoned: Schema.optional(Schema.Boolean),
-});
-export type RegistryListEntry = Schema.Schema.Type<typeof RegistryListEntry>;
-
 export const ReadingProgress = Schema.Struct({
   entryId: Schema.NonEmptyString,
   chapterKey: Schema.NonEmptyString,
@@ -72,6 +58,21 @@ export const ReadingProgress = Schema.Struct({
   version: Schema.Number,
 });
 export type ReadingProgress = Schema.Schema.Type<typeof ReadingProgress>;
+
+/** Registry list row includes optional list/progress state + tombstone flag. */
+export const RegistryListEntry = Schema.Struct({
+  id: Schema.NonEmptyString,
+  provider: CanonicalProvider,
+  providerId: Schema.NonEmptyString,
+  title: Schema.NonEmptyString,
+  createdAt: Schema.Number,
+  updatedAt: Schema.Number,
+  providers: Schema.Array(ProviderLink),
+  state: Schema.optional(ListState),
+  progress: Schema.optional(ReadingProgress),
+  tombstoned: Schema.optional(Schema.Boolean),
+});
+export type RegistryListEntry = Schema.Schema.Type<typeof RegistryListEntry>;
 
 export const ListEvent = Schema.Struct({
   id: Schema.Number,
