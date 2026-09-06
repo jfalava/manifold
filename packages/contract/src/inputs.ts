@@ -88,6 +88,12 @@ export const NukeEntryInput = Schema.Struct({
 });
 export type NukeEntryInput = Schema.Schema.Type<typeof NukeEntryInput>;
 
+export const RestoreRegistryBackupInput = Schema.Struct({
+  key: Schema.NonEmptyString,
+  confirm: Schema.Literal(true),
+});
+export type RestoreRegistryBackupInput = Schema.Schema.Type<typeof RestoreRegistryBackupInput>;
+
 export const MangaDexMatchInput = Schema.Struct({
   id: Schema.NonEmptyString,
   provider: Schema.Literals(["anilist", "mal"]),

@@ -1,13 +1,26 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Output from "alchemy/Output";
+import * as RemovalPolicy from "alchemy/RemovalPolicy";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import type { ManifoldSync as ManifoldSyncClass } from "../api/src/manifold-sync";
 
 import { defineManagedSecrets } from "./src/secrets";
+import { requireDeploymentArchive } from "../api/scripts/deployment-protection";
 
+await requireDeploymentArchive();
+
+// This is binding metadata for the ManifoldApi host, not a standalone
+// resource. ManifoldApi is retained below, and the pinned Alchemy provider
+// fails closed if this class ever appears in deleted_classes.
 export const ManifoldSync = Cloudflare.DurableObject<ManifoldSyncClass>("ManifoldSync");
+
+// Backups are independently retained so a stack teardown cannot remove the
+// recovery path along with the Worker.
+export const RegistryBackups = Cloudflare.R2.Bucket("RegistryBackups", {
+  name: "manifold-registry-backups"
+}).pipe(RemovalPolicy.retain());
 
 export const SharedSecretsStore = Cloudflare.SecretsStore.Store(
   "SharedSecretsStore"
@@ -84,17 +97,19 @@ export const ManifoldApi = Cloudflare.Worker("ManifoldApi", {
     directory: "../api/catalog-assets",
     runWorkerFirst: true,
   },
+  crons: ["0 3 * * *"],
   env: {
     AI: Cloudflare.Workers.AI(),
     MANGADEX_INDEX: MangaDexIndex,
     MANIFOLD_SYNC: ManifoldSync,
+    REGISTRY_BACKUPS: RegistryBackups,
     ENVIRONMENT: "production",
     MANIFOLD_OAUTH_REDIRECT_BASE_URL: Config.string("MANIFOLD_OAUTH_REDIRECT_BASE_URL"),
     MANIFOLD_ANILIST_CLIENT_ID: Config.string("MANIFOLD_ANILIST_CLIENT_ID"),
     MANIFOLD_MAL_CLIENT_ID: Config.string("MANIFOLD_MAL_CLIENT_ID"),
     MANIFOLD_MANGADEX_CLIENT_ID: Config.string("MANIFOLD_MANGADEX_CLIENT_ID")
   }
-});
+}).pipe(RemovalPolicy.retain());
 
 export const Worker = ManifoldApi;
 

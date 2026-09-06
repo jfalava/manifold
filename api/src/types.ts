@@ -14,6 +14,7 @@ import type {
   ReadingProgress,
   RecordReadInput,
   RegistryEntry,
+  RegistryBackupMetadata,
   RegistryListEntry,
   RegistrySummary,
   ResolveEntryInput,
@@ -86,6 +87,11 @@ export interface ManifoldSyncStub {
   retryOp(opId: string): Promise<SyncOp | undefined>;
   listOps(state?: string, target?: string, limit?: number): Promise<readonly SyncOp[]>;
   opsSummary(limit?: number): Promise<OpsSummary>;
+  backupRegistry(): Promise<RegistryBackupMetadata>;
+  listBackups(): Promise<readonly RegistryBackupMetadata[]>;
+  restoreBackup(key: string): Promise<RegistryBackupMetadata>;
+  restoreRegistryData(input: import("@manifold/json").JsonValue): Promise<void>;
+  resumeRegistrySync(): Promise<void>;
 }
 
 /** Worker binding that may be a plain string (local dev) or a Secrets Store secret. */
@@ -94,6 +100,7 @@ export type RuntimeSecret = string | SecretsStoreSecret;
 export interface Env {
   AI: Ai;
   MANGADEX_INDEX: VectorizeIndex;
+  REGISTRY_BACKUPS?: R2Bucket;
   MANIFOLD_SYNC: {
     getByName(name: string): ManifoldSyncStub;
   };

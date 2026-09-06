@@ -1,4 +1,5 @@
 import { adopt } from "alchemy/AdoptPolicy";
+import { retain } from "alchemy/RemovalPolicy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
@@ -108,7 +109,7 @@ export const defineManagedSecrets = Effect.fn("defineManagedSecrets")(
           name: secretName,
           value: Redacted.make(value)
         }
-      ).pipe(adopt(true));
+      ).pipe(adopt(true), retain());
     }
 
     return managed;

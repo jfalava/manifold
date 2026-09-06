@@ -29,6 +29,7 @@ export {
   ReadingProgress,
   RecordReadInput,
   RegistryEntry,
+  RegistryBackupMetadata,
   RegistryListEntry,
   RegistryProvider,
   RegistrySummary,

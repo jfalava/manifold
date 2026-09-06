@@ -14,6 +14,7 @@ import {
   type OpsSummary,
   type ReadingProgress,
   type RegistryEntry,
+  type RegistryBackupMetadata,
   type RegistryListEntry,
   type RegistrySummary,
   type SyncOp,
@@ -42,6 +43,7 @@ export type JsonResponseBody =
   | OAuthStart
   | ReadingProgress
   | RegistryEntry
+  | RegistryBackupMetadata
   | RegistryListEntry
   | SyncOp
   | readonly AuthConnection[]
@@ -65,6 +67,9 @@ export type JsonResponseBody =
   | { readonly ops: readonly SyncOp[] }
   | { readonly progress: ReadingProgress | null }
   | { readonly retried: number }
+  | { readonly backup: RegistryBackupMetadata }
+  | { readonly backups: readonly RegistryBackupMetadata[] }
+  | { readonly restored: true; readonly backup: RegistryBackupMetadata }
   | { readonly state: ListState | null }
   | { readonly stats: Record<string, MangaDexEntryStat> }
   | { readonly updated: number };

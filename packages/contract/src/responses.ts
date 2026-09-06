@@ -103,6 +103,35 @@ export const OpsSummaryResponse = Schema.Struct({
 });
 export type OpsSummaryResponse = Schema.Schema.Type<typeof OpsSummaryResponse>;
 
+export const RegistryBackupMetadata = Schema.Struct({
+  key: Schema.NonEmptyString,
+  createdAt: Schema.Number,
+  uploadedAt: Schema.Number,
+  size: Schema.Number,
+  databaseSize: Schema.Number,
+  entryCount: Schema.Number,
+  bookmark: Schema.NonEmptyString,
+});
+export type RegistryBackupMetadata = Schema.Schema.Type<typeof RegistryBackupMetadata>;
+
+export const RegistryBackupResponse = Schema.Struct({
+  backup: RegistryBackupMetadata,
+});
+export type RegistryBackupResponse = Schema.Schema.Type<typeof RegistryBackupResponse>;
+
+export const RegistryBackupsResponse = Schema.Struct({
+  backups: Schema.Array(RegistryBackupMetadata),
+});
+export type RegistryBackupsResponse = Schema.Schema.Type<typeof RegistryBackupsResponse>;
+
+export const RegistryBackupRestoreResponse = Schema.Struct({
+  restored: Schema.Literal(true),
+  backup: RegistryBackupMetadata,
+});
+export type RegistryBackupRestoreResponse = Schema.Schema.Type<
+  typeof RegistryBackupRestoreResponse
+>;
+
 export const MangaDexReadMarkersResponse = Schema.Struct({
   chapters: Schema.Array(Schema.String),
 });

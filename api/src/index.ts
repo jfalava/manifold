@@ -15,6 +15,7 @@ import {
 } from "./http";
 import { ManifoldSync } from "./manifold-sync";
 import { handleAuth, handleHealth } from "./routes/health-auth";
+import { handleBackups } from "./routes/backups";
 import { handleCanonical } from "./routes/canonical";
 import { handleMangaDex } from "./routes/mangadex";
 import { handleOps } from "./routes/ops";
@@ -44,6 +45,8 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
 
     const canonical = yield* handleCanonical(ctx);
     if (canonical) {return canonical;}
+    const backups = yield* handleBackups(ctx);
+    if (backups) {return backups;}
     const registry = yield* handleRegistry(ctx);
     if (registry) {return registry;}
     const mangadex = yield* handleMangaDex(ctx);
@@ -84,4 +87,13 @@ const app: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
     }
   });
 
-export default app;
+const worker = {
+  fetch: (request: Request, env: Env, executionContext: ExecutionContext) =>
+    app.fetch(request, env, executionContext),
+  scheduled: async (_controller: ScheduledController, env: Env): Promise<void> => {
+    const backup = await env.MANIFOLD_SYNC.getByName("default").backupRegistry();
+    console.info(`[manifold/api] scheduled registry backup:${backup.key}`);
+  },
+};
+
+export default worker;

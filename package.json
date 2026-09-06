@@ -1,6 +1,9 @@
 {
   "name": "manifold",
   "private": true,
+  "patchedDependencies": {
+    "alchemy@2.0.0-beta.76": "patches/alchemy@2.0.0-beta.76.patch"
+  },
   "workspaces": {
     "packages": [
       "iac",
@@ -29,6 +32,7 @@
         "oxlint-tsgolint": "7.0.2001",
         "@oxlint/plugins": "1.81.0",
         "typescript": "7.0.2",
+        "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
         "vitest": "5.0.0"
       },
       "styling": {
@@ -78,6 +82,12 @@
     "plan:api": "bun run plan",
     "deploy:api": "bun run deploy",
     "destroy:api": "bun run destroy",
+    "backup": "bun api/scripts/registry-recovery.ts backup",
+    "backup:verify": "bun api/scripts/registry-recovery.ts verify",
+    "backup:bootstrap-sql": "bun api/scripts/registry-recovery.ts bootstrap-sql",
+    "backup:pack": "bun api/scripts/registry-recovery.ts pack",
+    "recovery:prepare": "bun api/scripts/registry-recovery.ts prepare",
+    "recovery:restore": "bun api/scripts/registry-recovery.ts restore",
     "inspect:realm": "node scripts/inspect-paperback-realm.mjs",
     "manifold": "bun run --cwd cli manifold"
   },

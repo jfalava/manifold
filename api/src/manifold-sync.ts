@@ -1,6 +1,12 @@
 import { DurableObject } from "cloudflare:workers";
 import { Effect, Schema } from "effect";
-import { errorMessage, isJsonObject, stringField, type JsonObject } from "@manifold/json";
+import {
+  errorMessage,
+  isJsonObject,
+  stringField,
+  type JsonObject,
+  type JsonValue,
+} from "@manifold/json";
 import {
   createMangaDexClient,
   createMangaDexPasswordGrant,
@@ -29,6 +35,7 @@ import {
   type OpTarget,
   type ReadingProgress,
   type RecordReadInput,
+  type RegistryBackupMetadata,
   type ResolveEntryInput,
   type SetListStateInput,
   type SetMangaDexStatusInput,
@@ -78,6 +85,19 @@ import {
   toRegistryEntry,
 } from "./sync-rows";
 import { decryptToken, encryptToken } from "./token-crypto";
+import {
+  backupKey,
+  isRegistryBackupKey,
+  parseRegistryBackup,
+  REGISTRY_BACKUP_PREFIX,
+  REGISTRY_BACKUP_TABLE_COLUMNS,
+  REGISTRY_BACKUP_TABLE_NAMES,
+  MAX_REGISTRY_BACKUP_BYTES,
+  readBackupBody,
+  sha256,
+  toBackupRows,
+  type RegistryBackup,
+} from "./registry-backup";
 import type { Env } from "./types";
 
 export type { MangaDexEntryStat };
@@ -406,6 +426,135 @@ export class ManifoldSync extends DurableObject<Env> {
           .filter((entry): entry is RegistryEntry => entry !== undefined);
       })
     );
+  }
+
+  async backupRegistry(): Promise<RegistryBackupMetadata> {
+    const bucket = this.env.REGISTRY_BACKUPS;
+    if (!bucket) {throw new Error("Registry backup bucket is not configured");}
+    const backup = await this.snapshotRegistry();
+
+    const key = backupKey(backup.createdAt);
+    const body = JSON.stringify(backup);
+    const size = new TextEncoder().encode(body).byteLength;
+    if (size > MAX_REGISTRY_BACKUP_BYTES) {
+      throw new Error("Registry backup exceeds the 16 MiB recovery limit");
+    }
+    const object = await bucket.put(key, body, {
+      httpMetadata: { contentType: "application/json", cacheControl: "no-store" },
+      customMetadata: {
+        sha256: await sha256(body),
+        createdAt: String(backup.createdAt),
+        databaseSize: String(backup.databaseSize),
+        entryCount: String(backup.tables.canonical_entries.length),
+        bookmark: backup.bookmark,
+      },
+    });
+
+    return this.backupMetadata(
+      backup,
+      key,
+      object.uploaded.getTime(),
+      size,
+    );
+  }
+
+  async listBackups(): Promise<readonly RegistryBackupMetadata[]> {
+    const bucket = this.env.REGISTRY_BACKUPS;
+    if (!bucket) {throw new Error("Registry backup bucket is not configured");}
+
+    const backups: RegistryBackupMetadata[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await bucket.list({
+        prefix: REGISTRY_BACKUP_PREFIX,
+        limit: 1000,
+        ...(cursor !== undefined && { cursor }),
+        include: ["customMetadata"],
+      });
+      for (const object of page.objects) {
+        const metadata = object.customMetadata;
+        const createdAt = Number(metadata?.createdAt);
+        const databaseSize = Number(metadata?.databaseSize);
+        const entryCount = Number(metadata?.entryCount);
+        const bookmark = metadata?.bookmark;
+        if (
+          !isRegistryBackupKey(object.key) ||
+          !Number.isFinite(createdAt) ||
+          !Number.isFinite(databaseSize) ||
+          !Number.isFinite(entryCount) ||
+          !bookmark
+        ) {
+          continue;
+        }
+        backups.push({
+          key: object.key,
+          createdAt,
+          uploadedAt: object.uploaded.getTime(),
+          size: object.size,
+          databaseSize,
+          entryCount,
+          bookmark,
+        });
+      }
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor !== undefined);
+
+    return backups.sort((left, right) => right.createdAt - left.createdAt);
+  }
+
+  async restoreBackup(key: string): Promise<RegistryBackupMetadata> {
+    if (!isRegistryBackupKey(key)) {
+      throw new Error("Invalid registry backup key");
+    }
+    const bucket = this.env.REGISTRY_BACKUPS;
+    if (!bucket) {throw new Error("Registry backup bucket is not configured");}
+
+    // Download and validate before entering the synchronous transaction.
+    const object = await bucket.get(key);
+    if (!object) {throw new Error(`Registry backup not found: ${key}`);}
+    const backup = await readBackupBody(object.body, object.customMetadata?.sha256 ?? "");
+    await this.validateBackupKey(backup);
+    // Preserve the state being replaced, including when the wrong backup was chosen.
+    await this.backupRegistry();
+    this.applyRegistryBackup(backup);
+    return this.backupMetadata(
+      backup,
+      key,
+      object.uploaded.getTime(),
+      object.size,
+    );
+  }
+
+  /** Recovery Worker only: importing a local archive never replaces live data. */
+  async restoreRegistryData(input: JsonValue): Promise<void> {
+    const backup = parseRegistryBackup(input);
+    await this.validateBackupKey(backup);
+    for (const table of REGISTRY_BACKUP_TABLE_NAMES) {
+      if (this.ctx.storage.sql.exec(`SELECT 1 FROM ${table} LIMIT 1`).toArray().length > 0) {
+        throw new Error("Offline recovery requires an empty registry");
+      }
+    }
+    this.applyRegistryBackup(backup);
+  }
+
+  async resumeRegistrySync(): Promise<void> {
+    this.ctx.storage.kv.delete("registry_sync_paused");
+    await this.scheduleSync();
+  }
+
+  private async validateBackupKey(backup: RegistryBackup): Promise<void> {
+    const fingerprint = await sha256(await readSecret(
+      this.env.MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET,
+      "MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET",
+    ));
+    if (fingerprint !== backup.tokenKeyHash) {
+      throw new Error("Restore requires the original MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET");
+    }
+  }
+
+  private applyRegistryBackup(backup: RegistryBackup): void {
+    this.restoreRegistry(backup);
+    this.mdLibraryCache = undefined;
   }
 
   async getEntry(entryId: string): Promise<RegistryEntry | undefined> {
@@ -1744,6 +1893,7 @@ export class ManifoldSync extends DurableObject<Env> {
   }
 
   async alarm(): Promise<void> {
+    if (this.ctx.storage.kv.get("registry_sync_paused")) {return;}
     const rows = this.ctx.storage.sql
       .exec<OpRow>(
         `SELECT * FROM sync_ops
@@ -1893,6 +2043,7 @@ export class ManifoldSync extends DurableObject<Env> {
   }
 
   private async scheduleSync(delayMs = 0): Promise<void> {
+    if (this.ctx.storage.kv.get("registry_sync_paused")) {return;}
     const pending = this.ctx.storage.sql
       .exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM sync_ops WHERE state = 'pending' AND target = 'mangadex'"
@@ -2247,5 +2398,159 @@ export class ManifoldSync extends DurableObject<Env> {
       .exec<ProgressRow>("SELECT * FROM progress_state WHERE entry_id = ?", entryId)
       .toArray()[0];
     return row ? toProgress(row) : undefined;
+  }
+
+  private async snapshotRegistry(): Promise<RegistryBackup> {
+    const tokenKeyHash = await sha256(await readSecret(
+      this.env.MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET,
+      "MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET",
+    ));
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const createdAt = now();
+      const bookmark = await this.ctx.storage.getCurrentBookmark();
+      const tables: RegistryBackup["tables"] = {
+        canonical_entries: toBackupRows(
+          this.ctx.storage.sql
+            .exec<EntryRow>(
+              "SELECT id, provider, provider_id, title, created_at, updated_at, tombstoned_at FROM canonical_entries",
+            )
+            .toArray(),
+          REGISTRY_BACKUP_TABLE_COLUMNS.canonical_entries,
+        ),
+        provider_links: toBackupRows(
+          this.ctx.storage.sql
+            .exec<ProviderRow>(
+              "SELECT entry_id, provider, external_id, title, updated_at FROM provider_links",
+            )
+            .toArray(),
+          REGISTRY_BACKUP_TABLE_COLUMNS.provider_links,
+        ),
+        read_events: toBackupRows(
+          this.ctx.storage.sql
+            .exec<{ event_id: string; entry_id: string; chapter_key: string; read_at: number }>(
+              "SELECT event_id, entry_id, chapter_key, read_at FROM read_events",
+            )
+            .toArray(),
+          REGISTRY_BACKUP_TABLE_COLUMNS.read_events,
+        ),
+        progress_state: toBackupRows(
+          this.ctx.storage.sql
+            .exec<ProgressRow>(
+              "SELECT entry_id, chapter_key, chapter_number, volume_number, provider, source_chapter_id, read_at, version FROM progress_state",
+            )
+            .toArray(),
+          REGISTRY_BACKUP_TABLE_COLUMNS.progress_state,
+        ),
+        md_status_queue: toBackupRows(
+          this.ctx.storage.sql
+            .exec<{ entry_id: string; created_at: number; attempts: number }>(
+              "SELECT entry_id, created_at, attempts FROM md_status_queue",
+            )
+            .toArray(),
+          REGISTRY_BACKUP_TABLE_COLUMNS.md_status_queue,
+        ),
+        md_feed_stats: toBackupRows(
+          this.ctx.storage.sql
+            .exec<{ manga_id: string; payload: string; computed_at: number }>(
+              "SELECT manga_id, payload, computed_at FROM md_feed_stats",
+            )
+            .toArray(),
+          REGISTRY_BACKUP_TABLE_COLUMNS.md_feed_stats,
+        ),
+        oauth_tokens: toBackupRows(
+          this.ctx.storage.sql
+            .exec<OAuthTokenRow>(
+              "SELECT provider, access_token, refresh_token, token_type, expires_at, scope, updated_at FROM oauth_tokens",
+            )
+            .toArray(),
+          REGISTRY_BACKUP_TABLE_COLUMNS.oauth_tokens,
+        ),
+        list_state: toBackupRows(
+          this.ctx.storage.sql
+            .exec<ListStateRow>(
+              "SELECT entry_id, status, score, notes, started_at, completed_at, volume_progress, media_list_entry_id, updated_at FROM list_state",
+            )
+            .toArray(),
+          REGISTRY_BACKUP_TABLE_COLUMNS.list_state,
+        ),
+        sync_ops: toBackupRows(
+          this.ctx.storage.sql
+            .exec<OpRow>(
+              "SELECT id, op_id, target, kind, origin, payload, state, attempts, last_error, created_at, updated_at FROM sync_ops",
+            )
+            .toArray(),
+          REGISTRY_BACKUP_TABLE_COLUMNS.sync_ops,
+        ),
+        list_events: toBackupRows(
+          this.ctx.storage.sql
+            .exec<ListEventRow>(
+              "SELECT id, entry_id, kind, origin, detail, created_at FROM list_events",
+            )
+            .toArray(),
+          REGISTRY_BACKUP_TABLE_COLUMNS.list_events,
+        ),
+      };
+      return {
+        version: 1,
+        kind: "manifold-sync",
+        createdAt,
+        bookmark,
+        databaseSize: this.ctx.storage.sql.databaseSize,
+        tokenKeyHash,
+        tables,
+      };
+    });
+  }
+
+  private restoreRegistry(backup: RegistryBackup): void {
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.kv.put("registry_sync_paused", true);
+      this.ctx.storage.sql.exec("DELETE FROM oauth_sessions");
+      for (const table of [
+        "md_status_queue",
+        "progress_state",
+        "read_events",
+        "list_state",
+        "list_events",
+        "provider_links",
+        "canonical_entries",
+        "md_feed_stats",
+        "oauth_tokens",
+        "sync_ops",
+      ]) {
+        this.ctx.storage.sql.exec(`DELETE FROM ${table}`);
+      }
+      this.ctx.storage.sql.exec(
+        "DELETE FROM sqlite_sequence WHERE name IN ('sync_ops', 'list_events')",
+      );
+
+      for (const table of REGISTRY_BACKUP_TABLE_NAMES) {
+        const columns = REGISTRY_BACKUP_TABLE_COLUMNS[table];
+        const placeholders = columns.map(() => "?").join(", ");
+        for (const row of backup.tables[table]) {
+          this.ctx.storage.sql.exec(
+            `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${placeholders})`,
+            ...columns.map((column) => row[column]),
+          );
+        }
+      }
+    });
+  }
+
+  private backupMetadata(
+    backup: RegistryBackup,
+    key: string,
+    uploadedAt: number,
+    size: number,
+  ): RegistryBackupMetadata {
+    return {
+      key,
+      createdAt: backup.createdAt,
+      uploadedAt,
+      size,
+      databaseSize: backup.databaseSize,
+      entryCount: backup.tables.canonical_entries.length,
+      bookmark: backup.bookmark,
+    };
   }
 }
