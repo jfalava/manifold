@@ -7,6 +7,29 @@ place while native MangaDex and Comix extensions own reading and chapter updates
 > [!WARNING]
 > This is **very** experimental and requires your own [infrastructure](https://manifold.jfa.dev/architecture/).
 
+## MyAnimeList status backup
+
+Tracker list-state updates enqueue a Worker-side `mal.status` backup. Connect
+MAL through Credentials first. AniList/Manifold remain authoritative: this flow
+never imports MAL list state, creates a MAL-origin registry entry, or merges
+canonical entries. It only updates MAL status (including the rereading flag),
+not scores, notes, progress, or deletions.
+
+An existing MAL binding wins, followed by AniList's `idMal`. Otherwise the Worker
+searches all supplied title variants and registry link titles. It accepts a
+unique normalized title/alias match or uses the MangaDex resolver's embedding
+model and confidence rules (score ≥ 0.85, margin ≥ 0.06). Conflicting exact
+matches and close semantic ties stay unbound. Automatic binding never takes an
+ID owned by another registry entry.
+
+The tracker supplies AniList's ID and English/romaji/native/synonym titles in
+the existing status mutation response; the Worker does not need AniList access.
+New updates supersede older backup work, and retries read the latest list state.
+Failures do not fail tracker updates. Inspect `GET /v1/ops?target=mal`; after five
+failed attempts the operation is blocked. Fix credentials or the binding, then
+use the existing per-operation retry endpoint (`POST /v1/ops/:opId/retry`), or
+send another tracker update. Registry restore pauses these backups too.
+
 ## Protecting and backing up the registry
 
 The `ManifoldApi` host for the `ManifoldSync` Durable Object namespace and the

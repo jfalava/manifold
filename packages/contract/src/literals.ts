@@ -26,11 +26,12 @@ export type AuthProvider = Schema.Schema.Type<typeof AuthProvider>;
 export const OAuthProvider = Schema.Literals(["anilist", "mal"]);
 export type OAuthProvider = Schema.Schema.Type<typeof OAuthProvider>;
 
-export const OpTarget = Schema.Literals(["mangadex", "anilist"]);
+export const OpTarget = Schema.Literals(["mangadex", "anilist", "mal"]);
 export type OpTarget = Schema.Schema.Type<typeof OpTarget>;
 
 export const OpKind = Schema.Literals([
   "mangadex.read",
+  "mal.status",
   "anilist.status",
   "anilist.progress",
   "anilist.fields",

@@ -24,8 +24,8 @@ export const MANGADEX_EMBEDDING_MODEL = "@cf/qwen/qwen3-embedding-0.6b" as const
 const VECTOR_TOP_K = 20;
 // Prefill/CLI now pass AniList english/romaji/native/synonyms, so exact-title
 // hits cover more cases and the semantic accept bar can sit higher.
-const VECTOR_ACCEPT_SCORE = 0.85;
-const VECTOR_ACCEPT_MARGIN = 0.06;
+export const VECTOR_ACCEPT_SCORE = 0.85;
+export const VECTOR_ACCEPT_MARGIN = 0.06;
 const SEARCH_TERM_LIMIT = 5;
 const MATCH_CANDIDATE_LIMIT = 100;
 
@@ -290,7 +290,7 @@ const uniqueManga = (values: readonly MangaDexManga[]): MangaDexManga[] => {
 // below a hundred titles, so candidate embeddings go out in small batches.
 const EMBED_BATCH_SIZE = 16;
 
-const embed = async (ai: Ai, texts: readonly string[]): Promise<readonly number[][]> => {
+export const embedMangaTitles = async (ai: Ai, texts: readonly string[]): Promise<readonly number[][]> => {
   if (texts.length === 0) {return [];}
   const vectors: number[][] = [];
   for (let index = 0; index < texts.length; index += EMBED_BATCH_SIZE) {
@@ -396,7 +396,7 @@ export const resolveMangaDex = async (
     return cachedResult(entry, entry.externalIds.mangadex, undefined);
   }
 
-  const queryVector = (await embed(env.AI, [buildCanonicalEmbeddingText(entry)]))[0];
+  const queryVector = (await embedMangaTitles(env.AI, [buildCanonicalEmbeddingText(entry)]))[0];
   if (!queryVector) {throw new Error("Workers AI returned no MangaDex query embedding");}
 
   const indexed = await queryIndex(env.MANGADEX_INDEX, queryVector, entry);
@@ -404,7 +404,7 @@ export const resolveMangaDex = async (
   if (indexedDecision.status === "matched") {return indexedDecision;}
 
   const searched = await searchMangaDex(entry);
-  const fresh = await embed(env.AI, searched.map(buildMangaDexEmbeddingText));
+  const fresh = await embedMangaTitles(env.AI, searched.map(buildMangaDexEmbeddingText));
   const freshRanked = rankEmbeddedCandidates(
     queryVector,
     searched.map((manga, index) => ({ manga, embedding: fresh[index] ?? [] })),

@@ -8,6 +8,14 @@ import {
   RegistryProvider,
 } from "./literals";
 
+/** AniList identity observed on-device; MAL remains a downstream backup. */
+export const MalBackupIdentity = Schema.Struct({
+  anilistId: Schema.NonEmptyString,
+  malId: Schema.optional(Schema.NonEmptyString),
+  titles: Schema.Array(Schema.NonEmptyString),
+});
+export type MalBackupIdentity = Schema.Schema.Type<typeof MalBackupIdentity>;
+
 export const SetListStateInput = Schema.Struct({
   status: Schema.optional(Schema.NullOr(ListStatus)),
   score: Schema.optional(Schema.NullOr(Schema.Number)),
@@ -17,6 +25,7 @@ export const SetListStateInput = Schema.Struct({
   volumeProgress: Schema.optional(Schema.NullOr(Schema.Number)),
   origin: Schema.optional(OpOrigin),
   appliedRemotely: Schema.optional(Schema.Boolean),
+  backupIdentity: Schema.optional(MalBackupIdentity),
 });
 export type SetListStateInput = Schema.Schema.Type<typeof SetListStateInput>;
 

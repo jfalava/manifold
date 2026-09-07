@@ -57,6 +57,7 @@ import {
   type MdFeedStatsPayload,
 } from "./mangadex-stats";
 import { createAniListListStateOpPayload } from "./list-state-op";
+import { MalBackupPayload, resolveMalBackup, writeMalBackupStatus } from "./mal-backup";
 import {
   createAuthorizationUrl,
   createPkceChallenge,
@@ -1637,6 +1638,12 @@ export class ManifoldSync extends DurableObject<Env> {
 
     const stored = this.readListState(entryId);
     if (!stored) {throw new Error(`List state missing after write: ${entryId}`);}
+    // MAL is only a backup sink. The original update commits before any
+    // upstream work, regardless of whether AniList was already updated.
+    if (origin === "device" && stored.status) {
+      this.enqueueMalBackup(entryId, changes);
+      await this.scheduleSync();
+    }
     return stored;
   }
 
@@ -1780,6 +1787,7 @@ export class ManifoldSync extends DurableObject<Env> {
     const row = this.ctx.storage.sql
       .exec<OpRow>("SELECT * FROM sync_ops WHERE op_id = ?", opId)
       .toArray()[0];
+    if (row?.target === "mal") {await this.scheduleSync();}
     return row ? toOp(row) : undefined;
   }
 
@@ -1792,7 +1800,7 @@ export class ManifoldSync extends DurableObject<Env> {
           clauses.push("state = ?");
           params.push(state);
         }
-        if (target && ["mangadex", "anilist"].includes(target)) {
+        if (target && ["mangadex", "anilist", "mal"].includes(target)) {
           clauses.push("target = ?");
           params.push(target);
         }
@@ -1880,6 +1888,7 @@ export class ManifoldSync extends DurableObject<Env> {
 
   async alarm(): Promise<void> {
     if (this.ctx.storage.kv.get("registry_sync_paused")) {return;}
+    await this.drainMalBackups();
     const rows = this.ctx.storage.sql
       .exec<OpRow>(
         `SELECT * FROM sync_ops
@@ -1896,6 +1905,103 @@ export class ManifoldSync extends DurableObject<Env> {
     await this.drainMangaDexStatusQueue();
 
     await this.scheduleSync(SYNC_RETRY_DELAY_MS);
+  }
+
+  private enqueueMalBackup(entryId: string, changes: SetListStateInput): void {
+    const previous = this.ctx.storage.sql.exec<OpRow>(
+      `SELECT * FROM sync_ops WHERE kind = 'mal.status'
+       AND json_extract(payload, '$.entryId') = ? ORDER BY id DESC LIMIT 1`,
+      entryId,
+    ).toArray()[0];
+    const prior = previous
+      ? Schema.decodeUnknownSync(MalBackupPayload)(JSON.parse(previous.payload)).backupIdentity
+      : undefined;
+    const identity = changes.backupIdentity ?? prior;
+    // Supersede old failures too: a newer update retries the latest state.
+    this.ctx.storage.sql.exec(
+      `UPDATE sync_ops SET state = 'completed', updated_at = ?
+       WHERE kind = 'mal.status' AND state <> 'completed'
+       AND json_extract(payload, '$.entryId') = ?`,
+      now(), entryId,
+    );
+    this.enqueueOp({
+      opId: crypto.randomUUID(), target: "mal", kind: "mal.status", origin: "device",
+      payload: {
+        entryId,
+        ...(identity && { backupIdentity: {
+          anilistId: identity.anilistId,
+          titles: [...identity.titles],
+          ...(identity.malId && { malId: identity.malId }),
+        } }),
+      },
+    });
+  }
+
+  private async drainMalBackups(): Promise<void> {
+    const rows = this.ctx.storage.sql.exec<OpRow>(
+      "SELECT * FROM sync_ops WHERE target = 'mal' AND state = 'pending' ORDER BY id LIMIT 5",
+    ).toArray();
+    for (const row of rows) {
+      try {
+        const payload = Schema.decodeUnknownSync(MalBackupPayload)(JSON.parse(row.payload));
+        const entry = this.readMalBackupEntry(payload.entryId);
+        if (entry && this.readListState(entry.id)?.status) {
+          const accessToken = await this.getAuthAccessToken("mal");
+          const match = await resolveMalBackup(this.env, entry, payload.backupIdentity);
+          // Network awaits can outlive an update, unlink, or nuke. Re-check
+          // ownership and status immediately before applying the projection.
+          const current = this.readMalBackupEntry(entry.id);
+          const pending = this.ctx.storage.sql.exec<OpRow>(
+            "SELECT * FROM sync_ops WHERE id = ? AND state = 'pending'", row.id,
+          ).toArray()[0];
+          if (!pending) {continue;}
+          const status = this.readListState(entry.id)?.status;
+          if (current && status) {
+            const existing = current.providers.find((link) => link.provider === "mal");
+            if (match.method === "binding" && !existing) {
+              throw new Error("MAL backup binding removed during resolution");
+            }
+            if (current.providers.find((link) => link.provider === "anilist")?.externalId !==
+              entry.providers.find((link) => link.provider === "anilist")?.externalId) {
+              throw new Error("AniList identity changed during MAL resolution");
+            }
+            if (existing && existing.externalId !== match.externalId) {
+              throw new Error("MAL backup binding changed during resolution");
+            }
+            const owner = this.ctx.storage.sql.exec<{ entry_id: string }>(
+              "SELECT entry_id FROM provider_links WHERE provider = 'mal' AND external_id = ? AND entry_id <> ?",
+              match.externalId, entry.id,
+            ).toArray()[0];
+            if (owner) {throw new Error("MAL backup match already belongs to another registry entry");}
+            if (!existing) {
+              // Unlike manual linkProvider, automatic backups must never steal
+              // a binding or change the canonical entry's provider/title.
+              this.ctx.storage.sql.exec(
+                "INSERT INTO provider_links (entry_id, provider, external_id, title, updated_at) VALUES (?, 'mal', ?, ?, ?)",
+                entry.id, match.externalId, match.title ?? null, now(),
+              );
+              this.appendEvent(entry.id, "mal.backup.bound", "device", {
+                externalId: match.externalId, method: match.method,
+              });
+            }
+            await writeMalBackupStatus(match.externalId, status, accessToken);
+          }
+        }
+        this.ctx.storage.sql.exec(
+          "UPDATE sync_ops SET state = 'completed', attempts = attempts + 1, last_error = NULL, updated_at = ? WHERE id = ? AND state = 'pending'",
+          now(), row.id,
+        );
+      } catch (error) {
+        this.failOps([row], error);
+      }
+    }
+  }
+
+  private readMalBackupEntry(entryId: string): RegistryEntry | undefined {
+    const active = this.ctx.storage.sql.exec<{ id: string }>(
+      "SELECT id FROM canonical_entries WHERE id = ? AND tombstoned_at IS NULL", entryId,
+    ).toArray()[0];
+    return active ? this.readEntry(entryId, false) : undefined;
   }
 
   private async drainMangaDexOutbox(rows: readonly OpRow[]): Promise<void> {
@@ -2032,7 +2138,7 @@ export class ManifoldSync extends DurableObject<Env> {
     if (this.ctx.storage.kv.get("registry_sync_paused")) {return;}
     const pending = this.ctx.storage.sql
       .exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM sync_ops WHERE state = 'pending' AND target = 'mangadex'"
+        "SELECT COUNT(*) AS count FROM sync_ops WHERE state = 'pending' AND target IN ('mangadex', 'mal')"
       )
       .toArray()[0]?.count ?? 0;
     const shelfPending = this.ctx.storage.sql

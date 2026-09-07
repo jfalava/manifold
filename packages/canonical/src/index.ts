@@ -67,9 +67,16 @@ export interface CanonicalListState {
 
 // A desired list-state mutation. `appliedRemotely` marks mutations the device
 // already pushed to AniList itself (no op is enqueued for those).
+export interface MalBackupIdentity {
+  readonly anilistId: string;
+  readonly malId?: string;
+  readonly titles: readonly string[];
+}
+
 export interface CanonicalListStateChange {
   readonly origin: "device" | "admin" | "cli" | "migration";
   readonly appliedRemotely?: boolean;
+  readonly backupIdentity?: MalBackupIdentity;
   readonly status?: CanonicalListStatus | null;
   readonly score?: number | null;
   readonly notes?: string | null;

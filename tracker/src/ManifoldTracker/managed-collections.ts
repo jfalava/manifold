@@ -263,6 +263,7 @@ export const commitManagedCollectionChanges = async (
         origin: "device",
         appliedRemotely: true,
         status,
+        ...(result.backupIdentity && { backupIdentity: result.backupIdentity }),
       })
       .catch(() => undefined);
   }

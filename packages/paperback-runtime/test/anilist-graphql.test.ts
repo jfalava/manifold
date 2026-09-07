@@ -193,4 +193,28 @@ describe("AniList field dates", () => {
     ).rejects.toThrow("Invalid AniList manga id");
     expect(getCallCount()).toBe(0);
   });
+
+  it("returns the MAL cross-link and all title variants from the status mutation", async () => {
+    const count = harness.install(() => ({ status: 200, body: { data: { SaveMediaListEntry: {
+      id: 10,
+      media: { idMal: 7, title: { english: "Title", romaji: "Romaji", native: "日本語" }, synonyms: ["Alias", "Title", " "] },
+    } } } }));
+    const { saveAniListStatus } = await harness.loadModule();
+    expect(await saveAniListStatus("t", "42", "reading")).toEqual({
+      mediaListEntryId: 10,
+      backupIdentity: { anilistId: "42", malId: "7", titles: ["Title", "Romaji", "日本語", "Alias"] },
+    });
+    expect(count()).toBe(1);
+    expect(harness.requests[0]?.body).toContain("idMal title { english romaji native } synonyms");
+  });
+
+  it("preserves title evidence when AniList has no MAL cross-link", async () => {
+    harness.install(() => ({ status: 200, body: { data: { SaveMediaListEntry: {
+      id: 10, media: { idMal: null, title: { romaji: "Romaji", english: null }, synonyms: [] },
+    } } } }));
+    const { saveAniListStatus } = await harness.loadModule();
+    expect(await saveAniListStatus("t", "42", "reading")).toEqual({
+      mediaListEntryId: 10, backupIdentity: { anilistId: "42", titles: ["Romaji"] },
+    });
+  });
 });

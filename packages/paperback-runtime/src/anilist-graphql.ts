@@ -1,4 +1,5 @@
 import { isJsonObject, type JsonObject } from "@manifold/json";
+import type { MalBackupIdentity } from "@manifold/canonical";
 import type { AniListReadingStatus } from "./anilist-types.js";
 
 const ANILIST_GRAPHQL_ENDPOINT = "https://graphql.anilist.co";
@@ -302,22 +303,50 @@ const mediaIdOf = (anilistId: string): number => {
   return mediaId;
 };
 
+interface SavedStatusData {
+  readonly SaveMediaListEntry?: {
+    readonly id?: number;
+    readonly media?: {
+      readonly idMal?: number | null;
+      readonly title?: {
+        readonly english?: string | null;
+        readonly romaji?: string | null;
+        readonly native?: string | null;
+      };
+      readonly synonyms?: readonly string[];
+    };
+  };
+}
+
 export const saveAniListStatus = async (
   token: string,
   anilistId: string,
   status: AniListReadingStatus | null,
-): Promise<{ mediaListEntryId?: number }> => {
+): Promise<{ mediaListEntryId?: number; backupIdentity?: MalBackupIdentity }> => {
   const mediaId = mediaIdOf(anilistId);
   // Privacy policy: everything this source touches stays private.
-  const data = await aniListRequest<{ SaveMediaListEntry?: { id?: number } }>(
+  const data = await aniListRequest<SavedStatusData>(
     token,
     `mutation ($mediaId: Int!, $status: MediaListStatus) {
-      SaveMediaListEntry(mediaId: $mediaId, status: $status, private: true) { id status private }
+      SaveMediaListEntry(mediaId: $mediaId, status: $status, private: true) {
+        id status private
+        media { idMal title { english romaji native } synonyms }
+      }
     }`,
     { mediaId, status: status === null ? null : toAniListStatus(status) },
   );
   const entryId = data.SaveMediaListEntry?.id;
-  return entryId === undefined ? {} : { mediaListEntryId: entryId };
+  const media = data.SaveMediaListEntry?.media;
+  return {
+    ...(entryId !== undefined && { mediaListEntryId: entryId }),
+    ...(media && { backupIdentity: {
+      anilistId,
+      ...(media.idMal != null && media.idMal > 0 && { malId: String(media.idMal) }),
+      titles: [...new Set([
+        media.title?.english, media.title?.romaji, media.title?.native, ...(media.synonyms ?? []),
+      ].flatMap((title) => title?.trim() ? [title.trim()] : []))],
+    } }),
+  };
 };
 
 // Score / notes / dates / volumes — the fields Paperback has no UI for.
