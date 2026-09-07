@@ -67,6 +67,7 @@ import {
   saveAniListFields,
   saveAniListProgress,
   saveAniListStatus,
+  safeImageUrl,
   toProviderCandidateSearchResult,
   viewerQuery,
   type AniListViewer,
@@ -205,7 +206,7 @@ export class ManifoldTrackerSource
           mangaId: entry.id,
           title: entry.title,
           subtitle: `Registry · ${entry.providers.map((link) => link.provider).join(" + ")}`,
-          imageUrl: "",
+          imageUrl: safeImageUrl(undefined),
         });
       }
     } else {
@@ -294,7 +295,7 @@ export class ManifoldTrackerSource
           providerId: manga.id,
           title: manga.title,
           aliases: manga.altTitles,
-          imageUrl: manga.coverUrl ?? "",
+          imageUrl: safeImageUrl(manga.coverUrl),
           description: manga.description,
         }, manga.anilistId);
       }
@@ -310,6 +311,7 @@ export class ManifoldTrackerSource
           mangaId: stored.id,
           mangaInfo: {
             ...details.mangaInfo,
+            thumbnailUrl: safeImageUrl(details.mangaInfo.thumbnailUrl),
             additionalInfo: {
               ...details.mangaInfo.additionalInfo,
               "Canonical ID": stored.id,
@@ -341,7 +343,7 @@ export class ManifoldTrackerSource
     return {
       mangaId: entry.id,
       mangaInfo: {
-        thumbnailUrl: entry.metadata?.coverUrl ?? "",
+        thumbnailUrl: safeImageUrl(entry.metadata?.coverUrl),
         synopsis: entry.metadata?.description ?? "",
         primaryTitle: entry.title,
         secondaryTitles: [...entry.aliases].filter((title) => title !== entry.title),
@@ -365,7 +367,7 @@ export class ManifoldTrackerSource
     return {
       mangaId: entryId,
       mangaInfo: {
-        thumbnailUrl: candidate.imageUrl,
+        thumbnailUrl: safeImageUrl(candidate.imageUrl),
         synopsis: candidate.description ?? "",
         primaryTitle: candidate.title,
         secondaryTitles: [...candidate.aliases],

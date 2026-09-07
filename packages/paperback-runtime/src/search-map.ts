@@ -1,5 +1,6 @@
 import { ContentRating, type SearchResultItem } from "@paperback/types";
 import type { CanonicalSearchResult } from "@manifold/canonical";
+import { safeImageUrl } from "./image-url.js";
 
 export const toCanonicalSearchResult = (
   entry: CanonicalSearchResult,
@@ -7,7 +8,7 @@ export const toCanonicalSearchResult = (
   mangaId: entry.id,
   title: entry.title,
   subtitle: entry.aliases.filter((title) => title !== entry.title).join(" · ") || undefined,
-  imageUrl: entry.metadata?.coverUrl ?? "",
+  imageUrl: safeImageUrl(entry.metadata?.coverUrl),
   contentRating: ContentRating.EVERYONE,
   metadata: entry,
 });

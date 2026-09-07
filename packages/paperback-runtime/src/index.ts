@@ -60,6 +60,11 @@ export { drainAniListOps, maybeDrainAniListOps } from "./op-drain.js";
 export { toCanonicalSearchResult } from "./search-map.js";
 
 export {
+  PAPERBACK_FALLBACK_IMAGE_URL,
+  safeImageUrl,
+} from "./image-url.js";
+
+export {
   aniListProviderCandidate,
   correlateProviderCandidates,
   mangaDexProviderCandidate,

@@ -16,6 +16,7 @@ import {
   parseAniListReadingStatus,
   saveAniListProgress,
   saveAniListStatus,
+  safeImageUrl,
   type AniListReadingStatus,
 } from "@manifold/paperback-runtime";
 
@@ -211,7 +212,7 @@ export const getSourceMangaInManagedCollection = async (
     return {
       mangaId: uuid ?? `anilist:${item.anilistId}`,
       mangaInfo: {
-        thumbnailUrl: item.coverUrl ?? "",
+        thumbnailUrl: safeImageUrl(item.coverUrl),
         synopsis: "",
         primaryTitle: item.title,
         secondaryTitles: [],

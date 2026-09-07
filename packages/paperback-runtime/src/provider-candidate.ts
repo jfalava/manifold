@@ -1,6 +1,7 @@
 import { ContentRating, type SearchResultItem } from "@paperback/types";
 import type { IngestCandidateInput, RegistryProvider } from "@manifold/contract";
 import type { CanonicalSearchResult } from "@manifold/canonical";
+import { safeImageUrl } from "./image-url.js";
 
 const CANDIDATE_PREFIX = "provider-candidate:";
 
@@ -56,7 +57,7 @@ export const aniListProviderCandidate = (
   providerId: result.providerId,
   title: result.title,
   aliases: result.aliases,
-  imageUrl: result.metadata?.coverUrl ?? "",
+  imageUrl: safeImageUrl(result.metadata?.coverUrl),
   description: result.metadata?.description,
   links: [
     ...(result.externalIds?.mal
@@ -75,7 +76,7 @@ export const mangaDexProviderCandidate = (
   providerId: manga.id,
   title: manga.title,
   aliases: manga.altTitles,
-  imageUrl: manga.coverUrl ?? "",
+  imageUrl: safeImageUrl(manga.coverUrl),
   description: manga.description,
   links: [
     ...(manga.anilistId
@@ -150,7 +151,7 @@ export const toProviderCandidateSearchResult = (
     candidate.provider === "anilist" ? "AniList" : "MyAnimeList", ...candidate.aliases]
     .filter(Boolean)
     .join(" · "),
-  imageUrl: candidate.imageUrl,
+  imageUrl: safeImageUrl(candidate.imageUrl),
   contentRating: ContentRating.MATURE,
   metadata: candidate,
 });
