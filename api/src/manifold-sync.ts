@@ -87,7 +87,6 @@ import { decryptToken, encryptToken } from "./token-crypto";
 import {
   backupKey,
   isRegistryBackupKey,
-  parseRegistryBackup,
   REGISTRY_BACKUP_PREFIX,
   REGISTRY_BACKUP_TABLE_COLUMNS,
   REGISTRY_BACKUP_TABLE_NAMES,

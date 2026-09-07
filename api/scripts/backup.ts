@@ -16,7 +16,7 @@ const readEnvironment = async (): Promise<Record<string, string>> => {
   }
   const environment: Record<string, string> = {};
   for (const [key, value] of Object.entries({ ...file, ...process.env })) {
-    if (key.startsWith("MANIFOLD_") && typeof value === "string" && value.length > 0) {
+    if (key.startsWith("MANIFOLD_") && isString(value) && value.length > 0) {
       environment[key] = value;
     }
   }
