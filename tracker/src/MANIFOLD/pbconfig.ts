@@ -3,14 +3,13 @@ import pkg from "../../package.json" with { type: "json" };
 
 export default {
   version: pkg.version,
-  name: "manifold: tracker",
+  name: "MANIFOLD",
   icon: "icon.png",
-  description:
-    "Canonical registry, managed collections, and progress sync for native providers.",
+  description: "Canonical registry and progress orchestration for native Paperback providers",
   contentRating: ContentRating.MATURE,
-  developers: [{ name: "manifold" }],
+  developers: [{ name: "MANIFOLD by JFA" }],
   language: "en",
-  badges: [{ label: "beta", textColor: "#ffffff", backgroundColor: "#2563eb" }],
+  badges: [{ label: "beta", textColor: "#ffffff", backgroundColor: "#4f39f6" }],
   capabilities: [
     SourceIntents.PROGRESS_PROVIDING,
     SourceIntents.MANAGED_COLLECTION_PROVIDING,
