@@ -1,9 +1,4 @@
-import {
-  isJsonArray,
-  isJsonObject,
-  isString,
-  type JsonValue,
-} from "@manifold/json";
+import { isJsonArray, isJsonObject, isString, type JsonValue } from "@manifold/json";
 
 export type WebViewChapter = {
   readonly url: string;

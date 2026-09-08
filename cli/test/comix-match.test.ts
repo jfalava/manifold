@@ -47,10 +47,7 @@ describe("comix title matching", () => {
       altTitles: ["Tonari no Furi-san ga Tonikaku Kowai"],
     };
     expect(
-      pickMatch([item], [
-        "Tonari no Uchuubito ga Kowai",
-        "My Neighbor Furi-san is Scary",
-      ]),
+      pickMatch([item], ["Tonari no Uchuubito ga Kowai", "My Neighbor Furi-san is Scary"]),
     ).toEqual(item);
   });
 
@@ -62,10 +59,7 @@ describe("comix title matching", () => {
         "My Neighbor Furi-san is Scary",
         "",
       ]),
-    ).toEqual([
-      "Tonari no Uchuubito ga Kowai",
-      "My Neighbor Furi-san is Scary",
-    ]);
+    ).toEqual(["Tonari no Uchuubito ga Kowai", "My Neighbor Furi-san is Scary"]);
   });
 });
 
@@ -191,9 +185,9 @@ describe("comix capture payloads", () => {
         altTitles: ["Makenshi no Maken Niyoru Maken no Tame no Harem Life"],
       },
     ]);
-    expect(
-      pickMatch(items, "Makenshi no Maken Niyoru Maken no Tame no Harem Life")?.hid,
-    ).toBe("y9j2n");
+    expect(pickMatch(items, "Makenshi no Maken Niyoru Maken no Tame no Harem Life")?.hid).toBe(
+      "y9j2n",
+    );
   });
 
   it("unwraps paperback-style { r } envelopes and empty lists as misses", () => {
@@ -211,7 +205,7 @@ describe("comix capture payloads", () => {
 
   it("detects Cloudflare challenge pages", () => {
     expect(isChallengeText("Just a moment...")).toBe(true);
-    expect(isChallengeText("<div class=\"cf-chl-widget\"></div>")).toBe(true);
+    expect(isChallengeText('<div class="cf-chl-widget"></div>')).toBe(true);
     expect(isChallengeText("Omniscient Reader")).toBe(false);
   });
 });

@@ -17,38 +17,44 @@ describe("MangaDex client", () => {
       fetcher: async (input) => {
         requests.push(requestHref(input));
         return jsonResponse({
-          data: [{
-            id: "manga-1",
-            attributes: {
-              title: { en: "Example Manga" },
-              altTitles: [{ ja: "例" }],
-              links: { al: "100", mal: "200" },
-              description: { en: "A description" },
-              status: "ongoing",
-              year: 2024,
+          data: [
+            {
+              id: "manga-1",
+              attributes: {
+                title: { en: "Example Manga" },
+                altTitles: [{ ja: "例" }],
+                links: { al: "100", mal: "200" },
+                description: { en: "A description" },
+                status: "ongoing",
+                year: 2024,
+              },
+              relationships: [
+                {
+                  type: "cover_art",
+                  attributes: { fileName: "cover.jpg" },
+                },
+              ],
             },
-            relationships: [{
-              type: "cover_art",
-              attributes: { fileName: "cover.jpg" },
-            }],
-          }],
+          ],
         });
       },
     });
 
     const result = await Effect.runPromise(client.search("Example"));
 
-    expect(result).toEqual([{
-      id: "manga-1",
-      title: "Example Manga",
-      altTitles: ["例"],
-      anilistId: "100",
-      myAnimeListId: "200",
-      description: "A description",
-      coverUrl: "https://uploads.mangadex.org/covers/manga-1/cover.jpg.512.jpg",
-      status: "ongoing",
-      year: 2024,
-    }]);
+    expect(result).toEqual([
+      {
+        id: "manga-1",
+        title: "Example Manga",
+        altTitles: ["例"],
+        anilistId: "100",
+        myAnimeListId: "200",
+        description: "A description",
+        coverUrl: "https://uploads.mangadex.org/covers/manga-1/cover.jpg.512.jpg",
+        status: "ongoing",
+        year: 2024,
+      },
+    ]);
     expect(requests[0]).toContain("/manga?");
     expect(requests[0]).toContain("includes%5B%5D=cover_art");
   });
@@ -74,17 +80,19 @@ describe("MangaDex client", () => {
         const offset = new URL(url).searchParams.get("offset");
         return jsonResponse({
           total: 2,
-          data: [{
-            id: `chapter-${offset}`,
-            attributes: {
-              chapter: offset,
-              volume: "1",
-              translatedLanguage: "en",
-              pages: 1,
-              publishAt: "2024-01-01T00:00:00Z",
+          data: [
+            {
+              id: `chapter-${offset}`,
+              attributes: {
+                chapter: offset,
+                volume: "1",
+                translatedLanguage: "en",
+                pages: 1,
+                publishAt: "2024-01-01T00:00:00Z",
+              },
+              relationships: [{ type: "manga", id: "manga-1" }],
             },
-            relationships: [{ type: "manga", id: "manga-1" }],
-          }],
+          ],
         });
       },
     });
@@ -104,11 +112,13 @@ describe("MangaDex client", () => {
     expect(details).toEqual({
       id: "chapter-0",
       mangaId: "manga-1",
-      pages: [{
-        url: "https://uploads.example/data/hash/page-1.jpg",
-        width: 800,
-        height: 1200,
-      }],
+      pages: [
+        {
+          url: "https://uploads.example/data/hash/page-1.jpg",
+          width: 800,
+          height: 1200,
+        },
+      ],
     });
     expect(requests.filter((url) => url.includes("/chapter?")).length).toBe(2);
     expect(requests[0]).toContain("manga=manga-1");
@@ -159,18 +169,23 @@ describe("MangaDex client", () => {
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(requestHref(input));
-        return jsonResponse({ total: 1, data: [{ id: "manga-9", attributes: { title: { en: "Nine" } } }] });
+        return jsonResponse({
+          total: 1,
+          data: [{ id: "manga-9", attributes: { title: { en: "Nine" } } }],
+        });
       },
     });
 
-    const result = await Effect.runPromise(client.listManga({
-      ids: ["a", "b"],
-      orderKey: "followedCount",
-      createdAtSince: "2026-07-22T00:00:00Z",
-      hasAvailableChapters: true,
-      limit: 2,
-      offset: 4,
-    }));
+    const result = await Effect.runPromise(
+      client.listManga({
+        ids: ["a", "b"],
+        orderKey: "followedCount",
+        createdAtSince: "2026-07-22T00:00:00Z",
+        hasAvailableChapters: true,
+        limit: 2,
+        offset: 4,
+      }),
+    );
 
     expect(result.items[0]?.id).toBe("manga-9");
     const url = new URL(requests[0]);
@@ -189,11 +204,17 @@ describe("MangaDex client", () => {
         requests.push(requestHref(input));
         return jsonResponse({
           total: 1,
-          data: [{
-            id: "chapter-5",
-            attributes: { chapter: "5", translatedLanguage: "en", readableAt: "2026-08-20T00:00:00Z" },
-            relationships: [{ type: "manga", id: "manga-1" }],
-          }],
+          data: [
+            {
+              id: "chapter-5",
+              attributes: {
+                chapter: "5",
+                translatedLanguage: "en",
+                readableAt: "2026-08-20T00:00:00Z",
+              },
+              relationships: [{ type: "manga", id: "manga-1" }],
+            },
+          ],
         });
       },
     });
@@ -215,18 +236,26 @@ describe("MangaDex client", () => {
         requests.push(requestHref(input));
         return jsonResponse({
           total: 1,
-          data: [{
-            id: "chapter-7",
-            attributes: { chapter: "7", translatedLanguage: "en", publishAt: "2026-08-01T00:00:00Z" },
-            relationships: [{ type: "manga", id: "manga-2" }],
-          }],
+          data: [
+            {
+              id: "chapter-7",
+              attributes: {
+                chapter: "7",
+                translatedLanguage: "en",
+                publishAt: "2026-08-01T00:00:00Z",
+              },
+              relationships: [{ type: "manga", id: "manga-2" }],
+            },
+          ],
         });
       },
     });
 
-    const result = await Effect.runPromise(client.followedFeed({
-      publishedAtSince: "2026-01-01T00:00:00Z",
-    }));
+    const result = await Effect.runPromise(
+      client.followedFeed({
+        publishedAtSince: "2026-01-01T00:00:00Z",
+      }),
+    );
 
     expect(result.items[0]?.id).toBe("chapter-7");
     expect(result.items[0]?.publishedAt).toBe(Date.parse("2026-08-01T00:00:00Z"));
@@ -252,16 +281,26 @@ describe("MangaDex client", () => {
         requests.push(requestHref(input));
         return jsonResponse({
           total: empty ? 0 : 1,
-          data: empty ? [] : [{
-            id: "chapter-9",
-            attributes: { chapter: "9", translatedLanguage: "en", publishAt: "2026-08-02T00:00:00Z" },
-            relationships: [{ type: "manga", id: "manga-3" }],
-          }],
+          data: empty
+            ? []
+            : [
+                {
+                  id: "chapter-9",
+                  attributes: {
+                    chapter: "9",
+                    translatedLanguage: "en",
+                    publishAt: "2026-08-02T00:00:00Z",
+                  },
+                  relationships: [{ type: "manga", id: "manga-3" }],
+                },
+              ],
         });
       },
     });
 
-    const chapter = await Effect.runPromise(client.latestChapterSince("manga-3", "2026-01-01T00:00:00Z"));
+    const chapter = await Effect.runPromise(
+      client.latestChapterSince("manga-3", "2026-01-01T00:00:00Z"),
+    );
     expect(chapter?.id).toBe("chapter-9");
     expect(chapter?.publishedAt).toBe(Date.parse("2026-08-02T00:00:00Z"));
     const url = new URL(requests[0]);
@@ -271,7 +310,9 @@ describe("MangaDex client", () => {
 
     empty = true;
     requests.length = 0;
-    const none = await Effect.runPromise(client.latestChapterSince("manga-3", "2026-01-01T00:00:00Z"));
+    const none = await Effect.runPromise(
+      client.latestChapterSince("manga-3", "2026-01-01T00:00:00Z"),
+    );
     expect(none).toBeUndefined();
   });
 
@@ -307,7 +348,12 @@ describe("MangaDex client", () => {
       },
     });
 
-    await Effect.runPromise(client.listManga({ ids: ["adult-1"], contentRating: ["safe", "suggestive", "erotica", "pornographic"] }));
+    await Effect.runPromise(
+      client.listManga({
+        ids: ["adult-1"],
+        contentRating: ["safe", "suggestive", "erotica", "pornographic"],
+      }),
+    );
 
     const url = new URL(requests[0]);
     expect(url.searchParams.getAll("ids[]")).toEqual(["adult-1"]);
@@ -359,9 +405,11 @@ describe("MangaDex client", () => {
     expect(requests[0]?.url).toBe("https://mangadex.test/manga/status");
 
     await Effect.runPromise(client.readingStatuses({ status: "dropped" }));
-    expect(requests.some((request) => request.url === "https://mangadex.test/manga/status?status=dropped")).toBe(
-      true,
-    );
+    expect(
+      requests.some(
+        (request) => request.url === "https://mangadex.test/manga/status?status=dropped",
+      ),
+    ).toBe(true);
 
     await Effect.runPromise(client.updateReadingStatus("manga-1", "on_hold"));
     const write = requests.find((request) => request.init?.method === "POST");
@@ -377,16 +425,18 @@ describe("MangaDex client", () => {
         requests.push(requestHref(input));
         return jsonResponse({
           total: 32,
-          data: [{
-            id: "ch-145",
-            relationships: [{ type: "manga", id: "manga-9" }],
-            attributes: {
-              chapter: "145",
-              volume: "none",
-              translatedLanguage: "en",
-              publishAt: "2026-08-01T00:00:00Z",
+          data: [
+            {
+              id: "ch-145",
+              relationships: [{ type: "manga", id: "manga-9" }],
+              attributes: {
+                chapter: "145",
+                volume: "none",
+                translatedLanguage: "en",
+                publishAt: "2026-08-01T00:00:00Z",
+              },
             },
-          }],
+          ],
         });
       },
     });
@@ -414,16 +464,16 @@ describe("MangaDex client", () => {
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(requestHref(input));
-        if (empty) {return jsonResponse({ data: [] });}
+        if (empty) {
+          return jsonResponse({ data: [] });
+        }
         return jsonResponse({
           data: { "manga-1": ["chapter-1", "chapter-2"], "manga-2": [] },
         });
       },
     });
 
-    const grouped = await Effect.runPromise(
-      client.readMarkersBulk(["manga-1", "manga-2"]),
-    );
+    const grouped = await Effect.runPromise(client.readMarkersBulk(["manga-1", "manga-2"]));
     expect(grouped).toEqual({ "manga-1": ["chapter-1", "chapter-2"], "manga-2": [] });
 
     // An all-empty history degrades to the ungrouped array shape — no markers.
@@ -444,7 +494,10 @@ describe("MangaDex client", () => {
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(requestHref(input));
-        return jsonResponse({ total: 1, data: [{ id: "adult-1", attributes: { title: { en: "Adult One" } } }] });
+        return jsonResponse({
+          total: 1,
+          data: [{ id: "adult-1", attributes: { title: { en: "Adult One" } } }],
+        });
       },
     });
 

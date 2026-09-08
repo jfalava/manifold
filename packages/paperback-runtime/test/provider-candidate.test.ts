@@ -11,30 +11,56 @@ import {
 describe("provider candidates", () => {
   it("creates MAL candidates without relabeling their IDs as AniList", () => {
     const candidate = canonicalProviderCandidate({
-      id: "mal:77", provider: "mal", providerId: "77", title: "Example", aliases: ["Alias"],
-      externalIds: { mal: "77" }, metadata: { coverUrl: "https://example.test/mal.jpg" },
+      id: "mal:77",
+      provider: "mal",
+      providerId: "77",
+      title: "Example",
+      aliases: ["Alias"],
+      externalIds: { mal: "77" },
+      metadata: { coverUrl: "https://example.test/mal.jpg" },
     });
     expect(candidate).toMatchObject({ provider: "mal", providerId: "77", links: [] });
     expect(toProviderCandidateSearchResult(candidate)).toMatchObject({
-      mangaId: "provider-candidate:mal:77", subtitle: "MyAnimeList · Alias",
+      mangaId: "provider-candidate:mal:77",
+      subtitle: "MyAnimeList · Alias",
     });
     expect(parseProviderSearchInput("mal: Example")).toEqual({ query: "Example", scope: "mal" });
   });
 
   it("carries proven MAL cross-links even when a candidate is reopened without a search cache", () => {
-    expect(canonicalProviderCandidate({
-      id: "anilist:42", provider: "anilist", providerId: "42", title: "Example", aliases: [],
-      externalIds: { anilist: "42", mal: "77" },
-    }).links).toEqual([{ provider: "mal", externalId: "77" }]);
+    expect(
+      canonicalProviderCandidate({
+        id: "anilist:42",
+        provider: "anilist",
+        providerId: "42",
+        title: "Example",
+        aliases: [],
+        externalIds: { anilist: "42", mal: "77" },
+      }).links,
+    ).toEqual([{ provider: "mal", externalId: "77" }]);
   });
 
   it("correlates MAL through MangaDex and preserves its proven AniList link", () => {
     const result = correlateProviderCandidates([
       { provider: "mal", providerId: "77", title: "Example", aliases: [], imageUrl: "" },
-      { provider: "anilist", providerId: "77", title: "Different manga", aliases: [], imageUrl: "" },
-      { provider: "mangadex", providerId: "md-1", title: "Other language", aliases: [], imageUrl: "", links: [
-        { provider: "mal", externalId: "77" }, { provider: "anilist", externalId: "42" },
-      ] },
+      {
+        provider: "anilist",
+        providerId: "77",
+        title: "Different manga",
+        aliases: [],
+        imageUrl: "",
+      },
+      {
+        provider: "mangadex",
+        providerId: "md-1",
+        title: "Other language",
+        aliases: [],
+        imageUrl: "",
+        links: [
+          { provider: "mal", externalId: "77" },
+          { provider: "anilist", externalId: "42" },
+        ],
+      },
     ]);
     expect(result[0]?.links).toEqual([
       { provider: "mangadex", externalId: "md-1", title: "Other language" },
@@ -45,12 +71,25 @@ describe("provider candidates", () => {
 
   it("rejects contradictory cross-links during correlation", () => {
     const result = correlateProviderCandidates([
-      { provider: "mal", providerId: "77", title: "Example", aliases: [], imageUrl: "", links: [
-        { provider: "anilist", externalId: "99" },
-      ] },
-      { provider: "mangadex", providerId: "md-1", title: "Example", aliases: [], imageUrl: "", links: [
-        { provider: "mal", externalId: "77" }, { provider: "anilist", externalId: "42" },
-      ] },
+      {
+        provider: "mal",
+        providerId: "77",
+        title: "Example",
+        aliases: [],
+        imageUrl: "",
+        links: [{ provider: "anilist", externalId: "99" }],
+      },
+      {
+        provider: "mangadex",
+        providerId: "md-1",
+        title: "Example",
+        aliases: [],
+        imageUrl: "",
+        links: [
+          { provider: "mal", externalId: "77" },
+          { provider: "anilist", externalId: "42" },
+        ],
+      },
     ]);
     expect(result[0]?.links).toEqual([{ provider: "anilist", externalId: "99" }]);
   });
@@ -65,13 +104,15 @@ describe("provider candidates", () => {
   });
 
   it("labels provider search results", () => {
-    expect(toProviderCandidateSearchResult({
-      provider: "mangadex",
-      providerId: "md-1",
-      title: "Example",
-      aliases: ["Alias"],
-      imageUrl: "https://example.test/cover.jpg",
-    })).toMatchObject({
+    expect(
+      toProviderCandidateSearchResult({
+        provider: "mangadex",
+        providerId: "md-1",
+        title: "Example",
+        aliases: ["Alias"],
+        imageUrl: "https://example.test/cover.jpg",
+      }),
+    ).toMatchObject({
       mangaId: "provider-candidate:mangadex:md-1",
       title: "Example",
       subtitle: "MangaDex · Alias",

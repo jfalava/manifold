@@ -3,13 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "oxlint",
-    "format": "oxfmt",
     "check": "oxlint --fix",
-    "typecheck": "tsc --noEmit",
-    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "format": "oxfmt",
+    "lint": "oxlint",
+    "test": "vitest run",
     "test:oauth": "vitest run test/oauth.test.ts",
-    "test": "vitest run"
+    "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@effect/platform-bun": "catalog:effect",

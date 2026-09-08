@@ -12,13 +12,7 @@ import {
 export default defineConfig({
   ...baseConfig,
   jsPlugins: antiSlopJsPlugins("..", { effect: true }),
-  ignorePatterns: [
-    ...agentIgnores,
-    "*.d.ts",
-    "**/*.d.ts",
-    "bundles/**",
-    "dist/**",
-  ],
+  ignorePatterns: [...agentIgnores, "*.d.ts", "**/*.d.ts", "bundles/**", "dist/**"],
   rules: {
     ...baseConfig.rules,
     ...antiSlopEffectRules,

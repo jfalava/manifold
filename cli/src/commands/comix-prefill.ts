@@ -75,15 +75,11 @@ export const comixPrefillCommand = Command.make("comix", {
   ),
   cfClearance: Flag.string("cf-clearance").pipe(
     Flag.optional,
-    Flag.withDescription(
-      "Optional seed cf_clearance. Falls back to MANIFOLD_COMIX_CF_CLEARANCE.",
-    ),
+    Flag.withDescription("Optional seed cf_clearance. Falls back to MANIFOLD_COMIX_CF_CLEARANCE."),
   ),
   session: Flag.string("session").pipe(
     Flag.optional,
-    Flag.withDescription(
-      "Optional seed session cookie. Falls back to MANIFOLD_COMIX_SESSION.",
-    ),
+    Flag.withDescription("Optional seed session cookie. Falls back to MANIFOLD_COMIX_SESSION."),
   ),
   cookies: Flag.string("cookies").pipe(
     Flag.optional,
@@ -125,18 +121,13 @@ export const comixPrefillCommand = Command.make("comix", {
             await clearStoredSession(bunSecretStore);
           }
           const seedCookies = cookiesFromFlags({
-            cfClearance: resolveValue(
-              cfClearance,
-              "MANIFOLD_COMIX_CF_CLEARANCE",
-            ),
+            cfClearance: resolveValue(cfClearance, "MANIFOLD_COMIX_CF_CLEARANCE"),
             session: resolveValue(session, "MANIFOLD_COMIX_SESSION"),
             cookieHeader: resolveValue(cookies, "MANIFOLD_COMIX_COOKIES"),
           });
           const stored =
             seedCookies.length > 0 ? undefined : await loadStoredSession(bunSecretStore);
-          const anilist = await resolveAniListToken(
-            Option.getOrUndefined(anilistToken),
-          );
+          const anilist = await resolveAniListToken(Option.getOrUndefined(anilistToken));
           let chromeUrl =
             resolveValue(chromeCdpUrl, "MANIFOLD_COMIX_CHROME_CDP_URL") ??
             (await waitForChromeDevToolsUrl({

@@ -2,7 +2,12 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 // Run the real command with Bun services, but never use real credentials or HTTP.
-const runWipe = (flags: string[], connected: boolean) => spawnSync("bun", ["-e", `
+const runWipe = (flags: string[], connected: boolean) =>
+  spawnSync(
+    "bun",
+    [
+      "-e",
+      `
   import { BunServices } from "@effect/platform-bun";
   import { Effect } from "effect";
   import { Command } from "effect/unstable/cli";
@@ -35,7 +40,10 @@ const runWipe = (flags: string[], connected: boolean) => spawnSync("bun", ["-e",
     console.error(error.message);
     process.exitCode = 1;
   }
-`], { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 15_000 });
+`,
+    ],
+    { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 15_000 },
+  );
 
 describe("MAL CLI safeguards", () => {
   it("defaults to a dry run", () => {

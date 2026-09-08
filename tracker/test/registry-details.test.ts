@@ -7,9 +7,7 @@ const registryEntry = {
   provider: "anilist" as const,
   providerId: "42",
   title: "Registry title",
-  providers: [
-    { provider: "anilist" as const, externalId: "42", updatedAt: 1 },
-  ],
+  providers: [{ provider: "anilist" as const, externalId: "42", updatedAt: 1 }],
 };
 
 describe("registry details", () => {

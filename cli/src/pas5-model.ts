@@ -6,8 +6,7 @@
 /** Core Data reference date: seconds since 2001-01-01. */
 export const coreDataNow = (): number => Date.now() / 1000 - 978_307_200;
 
-export const coreDataFromUnix = (unixSeconds: number): number =>
-  unixSeconds - 978_307_200;
+export const coreDataFromUnix = (unixSeconds: number): number => unixSeconds - 978_307_200;
 
 /** "Never read" sentinel used by device exports for `lastRead`. */
 export const LAST_READ_NEVER = -63_114_076_800;
@@ -123,7 +122,5 @@ export const tabForStatus = (status: string): string | undefined =>
   isAniListStatusKey(status) ? STATUS_TO_TAB[status] : undefined;
 
 /** AniList media status → Paperback MangaInfo status (unknown → RELEASING). */
-export const infoStatusFor = (
-  mediaStatus: string | undefined,
-): "FINISHED" | "RELEASING" =>
+export const infoStatusFor = (mediaStatus: string | undefined): "FINISHED" | "RELEASING" =>
   mediaStatus === "FINISHED" ? "FINISHED" : "RELEASING";

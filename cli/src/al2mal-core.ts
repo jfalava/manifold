@@ -36,7 +36,9 @@ export const malUpdateForAniList = (
   entry: Pick<AniListEntry, "status" | "progress">,
   options: { readonly includeProgress: boolean },
 ): MalMangaUpdate | undefined => {
-  if (!isAniListMalStatus(entry.status)) {return undefined;}
+  if (!isAniListMalStatus(entry.status)) {
+    return undefined;
+  }
   const mapped = ANILIST_TO_MAL[entry.status];
   const update: MalMangaUpdate = {
     status: mapped.status,
@@ -89,9 +91,7 @@ export interface Al2malSearchHit {
   readonly aliases: readonly string[];
 }
 
-export type Al2malSearch = (
-  query: string,
-) => Promise<readonly Al2malSearchHit[]>;
+export type Al2malSearch = (query: string) => Promise<readonly Al2malSearchHit[]>;
 
 /**
  * MAL GET /manga `q`: 3–64 Unicode code points. Shorter or longer → HTTP 400
@@ -109,10 +109,10 @@ export const malSearchQueryOk = (query: string): boolean => {
 export const malSearchQuery = (query: string): string | undefined => {
   const trimmed = query.trim();
   const chars = [...trimmed];
-  if (chars.length < MAL_SEARCH_Q_MIN) {return undefined;}
-  return chars.length <= MAL_SEARCH_Q_MAX
-    ? trimmed
-    : chars.slice(0, MAL_SEARCH_Q_MAX).join("");
+  if (chars.length < MAL_SEARCH_Q_MIN) {
+    return undefined;
+  }
+  return chars.length <= MAL_SEARCH_Q_MAX ? trimmed : chars.slice(0, MAL_SEARCH_Q_MAX).join("");
 };
 
 /** Same floor as createMalClient (~40 req/min); MAL publishes no hard quota. */
@@ -126,8 +126,7 @@ export const MAL_SEARCH_INTERVAL_MS = 1_500;
 export const createMalTitleSearch = (
   clientId: string,
   fetcher: typeof fetch = fetch,
-  sleep: (ms: number) => Promise<void> = (ms) =>
-    new Promise((resolve) => setTimeout(resolve, ms)),
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 ): Al2malSearch => {
   if (!clientId || clientId === "not-configured") {
     return async () => {
@@ -137,8 +136,12 @@ export const createMalTitleSearch = (
   let requested = false;
   return async (query) => {
     const q = malSearchQuery(query);
-    if (!q) {return [];}
-    if (requested) {await sleep(MAL_SEARCH_INTERVAL_MS);}
+    if (!q) {
+      return [];
+    }
+    if (requested) {
+      await sleep(MAL_SEARCH_INTERVAL_MS);
+    }
     requested = true;
     const href =
       `${MYANIMELIST_MANGA_ENDPOINT}?q=${encodeURIComponent(q)}` +
@@ -155,34 +158,44 @@ export const createMalTitleSearch = (
       if ((response.status === 429 || response.status >= 500) && attempt < 3) {
         const retryAfter = response.headers.get("retry-after");
         const seconds = retryAfter === null ? NaN : Number(retryAfter);
-        const wait = retryAfter === null
-          ? NaN
-          : Number.isFinite(seconds)
-            ? seconds * 1000
-            : Date.parse(retryAfter) - Date.now();
+        const wait =
+          retryAfter === null
+            ? NaN
+            : Number.isFinite(seconds)
+              ? seconds * 1000
+              : Date.parse(retryAfter) - Date.now();
         await response.body?.cancel();
         if (wait > 300_000) {
           throw new Error("MAL title search requested a long retry delay. Stop and resume later.");
         }
-        await sleep(Number.isFinite(wait) ? Math.max(MAL_SEARCH_INTERVAL_MS, wait) : 5000 * 2 ** attempt);
+        await sleep(
+          Number.isFinite(wait) ? Math.max(MAL_SEARCH_INTERVAL_MS, wait) : 5000 * 2 ** attempt,
+        );
         continue;
       }
       if (!response.ok) {
-        const body = (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 200);
-        throw new Error(
-          `MAL title search HTTP ${response.status}${body ? `: ${body}` : ""}`,
-        );
+        const body = (await response.text().catch(() => ""))
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 200);
+        throw new Error(`MAL title search HTTP ${response.status}${body ? `: ${body}` : ""}`);
       }
       const json: unknown = await response.json();
-      if (!isJsonObject(json)) {return [];}
+      if (!isJsonObject(json)) {
+        return [];
+      }
       const data = isJsonArray(json.data) ? json.data : [];
       const hits: Al2malSearchHit[] = [];
       for (const item of data) {
-        if (!isJsonObject(item)) {continue;}
+        if (!isJsonObject(item)) {
+          continue;
+        }
         const node = objectField(item, "node") ?? item;
         const id = numberField(node, "id");
         const title = stringField(node, "title");
-        if (id === undefined || id <= 0 || title === undefined) {continue;}
+        if (id === undefined || id <= 0 || title === undefined) {
+          continue;
+        }
         const alternative = objectField(node, "alternative_titles");
         const aliases = [
           alternative === undefined ? undefined : stringField(alternative, "en"),
@@ -205,7 +218,9 @@ const titlePool = (entry: AniListEntry): string[] => {
     // Keep short titles for exact compare against MAL hit aliases, but never
     // send them as MAL search `q` (see malSearchQueryOk).
     const key = normalizeTitle(trimmed);
-    if (key && !values.has(key)) {values.set(key, trimmed);}
+    if (key && !values.has(key)) {
+      values.set(key, trimmed);
+    }
   }
   return [...values.values()];
 };
@@ -215,13 +230,19 @@ const chooseTitleMatch = (
   hits: readonly Al2malSearchHit[],
 ): { hit: Al2malSearchHit; method: "title-exact" | "title-partial" } | undefined => {
   const wanted = new Set(titlePool(entry).map(normalizeTitle));
-  if (wanted.size === 0 || hits.length === 0) {return undefined;}
+  if (wanted.size === 0 || hits.length === 0) {
+    return undefined;
+  }
 
   const exact = hits.filter((hit) =>
     [hit.title, ...hit.aliases].some((title) => wanted.has(normalizeTitle(title))),
   );
-  if (exact.length === 1) {return { hit: exact[0]!, method: "title-exact" };}
-  if (exact.length > 1) {return undefined;}
+  if (exact.length === 1) {
+    return { hit: exact[0]!, method: "title-exact" };
+  }
+  if (exact.length > 1) {
+    return undefined;
+  }
 
   // Single partial: one hit whose normalized title starts with / is started by a candidate.
   const partial = hits.filter((hit) => {
@@ -230,7 +251,9 @@ const chooseTitleMatch = (
       [...wanted].some((want) => name.startsWith(want) || want.startsWith(name)),
     );
   });
-  if (partial.length === 1) {return { hit: partial[0]!, method: "title-partial" };}
+  if (partial.length === 1) {
+    return { hit: partial[0]!, method: "title-partial" };
+  }
   return undefined;
 };
 
@@ -239,8 +262,7 @@ export const matchAniListToMal = async (
   search: Al2malSearch,
   options: { readonly includeProgress: boolean },
 ): Promise<
-  | { kind: "matched"; value: Al2malMatched }
-  | { kind: "unmatched"; value: Al2malUnmatched }
+  { kind: "matched"; value: Al2malMatched } | { kind: "unmatched"; value: Al2malUnmatched }
 > => {
   const update = malUpdateForAniList(entry, options);
   if (!update) {

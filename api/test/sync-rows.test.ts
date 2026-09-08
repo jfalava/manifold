@@ -66,9 +66,7 @@ describe("toRegistryEntry", () => {
         updated_at: 1,
       },
     ]);
-    expect(entry.providers).toEqual([
-      { provider: "comix", externalId: "hid1", updatedAt: 1 },
-    ]);
+    expect(entry.providers).toEqual([{ provider: "comix", externalId: "hid1", updatedAt: 1 }]);
     expect(() => encodeResponse(RegistryEntry, entry)).not.toThrow();
   });
 
@@ -100,7 +98,9 @@ describe("shouldAdvanceProgress", () => {
   it("uses read time to break ties and order progress without chapter numbers", () => {
     expect(shouldAdvanceProgress({ chapter_number: 22, read_at: 100 }, 22, 99)).toBe(false);
     expect(shouldAdvanceProgress({ chapter_number: 22, read_at: 100 }, 22, 100)).toBe(true);
-    expect(shouldAdvanceProgress({ chapter_number: null, read_at: 100 }, undefined, 101)).toBe(true);
+    expect(shouldAdvanceProgress({ chapter_number: null, read_at: 100 }, undefined, 101)).toBe(
+      true,
+    );
     expect(shouldAdvanceProgress({ chapter_number: 22, read_at: 100 }, undefined, 101)).toBe(false);
   });
 });

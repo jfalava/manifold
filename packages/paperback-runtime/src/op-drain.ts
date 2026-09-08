@@ -1,8 +1,5 @@
 import { isFiniteNumber, isString } from "@manifold/json";
-import {
-  ANILIST_SESSION_KEY,
-  ANILIST_VIEWER_ID_KEY,
-} from "./anilist-types.js";
+import { ANILIST_SESSION_KEY, ANILIST_VIEWER_ID_KEY } from "./anilist-types.js";
 import { errorMessage } from "./errors.js";
 import {
   deleteAniListEntry,
@@ -33,7 +30,9 @@ const aniListToken = (): string | undefined => {
 
 const aniListUserId = (): number | undefined => {
   const raw = Application.getState(ANILIST_VIEWER_ID_KEY);
-  if (!isString(raw) && !isFiniteNumber(raw)) {return undefined;}
+  if (!isString(raw) && !isFiniteNumber(raw)) {
+    return undefined;
+  }
   const parsed = Number(raw);
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 };
@@ -47,11 +46,7 @@ const executeOp = async (
 
   switch (parsed.kind) {
     case "anilist.status": {
-      const result = await saveAniListStatus(
-        token,
-        parsed.anilistId,
-        parsed.status,
-      );
+      const result = await saveAniListStatus(token, parsed.anilistId, parsed.status);
       return result.mediaListEntryId;
     }
     case "anilist.progress": {
@@ -83,10 +78,14 @@ const executeOp = async (
  */
 export const drainAniListOps = async (): Promise<void> => {
   const token = aniListToken();
-  if (!token) {return;}
+  if (!token) {
+    return;
+  }
   const api = configuredPersonalApi();
   const ops = await api.pendingAniListOps(DRAIN_BATCH_LIMIT);
-  if (ops.length === 0) {return;}
+  if (ops.length === 0) {
+    return;
+  }
 
   const needsListEntryIds = ops.some(
     (op) => op.kind === "anilist.delete" && op.payload["mediaListEntryId"] === undefined,
@@ -113,7 +112,11 @@ export const drainAniListOps = async (): Promise<void> => {
       results.push({ opId: op.opId, ok: false, error: message });
       continue;
     }
-    results.push({ opId: op.opId, ok: true, ...(mediaListEntryId !== undefined && { mediaListEntryId }) });
+    results.push({
+      opId: op.opId,
+      ok: true,
+      ...(mediaListEntryId !== undefined && { mediaListEntryId }),
+    });
     const drainedAnilistId = op.payload["anilistId"];
     console.log(
       `[manifold] drained op:${op.kind}:${isString(drainedAnilistId) ? drainedAnilistId : ""}`,
@@ -124,24 +127,26 @@ export const drainAniListOps = async (): Promise<void> => {
     await api.completeOps(results);
   } catch (error) {
     // Completion reporting is best-effort; failed ops simply retry later.
-    console.error(
-      `[manifold] drain completion report failed:${errorMessage(error)}`,
-    );
+    console.error(`[manifold] drain completion report failed:${errorMessage(error)}`);
   }
 };
 
 /** Throttled, fire-and-forget drain suitable for piggybacking on any request. */
 export const maybeDrainAniListOps = (): void => {
   const nowMs = Date.now();
-  if (nowMs - lastDrainAt < DRAIN_MIN_INTERVAL_MS) {return;}
-  if (!aniListToken()) {return;}
+  if (nowMs - lastDrainAt < DRAIN_MIN_INTERVAL_MS) {
+    return;
+  }
+  if (!aniListToken()) {
+    return;
+  }
   lastDrainAt = nowMs;
-  if (drainInFlight) {return;}
+  if (drainInFlight) {
+    return;
+  }
   drainInFlight = drainAniListOps()
     .catch((cause) => {
-      console.error(
-        `[manifold] op drain error:${errorMessage(cause)}`,
-      );
+      console.error(`[manifold] op drain error:${errorMessage(cause)}`);
     })
     .finally(() => {
       drainInFlight = undefined;

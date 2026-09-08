@@ -57,19 +57,24 @@ describe("processReadActions", () => {
     const recordRead = vi.fn().mockResolvedValue({});
     const pushProgress = vi.fn().mockResolvedValue(true);
 
-    await processReadActions([action("a1", "c5", 5), action("a2", "c9", 9), action("a3", "c2", 2)], {
-      recordRead,
-      pushProgress,
-    });
+    await processReadActions(
+      [action("a1", "c5", 5), action("a2", "c9", 9), action("a3", "c2", 2)],
+      {
+        recordRead,
+        pushProgress,
+      },
+    );
 
     expect(pushProgress).toHaveBeenCalledTimes(1);
     expect(pushProgress.mock.calls[0]?.[1]).toBe(9);
   });
 
   it("failed personal API reads are reported and excluded from the AniList max", async () => {
-    const recordRead = vi.fn().mockImplementation((_entryId: string, input: PersonalReadInput) =>
-      input.eventId === "bad" ? Promise.reject(new Error("HTTP 502")) : Promise.resolve({}),
-    );
+    const recordRead = vi
+      .fn()
+      .mockImplementation((_entryId: string, input: PersonalReadInput) =>
+        input.eventId === "bad" ? Promise.reject(new Error("HTTP 502")) : Promise.resolve({}),
+      );
     const pushProgress = vi.fn().mockResolvedValue(true);
 
     const result = await processReadActions(
@@ -140,9 +145,7 @@ describe("processReadActions", () => {
     // AniList progress is keyed by the anilist-canonical manga either way.
     expect(pushProgress).toHaveBeenCalledTimes(1);
     // SAFETY: optional field is | [SourceManga, number] | undefined when present at this call site
-    const progressCall = pushProgress.mock.calls[0] as
-      | [SourceManga, number]
-      | undefined;
+    const progressCall = pushProgress.mock.calls[0] as [SourceManga, number] | undefined;
     expect(progressCall?.[0]?.mangaId).toBe("anilist:141756");
     expect(progressCall?.[1]).toBe(13);
   });

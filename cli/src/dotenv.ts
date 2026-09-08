@@ -13,9 +13,13 @@ export const loadDotEnv = (file: string): void => {
   }
   for (const line of contents.split(/\r?\n/u)) {
     const match = line.match(/^\s*(?:export\s+)?([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/u);
-    if (!match) {continue;}
+    if (!match) {
+      continue;
+    }
     const [, key, rawValue] = match;
-    if (!key || rawValue === undefined) {continue;}
+    if (!key || rawValue === undefined) {
+      continue;
+    }
     const value =
       (rawValue.startsWith('"') && rawValue.endsWith('"')) ||
       (rawValue.startsWith("'") && rawValue.endsWith("'"))

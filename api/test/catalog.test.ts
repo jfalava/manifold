@@ -15,14 +15,15 @@ const env = {
     fetch: async (input: Request | string) => {
       const pathname = new URL(requestHref(input)).pathname;
       const body = assets.get(pathname);
-      if (body === undefined) {return new Response("missing", { status: 404 });}
+      if (body === undefined) {
+        return new Response("missing", { status: 404 });
+      }
       return new Response(body, { status: 200 });
     },
   },
 } as Env;
 
-const get = (path: string) =>
-  catalogApp.request(`https://manifold.jfa.dev${path}`, {}, env);
+const get = (path: string) => catalogApp.request(`https://manifold.jfa.dev${path}`, {}, env);
 
 describe("Paperback catalog routes", () => {
   it("publishes only the tracker in versioning.json without auth", async () => {
@@ -52,9 +53,7 @@ describe("Paperback catalog routes", () => {
   });
 
   it("serves icon.png at the Paperback static/ path", async () => {
-    const response = await get(
-      "/extensions/0.9/stable/MANIFOLD/static/icon.png",
-    );
+    const response = await get("/extensions/0.9/stable/MANIFOLD/static/icon.png");
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("image/png");
     expect(await response.text()).toBe("png");

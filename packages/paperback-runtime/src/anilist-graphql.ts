@@ -52,14 +52,18 @@ const enqueue = <T>(task: () => Promise<T>): Promise<T> => {
 
 const gate = async (): Promise<void> => {
   const waitMs = Math.max(nextSlotAt - Date.now(), cooldownUntil - Date.now(), 0);
-  if (waitMs > 0) {await Application.sleep(Math.ceil(waitMs / 1000));}
+  if (waitMs > 0) {
+    await Application.sleep(Math.ceil(waitMs / 1000));
+  }
   nextSlotAt = Math.max(Date.now(), nextSlotAt) + MIN_REQUEST_SPACING_MS;
 };
 
 const headerValue = (headers: Record<string, string>, name: string): string | undefined => {
   const target = name.toLowerCase();
   for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === target) {return value;}
+    if (key.toLowerCase() === target) {
+      return value;
+    }
   }
   return undefined;
 };
@@ -88,9 +92,7 @@ const rawAniListRequest = async <A>(
   });
   try {
     // SAFETY: I/O JSON.parse of the AniList GraphQL HTTP body at the scheduleRequest boundary.
-    const parsed: unknown = JSON.parse(
-      Application.arrayBufferToUTF8String(bodyBuffer),
-    );
+    const parsed: unknown = JSON.parse(Application.arrayBufferToUTF8String(bodyBuffer));
     if (!isJsonObject(parsed)) {
       return { status: response.status, headers: response.headers ?? {} };
     }
@@ -107,11 +109,12 @@ const rawAniListRequest = async <A>(
 };
 
 const isThrottled = <A>(outcome: RawOutcome<A>): boolean => {
-  if (outcome.status === 429) {return true;}
+  if (outcome.status === 429) {
+    return true;
+  }
   return (outcome.body?.errors ?? []).some(
     (error) =>
-      error.status === 429 ||
-      (error.message !== undefined && THROTTLE_MESSAGE.test(error.message)),
+      error.status === 429 || (error.message !== undefined && THROTTLE_MESSAGE.test(error.message)),
   );
 };
 
@@ -120,10 +123,7 @@ const scheduleCooldown = (headers: Record<string, string>): void => {
   const seconds = raw !== undefined ? Number.parseInt(raw, 10) : Number.NaN;
   const waitSeconds =
     Number.isSafeInteger(seconds) && seconds > 0 ? seconds : DEFAULT_RETRY_AFTER_SECONDS;
-  cooldownUntil = Math.max(
-    cooldownUntil,
-    Date.now() + waitSeconds * 1000 + COOLDOWN_BUFFER_MS,
-  );
+  cooldownUntil = Math.max(cooldownUntil, Date.now() + waitSeconds * 1000 + COOLDOWN_BUFFER_MS);
 };
 
 const interpretOutcome = <A>(outcome: RawOutcome<A>): A => {
@@ -156,7 +156,9 @@ export const aniListRequest = async <A>(
     for (let attempt = 1; ; attempt += 1) {
       await gate();
       const outcome = await rawAniListRequest<A>(token, query, variables);
-      if (!isThrottled(outcome)) {return interpretOutcome(outcome);}
+      if (!isThrottled(outcome)) {
+        return interpretOutcome(outcome);
+      }
       if (attempt > MAX_THROTTLED_RETRIES) {
         throw new Error("AniList kept rate limiting after repeated backoff");
       }
@@ -269,10 +271,14 @@ export const fetchAniListLibrary = async (
     for (const entry of list.entries ?? []) {
       const mediaId = entry.media?.id;
       const status = entry.status ? normalizeAniListStatus(entry.status) : undefined;
-      if (!mediaId || !status) {continue;}
+      if (!mediaId || !status) {
+        continue;
+      }
 
       const key = String(mediaId);
-      if (items.get(key)?.status === "re_reading") {continue;}
+      if (items.get(key)?.status === "re_reading") {
+        continue;
+      }
 
       const titles = entry.media?.title;
       items.set(key, {
@@ -283,7 +289,9 @@ export const fetchAniListLibrary = async (
           titleValue(titles?.english) ??
           titleValue(titles?.romaji) ??
           `AniList ${mediaId}`,
-        ...(titleValue(entry.media?.coverImage?.large) && { coverUrl: titleValue(entry.media?.coverImage?.large) }),
+        ...(titleValue(entry.media?.coverImage?.large) && {
+          coverUrl: titleValue(entry.media?.coverImage?.large),
+        }),
       });
     }
   }
@@ -340,13 +348,22 @@ export const saveAniListStatus = async (
   const media = data.SaveMediaListEntry?.media;
   return {
     ...(entryId !== undefined && { mediaListEntryId: entryId }),
-    ...(media && { backupIdentity: {
-      anilistId,
-      ...(media.idMal != null && media.idMal > 0 && { malId: String(media.idMal) }),
-      titles: [...new Set([
-        media.title?.english, media.title?.romaji, media.title?.native, ...(media.synonyms ?? []),
-      ].flatMap((title) => title?.trim() ? [title.trim()] : []))],
-    } }),
+    ...(media && {
+      backupIdentity: {
+        anilistId,
+        ...(media.idMal != null && media.idMal > 0 && { malId: String(media.idMal) }),
+        titles: [
+          ...new Set(
+            [
+              media.title?.english,
+              media.title?.romaji,
+              media.title?.native,
+              ...(media.synonyms ?? []),
+            ].flatMap((title) => (title?.trim() ? [title.trim()] : [])),
+          ),
+        ],
+      },
+    }),
   };
 };
 
@@ -371,7 +388,9 @@ export type FuzzyDateInput = {
 };
 
 const fmiDate = (value: string | null): FuzzyDateInput | null => {
-  if (value === null) {return null;}
+  if (value === null) {
+    return null;
+  }
   if (!FMI_DATE.test(value)) {
     throw new Error(`Invalid AniList date: ${value}; expected YYYY-MM-DD`);
   }
@@ -382,7 +401,9 @@ const fmiDate = (value: string | null): FuzzyDateInput | null => {
   const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
   const daysInMonth =
     month === 2
-      ? isLeapYear ? 29 : 28
+      ? isLeapYear
+        ? 29
+        : 28
       : month === 4 || month === 6 || month === 9 || month === 11
         ? 30
         : 31;
@@ -412,7 +433,9 @@ export const saveAniListFields = async (
     }`,
     {
       mediaId,
-      ...(!(change.status === undefined) && { status: change.status === null ? null : toAniListStatus(change.status) }),
+      ...(!(change.status === undefined) && {
+        status: change.status === null ? null : toAniListStatus(change.status),
+      }),
       ...(!(change.score === undefined) && { score: change.score }),
       ...(!(change.notes === undefined) && { notes: change.notes }),
       ...(!(change.startedAt === undefined) && { startedAt: fmiDate(change.startedAt) }),
@@ -485,7 +508,9 @@ export const saveAniListProgress = async (
   // AniList tracks whole chapters only; fractional releases (e.g. 38.5)
   // normalize down to their integer part. Below 1 there is nothing to push.
   const chapters = Math.floor(progress);
-  if (!Number.isSafeInteger(chapters) || chapters < 1) {return false;}
+  if (!Number.isSafeInteger(chapters) || chapters < 1) {
+    return false;
+  }
   // Status is NEVER touched here — collections own status transitions.
   // Reading a DROPPED title bumps its progress and stays DROPPED; omitting
   // the field preserves whatever AniList already has (creating a private

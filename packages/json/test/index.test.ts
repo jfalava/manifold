@@ -46,13 +46,13 @@ describe("json boundary parsers", () => {
     expect(requestHref({ url: "https://example.test/c" } as RequestInfo)).toBe(
       "https://example.test/c",
     );
-    expect(requestInitText({ body: "{\"ok\":true}" })).toBe("{\"ok\":true}");
+    expect(requestInitText({ body: '{"ok":true}' })).toBe('{"ok":true}');
     expect(requestInitText({ body: new URLSearchParams("a=1") })).toBeUndefined();
   });
 
   it("reads error cause as a named unknown parameter", () => {
     expect(errorMessage(new Error("boom"))).toBe("boom");
     expect(errorMessage("plain")).toBe("plain");
-    expect(errorMessage({ code: 7 })).toBe("{\"code\":7}");
+    expect(errorMessage({ code: 7 })).toBe('{"code":7}');
   });
 });

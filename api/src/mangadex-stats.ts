@@ -46,16 +46,13 @@ export async function mapWithConcurrency<T>(
   worker: (item: T) => Promise<void>,
 ): Promise<void> {
   let cursor = 0;
-  const runners = Array.from(
-    { length: Math.min(concurrency, items.length) },
-    async () => {
-      while (cursor < items.length) {
-        const item = items[cursor];
-        cursor += 1;
-        await worker(item);
-      }
-    },
-  );
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const item = items[cursor];
+      cursor += 1;
+      await worker(item);
+    }
+  });
   await Promise.all(runners);
 }
 
@@ -78,7 +75,9 @@ export const sampleFeedStats = (page: MdFeedPage): MdFeedStatsPayload => {
 const stringRecord = (value: JsonObject): Readonly<Record<string, string>> | undefined => {
   const numbersById: Record<string, string> = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (!isString(entry)) {return undefined;}
+    if (!isString(entry)) {
+      return undefined;
+    }
     numbersById[key] = entry;
   }
   return numbersById;
@@ -86,8 +85,12 @@ const stringRecord = (value: JsonObject): Readonly<Record<string, string>> | und
 
 const nullableNumber = (record: JsonObject, key: string): number | null | undefined => {
   const value = record[key];
-  if (value === null) {return null;}
-  if (value === undefined) {return null;}
+  if (value === null) {
+    return null;
+  }
+  if (value === undefined) {
+    return null;
+  }
   return isFiniteNumber(value) ? value : undefined;
 };
 
@@ -98,7 +101,9 @@ export const parseMdFeedStatsPayload = (text: string): MdFeedStatsPayload | unde
   } catch {
     return undefined;
   }
-  if (!isJsonObject(parsed)) {return undefined;}
+  if (!isJsonObject(parsed)) {
+    return undefined;
+  }
   const totalListed = numberField(parsed, "totalListed");
   const latestChapter = nullableNumber(parsed, "latestChapter");
   const latestPublishedAt = nullableNumber(parsed, "latestPublishedAt");
@@ -128,7 +133,9 @@ export const composeMangaDexEntryStat = (
     if (marks !== undefined && feed !== undefined) {
       for (const chapterId of marks) {
         const numberText = feed.numbersById[chapterId];
-        if (numberText === undefined) {continue;}
+        if (numberText === undefined) {
+          continue;
+        }
         readChapters += 1;
         const parsed = Number.parseFloat(numberText);
         if (Number.isFinite(parsed) && (lastRead === null || parsed > lastRead)) {

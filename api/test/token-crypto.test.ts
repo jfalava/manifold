@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  decryptToken,
-  encryptToken,
-  fromBase64Url,
-  toBase64Url,
-} from "../src/token-crypto";
+import { decryptToken, encryptToken, fromBase64Url, toBase64Url } from "../src/token-crypto";
 import type { Env } from "../src/types";
 
 const environment: Pick<Env, "MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET"> = {

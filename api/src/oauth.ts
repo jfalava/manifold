@@ -30,13 +30,13 @@ export const OAuthTokenResponse = Schema.Struct({
   refresh_token: Schema.optional(Schema.NonEmptyString),
   token_type: Schema.optional(Schema.NonEmptyString),
   expires_in: Schema.optional(Schema.Number),
-  scope: Schema.optional(Schema.String)
+  scope: Schema.optional(Schema.String),
 });
 export type OAuthTokenResponse = Schema.Schema.Type<typeof OAuthTokenResponse>;
 
 export const getOAuthClientConfig = async (
   provider: OAuthProvider,
-  env: OAuthEnvironment
+  env: OAuthEnvironment,
 ): Promise<OAuthClientConfig> => {
   if (provider === "anilist") {
     return {
@@ -44,8 +44,11 @@ export const getOAuthClientConfig = async (
       authorizationEndpoint: "https://anilist.co/api/v2/oauth/authorize",
       tokenEndpoint: "https://anilist.co/api/v2/oauth/token",
       clientId: env.MANIFOLD_ANILIST_CLIENT_ID,
-      clientSecret: await readSecret(env.MANIFOLD_ANILIST_CLIENT_SECRET, "MANIFOLD_ANILIST_CLIENT_SECRET"),
-      pkceMethod: undefined
+      clientSecret: await readSecret(
+        env.MANIFOLD_ANILIST_CLIENT_SECRET,
+        "MANIFOLD_ANILIST_CLIENT_SECRET",
+      ),
+      pkceMethod: undefined,
     };
   }
 
@@ -55,8 +58,9 @@ export const getOAuthClientConfig = async (
     tokenEndpoint: "https://myanimelist.net/v1/oauth2/token",
     clientId: env.MANIFOLD_MAL_CLIENT_ID,
     clientSecret:
-      (await readSecretOptional(env.MANIFOLD_MAL_CLIENT_SECRET, "MANIFOLD_MAL_CLIENT_SECRET")) ?? "",
-    pkceMethod: "plain"
+      (await readSecretOptional(env.MANIFOLD_MAL_CLIENT_SECRET, "MANIFOLD_MAL_CLIENT_SECRET")) ??
+      "",
+    pkceMethod: "plain",
   };
 };
 
@@ -75,13 +79,13 @@ export const createAuthorizationUrl = (
   config: OAuthClientConfig,
   redirectUri: string,
   state: string,
-  codeChallenge?: string
+  codeChallenge?: string,
 ): string => {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: config.clientId,
     redirect_uri: redirectUri,
-    state
+    state,
   });
 
   if (config.pkceMethod && codeChallenge) {

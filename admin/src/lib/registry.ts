@@ -1,6 +1,3 @@
-import { createServerFn } from "@tanstack/react-start";
-import { Schema } from "effect";
-import { manifoldUserAgent } from "@manifold/json";
 import {
   AuthConnection as AuthConnectionSchema,
   type AuthConnection as ContractAuthConnection,
@@ -28,8 +25,17 @@ import {
   SyncOp,
   type ListEvent,
 } from "@manifold/contract";
+import { manifoldUserAgent } from "@manifold/json";
+import { createServerFn } from "@tanstack/react-start";
+import { Schema } from "effect";
 
-import { isFunctionValue, isJsonObject, isJsonValue, isStringValue, type SecretHandle } from "./guards";
+import {
+  isFunctionValue,
+  isJsonObject,
+  isJsonValue,
+  isStringValue,
+  type SecretHandle,
+} from "./guards";
 import type { MangaDexLibraryItem, MangaDexReadingStatus, MangaDexStat } from "./mangadex";
 import { cachedJson, invalidateCachedJson } from "./server-cache";
 import { trusted } from "./trusted-cast";
@@ -236,14 +242,10 @@ export const saveListState = createServerFn({ method: "POST" })
   .validator((data: ListStatePatch) => data)
   .handler(async ({ data }) => {
     const { entryId, ...patch } = data;
-    return call(
-      `/v1/entries/${encodeURIComponent(entryId)}/list-state`,
-      ListState,
-      {
-        method: "POST",
-        body: { ...patch, origin: "admin" },
-      },
-    );
+    return call(`/v1/entries/${encodeURIComponent(entryId)}/list-state`, ListState, {
+      method: "POST",
+      body: { ...patch, origin: "admin" },
+    });
   });
 
 interface BindInput {
@@ -255,14 +257,10 @@ interface BindInput {
 export const bindProvider = createServerFn({ method: "POST" })
   .validator((data: BindInput) => data)
   .handler(async ({ data }) =>
-    call(
-      `/v1/entries/${encodeURIComponent(data.entryId)}/providers`,
-      ContractRegistryEntry,
-      {
-        method: "POST",
-        body: { provider: data.provider, externalId: data.externalId },
-      },
-    ),
+    call(`/v1/entries/${encodeURIComponent(data.entryId)}/providers`, ContractRegistryEntry, {
+      method: "POST",
+      body: { provider: data.provider, externalId: data.externalId },
+    }),
   );
 
 interface UnlinkInput {
@@ -283,24 +281,16 @@ export const unlinkProvider = createServerFn({ method: "POST" })
 export const nukeEntry = createServerFn({ method: "POST" })
   .validator((data: { entryId: string }) => data)
   .handler(async ({ data }) =>
-    call(
-      `/v1/entries/${encodeURIComponent(data.entryId)}/delete`,
-      OkWithListStateResponse,
-      {
-        method: "POST",
-        body: { origin: "admin" },
-      },
-    ),
+    call(`/v1/entries/${encodeURIComponent(data.entryId)}/delete`, OkWithListStateResponse, {
+      method: "POST",
+      body: { origin: "admin" },
+    }),
   );
 
 export const retryOp = createServerFn({ method: "POST" })
   .validator((data: { opId: string }) => data)
   .handler(async ({ data }) =>
-    call(
-      `/v1/ops/${encodeURIComponent(data.opId)}/retry`,
-      SyncOp,
-      { method: "POST" },
-    ),
+    call(`/v1/ops/${encodeURIComponent(data.opId)}/retry`, SyncOp, { method: "POST" }),
   );
 
 export const loadMangaDexLibrary = createServerFn({ method: "POST" })
@@ -526,11 +516,9 @@ export const disconnectAuth = createServerFn({ method: "POST" })
     if (!isAuthProvider(provider)) {
       throw new Error(`Unknown auth provider: ${String(provider)}`);
     }
-    await call(
-      `/v1/auth/${encodeURIComponent(provider)}`,
-      AuthDisconnectedResponse,
-      { method: "DELETE" },
-    );
+    await call(`/v1/auth/${encodeURIComponent(provider)}`, AuthDisconnectedResponse, {
+      method: "DELETE",
+    });
     await invalidateCachedJson("library-overview:v1");
     await invalidateCachedJson("library-overview:v2");
     return { provider, connected: false };

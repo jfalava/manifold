@@ -8,10 +8,7 @@ import {
   requestInitText,
   type JsonValue,
 } from "@manifold/json";
-import {
-  createAniListSource,
-  createMyAnimeListSource,
-} from "../src/sources";
+import { createAniListSource, createMyAnimeListSource } from "../src/sources";
 
 const jsonResponse = (body: JsonValue, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -50,7 +47,12 @@ describe("AniList canonical source", () => {
                   status: "RELEASING",
                   averageScore: 88,
                   coverImage: { large: "https://example.test/cover.jpg" },
-                  externalLinks: [{ site: "MangaDex", url: "https://mangadex.org/title/01234567-89ab-cdef-0123-456789abcdef" }],
+                  externalLinks: [
+                    {
+                      site: "MangaDex",
+                      url: "https://mangadex.org/title/01234567-89ab-cdef-0123-456789abcdef",
+                    },
+                  ],
                 },
               ],
             },
@@ -121,31 +123,41 @@ describe("AniList canonical source", () => {
       provider: "anilist",
       status: 403,
     });
-    const message =
-      isJsonObject(error) && isString(error.message) ? error.message : "";
+    const message = isJsonObject(error) && isString(error.message) ? error.message : "";
     expect(message).toContain("You have been manually blocked");
   });
 });
 
 describe("MyAnimeList canonical source", () => {
-  it.each(["ab", " 漫画 ", "𠮷𠮷"])("rejects short Unicode search %s without a request", async (query) => {
-    let calls = 0;
-    const source = createMyAnimeListSource({ clientId: "client", fetcher: async () => {
-      calls += 1;
-      return jsonResponse({ data: [] });
-    } });
-    await expect(Effect.runPromise(source.search(query))).rejects.toMatchObject({
-      provider: "mal", status: 400, message: "MyAnimeList search requires at least 3 characters",
-    });
-    expect(calls).toBe(0);
-  });
+  it.each(["ab", " 漫画 ", "𠮷𠮷"])(
+    "rejects short Unicode search %s without a request",
+    async (query) => {
+      let calls = 0;
+      const source = createMyAnimeListSource({
+        clientId: "client",
+        fetcher: async () => {
+          calls += 1;
+          return jsonResponse({ data: [] });
+        },
+      });
+      await expect(Effect.runPromise(source.search(query))).rejects.toMatchObject({
+        provider: "mal",
+        status: 400,
+        message: "MyAnimeList search requires at least 3 characters",
+      });
+      expect(calls).toBe(0);
+    },
+  );
 
   it("accepts three Unicode characters", async () => {
     let href = "";
-    const source = createMyAnimeListSource({ clientId: "client", fetcher: async (input) => {
-      href = requestHref(input);
-      return jsonResponse({ data: [] });
-    } });
+    const source = createMyAnimeListSource({
+      clientId: "client",
+      fetcher: async (input) => {
+        href = requestHref(input);
+        return jsonResponse({ data: [] });
+      },
+    });
     await expect(Effect.runPromise(source.search(" 漫画家 "))).resolves.toEqual([]);
     expect(new URL(href).searchParams.get("q")).toBe("漫画家");
   });

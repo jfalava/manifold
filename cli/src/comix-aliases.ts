@@ -14,8 +14,7 @@ export const providerIdOf = (
     readonly providers: readonly { readonly provider: string; readonly externalId: string }[];
   },
   provider: string,
-): string | undefined =>
-  row.providers.find((link) => link.provider === provider)?.externalId;
+): string | undefined => row.providers.find((link) => link.provider === provider)?.externalId;
 
 /**
  * Collect every language/title variant for registry prefill matching.
@@ -30,10 +29,7 @@ export const loadRegistrySearchTitles = async (
   },
   options: {
     readonly anilistToken?: string;
-    readonly anilistTitles?: (
-      token: string,
-      mediaId: number,
-    ) => Promise<readonly string[]>;
+    readonly anilistTitles?: (token: string, mediaId: number) => Promise<readonly string[]>;
     readonly mangaDexTitles?: (id: string) => Promise<readonly string[]>;
   } = {},
 ): Promise<readonly string[]> => {
@@ -51,15 +47,21 @@ export const loadRegistrySearchTitles = async (
     }
   }
   const unique = uniqueTitles(titles);
-  if (unique.length >= 2) {return unique;}
+  if (unique.length >= 2) {
+    return unique;
+  }
   const mangadexId = providerIdOf(row, "mangadex");
-  if (!mangadexId) {return unique;}
-  const loadMangaDex = options.mangaDexTitles ?? (async (id: string) => {
-    const manga = await Effect.runPromise(
-      createMangaDexClient({ userAgent: manifoldUserAgent("cli") }).getManga(id),
-    );
-    return [manga.title, ...manga.altTitles];
-  });
+  if (!mangadexId) {
+    return unique;
+  }
+  const loadMangaDex =
+    options.mangaDexTitles ??
+    (async (id: string) => {
+      const manga = await Effect.runPromise(
+        createMangaDexClient({ userAgent: manifoldUserAgent("cli") }).getManga(id),
+      );
+      return [manga.title, ...manga.altTitles];
+    });
   try {
     return uniqueTitles([...unique, ...(await loadMangaDex(mangadexId))]);
   } catch {

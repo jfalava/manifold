@@ -6,7 +6,7 @@ import { groupOutboxForDrain } from "../src/outbox-drain";
 const row = (id: number, payload: string | JsonObject) => ({
   id,
   payload: isString(payload) ? payload : JSON.stringify(payload),
-  attempts: 0
+  attempts: 0,
 });
 
 const readPayload = (entryId: string, chapterId: string) => ({
@@ -15,7 +15,7 @@ const readPayload = (entryId: string, chapterId: string) => ({
   chapterKey: `mangadex:${chapterId}`,
   provider: "mangadex",
   sourceChapterId: chapterId,
-  readAt: 0
+  readAt: 0,
 });
 
 describe("groupOutboxForDrain", () => {
@@ -24,7 +24,7 @@ describe("groupOutboxForDrain", () => {
       row(1, readPayload("anilist:1", "ch-a")),
       row(2, readPayload("anilist:1", "ch-b")),
       row(3, readPayload("anilist:1", "ch-a")),
-      row(4, readPayload("anilist:2", "ch-c"))
+      row(4, readPayload("anilist:2", "ch-c")),
     ]);
 
     expect(invalid).toEqual([]);
@@ -42,7 +42,7 @@ describe("groupOutboxForDrain", () => {
     const { groups, invalid } = groupOutboxForDrain([
       row(1, "{not json"),
       row(2, readPayload("anilist:9", "ch-x")),
-      row(3, { provider: "mangadex" })
+      row(3, { provider: "mangadex" }),
     ]);
 
     expect(groups).toHaveLength(1);

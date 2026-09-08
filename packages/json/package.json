@@ -6,11 +6,11 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "lint": "oxlint",
-    "format": "oxfmt",
-    "typecheck": "tsc --noEmit",
     "check": "oxlint --fix",
-    "test": "vitest run"
+    "format": "oxfmt",
+    "lint": "oxlint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "oxfmt": "catalog:build",

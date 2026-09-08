@@ -24,10 +24,7 @@ import {
 export const ANILIST_GRAPHQL_ENDPOINT = "https://graphql.anilist.co";
 export const MYANIMELIST_MANGA_ENDPOINT = "https://api.myanimelist.net/v2/manga";
 
-export type CanonicalFetcher = (
-  input: RequestInfo | URL,
-  init?: RequestInit,
-) => Promise<Response>;
+export type CanonicalFetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export interface AniListSourceOptions {
   readonly fetcher?: CanonicalFetcher;
@@ -61,23 +58,32 @@ const stringsFrom = (value: JsonValue | undefined): string[] =>
     : [];
 
 const mangaDexIdFromUrl = (value: JsonValue | undefined): string | undefined => {
-  if (!isString(value)) {return undefined;}
+  if (!isString(value)) {
+    return undefined;
+  }
   // Parse without global URL — Paperback's extension JSC sandbox does not
   // define it (`Can't find variable: URL`), and AniList enrichment runs this
   // on every library open when normalizing externalLinks.
   const trimmed = value.trim();
-  const match = /^(?:https?:)?\/\/(?:www\.)?mangadex\.org\/title\/([0-9a-f]{8}-[0-9a-f-]{27})(?:\/|$)/i.exec(
-    trimmed,
-  );
+  const match =
+    /^(?:https?:)?\/\/(?:www\.)?mangadex\.org\/title\/([0-9a-f]{8}-[0-9a-f-]{27})(?:\/|$)/i.exec(
+      trimmed,
+    );
   return match?.[1]?.toLowerCase();
 };
 
 const mangaDexExternalId = (value: JsonValue | undefined): string | undefined => {
-  if (!isJsonArray(value)) {return undefined;}
+  if (!isJsonArray(value)) {
+    return undefined;
+  }
   for (const link of value) {
-    if (!isJsonObject(link)) {continue;}
+    if (!isJsonObject(link)) {
+      continue;
+    }
     const id = mangaDexIdFromUrl(link.url);
-    if (id !== undefined) {return id;}
+    if (id !== undefined) {
+      return id;
+    }
   }
   return undefined;
 };
@@ -87,9 +93,13 @@ const uniqueStrings = (values: readonly (string | undefined)[]): string[] => {
   const result: string[] = [];
   for (const value of values) {
     const normalized = value?.trim();
-    if (!normalized) {continue;}
+    if (!normalized) {
+      continue;
+    }
     const key = normalized.toLocaleLowerCase();
-    if (seen.has(key)) {continue;}
+    if (seen.has(key)) {
+      continue;
+    }
     seen.add(key);
     result.push(normalized);
   }
@@ -120,7 +130,9 @@ const withSourceError = <A>(
   Effect.tryPromise({
     try: action,
     catch: (cause) => {
-      if (isSourceError(cause)) {return cause;}
+      if (isSourceError(cause)) {
+        return cause;
+      }
       return sourceError(
         provider,
         cause instanceof Error ? cause.message : "Canonical provider request failed",
@@ -161,11 +173,15 @@ const requestJson = async (
 };
 
 const dateFromParts = (value: JsonValue | undefined): string | undefined => {
-  if (value === undefined || !isJsonObject(value)) {return undefined;}
+  if (value === undefined || !isJsonObject(value)) {
+    return undefined;
+  }
   const year = numberField(value, "year");
   const month = numberField(value, "month");
   const day = numberField(value, "day");
-  if (year === undefined) {return undefined;}
+  if (year === undefined) {
+    return undefined;
+  }
   return [year, month, day]
     .filter((part): part is number => part !== undefined)
     .map((part, index) => (index === 0 ? String(part) : String(part).padStart(2, "0")))
@@ -178,9 +194,9 @@ const metadata = (value: JsonObject): CanonicalMetadata => {
   const coverUrl =
     cover === undefined
       ? undefined
-      : stringField(cover, "extraLarge") ??
+      : (stringField(cover, "extraLarge") ??
         stringField(cover, "large") ??
-        stringField(cover, "medium");
+        stringField(cover, "medium"));
   const chapters = numberField(value, "chapters");
   const volumes = numberField(value, "volumes");
   const startDate = dateFromParts(value.startDate);
@@ -198,7 +214,9 @@ const metadata = (value: JsonObject): CanonicalMetadata => {
 };
 
 const titleValues = (value: JsonValue | undefined): string[] => {
-  if (value === undefined || !isJsonObject(value)) {return [];}
+  if (value === undefined || !isJsonObject(value)) {
+    return [];
+  }
   return [
     stringField(value, "userPreferred"),
     stringField(value, "english"),
@@ -230,9 +248,13 @@ const makeEntry = (
 };
 
 const anilistMedia = (value: JsonValue | undefined): CanonicalSearchResult | undefined => {
-  if (value === undefined || !isJsonObject(value)) {return undefined;}
+  if (value === undefined || !isJsonObject(value)) {
+    return undefined;
+  }
   const id = numberField(value, "id");
-  if (id === undefined) {return undefined;}
+  if (id === undefined) {
+    return undefined;
+  }
   const idMal = numberField(value, "idMal");
   const titles = [...titleValues(value.title), ...stringsFrom(value.synonyms)];
   const averageScore = numberField(value, "averageScore");
@@ -254,7 +276,9 @@ const anilistMedia = (value: JsonValue | undefined): CanonicalSearchResult | und
 const anilistGraphQLError = (body: JsonObject): CanonicalSourceError | undefined => {
   const errors = arrayField(body, "errors") ?? [];
   const messages = errors.flatMap((error) => {
-    if (!isJsonObject(error)) {return [];}
+    if (!isJsonObject(error)) {
+      return [];
+    }
     const message = stringField(error, "message");
     return message === undefined ? [] : [message];
   });
@@ -312,21 +336,23 @@ const anilistGetByMalQuery = `
 
 const limitFrom = (options: CanonicalSearchOptions | undefined): number => {
   const limit = options?.limit ?? 20;
-  if (!Number.isFinite(limit)) {return 20;}
+  if (!Number.isFinite(limit)) {
+    return 20;
+  }
   return Math.min(25, Math.max(1, Math.floor(limit)));
 };
 
 const requireQuery = (query: string, provider: CanonicalSourceError["provider"]): string => {
   const normalized = query.trim();
-  if (!normalized) {throw sourceError(provider, "Canonical search query cannot be empty");}
+  if (!normalized) {
+    throw sourceError(provider, "Canonical search query cannot be empty");
+  }
   return normalized;
 };
 
 export const normalizeAniListMedia = anilistMedia;
 
-export const createAniListSource = (
-  options: AniListSourceOptions = {},
-): CanonicalSearchSource => {
+export const createAniListSource = (options: AniListSourceOptions = {}): CanonicalSearchSource => {
   const fetcher = options.fetcher ?? defaultFetcher;
   const endpoint = options.endpoint ?? ANILIST_GRAPHQL_ENDPOINT;
 
@@ -351,11 +377,15 @@ export const createAniListSource = (
           perPage: limitFrom(searchOptions),
         });
         const graphQLError = anilistGraphQLError(body);
-        if (graphQLError) {throw graphQLError;}
+        if (graphQLError) {
+          throw graphQLError;
+        }
         const data = objectField(body, "data");
         const page = data === undefined ? undefined : objectField(data, "Page");
         const media = page === undefined ? undefined : arrayField(page, "media");
-        if (!media) {throw sourceError("anilist", "AniList search returned no media array");}
+        if (!media) {
+          throw sourceError("anilist", "AniList search returned no media array");
+        }
         return media.flatMap((item) => {
           const result = anilistMedia(item);
           return result === undefined ? [] : [result];
@@ -369,7 +399,9 @@ export const createAniListSource = (
         }
         const body = await request(anilistGetQuery, { id });
         const graphQLError = anilistGraphQLError(body);
-        if (graphQLError) {throw graphQLError;}
+        if (graphQLError) {
+          throw graphQLError;
+        }
         const data = objectField(body, "data");
         return anilistMedia(data === undefined ? undefined : objectField(data, "Media"));
       }),
@@ -382,7 +414,9 @@ export const createAniListSource = (
         const body = await request(anilistGetByMalQuery, { idMal: id });
         const graphQLError = anilistGraphQLError(body);
         if (graphQLError) {
-          if (graphQLError.message.includes("Not Found")) {return undefined;}
+          if (graphQLError.message.includes("Not Found")) {
+            return undefined;
+          }
           throw graphQLError;
         }
         const data = objectField(body, "data");
@@ -407,10 +441,14 @@ const malFields = [
 ].join(",");
 
 const malEntry = (value: JsonValue | undefined): CanonicalSearchResult | undefined => {
-  if (value === undefined || !isJsonObject(value)) {return undefined;}
+  if (value === undefined || !isJsonObject(value)) {
+    return undefined;
+  }
   const id = numberField(value, "id");
   const title = stringField(value, "title");
-  if (id === undefined || title === undefined) {return undefined;}
+  if (id === undefined || title === undefined) {
+    return undefined;
+  }
   const alternativeTitles = objectField(value, "alternative_titles");
   const aliases = [
     title,
@@ -423,7 +461,7 @@ const malEntry = (value: JsonValue | undefined): CanonicalSearchResult | undefin
   const coverUrl =
     picture === undefined
       ? undefined
-      : stringField(picture, "large") ?? stringField(picture, "medium");
+      : (stringField(picture, "large") ?? stringField(picture, "medium"));
   const chapters = numberField(value, "num_chapters");
   const volumes = numberField(value, "num_volumes");
   const startDate = stringField(value, "start_date");
@@ -485,7 +523,9 @@ export const createMyAnimeListSource = (
         const href = `${endpoint}?q=${q}&limit=${limit}&fields=${fields}`;
         const body = await request(href);
         const data = arrayField(body, "data");
-        if (!data) {throw sourceError("mal", "MyAnimeList search returned no data array");}
+        if (!data) {
+          throw sourceError("mal", "MyAnimeList search returned no data array");
+        }
         return data.flatMap((item) => {
           const result = malEntry(isJsonObject(item) ? objectField(item, "node") : undefined);
           return result === undefined ? [] : [result];
@@ -496,8 +536,7 @@ export const createMyAnimeListSource = (
         if (!options.clientId || options.clientId === "not-configured") {
           throw sourceError("mal", "MyAnimeList client id is not configured");
         }
-        const href =
-          `${endpoint}/${encodeURIComponent(providerId)}?fields=${encodeURIComponent(malFields)}`;
+        const href = `${endpoint}/${encodeURIComponent(providerId)}?fields=${encodeURIComponent(malFields)}`;
         const body = await request(href);
         return malEntry(body);
       }),

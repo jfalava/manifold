@@ -1,7 +1,4 @@
-import type {
-  SourceManga,
-  TrackedMangaChapterReadAction,
-} from "@paperback/types";
+import type { SourceManga, TrackedMangaChapterReadAction } from "@paperback/types";
 
 import { isFiniteNumber } from "@manifold/json";
 import {
@@ -23,10 +20,7 @@ interface ChapterProvenance {
   readonly chapterKey: string;
 }
 
-const chapterProvenance = (
-  chapterSourceId: string,
-  sourceChapterId: string,
-): ChapterProvenance => {
+const chapterProvenance = (chapterSourceId: string, sourceChapterId: string): ChapterProvenance => {
   if (chapterSourceId === "MangaDex") {
     return { provider: "mangadex", chapterKey: `mangadex:${sourceChapterId}` };
   }
@@ -55,8 +49,12 @@ export const processReadActions = async (
         `[manifold] read action:${action.id}:${action.chapterSourceId}:${action.chapterMangaId}:${action.sourceManga.mangaId}`,
       );
       const sourceChapterId = action.readChapter?.chapterId ?? action.chapterId;
-      if (!sourceChapterId) {throw new Error("Chapter read action has no source chapter ID");}
-      if (!action.chapterMangaId) {throw new Error("Chapter read action has no source manga ID");}
+      if (!sourceChapterId) {
+        throw new Error("Chapter read action has no source chapter ID");
+      }
+      if (!action.chapterMangaId) {
+        throw new Error("Chapter read action has no source manga ID");
+      }
 
       const provenance = chapterProvenance(action.chapterSourceId, sourceChapterId);
       await deps.recordRead(action.sourceManga.mangaId, {

@@ -14,7 +14,7 @@ const SyncReadPayloadSchema = Schema.Struct({
   volumeNumber: Schema.optional(Schema.Number),
   provider: Schema.Literal("mangadex"),
   sourceChapterId: Schema.NonEmptyString,
-  readAt: Schema.Number
+  readAt: Schema.Number,
 });
 
 export type SyncReadPayload = Schema.Schema.Type<typeof SyncReadPayloadSchema>;
@@ -30,17 +30,13 @@ export interface DrainBatch<R extends OutboxRowLike = OutboxRowLike> {
   readonly invalid: readonly R[];
 }
 
-export const groupOutboxForDrain = <R extends OutboxRowLike>(
-  rows: readonly R[]
-): DrainBatch<R> => {
+export const groupOutboxForDrain = <R extends OutboxRowLike>(rows: readonly R[]): DrainBatch<R> => {
   const byEntry = new Map<string, { chapters: string[]; rows: R[] }>();
   const invalid: R[] = [];
 
   for (const row of rows) {
     try {
-      const payload = Schema.decodeUnknownSync(SyncReadPayloadSchema)(
-        JSON.parse(row.payload)
-      );
+      const payload = Schema.decodeUnknownSync(SyncReadPayloadSchema)(JSON.parse(row.payload));
       const group = byEntry.get(payload.entryId) ?? { chapters: [], rows: [] };
       if (!group.chapters.includes(payload.sourceChapterId)) {
         group.chapters.push(payload.sourceChapterId);

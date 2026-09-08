@@ -182,21 +182,24 @@ export class ManifoldTrackerSource
     }
 
     const api = configuredPersonalApi();
-    const [registryResult, canonicalResult, mangaDexResult, comixResult] = await Promise.allSettled([
-      search.scope === "all" || search.scope === "registry"
-        ? api.searchRegistry(title, 25)
-        : Promise.resolve([]),
-      search.scope === "all" || search.scope === "anilist" || search.scope === "mal"
-        ? api.searchCanonical(title, 25, search.scope === "all" ? "auto" : search.scope)
-          .then((response) => response.results)
-        : Promise.resolve([]),
-      search.scope === "all" || search.scope === "mangadex"
-        ? Effect.runPromise(this.mangaDex.search(title))
-        : Promise.resolve([]),
-      search.scope === "all" || search.scope === "comix"
-        ? this.comix.getSearchResults({ ...query, title }, undefined, undefined)
-        : Promise.resolve({ items: [] }),
-    ]);
+    const [registryResult, canonicalResult, mangaDexResult, comixResult] = await Promise.allSettled(
+      [
+        search.scope === "all" || search.scope === "registry"
+          ? api.searchRegistry(title, 25)
+          : Promise.resolve([]),
+        search.scope === "all" || search.scope === "anilist" || search.scope === "mal"
+          ? api
+              .searchCanonical(title, 25, search.scope === "all" ? "auto" : search.scope)
+              .then((response) => response.results)
+          : Promise.resolve([]),
+        search.scope === "all" || search.scope === "mangadex"
+          ? Effect.runPromise(this.mangaDex.search(title))
+          : Promise.resolve([]),
+        search.scope === "all" || search.scope === "comix"
+          ? this.comix.getSearchResults({ ...query, title }, undefined, undefined)
+          : Promise.resolve({ items: [] }),
+      ],
+    );
     const selectedResult =
       search.scope === "registry"
         ? registryResult
@@ -229,9 +232,7 @@ export class ManifoldTrackerSource
           linkedKeys.add(`${link.provider}:${link.externalId}`);
         }
         const canonical = entry.providers
-          .map((link) =>
-            canonicalByIdentity.get(`${link.provider}:${link.externalId}`),
-          )
+          .map((link) => canonicalByIdentity.get(`${link.provider}:${link.externalId}`))
           .find((result): result is CanonicalSearchResult => result !== undefined);
         items.push({
           mangaId: entry.id,
@@ -300,7 +301,9 @@ export class ManifoldTrackerSource
           this.canonicalResults.get(mangaId) ??
           (await personalApi.getCanonical(parsedCandidate.provider, parsedCandidate.providerId));
         if (!canonical) {
-          throw new Error(`${parsedCandidate.provider} title not found: ${parsedCandidate.providerId}`);
+          throw new Error(
+            `${parsedCandidate.provider} title not found: ${parsedCandidate.providerId}`,
+          );
         }
         const stored = await personalApi.ingestCandidate({
           provider: parsedCandidate.provider,
@@ -370,7 +373,9 @@ export class ManifoldTrackerSource
       }
       const hydrated = await personalApi.getRegistryCanonical(mangaId).catch(() => undefined);
       entry = canonicalResultForRegistryEntry(stored, hydrated);
-      if (hydrated?.metadata) {this.canonicalResults.set(entry.id, entry);}
+      if (hydrated?.metadata) {
+        this.canonicalResults.set(entry.id, entry);
+      }
     }
 
     const anilistLink = aniLinkOf(stored);
@@ -747,7 +752,11 @@ class TrackerStatusForm extends Form {
         throw new Error(`${key} must be YYYY-MM-DD`);
       }
       const date = new Date(`${trimmed}T00:00:00Z`);
-      if (trimmed.startsWith("0000") || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== trimmed) {
+      if (
+        trimmed.startsWith("0000") ||
+        !Number.isFinite(date.getTime()) ||
+        date.toISOString().slice(0, 10) !== trimmed
+      ) {
         throw new Error(`${key} must be a real calendar date`);
       }
       if (trimmed !== current) {
@@ -807,10 +816,13 @@ class TrackerStatusForm extends Form {
           ...(changes.startedAt !== undefined && { startedAt: changes.startedAt }),
           ...(changes.completedAt !== undefined && { completedAt: changes.completedAt }),
           ...(changes.notes !== undefined && { notes: changes.notes }),
-        }).then(() => true, (error) => {
-          console.warn(`[MANIFOLD] AniList fields deferred: ${errorMessage(error)}`);
-          return false;
-        });
+        }).then(
+          () => true,
+          (error) => {
+            console.warn(`[MANIFOLD] AniList fields deferred: ${errorMessage(error)}`);
+            return false;
+          },
+        );
       }
       this.lastError = undefined;
       await api.setListState(this.entryId, {
@@ -868,9 +880,9 @@ class TrackerStatusForm extends Form {
       const result =
         token !== undefined && anilistId !== undefined
           ? await saveAniListStatus(token, anilistId, status).catch((error) => {
-            console.warn(`[MANIFOLD] AniList status deferred: ${errorMessage(error)}`);
-            return undefined;
-          })
+              console.warn(`[MANIFOLD] AniList status deferred: ${errorMessage(error)}`);
+              return undefined;
+            })
           : undefined;
       this.statusText = status;
       this.selectedStatus = status;

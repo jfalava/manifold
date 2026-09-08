@@ -71,19 +71,16 @@ describe("Comix Paperback parser", () => {
     ]);
     expect(toChapterDetails(payload, chapter)).toMatchObject({
       type: "images",
-      pages: [
-        "https://cdn.example/images/page-1.jpg",
-        "https://cdn.example/page-2.jpg",
-      ],
+      pages: ["https://cdn.example/images/page-1.jpg", "https://cdn.example/page-2.jpg"],
     });
   });
 
   it("reads browser-rendered chapter and page results", () => {
-    expect(chaptersFromWebView({
-      chapters: [{ url: "https://comix.to/title/example/123-chapter-1", title: "Chapter 1" }],
-    })).toEqual([
-      { url: "https://comix.to/title/example/123-chapter-1", title: "Chapter 1" },
-    ]);
+    expect(
+      chaptersFromWebView({
+        chapters: [{ url: "https://comix.to/title/example/123-chapter-1", title: "Chapter 1" }],
+      }),
+    ).toEqual([{ url: "https://comix.to/title/example/123-chapter-1", title: "Chapter 1" }]);
     expect(pagesFromWebView({ pages: ["https://cdn.example/i/page-1.jpg"] })).toEqual([
       "https://cdn.example/i/page-1.jpg",
     ]);

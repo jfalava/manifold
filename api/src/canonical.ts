@@ -36,20 +36,24 @@ const searchSource = async (
   query: string,
   limit: number,
 ): Promise<CanonicalProviderSearch> =>
-  Effect.runPromise(source.search(query, { limit }).pipe(Effect.match({
-    onSuccess: (results): CanonicalProviderSearch => ({
-      provider: source.provider,
-      results,
-    }),
-    onFailure: (failure): CanonicalProviderSearch => ({
-      provider: source.provider,
-      results: [],
-      error: {
-        message: failure.message,
-        ...(failure.status !== undefined && { status: failure.status }),
-      },
-    }),
-  })));
+  Effect.runPromise(
+    source.search(query, { limit }).pipe(
+      Effect.match({
+        onSuccess: (results): CanonicalProviderSearch => ({
+          provider: source.provider,
+          results,
+        }),
+        onFailure: (failure): CanonicalProviderSearch => ({
+          provider: source.provider,
+          results: [],
+          error: {
+            message: failure.message,
+            ...(failure.status !== undefined && { status: failure.status }),
+          },
+        }),
+      }),
+    ),
+  );
 
 const isUnavailable = (error: { readonly status?: number }): boolean =>
   error.status === undefined || [401, 403, 408, 429].includes(error.status) || error.status >= 500;
@@ -66,11 +70,13 @@ const selectedSources = (
     sources.push(createAniListSource({ userAgent, fetcher }));
   }
   if (provider === "all" || provider === "mal") {
-    sources.push(createMyAnimeListSource({
-      clientId: env.MANIFOLD_MAL_CLIENT_ID,
-      userAgent,
-      fetcher,
-    }));
+    sources.push(
+      createMyAnimeListSource({
+        clientId: env.MANIFOLD_MAL_CLIENT_ID,
+        userAgent,
+        fetcher,
+      }),
+    );
   }
   return sources;
 };
@@ -86,12 +92,16 @@ export const searchCanonical = async (
     for (const source of selectedSources(env, "all")) {
       const result = await searchSource(source, query, limit);
       providers.push(result);
-      if (!result.error || !isUnavailable(result.error)) {break;}
+      if (!result.error || !isUnavailable(result.error)) {
+        break;
+      }
     }
   } else {
-    providers.push(...await Promise.all(
-      selectedSources(env, provider).map((source) => searchSource(source, query, limit)),
-    ));
+    providers.push(
+      ...(await Promise.all(
+        selectedSources(env, provider).map((source) => searchSource(source, query, limit)),
+      )),
+    );
   }
   return {
     query,
@@ -106,7 +116,9 @@ export const getCanonical = async (
   providerId: string,
 ): Promise<CanonicalEntry | undefined> => {
   const source = selectedSources(env, provider)[0];
-  if (!source) {return undefined;}
+  if (!source) {
+    return undefined;
+  }
   return Effect.runPromise(source.getById(providerId));
 };
 
@@ -117,17 +129,31 @@ export const getRegistryCanonical = async (
 ): Promise<CanonicalEntry> => {
   for (const source of selectedSources(env, "all")) {
     const link = entry.providers.find((item) => item.provider === source.provider);
-    if (!link) {continue;}
-    const outcome = await Effect.runPromise(source.getById(link.externalId).pipe(Effect.match({
-      onSuccess: (value) => ({ value, error: undefined }),
-      onFailure: (error: CanonicalSourceError) => ({ value: undefined, error }),
-    })));
-    if (outcome.value) {return { ...outcome.value, id: entry.id };}
+    if (!link) {
+      continue;
+    }
+    const outcome = await Effect.runPromise(
+      source.getById(link.externalId).pipe(
+        Effect.match({
+          onSuccess: (value) => ({ value, error: undefined }),
+          onFailure: (error: CanonicalSourceError) => ({ value: undefined, error }),
+        }),
+      ),
+    );
+    if (outcome.value) {
+      return { ...outcome.value, id: entry.id };
+    }
     if (outcome.error) {
-      console.warn(JSON.stringify({
-        event: "canonical.details.failed", entryId: entry.id, ...outcome.error,
-      }));
-      if (!isUnavailable(outcome.error) && outcome.error.status !== 404) {break;}
+      console.warn(
+        JSON.stringify({
+          event: "canonical.details.failed",
+          entryId: entry.id,
+          ...outcome.error,
+        }),
+      );
+      if (!isUnavailable(outcome.error) && outcome.error.status !== 404) {
+        break;
+      }
     }
   }
   return {

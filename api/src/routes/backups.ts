@@ -7,13 +7,7 @@ import {
   RestoreRegistryBackupInput,
 } from "@manifold/contract";
 
-import {
-  jsonEncoded,
-  parseJson,
-  tryPromise,
-  type RouteContext,
-  type RouteEffect,
-} from "../http";
+import { jsonEncoded, parseJson, tryPromise, type RouteContext, type RouteEffect } from "../http";
 import { isRegistryBackupKey } from "../registry-backup";
 
 export const handleBackups = (ctx: RouteContext): RouteEffect =>
@@ -30,9 +24,13 @@ export const handleBackups = (ctx: RouteContext): RouteEffect =>
         return jsonEncoded(ErrorBody, { error: "Invalid registry backup key" }, 400);
       }
       const bucket = env.REGISTRY_BACKUPS;
-      if (!bucket) {throw new Error("Registry backup bucket is not configured");}
+      if (!bucket) {
+        throw new Error("Registry backup bucket is not configured");
+      }
       const object = yield* tryPromise(() => bucket.get(key));
-      if (!object) {return jsonEncoded(ErrorBody, { error: "Backup not found" }, 404);}
+      if (!object) {
+        return jsonEncoded(ErrorBody, { error: "Backup not found" }, 404);
+      }
       return new Response(object.body, {
         headers: {
           "content-type": "application/json",

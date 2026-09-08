@@ -3,12 +3,7 @@ import { stdin, stdout } from "node:process";
 
 import pc from "picocolors";
 import cliProgress from "cli-progress";
-import {
-  Listr,
-  PRESET_TIMER,
-  Spinner,
-  type ListrTask,
-} from "listr2";
+import { Listr, PRESET_TIMER, Spinner, type ListrTask } from "listr2";
 
 /**
  * Terminal UI kit: listr2 owns the task tree (◆/■/◇ icons via the default
@@ -20,7 +15,9 @@ import {
 
 /** Muted slate matching opencode's chrome (pc.dim renders too faintly). */
 export const muted = (() => {
-  if (!pc.isColorSupported) {return (text: string): string => text;}
+  if (!pc.isColorSupported) {
+    return (text: string): string => text;
+  }
   const [r, g, b] = [100, 116, 139];
   return (text: string): string => `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`;
 })();
@@ -33,7 +30,9 @@ export const frameDetail = (text: string): void => {
 
 export const fmtDuration = (ms: number): string => {
   const s = Math.round(ms / 1000);
-  if (s < 60) {return `${s}s`;}
+  if (s < 60) {
+    return `${s}s`;
+  }
   const m = Math.floor(s / 60);
   return `${m}m${String(s % 60).padStart(2, "0")}s`;
 };
@@ -156,20 +155,14 @@ export interface BarUpdate {
 }
 
 /** Render one bar line via cli-progress; meant to be assigned to task.output. */
-export const barLine = ({
-  done,
-  total,
-  counts = [],
-  startedAt,
-}: BarUpdate): string => {
+export const barLine = ({ done, total, counts = [], startedAt }: BarUpdate): string => {
   const progress = total > 0 ? Math.min(1, done / total) : 1;
   const rateMs = done > 0 ? (Date.now() - startedAt) / done : 0;
   const remaining = Math.max(total - done, 0);
   const etaSec = remaining > 0 && done > 0 ? (rateMs * remaining) / 1000 : 0;
   const countText = counts.map(([label, value]) => ` ${label}=${value}`).join("");
   const elapsedText = ` · elapsed=${fmtDuration(Date.now() - startedAt)}`;
-  const etaText =
-    done < total && etaSec > 0 ? ` · eta=${fmtDuration(etaSec * 1000)}` : "";
+  const etaText = done < total && etaSec > 0 ? ` · eta=${fmtDuration(etaSec * 1000)}` : "";
   return cliProgress.Format.Formatter(
     {
       ...BAR_OPTIONS,

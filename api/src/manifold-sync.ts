@@ -121,7 +121,7 @@ export class ManifoldSync extends DurableObject<Env> {
   async createOAuthSession(
     provider: OAuthProvider,
     redirectUri: string,
-    returnPath?: string
+    returnPath?: string,
   ): Promise<OAuthStart> {
     const config = await getOAuthClientConfig(provider, this.env);
     const state = createRandomValue();
@@ -142,19 +142,19 @@ export class ManifoldSync extends DurableObject<Env> {
       codeVerifier ?? null,
       redirectUri,
       returnPath ?? null,
-      now()
+      now(),
     );
 
     return {
       provider,
-      authorizationUrl: createAuthorizationUrl(config, redirectUri, state, codeChallenge)
+      authorizationUrl: createAuthorizationUrl(config, redirectUri, state, codeChallenge),
     };
   }
 
   async completeOAuthSession(
     provider: OAuthProvider,
     state: string,
-    code: string
+    code: string,
   ): Promise<AuthConnection & { readonly returnPath?: string }> {
     const session = this.ctx.storage.sql
       .exec<OAuthSessionRow>(
@@ -162,11 +162,13 @@ export class ManifoldSync extends DurableObject<Env> {
          WHERE provider = ? AND state = ? AND created_at >= ?`,
         provider,
         state,
-        now() - 600_000
+        now() - 600_000,
       )
       .toArray()[0];
 
-    if (!session) {throw new Error("OAuth session is invalid or expired");}
+    if (!session) {
+      throw new Error("OAuth session is invalid or expired");
+    }
 
     const returnPath = session.return_path ?? undefined;
 
@@ -174,7 +176,7 @@ export class ManifoldSync extends DurableObject<Env> {
     this.ctx.storage.sql.exec(
       "DELETE FROM oauth_sessions WHERE provider = ? AND state = ?",
       provider,
-      state
+      state,
     );
 
     const config = await getOAuthClientConfig(provider, this.env);
@@ -182,10 +184,14 @@ export class ManifoldSync extends DurableObject<Env> {
       grant_type: "authorization_code",
       code,
       client_id: config.clientId,
-      redirect_uri: session.redirect_uri
+      redirect_uri: session.redirect_uri,
     });
-    if (config.clientSecret) {form.set("client_secret", config.clientSecret);}
-    if (session.code_verifier) {form.set("code_verifier", session.code_verifier);}
+    if (config.clientSecret) {
+      form.set("client_secret", config.clientSecret);
+    }
+    if (session.code_verifier) {
+      form.set("code_verifier", session.code_verifier);
+    }
 
     const response = await fetch(config.tokenEndpoint, {
       method: "POST",
@@ -193,14 +199,14 @@ export class ManifoldSync extends DurableObject<Env> {
         "content-type": "application/x-www-form-urlencoded",
         "user-agent": manifoldUserAgent("api"),
       },
-      body: form
+      body: form,
     });
     if (!response.ok) {
       throw new Error(`OAuth token exchange failed for ${provider} (${response.status})`);
     }
 
     const token = await Effect.runPromise(
-      Schema.decodeUnknownEffect(OAuthTokenResponseSchema)(await response.json())
+      Schema.decodeUnknownEffect(OAuthTokenResponseSchema)(await response.json()),
     );
     const connection = await this.persistToken(provider, token);
     return returnPath ? { ...connection, returnPath } : connection;
@@ -208,19 +214,19 @@ export class ManifoldSync extends DurableObject<Env> {
 
   async cancelOAuthSession(
     provider: OAuthProvider,
-    state: string
+    state: string,
   ): Promise<{ readonly returnPath?: string }> {
     const session = this.ctx.storage.sql
       .exec<OAuthSessionRow>(
         `SELECT return_path FROM oauth_sessions WHERE provider = ? AND state = ?`,
         provider,
-        state
+        state,
       )
       .toArray()[0];
     this.ctx.storage.sql.exec(
       "DELETE FROM oauth_sessions WHERE provider = ? AND state = ?",
       provider,
-      state
+      state,
     );
     const returnPath = session?.return_path ?? undefined;
     return returnPath ? { returnPath } : {};
@@ -236,27 +242,34 @@ export class ManifoldSync extends DurableObject<Env> {
       },
       body: createMangaDexPasswordGrant({
         clientId: this.env.MANIFOLD_MANGADEX_CLIENT_ID,
-        clientSecret: await readSecret(this.env.MANIFOLD_MANGADEX_CLIENT_SECRET, "MANIFOLD_MANGADEX_CLIENT_SECRET"),
-        username: await readSecret(this.env.MANIFOLD_MANGADEX_USERNAME, "MANIFOLD_MANGADEX_USERNAME"),
-        password: await readSecret(this.env.MANIFOLD_MANGADEX_PASSWORD, "MANIFOLD_MANGADEX_PASSWORD")
-      })
+        clientSecret: await readSecret(
+          this.env.MANIFOLD_MANGADEX_CLIENT_SECRET,
+          "MANIFOLD_MANGADEX_CLIENT_SECRET",
+        ),
+        username: await readSecret(
+          this.env.MANIFOLD_MANGADEX_USERNAME,
+          "MANIFOLD_MANGADEX_USERNAME",
+        ),
+        password: await readSecret(
+          this.env.MANIFOLD_MANGADEX_PASSWORD,
+          "MANIFOLD_MANGADEX_PASSWORD",
+        ),
+      }),
     });
     if (!response.ok) {
       const detail = (await response.text()).trim().slice(0, 500);
-      throw new Error(
-        `MangaDex login failed (${response.status})` + (detail ? `: ${detail}` : "")
-      );
+      throw new Error(`MangaDex login failed (${response.status})` + (detail ? `: ${detail}` : ""));
     }
 
     const token = await Effect.runPromise(
-      Schema.decodeUnknownEffect(OAuthTokenResponseSchema)(await response.json())
+      Schema.decodeUnknownEffect(OAuthTokenResponseSchema)(await response.json()),
     );
     const connection = await this.persistToken("mangadex", token);
     this.ctx.storage.sql.exec(
       `UPDATE sync_ops
        SET state = 'pending', attempts = 0, updated_at = ?
        WHERE target = 'mangadex' AND state IN ('failed', 'blocked')`,
-      now()
+      now(),
     );
     try {
       await this.scheduleSync();
@@ -275,7 +288,7 @@ export class ManifoldSync extends DurableObject<Env> {
   async importAuthToken(
     provider: AuthProvider,
     accessToken: string,
-    expiresIn?: number
+    expiresIn?: number,
   ): Promise<AuthConnection> {
     const token = accessToken.trim();
     if (!token) {
@@ -287,9 +300,10 @@ export class ManifoldSync extends DurableObject<Env> {
     const payload: {
       readonly access_token: string;
       readonly expires_in?: number;
-    } = expiresIn !== undefined && expiresIn > 0
-      ? { access_token: token, expires_in: expiresIn }
-      : { access_token: token };
+    } =
+      expiresIn !== undefined && expiresIn > 0
+        ? { access_token: token, expires_in: expiresIn }
+        : { access_token: token };
     return this.persistToken(provider, payload);
   }
 
@@ -308,7 +322,9 @@ export class ManifoldSync extends DurableObject<Env> {
 
   async getAuthAccessToken(provider: AuthProvider): Promise<string> {
     const row = this.readAuthToken(provider);
-    if (!row) {throw new Error(`Auth provider is not connected: ${provider}`);}
+    if (!row) {
+      throw new Error(`Auth provider is not connected: ${provider}`);
+    }
 
     if (row.expires_at === null || row.expires_at > now() + 30_000) {
       return decryptToken(this.env, row.access_token);
@@ -325,19 +341,21 @@ export class ManifoldSync extends DurableObject<Env> {
               clientId: this.env.MANIFOLD_MANGADEX_CLIENT_ID,
               clientSecret: await readSecret(
                 this.env.MANIFOLD_MANGADEX_CLIENT_SECRET,
-                "MANIFOLD_MANGADEX_CLIENT_SECRET"
-              )
+                "MANIFOLD_MANGADEX_CLIENT_SECRET",
+              ),
             },
-            refreshToken
+            refreshToken,
           )
         : await (async () => {
             const config = await getOAuthClientConfig(provider, this.env);
             const refreshForm = new URLSearchParams({
               grant_type: "refresh_token",
               refresh_token: refreshToken,
-              client_id: config.clientId
+              client_id: config.clientId,
             });
-            if (config.clientSecret) {refreshForm.set("client_secret", config.clientSecret);}
+            if (config.clientSecret) {
+              refreshForm.set("client_secret", config.clientSecret);
+            }
             return refreshForm;
           })();
 
@@ -352,23 +370,25 @@ export class ManifoldSync extends DurableObject<Env> {
         "content-type": "application/x-www-form-urlencoded",
         "user-agent": manifoldUserAgent("api"),
       },
-      body: form
+      body: form,
     });
     if (!response.ok) {
       const detail = (await response.text()).trim().slice(0, 500);
       throw new Error(
         `Auth token refresh failed for ${provider} (${response.status})` +
-          (detail ? `: ${detail}` : "")
+          (detail ? `: ${detail}` : ""),
       );
     }
 
     const token = await Effect.runPromise(
-      Schema.decodeUnknownEffect(OAuthTokenResponseSchema)(await response.json())
+      Schema.decodeUnknownEffect(OAuthTokenResponseSchema)(await response.json()),
     );
     const timestamp = now();
     const latest = this.readAuthToken(provider);
     if (!latest || latest.updated_at !== row.updated_at) {
-      if (!latest) {throw new Error(`Auth provider disconnected during refresh: ${provider}`);}
+      if (!latest) {
+        throw new Error(`Auth provider disconnected during refresh: ${provider}`);
+      }
       return decryptToken(this.env, latest.access_token);
     }
 
@@ -388,7 +408,7 @@ export class ManifoldSync extends DurableObject<Env> {
       expiresAt,
       token.scope ?? row.scope,
       timestamp,
-      provider
+      provider,
     );
 
     return token.access_token;
@@ -413,7 +433,9 @@ export class ManifoldSync extends DurableObject<Env> {
       timestamp,
     );
     const stored = this.readEntry(input.id);
-    if (!stored) {throw new Error(`Canonical entry not found after write: ${input.id}`);}
+    if (!stored) {
+      throw new Error(`Canonical entry not found after write: ${input.id}`);
+    }
     return stored;
   }
 
@@ -426,13 +448,15 @@ export class ManifoldSync extends DurableObject<Env> {
         return rows
           .map((row) => this.readEntry(row.id))
           .filter((entry): entry is RegistryEntry => entry !== undefined);
-      })
+      }),
     );
   }
 
   async backupRegistry(): Promise<RegistryBackupMetadata> {
     const bucket = this.env.REGISTRY_BACKUPS;
-    if (!bucket) {throw new Error("Registry backup bucket is not configured");}
+    if (!bucket) {
+      throw new Error("Registry backup bucket is not configured");
+    }
     const backup = await this.snapshotRegistry();
 
     const key = backupKey(backup.createdAt);
@@ -452,17 +476,14 @@ export class ManifoldSync extends DurableObject<Env> {
       },
     });
 
-    return this.backupMetadata(
-      backup,
-      key,
-      object.uploaded.getTime(),
-      size,
-    );
+    return this.backupMetadata(backup, key, object.uploaded.getTime(), size);
   }
 
   async listBackups(): Promise<readonly RegistryBackupMetadata[]> {
     const bucket = this.env.REGISTRY_BACKUPS;
-    if (!bucket) {throw new Error("Registry backup bucket is not configured");}
+    if (!bucket) {
+      throw new Error("Registry backup bucket is not configured");
+    }
 
     const backups: RegistryBackupMetadata[] = [];
     let cursor: string | undefined;
@@ -509,22 +530,21 @@ export class ManifoldSync extends DurableObject<Env> {
       throw new Error("Invalid registry backup key");
     }
     const bucket = this.env.REGISTRY_BACKUPS;
-    if (!bucket) {throw new Error("Registry backup bucket is not configured");}
+    if (!bucket) {
+      throw new Error("Registry backup bucket is not configured");
+    }
 
     // Download and validate before entering the synchronous transaction.
     const object = await bucket.get(key);
-    if (!object) {throw new Error(`Registry backup not found: ${key}`);}
+    if (!object) {
+      throw new Error(`Registry backup not found: ${key}`);
+    }
     const backup = await readBackupBody(object.body, object.customMetadata?.sha256 ?? "");
     await this.validateBackupKey(backup);
     // Preserve the state being replaced, including when the wrong backup was chosen.
     await this.backupRegistry();
     this.applyRegistryBackup(backup);
-    return this.backupMetadata(
-      backup,
-      key,
-      object.uploaded.getTime(),
-      object.size,
-    );
+    return this.backupMetadata(backup, key, object.uploaded.getTime(), object.size);
   }
 
   async resumeRegistrySync(): Promise<void> {
@@ -533,10 +553,12 @@ export class ManifoldSync extends DurableObject<Env> {
   }
 
   private async validateBackupKey(backup: RegistryBackup): Promise<void> {
-    const fingerprint = await sha256(await readSecret(
-      this.env.MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET,
-      "MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET",
-    ));
+    const fingerprint = await sha256(
+      await readSecret(
+        this.env.MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET,
+        "MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET",
+      ),
+    );
     if (fingerprint !== backup.tokenKeyHash) {
       throw new Error("Restore requires the original MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET");
     }
@@ -558,7 +580,7 @@ export class ManifoldSync extends DurableObject<Env> {
           .exec<ProgressRow>("SELECT * FROM progress_state WHERE entry_id = ?", entryId)
           .toArray()[0];
         return row ? toProgress(row) : undefined;
-      })
+      }),
     );
   }
 
@@ -753,9 +775,7 @@ export class ManifoldSync extends DurableObject<Env> {
   }
 
   async listPendingSync(): Promise<readonly SyncOp[]> {
-    return Effect.runSync(
-      Effect.sync(() => this.readOps("mangadex", "pending"))
-    );
+    return Effect.runSync(Effect.sync(() => this.readOps("mangadex", "pending")));
   }
 
   // Library snapshot cache: statuses only change through setMangaDexStatus
@@ -773,13 +793,11 @@ export class ManifoldSync extends DurableObject<Env> {
    * a day — it only changes when scanlations upload. Read markers are always
    * fetched fresh because they change while the user reads.
    */
-  async mangaDexStats(
-    mangaDexIds: readonly string[],
-  ): Promise<Record<string, MangaDexEntryStat>> {
-    const wanted = [...new Set(mangaDexIds)]
-      .filter((id) => id.length > 0)
-      .slice(0, 200);
-    if (wanted.length === 0) {return {};}
+  async mangaDexStats(mangaDexIds: readonly string[]): Promise<Record<string, MangaDexEntryStat>> {
+    const wanted = [...new Set(mangaDexIds)].filter((id) => id.length > 0).slice(0, 200);
+    if (wanted.length === 0) {
+      return {};
+    }
 
     const accessToken = await this.getAuthAccessToken("mangadex");
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
@@ -799,14 +817,20 @@ export class ManifoldSync extends DurableObject<Env> {
         .toArray();
       const fresh = new Set<string>();
       for (const row of rows) {
-        if (row.computed_at < cutoff) {continue;}
+        if (row.computed_at < cutoff) {
+          continue;
+        }
         const payload = parseMdFeedStatsPayload(row.payload);
-        if (!payload) {continue;}
+        if (!payload) {
+          continue;
+        }
         meta.set(row.manga_id, payload);
         fresh.add(row.manga_id);
       }
       for (const mangaDexId of chunk) {
-        if (!fresh.has(mangaDexId)) {staleIds.push(mangaDexId);}
+        if (!fresh.has(mangaDexId)) {
+          staleIds.push(mangaDexId);
+        }
       }
     }
 
@@ -844,7 +868,9 @@ export class ManifoldSync extends DurableObject<Env> {
           readMarkers.set(mangaId, new Set(ids));
         }
       } catch {
-        for (const mangaId of chunk) {markerFailures.add(mangaId);}
+        for (const mangaId of chunk) {
+          markerFailures.add(mangaId);
+        }
       }
     }
 
@@ -879,7 +905,9 @@ export class ManifoldSync extends DurableObject<Env> {
     const attachRatings = async (
       base: readonly MangaDexLibraryItem[],
     ): Promise<readonly MangaDexLibraryItem[]> => {
-      if (base.length === 0) {return base;}
+      if (base.length === 0) {
+        return base;
+      }
       const ids = base.map((row) => row.mangaDexId);
       try {
         const batch = await Effect.runPromise(client.getRatings(ids));
@@ -917,7 +945,9 @@ export class ManifoldSync extends DurableObject<Env> {
             ...chunk,
           )
           .toArray();
-        for (const row of rows) {links.set(row.external_id, row.entry_id);}
+        for (const row of rows) {
+          links.set(row.external_id, row.entry_id);
+        }
       }
       // Resolve titles + covers in batches so the admin UI shows names, not bare UUIDs.
       // Prefer seed/cache rows; listManga only for ids still missing a title or cover.
@@ -928,8 +958,12 @@ export class ManifoldSync extends DurableObject<Env> {
       const missingMeta: string[] = [];
       for (const mangaDexId of mangaDexIds) {
         const seeded = seedById.get(mangaDexId);
-        if (seeded?.title) {titles.set(mangaDexId, seeded.title);}
-        if (seeded?.coverUrl) {covers.set(mangaDexId, seeded.coverUrl);}
+        if (seeded?.title) {
+          titles.set(mangaDexId, seeded.title);
+        }
+        if (seeded?.coverUrl) {
+          covers.set(mangaDexId, seeded.coverUrl);
+        }
         if (!titles.has(mangaDexId) || !covers.has(mangaDexId)) {
           missingMeta.push(mangaDexId);
         }
@@ -939,8 +973,12 @@ export class ManifoldSync extends DurableObject<Env> {
         try {
           const page = await Effect.runPromise(client.listManga({ ids: chunk, limit: 100 }));
           for (const manga of page.items) {
-            if (manga.title) {titles.set(manga.id, manga.title);}
-            if (manga.coverUrl) {covers.set(manga.id, manga.coverUrl);}
+            if (manga.title) {
+              titles.set(manga.id, manga.title);
+            }
+            if (manga.coverUrl) {
+              covers.set(manga.id, manga.coverUrl);
+            }
           }
         } catch {
           // Titles are cosmetic here — a failed batch must not kill the list.
@@ -970,8 +1008,12 @@ export class ManifoldSync extends DurableObject<Env> {
           at: this.mdLibraryCache.at,
           data: this.mdLibraryCache.data.map((row) => {
             const hydrated = byId.get(row.mangaDexId);
-            if (hydrated) {return hydrated;}
-            if ((row.status || "") === statusFilter) {return { ...row, status: "" };}
+            if (hydrated) {
+              return hydrated;
+            }
+            if ((row.status || "") === statusFilter) {
+              return { ...row, status: "" };
+            }
             return row;
           }),
         };
@@ -1104,10 +1146,7 @@ export class ManifoldSync extends DurableObject<Env> {
     };
   }
 
-  async mangaDexFeed(
-    limit: number,
-    offset: number,
-  ): Promise<MangaDexPaged<MangaDexChapter>> {
+  async mangaDexFeed(limit: number, offset: number): Promise<MangaDexPaged<MangaDexChapter>> {
     const accessToken = await this.getAuthAccessToken("mangadex");
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
     return Effect.runPromise(client.followedFeed({ limit, offset }));
@@ -1153,13 +1192,14 @@ export class ManifoldSync extends DurableObject<Env> {
     this.ctx.storage.sql.exec(
       `UPDATE sync_ops SET state = 'pending', attempts = 0, updated_at = ?
        WHERE target = 'mangadex' AND state IN ('failed', 'blocked')`,
-      now()
+      now(),
     );
-    const pending = this.ctx.storage.sql
-      .exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM sync_ops WHERE state = 'pending' AND target = 'mangadex'"
-      )
-      .toArray()[0]?.count ?? 0;
+    const pending =
+      this.ctx.storage.sql
+        .exec<{ count: number }>(
+          "SELECT COUNT(*) AS count FROM sync_ops WHERE state = 'pending' AND target = 'mangadex'",
+        )
+        .toArray()[0]?.count ?? 0;
     await this.scheduleSync();
     return { retried: pending };
   }
@@ -1278,7 +1318,9 @@ export class ManifoldSync extends DurableObject<Env> {
       linkedProviders: links.map((link) => link.provider),
     });
     const entry = this.readEntry(entryId);
-    if (!entry) {throw new Error(`Registry row not found after candidate ingest: ${entryId}`);}
+    if (!entry) {
+      throw new Error(`Registry row not found after candidate ingest: ${entryId}`);
+    }
     return entry;
   }
 
@@ -1292,7 +1334,7 @@ export class ManifoldSync extends DurableObject<Env> {
          JOIN canonical_entries ce ON ce.id = pl.entry_id
          WHERE pl.provider = ? AND pl.external_id = ? AND ce.tombstoned_at IS NULL`,
         request.provider,
-        request.providerId
+        request.providerId,
       )
       .toArray()[0];
     if (existing) {
@@ -1301,10 +1343,12 @@ export class ManifoldSync extends DurableObject<Env> {
         request.title,
         timestamp,
         existing.entry_id,
-        request.title
+        request.title,
       );
       const entry = this.readEntry(existing.entry_id, false);
-      if (!entry) {throw new Error(`Registry row vanished for link: ${existing.entry_id}`);}
+      if (!entry) {
+        throw new Error(`Registry row vanished for link: ${existing.entry_id}`);
+      }
       return entry;
     }
 
@@ -1321,7 +1365,7 @@ export class ManifoldSync extends DurableObject<Env> {
       request.providerId,
       request.title,
       timestamp,
-      timestamp
+      timestamp,
     );
     this.ctx.storage.sql.exec(
       `INSERT INTO provider_links (entry_id, provider, external_id, title, updated_at)
@@ -1330,19 +1374,26 @@ export class ManifoldSync extends DurableObject<Env> {
       request.provider,
       request.providerId,
       request.title,
-      timestamp
+      timestamp,
     );
 
     const minted = this.readEntry(id);
-    if (!minted) {throw new Error(`Registry row not found after mint: ${id}`);}
+    if (!minted) {
+      throw new Error(`Registry row not found after mint: ${id}`);
+    }
     return minted;
   }
 
   async searchRegistry(query: string, limit = 25): Promise<readonly RegistryEntry[]> {
     const normalized = query.trim();
-    if (!normalized) {return [];}
+    if (!normalized) {
+      return [];
+    }
     const safeLimit = Math.min(50, Math.max(1, Math.trunc(limit)));
-    const escaped = normalized.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+    const escaped = normalized
+      .replaceAll("\\", "\\\\")
+      .replaceAll("%", "\\%")
+      .replaceAll("_", "\\_");
     const pattern = `%${escaped}%`;
     const rows = this.ctx.storage.sql
       .exec<EntryRow>(
@@ -1383,18 +1434,20 @@ export class ManifoldSync extends DurableObject<Env> {
           )
           .toArray()) {
           const entry = this.readEntry(row.id, false);
-          if (!entry) {continue;}
+          if (!entry) {
+            continue;
+          }
           const state = this.readListState(row.id);
           const progress = this.getProgressSync(row.id);
           results.push({
             ...entry,
             ...(state && { state }),
             ...(progress && { progress }),
-            ...(row.tombstoned_at !== null && { tombstoned: true })
+            ...(row.tombstoned_at !== null && { tombstoned: true }),
           });
         }
         return results;
-      })
+      }),
     );
   }
 
@@ -1523,7 +1576,9 @@ export class ManifoldSync extends DurableObject<Env> {
       externalId: input.externalId,
     });
     const stored = this.readEntry(entryId);
-    if (!stored) {throw new Error(`Canonical entry not found after link: ${entryId}`);}
+    if (!stored) {
+      throw new Error(`Canonical entry not found after link: ${entryId}`);
+    }
     return stored;
   }
 
@@ -1532,11 +1587,13 @@ export class ManifoldSync extends DurableObject<Env> {
     this.ctx.storage.sql.exec(
       "DELETE FROM provider_links WHERE entry_id = ? AND provider = ?",
       entryId,
-      provider
+      provider,
     );
     this.appendEvent(entryId, "link.remove", "admin", { provider });
     const stored = this.readEntry(entryId);
-    if (!stored) {throw new Error(`Canonical entry not found after unlink: ${entryId}`);}
+    if (!stored) {
+      throw new Error(`Canonical entry not found after unlink: ${entryId}`);
+    }
     return stored;
   }
 
@@ -1559,9 +1616,7 @@ export class ManifoldSync extends DurableObject<Env> {
     const nextStarted =
       changes.startedAt === undefined ? current?.startedAt : (changes.startedAt ?? undefined);
     const nextCompleted =
-      changes.completedAt === undefined
-        ? current?.completedAt
-        : (changes.completedAt ?? undefined);
+      changes.completedAt === undefined ? current?.completedAt : (changes.completedAt ?? undefined);
     const nextVolumes =
       changes.volumeProgress === undefined
         ? current?.volumeProgress
@@ -1590,7 +1645,7 @@ export class ManifoldSync extends DurableObject<Env> {
       nextCompleted ?? null,
       nextVolumes ?? null,
       mediaListEntryId ?? null,
-      timestamp
+      timestamp,
     );
 
     const origin: OpOrigin = changes.origin ?? "admin";
@@ -1630,17 +1685,14 @@ export class ManifoldSync extends DurableObject<Env> {
         target: "anilist",
         kind: onlyStatus ? "anilist.status" : "anilist.fields",
         origin,
-        payload: createAniListListStateOpPayload(
-          entryId,
-          anilistId,
-          mediaListEntryId,
-          changes,
-        ),
+        payload: createAniListListStateOpPayload(entryId, anilistId, mediaListEntryId, changes),
       });
     }
 
     const stored = this.readListState(entryId);
-    if (!stored) {throw new Error(`List state missing after write: ${entryId}`);}
+    if (!stored) {
+      throw new Error(`List state missing after write: ${entryId}`);
+    }
     // MAL is only a backup sink. The original update commits before any
     // upstream work, regardless of whether AniList was already updated.
     if (origin === "device" && stored.status) {
@@ -1702,18 +1754,18 @@ export class ManifoldSync extends DurableObject<Env> {
                 .exec<ListEventRow>(
                   `SELECT * FROM list_events WHERE entry_id = ? ORDER BY id DESC LIMIT ?`,
                   entryId,
-                  Math.min(500, Math.max(1, limit))
+                  Math.min(500, Math.max(1, limit)),
                 )
                 .toArray()
             : this.ctx.storage.sql
                 .exec<ListEventRow>(
                   `SELECT * FROM list_events ORDER BY id DESC LIMIT ?`,
-                  Math.min(500, Math.max(1, limit))
+                  Math.min(500, Math.max(1, limit)),
                 )
                 .toArray()
         ).map((row) => toListEvent(row));
         return rows;
-      })
+      }),
     );
   }
 
@@ -1723,9 +1775,7 @@ export class ManifoldSync extends DurableObject<Env> {
 
   async pendingAniListOps(limit = 25): Promise<readonly SyncOp[]> {
     return Effect.runSync(
-      Effect.sync(() =>
-        this.readOps("anilist", "pending", Math.min(100, Math.max(1, limit)))
-      )
+      Effect.sync(() => this.readOps("anilist", "pending", Math.min(100, Math.max(1, limit)))),
     );
   }
 
@@ -1736,7 +1786,9 @@ export class ManifoldSync extends DurableObject<Env> {
       const row = this.ctx.storage.sql
         .exec<OpRow>("SELECT * FROM sync_ops WHERE op_id = ?", result.opId)
         .toArray()[0];
-      if (!row || row.state !== "pending") {continue;}
+      if (!row || row.state !== "pending") {
+        continue;
+      }
       if (result.ok) {
         this.ctx.storage.sql.exec(
           `UPDATE sync_ops SET state = 'completed', attempts = ?, updated_at = ?
@@ -1771,7 +1823,7 @@ export class ManifoldSync extends DurableObject<Env> {
           attempts,
           (result.error ?? "unknown drain failure").slice(0, 500),
           timestamp,
-          row.id
+          row.id,
         );
       }
       updated += 1;
@@ -1785,12 +1837,14 @@ export class ManifoldSync extends DurableObject<Env> {
       `UPDATE sync_ops SET state = 'pending', attempts = 0, last_error = NULL, updated_at = ?
        WHERE op_id = ?`,
       timestamp,
-      opId
+      opId,
     );
     const row = this.ctx.storage.sql
       .exec<OpRow>("SELECT * FROM sync_ops WHERE op_id = ?", opId)
       .toArray()[0];
-    if (row?.target === "mal") {await this.scheduleSync();}
+    if (row?.target === "mal") {
+      await this.scheduleSync();
+    }
     return row ? toOp(row) : undefined;
   }
 
@@ -1813,7 +1867,7 @@ export class ManifoldSync extends DurableObject<Env> {
           .exec<OpRow>(`SELECT * FROM sync_ops ${where} ORDER BY id DESC LIMIT ?`, ...params)
           .toArray();
         return rows.map((row) => toOp(row));
-      })
+      }),
     );
   }
 
@@ -1845,7 +1899,10 @@ export class ManifoldSync extends DurableObject<Env> {
         let lastFailedAt = 0;
         for (const row of rows) {
           states.set(row.state, (states.get(row.state) ?? 0) + 1);
-          if (row.state === "pending" && (oldestPendingAt === null || row.created_at < oldestPendingAt)) {
+          if (
+            row.state === "pending" &&
+            (oldestPendingAt === null || row.created_at < oldestPendingAt)
+          ) {
             oldestPendingAt = row.created_at;
           }
           if (
@@ -1873,8 +1930,8 @@ export class ManifoldSync extends DurableObject<Env> {
    * that happened before the shelf mirror shipped.
    */
   async backfillMangaDexShelf(): Promise<{ enqueued: number }> {
-    const enqueued = this.ctx.storage.sql
-      .exec<{ count: number }>(
+    const enqueued =
+      this.ctx.storage.sql.exec<{ count: number }>(
         `INSERT INTO md_status_queue (entry_id, created_at, attempts)
          SELECT ps.entry_id, ?, 0
          FROM progress_state ps
@@ -1883,21 +1940,23 @@ export class ManifoldSync extends DurableObject<Env> {
          LEFT JOIN md_status_queue q ON q.entry_id = ps.entry_id
          WHERE q.entry_id IS NULL
          ON CONFLICT DO NOTHING`,
-        now()
+        now(),
       ).rowsWritten ?? 0;
     await this.scheduleSync();
     return { enqueued };
   }
 
   async alarm(): Promise<void> {
-    if (this.ctx.storage.kv.get("registry_sync_paused")) {return;}
+    if (this.ctx.storage.kv.get("registry_sync_paused")) {
+      return;
+    }
     await this.drainMalBackups();
     const rows = this.ctx.storage.sql
       .exec<OpRow>(
         `SELECT * FROM sync_ops
          WHERE state = 'pending' AND target = 'mangadex'
          ORDER BY id ASC
-         LIMIT ${SYNC_DRAIN_LIMIT}`
+         LIMIT ${SYNC_DRAIN_LIMIT}`,
       )
       .toArray();
 
@@ -1911,11 +1970,13 @@ export class ManifoldSync extends DurableObject<Env> {
   }
 
   private enqueueMalBackup(entryId: string, changes: SetListStateInput): void {
-    const previous = this.ctx.storage.sql.exec<OpRow>(
-      `SELECT * FROM sync_ops WHERE kind = 'mal.status'
+    const previous = this.ctx.storage.sql
+      .exec<OpRow>(
+        `SELECT * FROM sync_ops WHERE kind = 'mal.status'
        AND json_extract(payload, '$.entryId') = ? ORDER BY id DESC LIMIT 1`,
-      entryId,
-    ).toArray()[0];
+        entryId,
+      )
+      .toArray()[0];
     const prior = previous
       ? Schema.decodeUnknownSync(MalBackupPayload)(JSON.parse(previous.payload)).backupIdentity
       : undefined;
@@ -1925,25 +1986,33 @@ export class ManifoldSync extends DurableObject<Env> {
       `UPDATE sync_ops SET state = 'completed', updated_at = ?
        WHERE kind = 'mal.status' AND state <> 'completed'
        AND json_extract(payload, '$.entryId') = ?`,
-      now(), entryId,
+      now(),
+      entryId,
     );
     this.enqueueOp({
-      opId: crypto.randomUUID(), target: "mal", kind: "mal.status", origin: "device",
+      opId: crypto.randomUUID(),
+      target: "mal",
+      kind: "mal.status",
+      origin: "device",
       payload: {
         entryId,
-        ...(identity && { backupIdentity: {
-          anilistId: identity.anilistId,
-          titles: [...identity.titles],
-          ...(identity.malId && { malId: identity.malId }),
-        } }),
+        ...(identity && {
+          backupIdentity: {
+            anilistId: identity.anilistId,
+            titles: [...identity.titles],
+            ...(identity.malId && { malId: identity.malId }),
+          },
+        }),
       },
     });
   }
 
   private async drainMalBackups(): Promise<void> {
-    const rows = this.ctx.storage.sql.exec<OpRow>(
-      "SELECT * FROM sync_ops WHERE target = 'mal' AND state = 'pending' ORDER BY id LIMIT 5",
-    ).toArray();
+    const rows = this.ctx.storage.sql
+      .exec<OpRow>(
+        "SELECT * FROM sync_ops WHERE target = 'mal' AND state = 'pending' ORDER BY id LIMIT 5",
+      )
+      .toArray();
     for (const row of rows) {
       try {
         const payload = Schema.decodeUnknownSync(MalBackupPayload)(JSON.parse(row.payload));
@@ -1954,37 +2023,50 @@ export class ManifoldSync extends DurableObject<Env> {
           // Network awaits can outlive an update, unlink, or nuke. Re-check
           // ownership and status immediately before applying the projection.
           const current = this.readMalBackupEntry(entry.id);
-          const pending = this.ctx.storage.sql.exec<OpRow>(
-            "SELECT * FROM sync_ops WHERE id = ? AND state = 'pending'", row.id,
-          ).toArray()[0];
-          if (!pending) {continue;}
+          const pending = this.ctx.storage.sql
+            .exec<OpRow>("SELECT * FROM sync_ops WHERE id = ? AND state = 'pending'", row.id)
+            .toArray()[0];
+          if (!pending) {
+            continue;
+          }
           const status = this.readListState(entry.id)?.status;
           if (current && status) {
             const existing = current.providers.find((link) => link.provider === "mal");
             if (match.method === "binding" && !existing) {
               throw new Error("MAL backup binding removed during resolution");
             }
-            if (current.providers.find((link) => link.provider === "anilist")?.externalId !==
-              entry.providers.find((link) => link.provider === "anilist")?.externalId) {
+            if (
+              current.providers.find((link) => link.provider === "anilist")?.externalId !==
+              entry.providers.find((link) => link.provider === "anilist")?.externalId
+            ) {
               throw new Error("AniList identity changed during MAL resolution");
             }
             if (existing && existing.externalId !== match.externalId) {
               throw new Error("MAL backup binding changed during resolution");
             }
-            const owner = this.ctx.storage.sql.exec<{ entry_id: string }>(
-              "SELECT entry_id FROM provider_links WHERE provider = 'mal' AND external_id = ? AND entry_id <> ?",
-              match.externalId, entry.id,
-            ).toArray()[0];
-            if (owner) {throw new Error("MAL backup match already belongs to another registry entry");}
+            const owner = this.ctx.storage.sql
+              .exec<{ entry_id: string }>(
+                "SELECT entry_id FROM provider_links WHERE provider = 'mal' AND external_id = ? AND entry_id <> ?",
+                match.externalId,
+                entry.id,
+              )
+              .toArray()[0];
+            if (owner) {
+              throw new Error("MAL backup match already belongs to another registry entry");
+            }
             if (!existing) {
               // Unlike manual linkProvider, automatic backups must never steal
               // a binding or change the canonical entry's provider/title.
               this.ctx.storage.sql.exec(
                 "INSERT INTO provider_links (entry_id, provider, external_id, title, updated_at) VALUES (?, 'mal', ?, ?, ?)",
-                entry.id, match.externalId, match.title ?? null, now(),
+                entry.id,
+                match.externalId,
+                match.title ?? null,
+                now(),
               );
               this.appendEvent(entry.id, "mal.backup.bound", "device", {
-                externalId: match.externalId, method: match.method,
+                externalId: match.externalId,
+                method: match.method,
               });
             }
             await writeMalBackupStatus(match.externalId, status, accessToken);
@@ -1992,7 +2074,8 @@ export class ManifoldSync extends DurableObject<Env> {
         }
         this.ctx.storage.sql.exec(
           "UPDATE sync_ops SET state = 'completed', attempts = attempts + 1, last_error = NULL, updated_at = ? WHERE id = ? AND state = 'pending'",
-          now(), row.id,
+          now(),
+          row.id,
         );
       } catch (error) {
         this.failOps([row], error);
@@ -2001,9 +2084,12 @@ export class ManifoldSync extends DurableObject<Env> {
   }
 
   private readMalBackupEntry(entryId: string): RegistryEntry | undefined {
-    const active = this.ctx.storage.sql.exec<{ id: string }>(
-      "SELECT id FROM canonical_entries WHERE id = ? AND tombstoned_at IS NULL", entryId,
-    ).toArray()[0];
+    const active = this.ctx.storage.sql
+      .exec<{ id: string }>(
+        "SELECT id FROM canonical_entries WHERE id = ? AND tombstoned_at IS NULL",
+        entryId,
+      )
+      .toArray()[0];
     return active ? this.readEntry(entryId, false) : undefined;
   }
 
@@ -2015,7 +2101,7 @@ export class ManifoldSync extends DurableObject<Env> {
     // kept the DO input gate closed for minutes during mass-read bursts and
     // starved concurrent /read requests until clients dropped the connection.
     const { groups, invalid } = groupOutboxForDrain(
-      rows.map((row) => ({ id: row.id, payload: row.payload, attempts: row.attempts }))
+      rows.map((row) => ({ id: row.id, payload: row.payload, attempts: row.attempts })),
     );
     for (const row of invalid) {
       this.failOps([row], new Error(`Undecodable outbox payload`));
@@ -2025,7 +2111,7 @@ export class ManifoldSync extends DurableObject<Env> {
       try {
         const entry = await this.getEntry(group.entryId);
         const mangaDexId = entry?.providers.find(
-          (provider) => provider.provider === "mangadex"
+          (provider) => provider.provider === "mangadex",
         )?.externalId;
         if (!mangaDexId) {
           throw new Error(`No MangaDex provider link for entry ${group.entryId}`);
@@ -2038,10 +2124,9 @@ export class ManifoldSync extends DurableObject<Env> {
              WHERE id = ? AND state = 'pending'`,
             row.attempts + 1,
             now(),
-            row.id
+            row.id,
           );
         }
-
       } catch (error) {
         this.failOps(group.rows, error);
       }
@@ -2060,10 +2145,12 @@ export class ManifoldSync extends DurableObject<Env> {
       .exec<{ entry_id: string; attempts: number }>(
         `SELECT entry_id, attempts FROM md_status_queue
          ORDER BY created_at ASC
-         LIMIT ${MD_STATUS_DRAIN_LIMIT}`
+         LIMIT ${MD_STATUS_DRAIN_LIMIT}`,
       )
       .toArray();
-    if (pending.length === 0) {return;}
+    if (pending.length === 0) {
+      return;
+    }
 
     try {
       const accessToken = await this.getAuthAccessToken("mangadex");
@@ -2076,35 +2163,40 @@ export class ManifoldSync extends DurableObject<Env> {
           const mdLink = this.ctx.storage.sql
             .exec<{ external_id: string }>(
               "SELECT external_id FROM provider_links WHERE entry_id = ? AND provider = 'mangadex' LIMIT 1",
-              row.entry_id
+              row.entry_id,
             )
             .toArray()[0];
           if (!mdLink) {
             // Link disappeared; nothing to mirror.
-            this.ctx.storage.sql.exec("DELETE FROM md_status_queue WHERE entry_id = ?", row.entry_id);
+            this.ctx.storage.sql.exec(
+              "DELETE FROM md_status_queue WHERE entry_id = ?",
+              row.entry_id,
+            );
             continue;
           }
           if (!known.has(mdLink.external_id)) {
             await Effect.runPromise(client.updateReadingStatus(mdLink.external_id, "reading"));
             known.add(mdLink.external_id);
-
           }
           this.ctx.storage.sql.exec("DELETE FROM md_status_queue WHERE entry_id = ?", row.entry_id);
         } catch (error) {
           const attempts = row.attempts + 1;
           if (attempts >= SYNC_MAX_ATTEMPTS) {
-            this.ctx.storage.sql.exec("DELETE FROM md_status_queue WHERE entry_id = ?", row.entry_id);
+            this.ctx.storage.sql.exec(
+              "DELETE FROM md_status_queue WHERE entry_id = ?",
+              row.entry_id,
+            );
             console.error(
-              `[ManifoldSync] MangaDex shelf mirror dropped:${row.entry_id}:attempts=${attempts}:${errorMessage(error)}`
+              `[ManifoldSync] MangaDex shelf mirror dropped:${row.entry_id}:attempts=${attempts}:${errorMessage(error)}`,
             );
           } else {
             this.ctx.storage.sql.exec(
               "UPDATE md_status_queue SET attempts = ? WHERE entry_id = ?",
               attempts,
-              row.entry_id
+              row.entry_id,
             );
             console.error(
-              `[ManifoldSync] MangaDex shelf mirror retry:${row.entry_id}:attempt=${attempts}:${errorMessage(error)}`
+              `[ManifoldSync] MangaDex shelf mirror retry:${row.entry_id}:attempt=${attempts}:${errorMessage(error)}`,
             );
           }
         }
@@ -2138,31 +2230,33 @@ export class ManifoldSync extends DurableObject<Env> {
   }
 
   private async scheduleSync(delayMs = 0): Promise<void> {
-    if (this.ctx.storage.kv.get("registry_sync_paused")) {return;}
-    const pending = this.ctx.storage.sql
-      .exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM sync_ops WHERE state = 'pending' AND target IN ('mangadex', 'mal')"
-      )
-      .toArray()[0]?.count ?? 0;
-    const shelfPending = this.ctx.storage.sql
-      .exec<{ count: number }>("SELECT COUNT(*) AS count FROM md_status_queue")
-      .toArray()[0]?.count ?? 0;
-    if (pending === 0 && shelfPending === 0) {return;}
+    if (this.ctx.storage.kv.get("registry_sync_paused")) {
+      return;
+    }
+    const pending =
+      this.ctx.storage.sql
+        .exec<{ count: number }>(
+          "SELECT COUNT(*) AS count FROM sync_ops WHERE state = 'pending' AND target IN ('mangadex', 'mal')",
+        )
+        .toArray()[0]?.count ?? 0;
+    const shelfPending =
+      this.ctx.storage.sql
+        .exec<{ count: number }>("SELECT COUNT(*) AS count FROM md_status_queue")
+        .toArray()[0]?.count ?? 0;
+    if (pending === 0 && shelfPending === 0) {
+      return;
+    }
 
     const scheduledAt = now() + Math.max(0, delayMs);
     const currentAlarm = await this.ctx.storage.getAlarm();
-    if (
-      currentAlarm === null ||
-      currentAlarm <= now() ||
-      currentAlarm > scheduledAt
-    ) {
+    if (currentAlarm === null || currentAlarm <= now() || currentAlarm > scheduledAt) {
       await this.ctx.storage.setAlarm(scheduledAt);
     }
   }
 
   private async persistToken(
     provider: AuthProvider,
-    token: OAuthTokenResponse
+    token: OAuthTokenResponse,
   ): Promise<AuthConnection> {
     const timestamp = now();
     const encryptedAccessToken = await encryptToken(this.env, token.access_token);
@@ -2188,14 +2282,14 @@ export class ManifoldSync extends DurableObject<Env> {
       token.token_type ?? "Bearer",
       expiresAt,
       token.scope ?? null,
-      timestamp
+      timestamp,
     );
 
     return {
       provider,
       connected: true,
       ...(!(expiresAt === null) && { expiresAt }),
-      updatedAt: timestamp
+      updatedAt: timestamp,
     };
   }
 
@@ -2205,7 +2299,7 @@ export class ManifoldSync extends DurableObject<Env> {
       provider,
       connected: row !== undefined,
       ...(row?.expires_at != null && { expiresAt: row.expires_at }),
-      ...(row && { updatedAt: row.updated_at })
+      ...(row && { updatedAt: row.updated_at }),
     };
   }
 
@@ -2229,23 +2323,17 @@ export class ManifoldSync extends DurableObject<Env> {
     // Big-bang registry: entries are provider-neutral rows keyed by a minted
     // UUID; the provider columns record the minting source only.
     try {
-      this.ctx.storage.sql.exec(
-        "ALTER TABLE canonical_entries ADD COLUMN tombstoned_at INTEGER"
-      );
+      this.ctx.storage.sql.exec("ALTER TABLE canonical_entries ADD COLUMN tombstoned_at INTEGER");
     } catch {
       // Column already exists.
     }
     try {
-      this.ctx.storage.sql.exec(
-        "ALTER TABLE canonical_entries DROP COLUMN chapter_source"
-      );
+      this.ctx.storage.sql.exec("ALTER TABLE canonical_entries DROP COLUMN chapter_source");
     } catch {
       // Column is absent on source-free registries.
     }
     try {
-      this.ctx.storage.sql.exec(
-        "ALTER TABLE oauth_sessions ADD COLUMN return_path TEXT"
-      );
+      this.ctx.storage.sql.exec("ALTER TABLE oauth_sessions ADD COLUMN return_path TEXT");
     } catch {
       // Column already exists.
     }
@@ -2363,10 +2451,12 @@ export class ManifoldSync extends DurableObject<Env> {
   private migrateLegacyOutbox(): void {
     const legacy = this.ctx.storage.sql
       .exec<{ name: string }>(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_outbox'"
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_outbox'",
       )
       .toArray()[0];
-    if (!legacy) {return;}
+    if (!legacy) {
+      return;
+    }
     const timestamp = now();
     this.ctx.storage.sql.exec(
       `INSERT OR IGNORE INTO sync_ops
@@ -2374,7 +2464,7 @@ export class ManifoldSync extends DurableObject<Env> {
        SELECT event_id, 'mangadex', 'mangadex.read', 'device',
               payload, status, attempts, NULL, created_at, ?
        FROM sync_outbox`,
-      timestamp
+      timestamp,
     );
     this.ctx.storage.sql.exec("DROP TABLE sync_outbox");
   }
@@ -2408,7 +2498,7 @@ export class ManifoldSync extends DurableObject<Env> {
       op.origin,
       JSON.stringify(op.payload),
       timestamp,
-      timestamp
+      timestamp,
     );
   }
 
@@ -2420,14 +2510,14 @@ export class ManifoldSync extends DurableObject<Env> {
               `SELECT * FROM sync_ops WHERE target = ? AND state = ? ORDER BY id ASC LIMIT ?`,
               target,
               state,
-              limit
+              limit,
             )
             .toArray()
         : this.ctx.storage.sql
             .exec<OpRow>(
               `SELECT * FROM sync_ops WHERE target = ? ORDER BY id ASC LIMIT ?`,
               target,
-              limit
+              limit,
             )
             .toArray()
     ).map((row) => toOp(row));
@@ -2446,18 +2536,13 @@ export class ManifoldSync extends DurableObject<Env> {
       this.ctx.storage.sql
         .exec<{ external_id: string }>(
           "SELECT external_id FROM provider_links WHERE entry_id = ? AND provider = 'anilist'",
-          entryId
+          entryId,
         )
         .toArray()[0]?.external_id ?? undefined
     );
   }
 
-  private appendEvent(
-    entryId: string,
-    kind: string,
-    origin: OpOrigin,
-    detail?: JsonObject,
-  ): void {
+  private appendEvent(entryId: string, kind: string, origin: OpOrigin, detail?: JsonObject): void {
     this.ctx.storage.sql.exec(
       `INSERT INTO list_events (entry_id, kind, origin, detail, created_at)
        VALUES (?, ?, ?, ?, ?)`,
@@ -2465,7 +2550,7 @@ export class ManifoldSync extends DurableObject<Env> {
       kind,
       origin,
       detail === undefined ? null : JSON.stringify(detail),
-      now()
+      now(),
     );
   }
 
@@ -2474,14 +2559,16 @@ export class ManifoldSync extends DurableObject<Env> {
       .exec<EntryRow>("SELECT * FROM canonical_entries WHERE id = ?", entryId)
       .toArray()[0];
     if (!row) {
-      if (required) {throw new Error(`Canonical entry not found: ${entryId}`);}
+      if (required) {
+        throw new Error(`Canonical entry not found: ${entryId}`);
+      }
       return undefined;
     }
 
     const providerRows = this.ctx.storage.sql
       .exec<ProviderRow>(
         "SELECT provider, external_id, title, updated_at FROM provider_links WHERE entry_id = ? ORDER BY provider",
-        entryId
+        entryId,
       )
       .toArray();
 
@@ -2496,10 +2583,12 @@ export class ManifoldSync extends DurableObject<Env> {
   }
 
   private async snapshotRegistry(): Promise<RegistryBackup> {
-    const tokenKeyHash = await sha256(await readSecret(
-      this.env.MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET,
-      "MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET",
-    ));
+    const tokenKeyHash = await sha256(
+      await readSecret(
+        this.env.MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET,
+        "MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET",
+      ),
+    );
     return this.ctx.blockConcurrencyWhile(async () => {
       const createdAt = now();
       const bookmark = await this.ctx.storage.getCurrentBookmark();

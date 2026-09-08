@@ -4,9 +4,7 @@ import { resolve } from "node:path";
 const root = resolve(import.meta.dirname, "../..");
 const destination = resolve(import.meta.dirname, "../catalog-assets");
 
-const plugins = [
-  { packageName: "tracker", id: "MANIFOLD" },
-] as const;
+const plugins = [{ packageName: "tracker", id: "MANIFOLD" }] as const;
 
 rmSync(destination, { recursive: true, force: true });
 mkdirSync(destination, { recursive: true });

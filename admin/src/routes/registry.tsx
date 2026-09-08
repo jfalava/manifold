@@ -106,7 +106,9 @@ function RegistryPage() {
           <Text as="h1" variant="heading">
             Canonical registry
           </Text>
-          <Text>Provider-neutral entries with tracker bindings, list state, and reading progress.</Text>
+          <Text>
+            Provider-neutral entries with tracker bindings, list state, and reading progress.
+          </Text>
         </div>
         <Button onClick={() => void refresh()} disabled={busy}>
           {busy ? "Working…" : "Refresh"}
@@ -591,7 +593,9 @@ function EntriesTable({
         header: "Progress",
         cell: ({ row }) => {
           const progress = row.original.progress;
-          if (!progress) {return <span className="opacity-40">—</span>;}
+          if (!progress) {
+            return <span className="opacity-40">—</span>;
+          }
           const chapter = progress.chapterNumber;
           const volume = progress.volumeNumber;
           return (

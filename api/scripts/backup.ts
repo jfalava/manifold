@@ -64,9 +64,7 @@ try {
   }
 
   const body = await response.text();
-  const directory = resolve(
-    environment.MANIFOLD_BACKUP_DIR ?? resolve(repositoryRoot, ".backups"),
-  );
+  const directory = resolve(environment.MANIFOLD_BACKUP_DIR ?? resolve(repositoryRoot, ".backups"));
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const path = resolve(
     directory,

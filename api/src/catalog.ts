@@ -24,11 +24,7 @@ const versioningBody = () => ({
   })),
 });
 
-const asset = async (
-  env: Env,
-  pathname: string,
-  contentType: string,
-): Promise<Response> => {
+const asset = async (env: Env, pathname: string, contentType: string): Promise<Response> => {
   const response = await env.ASSETS.fetch(new Request(`https://assets.local${pathname}`));
   if (!response.ok) {
     return Response.json({ error: "Not found" }, { status: 404 });
@@ -70,12 +66,10 @@ export const catalogApp: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
   )
   .get(`${STABLE}/:id/info.json`, (c) => {
     const entry = byId(c.req.param("id"));
-    if (!entry) {return c.json({ error: "Not found" }, 404);}
-    return c.json(
-      { ...entry.info, id: entry.id },
-      200,
-      { "cache-control": "no-store" },
-    );
+    if (!entry) {
+      return c.json({ error: "Not found" }, 404);
+    }
+    return c.json({ ...entry.info, id: entry.id }, 200, { "cache-control": "no-store" });
   })
   .get(`${STABLE}/:id/index.js`, (c) =>
     asset(c.env, `/${c.req.param("id")}/index.js`, "application/javascript"),
@@ -84,8 +78,6 @@ export const catalogApp: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
   .get(`${STABLE}/:id/static/icon.png`, (c) =>
     asset(c.env, `/${c.req.param("id")}/icon.png`, "image/png"),
   )
-  .get(`${STABLE}/:id/icon.png`, (c) =>
-    asset(c.env, `/${c.req.param("id")}/icon.png`, "image/png"),
-  )
+  .get(`${STABLE}/:id/icon.png`, (c) => asset(c.env, `/${c.req.param("id")}/icon.png`, "image/png"))
   .get(STABLE, homepage)
   .get(`${STABLE}/`, homepage);

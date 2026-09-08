@@ -61,12 +61,18 @@ export const parseCookieHeader = (header: string): ComixCookie[] => {
   const cookies: ComixCookie[] = [];
   for (const part of header.split(";")) {
     const trimmed = part.trim();
-    if (trimmed.length === 0) {continue;}
+    if (trimmed.length === 0) {
+      continue;
+    }
     const eq = trimmed.indexOf("=");
-    if (eq <= 0) {continue;}
+    if (eq <= 0) {
+      continue;
+    }
     const name = trimmed.slice(0, eq).trim();
     const value = trimmed.slice(eq + 1).trim();
-    if (name.length === 0 || value.length === 0) {continue;}
+    if (name.length === 0 || value.length === 0) {
+      continue;
+    }
     cookies.push({
       name,
       value,
@@ -111,7 +117,9 @@ export const cookiesFromFlags = (options: {
 export const parseComixCookie = (value: JsonObject): ComixCookie | undefined => {
   const name = presentString(value.name);
   const cookieValue = presentString(value.value);
-  if (name === undefined || cookieValue === undefined) {return undefined;}
+  if (name === undefined || cookieValue === undefined) {
+    return undefined;
+  }
   const domain = presentString(value.domain);
   const path = presentString(value.path);
   const expires = isFiniteNumber(value.expires) ? value.expires : undefined;
@@ -140,11 +148,17 @@ export const parseStoredSession = (raw: string): StoredComixSession | undefined 
       return undefined;
     }
     const cookiesRaw = arrayField(parsed, "cookies");
-    if (cookiesRaw === undefined) {return undefined;}
+    if (cookiesRaw === undefined) {
+      return undefined;
+    }
     const cookies = cookiesFromJsonList(cookiesRaw);
-    if (cookies.length === 0) {return undefined;}
+    if (cookies.length === 0) {
+      return undefined;
+    }
     const harvestedAt = numberField(parsed, "harvestedAt");
-    if (harvestedAt === undefined) {return undefined;}
+    if (harvestedAt === undefined) {
+      return undefined;
+    }
     const userAgent = presentString(parsed.userAgent);
     return {
       version: 1,
@@ -159,12 +173,18 @@ export const parseStoredSession = (raw: string): StoredComixSession | undefined 
 
 export const clearanceExpiresAtMs = (cookies: readonly ComixCookie[]): number | undefined => {
   const expiries = cookies.flatMap((cookie) => {
-    if (cookie.name !== "cf_clearance") {return [];}
+    if (cookie.name !== "cf_clearance") {
+      return [];
+    }
     const expires = cookie.expires;
-    if (expires === undefined || expires <= 0) {return [];}
+    if (expires === undefined || expires <= 0) {
+      return [];
+    }
     return [expires < 1_000_000_000_000 ? expires * 1000 : expires];
   });
-  if (expiries.length === 0) {return undefined;}
+  if (expiries.length === 0) {
+    return undefined;
+  }
   return Math.min(...expiries);
 };
 
@@ -172,9 +192,13 @@ export const isSessionFresh = (session: StoredComixSession, now = Date.now()): b
   const clearance = session.cookies.filter(
     (cookie) => cookie.name === "cf_clearance" && cookie.value.length > 0,
   );
-  if (clearance.length === 0) {return false;}
+  if (clearance.length === 0) {
+    return false;
+  }
   const expiresAt = clearanceExpiresAtMs(session.cookies);
-  if (expiresAt === undefined) {return true;}
+  if (expiresAt === undefined) {
+    return true;
+  }
   return expiresAt > now + SESSION_SKEW_MS;
 };
 
@@ -183,7 +207,9 @@ export const loadStoredSession = async (
   now = Date.now(),
 ): Promise<StoredComixSession | undefined> => {
   const raw = await store.get(SECRETS_SERVICE, SECRETS_NAME);
-  if (!raw) {return undefined;}
+  if (!raw) {
+    return undefined;
+  }
   const parsed = parseStoredSession(raw);
   if (!parsed || !isSessionFresh(parsed, now)) {
     await store.delete(SECRETS_SERVICE, SECRETS_NAME);
@@ -215,11 +241,12 @@ export const sessionFromCookies = (
 });
 
 export const cookiesFromCdp = (value: JsonValue): ComixCookie[] => {
-  const list = isJsonObject(value) && isJsonArray(value.cookies)
-    ? value.cookies
-    : isJsonArray(value)
-      ? value
-      : [];
+  const list =
+    isJsonObject(value) && isJsonArray(value.cookies)
+      ? value.cookies
+      : isJsonArray(value)
+        ? value
+        : [];
   return cookiesFromJsonList(list);
 };
 
@@ -231,10 +258,12 @@ export const toCdpCookie = (cookie: ComixCookie): JsonObject => {
     domain: cookie.domain ?? "comix.to",
     path: cookie.path ?? "/",
     secure: cookie.secure ?? true,
-    ...(expires !== undefined && expires > 0 && {
-      expires: expires > 1_000_000_000_000 ? expires / 1000 : expires,
-    }),
+    ...(expires !== undefined &&
+      expires > 0 && {
+        expires: expires > 1_000_000_000_000 ? expires / 1000 : expires,
+      }),
     ...(cookie.httpOnly !== undefined && { httpOnly: cookie.httpOnly }),
-    ...(cookie.sameSite !== undefined && cookie.sameSite.length > 0 && { sameSite: cookie.sameSite }),
+    ...(cookie.sameSite !== undefined &&
+      cookie.sameSite.length > 0 && { sameSite: cookie.sameSite }),
   };
 };

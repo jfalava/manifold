@@ -56,8 +56,14 @@ describe("MangaDex match selection", () => {
 
   it("keeps a close semantic tie unresolved", () => {
     const result = chooseMangaDexMatch(entry({ title: "One Piece Special", aliases: [] }), [
-      { manga: manga({ id: "manga-1", title: "One Piece Special Edition", altTitles: [] }), score: 0.88 },
-      { manga: manga({ id: "manga-2", title: "One Piece Special Edition", altTitles: [] }), score: 0.84 },
+      {
+        manga: manga({ id: "manga-1", title: "One Piece Special Edition", altTitles: [] }),
+        score: 0.88,
+      },
+      {
+        manga: manga({ id: "manga-2", title: "One Piece Special Edition", altTitles: [] }),
+        score: 0.84,
+      },
     ]);
 
     expect(result.status).toBe("ambiguous");
@@ -66,7 +72,10 @@ describe("MangaDex match selection", () => {
 
   it("rejects a mid-band semantic hit that the old 0.78/0.04 bar would have accepted", () => {
     const result = chooseMangaDexMatch(entry({ title: "One Piece Special", aliases: [] }), [
-      { manga: manga({ id: "manga-1", title: "One Piece Special Edition", altTitles: [] }), score: 0.8 },
+      {
+        manga: manga({ id: "manga-1", title: "One Piece Special Edition", altTitles: [] }),
+        score: 0.8,
+      },
       { manga: manga({ id: "manga-2", title: "Unrelated", altTitles: [] }), score: 0.74 },
     ]);
 
@@ -76,7 +85,10 @@ describe("MangaDex match selection", () => {
 
   it("accepts a clear high-confidence semantic winner", () => {
     const result = chooseMangaDexMatch(entry({ title: "One Piece Special", aliases: [] }), [
-      { manga: manga({ id: "manga-1", title: "One Piece Special Edition", altTitles: [] }), score: 0.91 },
+      {
+        manga: manga({ id: "manga-1", title: "One Piece Special Edition", altTitles: [] }),
+        score: 0.91,
+      },
       { manga: manga({ id: "manga-2", title: "Unrelated", altTitles: [] }), score: 0.8 },
     ]);
 
@@ -88,10 +100,13 @@ describe("MangaDex match selection", () => {
   });
 
   it("ranks fresh candidates with the same cosine similarity used by Vectorize", () => {
-    const result = rankEmbeddedCandidates([1, 0], [
-      { manga: manga({ id: "near" }), embedding: [0.9, 0.1] },
-      { manga: manga({ id: "far" }), embedding: [0, 1] },
-    ]);
+    const result = rankEmbeddedCandidates(
+      [1, 0],
+      [
+        { manga: manga({ id: "near" }), embedding: [0.9, 0.1] },
+        { manga: manga({ id: "far" }), embedding: [0, 1] },
+      ],
+    );
 
     expect(result[0]?.manga.id).toBe("near");
     expect(result[0]?.score).toBeGreaterThan(result[1]?.score ?? 0);

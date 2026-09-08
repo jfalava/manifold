@@ -67,10 +67,14 @@ type ResolvedRegistryRow = {
 
 const readPendingNukes = (): PendingNukes => {
   const raw = Application.getState(PENDING_NUKES_KEY);
-  if (!isString(raw)) {return {};}
+  if (!isString(raw)) {
+    return {};
+  }
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (!isJsonObject(parsed)) {return {};}
+    if (!isJsonObject(parsed)) {
+      return {};
+    }
     const pending: PendingNukes = {};
     for (const [key, value] of Object.entries(parsed)) {
       if (
@@ -128,11 +132,10 @@ export const aniListSessionToken = (): string | undefined => {
   return isString(token) && token.trim().length > 0 ? token.trim() : undefined;
 };
 
-const rememberListEntryId = (
-  anilistId: string,
-  mediaListEntryId: number | undefined,
-): void => {
-  if (mediaListEntryId !== undefined) {mediaListEntryIds.set(anilistId, mediaListEntryId);}
+const rememberListEntryId = (anilistId: string, mediaListEntryId: number | undefined): void => {
+  if (mediaListEntryId !== undefined) {
+    mediaListEntryIds.set(anilistId, mediaListEntryId);
+  }
 };
 
 /**
@@ -144,10 +147,13 @@ const anilistIdOf = async (
 ): Promise<{ readonly entryId: string; readonly anilistId: string } | undefined> => {
   const entryId = sourceManga.mangaId;
   const stamped = sourceManga.mangaInfo.additionalInfo?.["AniList ID"];
-  if (stamped) {return { entryId, anilistId: stamped };}
+  if (stamped) {
+    return { entryId, anilistId: stamped };
+  }
   const entry = await configuredPersonalApi().getEntry(entryId);
-  const anilistId = entry?.providers.find((provider) => provider.provider === "anilist")
-    ?.externalId;
+  const anilistId = entry?.providers.find(
+    (provider) => provider.provider === "anilist",
+  )?.externalId;
   return anilistId ? { entryId, anilistId } : undefined;
 };
 
@@ -162,12 +168,16 @@ export const recordAniListProgress = async (
   chapterNumber: number | undefined,
 ): Promise<boolean> => {
   const token = aniListSessionToken();
-  if (!token) {return false;}
+  if (!token) {
+    return false;
+  }
   if (!isFiniteNumber(chapterNumber) || chapterNumber < 0) {
     return false;
   }
   const resolved = await anilistIdOf(sourceManga).catch(() => undefined);
-  if (!resolved) {return false;}
+  if (!resolved) {
+    return false;
+  }
   return await saveAniListProgress(token, resolved.anilistId, chapterNumber);
 };
 
@@ -193,13 +203,14 @@ export const resolveManagedCollectionEntries = async (
       );
       for (const entry of resolved) {
         const link = entry.providers.find((provider) => provider.provider === "anilist");
-        if (link) {byAnilist.set(link.externalId, entry);}
+        if (link) {
+          byAnilist.set(link.externalId, entry);
+        }
       }
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       console.error(
-        `[manifold] registry resolve batch failed:${index}-${index + chunk.length - 1}:` +
-          detail,
+        `[manifold] registry resolve batch failed:${index}-${index + chunk.length - 1}:` + detail,
       );
     }
   }
@@ -210,7 +221,9 @@ export const getSourceMangaInManagedCollection = async (
   managedCollection: ManagedCollection,
 ): Promise<SourceManga[]> => {
   const status = parseAniListReadingStatus(managedCollection.id);
-  if (status === undefined) {return [];}
+  if (status === undefined) {
+    return [];
+  }
   console.log(`[manifold] collection:fetch:${managedCollection.id}:start`);
 
   const token = aniListToken();
@@ -262,7 +275,9 @@ export const commitManagedCollectionChanges = async (
 
   for (const addition of changeset.additions ?? []) {
     const resolved = await anilistIdOf(addition);
-    if (!resolved) {throw new Error(`No AniList link for ${addition.mangaId}`);}
+    if (!resolved) {
+      throw new Error(`No AniList link for ${addition.mangaId}`);
+    }
     // An addition for a pending-nuked title means the deletion was one half
     // of a move — cancel the nuke.
     delete pending[resolved.anilistId];
@@ -285,7 +300,9 @@ export const commitManagedCollectionChanges = async (
 
   for (const deletion of changeset.deletions ?? []) {
     const resolved = await anilistIdOf(deletion);
-    if (!resolved) {continue;}
+    if (!resolved) {
+      continue;
+    }
     pending[resolved.anilistId] = {
       entryId: resolved.entryId,
       anilistId: resolved.anilistId,
@@ -308,10 +325,14 @@ export const flushPendingNukes = async (): Promise<number> => {
   const pending = readPendingNukes();
   const nowMs = Date.now();
   const due = Object.entries(pending).filter(([, nuke]) => nowMs - nuke.at >= NUKE_QUIET_MS);
-  if (due.length === 0) {return 0;}
+  if (due.length === 0) {
+    return 0;
+  }
 
   const token = aniListSessionToken();
-  if (!token) {return 0;}
+  if (!token) {
+    return 0;
+  }
   const api = configuredPersonalApi();
 
   let userId: number | undefined;

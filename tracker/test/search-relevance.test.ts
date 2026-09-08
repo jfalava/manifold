@@ -48,11 +48,15 @@ describe("tracker search relevance", () => {
         title: "Different registry title",
         createdAt: 1,
         updatedAt: 1,
-        providers: [{ provider: "anilist" as const, externalId: "1", title: "Blue Box", updatedAt: 1 }],
+        providers: [
+          { provider: "anilist" as const, externalId: "1", title: "Blue Box", updatedAt: 1 },
+        ],
       },
     ];
 
-    expect(filterAndRankRegistryEntries("Blue Box", entries).map((entry) => entry.id))
-      .toEqual(["a", "b"]);
+    expect(filterAndRankRegistryEntries("Blue Box", entries).map((entry) => entry.id)).toEqual([
+      "a",
+      "b",
+    ]);
   });
 });

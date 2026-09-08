@@ -17,18 +17,10 @@ import {
   type JsonValue,
 } from "@manifold/json";
 
-import {
-  fetchAniListMangaEntries,
-  type AniListEntry,
-} from "@/anilist";
+import { fetchAniListMangaEntries, type AniListEntry } from "@/anilist";
 import { resolveAniListToken } from "@/login/anilist";
 import { resolveValue } from "@/env-resolve";
-import {
-  abortFrame,
-  closeFrame,
-  frameDetail,
-  openFrame,
-} from "@/ui";
+import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
 
 const DEFAULT_API_ORIGIN = "https://manifold.jfa.dev/api";
 
@@ -43,9 +35,8 @@ const ANILIST_TO_REGISTRY = {
 
 type AniListRegistryStatus = keyof typeof ANILIST_TO_REGISTRY;
 
-const isAniListRegistryStatus = (
-  status: string,
-): status is AniListRegistryStatus => Object.hasOwn(ANILIST_TO_REGISTRY, status);
+const isAniListRegistryStatus = (status: string): status is AniListRegistryStatus =>
+  Object.hasOwn(ANILIST_TO_REGISTRY, status);
 
 const registryStatusFor = (anilistStatus: string): string =>
   isAniListRegistryStatus(anilistStatus)
@@ -55,9 +46,7 @@ const registryStatusFor = (anilistStatus: string): string =>
 const mappedRegistryStatus = (
   anilistStatus: string,
 ): (typeof ANILIST_TO_REGISTRY)[AniListRegistryStatus] | undefined =>
-  isAniListRegistryStatus(anilistStatus)
-    ? ANILIST_TO_REGISTRY[anilistStatus]
-    : undefined;
+  isAniListRegistryStatus(anilistStatus) ? ANILIST_TO_REGISTRY[anilistStatus] : undefined;
 
 export interface ApiConfig {
   readonly origin: string;
@@ -68,11 +57,10 @@ export const apiConfig = (
   originFlag: Option.Option<string>,
   tokenFlag: Option.Option<string>,
 ): ApiConfig => {
-  const token = resolveValue(
-    tokenFlag,
-    "MANIFOLD_TOKEN"
-  );
-  if (!token) {throw new Error("Personal API token missing (MANIFOLD_TOKEN)");}
+  const token = resolveValue(tokenFlag, "MANIFOLD_TOKEN");
+  if (!token) {
+    throw new Error("Personal API token missing (MANIFOLD_TOKEN)");
+  }
   const origin = resolveValue(originFlag, "MANIFOLD_API_ORIGIN") ?? DEFAULT_API_ORIGIN;
   return { origin: origin.replace(/\/$/, ""), token };
 };
@@ -124,9 +112,7 @@ export const apiCall = async <A>(
 /** Registry list row (compat alias for contract RegistryListEntry). */
 export type RegistryRow = RegistryListEntry;
 
-export const registryByAnilistId = async (
-  config: ApiConfig
-): Promise<Map<string, RegistryRow>> => {
+export const registryByAnilistId = async (config: ApiConfig): Promise<Map<string, RegistryRow>> => {
   const PAGE_SIZE = 5000;
   let offset = 0;
   let page: readonly RegistryRow[];
@@ -146,7 +132,9 @@ export const registryByAnilistId = async (
   const map = new Map<string, RegistryRow>();
   for (const row of all) {
     const link = row.providers.find((provider) => provider.provider === "anilist");
-    if (link) {map.set(link.externalId, row);}
+    if (link) {
+      map.set(link.externalId, row);
+    }
   }
   return map;
 };
@@ -160,12 +148,12 @@ const anilistTokenFlag = Flag.string("anilist-token").pipe(
 
 const apiOriginFlag = Flag.string("api-origin").pipe(
   Flag.optional,
-  Flag.withDescription(`Personal API origin (default ${DEFAULT_API_ORIGIN}).`)
+  Flag.withDescription(`Personal API origin (default ${DEFAULT_API_ORIGIN}).`),
 );
 
 const apiTokenFlag = Flag.string("api-token").pipe(
   Flag.optional,
-  Flag.withDescription("Falls back to MANIFOLD_TOKEN.")
+  Flag.withDescription("Falls back to MANIFOLD_TOKEN."),
 );
 
 // ------------------------------------------------------------------
@@ -200,7 +188,9 @@ export const opsCommand = Command.make("ops").pipe(
                   frameDetail(
                     `  ${state.toUpperCase()} ${op.opId} ${op.kind} origin=${op.origin} attempts=${op.attempts}`,
                   );
-                  if (op.lastError) {frameDetail(`    └ ${op.lastError}`);}
+                  if (op.lastError) {
+                    frameDetail(`    └ ${op.lastError}`);
+                  }
                 }
                 total += body.ops.length;
               }
@@ -344,7 +334,9 @@ export const importCommand = Command.make("import", {
           const live = await fetchAniListMangaEntries(token);
           frameDetail(`fetched ${live.length} AniList entries`);
           if (!apply) {
-            const importable = live.filter((entry) => mappedRegistryStatus(entry.status) !== undefined);
+            const importable = live.filter(
+              (entry) => mappedRegistryStatus(entry.status) !== undefined,
+            );
             closeFrame(
               `Dry run: would import ${importable.length}/${live.length} rows. Re-run with --apply.`,
             );
@@ -370,7 +362,9 @@ export const importCommand = Command.make("import", {
             const entry = live[index];
             const row = resolved.entries[index];
             const status = entry ? mappedRegistryStatus(entry.status) : undefined;
-            if (!entry || !row || !status) {continue;}
+            if (!entry || !row || !status) {
+              continue;
+            }
             await apiCall(
               config,
               `/v1/entries/${encodeURIComponent(row.id)}/list-state`,

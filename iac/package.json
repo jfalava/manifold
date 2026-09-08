@@ -3,13 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "alchemy dev",
-    "plan": "alchemy plan",
-    "format": "oxfmt",
     "check": "oxlint --fix",
     "deploy": "alchemy deploy",
     "destroy": "alchemy destroy",
+    "dev": "alchemy dev",
+    "format": "oxfmt",
     "lint": "oxlint",
+    "plan": "alchemy plan",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -47,11 +47,11 @@ state or expand the backup to scores, notes, or progress.
 There is **no** separate development stack or `workers.dev` endpoint.
 Deployments go through Alchemy (`iac/`).
 
-| Worker           | Role                                                 |
-| ---------------- | ---------------------------------------------------- |
-| `ManifoldRouter` | Owns `manifold.jfa.dev`; routes by path              |
-| `SyncApi`        | HTTP API, personal Durable Object, tracker catalog   |
-| `ManifoldDocs`   | Static Nimbus documentation site                     |
+| Worker           | Role                                               |
+| ---------------- | -------------------------------------------------- |
+| `ManifoldRouter` | Owns `manifold.jfa.dev`; routes by path            |
+| `SyncApi`        | HTTP API, personal Durable Object, tracker catalog |
+| `ManifoldDocs`   | Static Nimbus documentation site                   |
 
 The router mounts:
 

@@ -6,9 +6,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "lint": "oxlint",
-    "format": "oxfmt",
     "check": "oxlint --fix",
+    "format": "oxfmt",
+    "lint": "oxlint",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

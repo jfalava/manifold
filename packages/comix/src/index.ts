@@ -22,12 +22,12 @@ export interface ComixChapter {
 export interface ComixTransport {
   readonly request: <A>(
     input: RequestInfo | URL,
-    init?: RequestInit
+    init?: RequestInit,
   ) => Effect.Effect<A, ComixSourceError>;
   /** Browser-backed transport for Cloudflare challenges and page decryption. */
   readonly browse: <A>(
     input: string,
-    parse: (document: string) => A
+    parse: (document: string) => A,
   ) => Effect.Effect<A, ComixSourceError>;
 }
 
@@ -38,13 +38,9 @@ export interface ComixSourceError {
 }
 
 export interface ComixClient {
-  readonly search: (
-    query: string
-  ) => Effect.Effect<readonly ComixTitle[], ComixSourceError>;
-  readonly getTitle: (
-    titleId: ComixTitleId
-  ) => Effect.Effect<ComixTitle, ComixSourceError>;
+  readonly search: (query: string) => Effect.Effect<readonly ComixTitle[], ComixSourceError>;
+  readonly getTitle: (titleId: ComixTitleId) => Effect.Effect<ComixTitle, ComixSourceError>;
   readonly getChapters: (
-    titleId: ComixTitleId
+    titleId: ComixTitleId,
   ) => Effect.Effect<readonly ComixChapter[], ComixSourceError>;
 }

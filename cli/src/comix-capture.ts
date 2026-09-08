@@ -25,11 +25,7 @@ import {
   itemsFromGoogleLinks,
   type ComixSearchItem,
 } from "./comix-match";
-import {
-  cookiesFromCdp,
-  toCdpCookie,
-  type ComixCookie,
-} from "./comix-session";
+import { cookiesFromCdp, toCdpCookie, type ComixCookie } from "./comix-session";
 
 export const CAPTURE_TIMEOUT_MS = 15_000;
 export const GOOGLE_POLL_INTERVAL_MS = 500;
@@ -56,11 +52,16 @@ export interface ComixBrowser {
 export const comixProfileDir = (home = homedir()): string =>
   join(home, ".manifold", "comix-chrome");
 
-export const parseDevToolsActivePort = (contents: string, host = "127.0.0.1"): string | undefined => {
+export const parseDevToolsActivePort = (
+  contents: string,
+  host = "127.0.0.1",
+): string | undefined => {
   const [portLine, pathLine] = contents.split(/\r?\n/);
   const port = portLine?.trim();
   const path = pathLine?.trim();
-  if (!port || !/^\d+$/.test(port) || !path || path.length === 0) {return undefined;}
+  if (!port || !/^\d+$/.test(port) || !path || path.length === 0) {
+    return undefined;
+  }
   const suffix = path.startsWith("/") ? path : `/${path}`;
   return `ws://${host}:${port}${suffix}`;
 };
@@ -104,9 +105,13 @@ export const findChromeDevToolsUrl = (
 ): string | undefined => {
   for (const file of candidates) {
     const contents = readFile(file);
-    if (!contents) {continue;}
+    if (!contents) {
+      continue;
+    }
     const url = parseDevToolsActivePort(contents);
-    if (url) {return url;}
+    if (url) {
+      return url;
+    }
   }
   return undefined;
 };
@@ -115,7 +120,9 @@ export const parseChromeVersionEndpoint = (body: string): string | undefined => 
   try {
     // SAFETY: Chrome /json/version body is decoded via isJsonObject/stringField
     const parsed: unknown = JSON.parse(body);
-    if (!isJsonObject(parsed)) {return undefined;}
+    if (!isJsonObject(parsed)) {
+      return undefined;
+    }
     const url = stringField(parsed, "webSocketDebuggerUrl");
     return url !== undefined && url.startsWith("ws://") ? url : undefined;
   } catch {
@@ -141,10 +148,7 @@ export const findChromeExecutable = (
   exists: (path: string) => boolean = existsSync,
 ): string | undefined => candidates.find((path) => exists(path));
 
-export const chromeLaunchArgs = (
-  profileDir: string,
-  port = CHROME_DEBUG_PORT,
-): string[] => [
+export const chromeLaunchArgs = (profileDir: string, port = CHROME_DEBUG_PORT): string[] => [
   `--remote-debugging-port=${port}`,
   `--user-data-dir=${profileDir}`,
   "--remote-allow-origins=*",
@@ -170,7 +174,9 @@ export const probeChromeDevToolsUrl = async (
   fetchVersion: (url: string) => Promise<string | undefined> = async (url) => {
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
-      if (!response.ok) {return undefined;}
+      if (!response.ok) {
+        return undefined;
+      }
       return await response.text();
     } catch {
       return undefined;
@@ -178,33 +184,46 @@ export const probeChromeDevToolsUrl = async (
   },
 ): Promise<string | undefined> => {
   const fromFile = findChromeDevToolsUrl();
-  if (fromFile) {return fromFile;}
+  if (fromFile) {
+    return fromFile;
+  }
   for (const port of ports) {
     const body = await fetchVersion(`http://127.0.0.1:${port}/json/version`);
-    if (!body) {continue;}
+    if (!body) {
+      continue;
+    }
     const url = parseChromeVersionEndpoint(body);
-    if (url) {return url;}
+    if (url) {
+      return url;
+    }
   }
   return undefined;
 };
 
-export const waitForChromeDevToolsUrl = async (options: {
-  readonly timeoutMs?: number;
-  readonly intervalMs?: number;
-  readonly probe?: () => Promise<string | undefined>;
-  readonly now?: () => number;
-  readonly sleep?: (ms: number) => Promise<void>;
-} = {}): Promise<string | undefined> => {
+export const waitForChromeDevToolsUrl = async (
+  options: {
+    readonly timeoutMs?: number;
+    readonly intervalMs?: number;
+    readonly probe?: () => Promise<string | undefined>;
+    readonly now?: () => number;
+    readonly sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<string | undefined> => {
   const timeoutMs = options.timeoutMs ?? 20_000;
   const intervalMs = options.intervalMs ?? 400;
   const probe = options.probe ?? probeChromeDevToolsUrl;
   const now = options.now ?? Date.now;
-  const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const deadline = now() + timeoutMs;
   while (true) {
     const url = await probe();
-    if (url) {return url;}
-    if (now() >= deadline) {return undefined;}
+    if (url) {
+      return url;
+    }
+    if (now() >= deadline) {
+      return undefined;
+    }
     await sleep(intervalMs);
   }
 };
@@ -249,7 +268,7 @@ const SNAPSHOT_SCRIPT =
 // so searchGoogle re-runs this until comix.to anchors appear or time runs out.
 const GOOGLE_SNAPSHOT_SCRIPT =
   "({ url: location.href, ready: document.readyState, title: document.title, " +
-  "links: Array.from(document.querySelectorAll('a[href*=\"comix.to\"], a[href*=\"/goto?\"]'), " +
+  'links: Array.from(document.querySelectorAll(\'a[href*="comix.to"], a[href*="/goto?"]\'), ' +
   "function(anchor){ return { href: anchor.href, title: anchor.textContent || '' }; }) })";
 
 export const createComixBrowser = async (options: {
@@ -260,8 +279,8 @@ export const createComixBrowser = async (options: {
 }): Promise<ComixBrowser> => {
   const { view } = options;
   const now = options.now ?? Date.now;
-  const sleep = options.sleep ??
-    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   await view.navigate("about:blank");
   await view.cdp("Page.enable");
   await view.cdp("Network.enable");
@@ -283,7 +302,9 @@ export const createComixBrowser = async (options: {
     let userAgent: string | undefined;
     try {
       const ua = await view.evaluate("navigator.userAgent");
-      if (isString(ua) && ua.length > 0) {userAgent = ua;}
+      if (isString(ua) && ua.length > 0) {
+        userAgent = ua;
+      }
     } catch {
       // harvest cookies even if the tab is mid-navigation
     }
@@ -294,9 +315,11 @@ export const createComixBrowser = async (options: {
     await view.navigate(comixBrowseUrl(keyword));
     const snapshot = await view.evaluate(SNAPSHOT_SCRIPT);
     const record = isJsonObject(snapshot) ? snapshot : undefined;
-    const title = record === undefined ? view.title : stringField(record, "title") ?? view.title;
-    const html = record === undefined ? "" : stringField(record, "html") ?? "";
-    if (classifyPage(title, html) === "challenge") {return "challenge";}
+    const title = record === undefined ? view.title : (stringField(record, "title") ?? view.title);
+    const html = record === undefined ? "" : (stringField(record, "html") ?? "");
+    if (classifyPage(title, html) === "challenge") {
+      return "challenge";
+    }
     const payload = await view.evaluate("window.__comixResult__");
     return itemsFromCapture(payload) ?? "challenge";
   };
@@ -310,28 +333,39 @@ export const createComixBrowser = async (options: {
     while (true) {
       const snapshot = await view.evaluate(GOOGLE_SNAPSHOT_SCRIPT);
       const record = isJsonObject(snapshot) ? snapshot : undefined;
-      const url = record === undefined ? view.url : stringField(record, "url") ?? view.url;
-      const title = record === undefined ? view.title : stringField(record, "title") ?? view.title;
-      if (isGoogleBlockedPage(url, title)) {return "challenge";}
+      const url = record === undefined ? view.url : (stringField(record, "url") ?? view.url);
+      const title =
+        record === undefined ? view.title : (stringField(record, "title") ?? view.title);
+      if (isGoogleBlockedPage(url, title)) {
+        return "challenge";
+      }
       // Page.navigate resolves when navigation starts, so early polls still see
       // the previous document (often a comix.to page full of comix.to anchors).
       // Only read anchors once the WebView is actually on Google results.
       if (isGoogleResultsUrl(url) && record !== undefined) {
         const items = itemsFromGoogleLinks(record.links ?? null);
-        if (items.length > 0) {return items;}
+        if (items.length > 0) {
+          return items;
+        }
         const ready = stringField(record, "ready") ?? "";
         if (ready === "complete") {
           completedPolls += 1;
           // Google's udm=14 view wraps results in opaque /goto redirects; the
           // only way to recover the comix.to URL is to follow one.
           const gotoLinks = googleGotoLinks(record.links ?? null);
-          if (gotoLinks.length > 0) {return followGotoLinks(gotoLinks);}
+          if (gotoLinks.length > 0) {
+            return followGotoLinks(gotoLinks);
+          }
           // Results are server-rendered, so two empty polls on a complete
           // page mean a real miss.
-          if (completedPolls >= 2) {return [];}
+          if (completedPolls >= 2) {
+            return [];
+          }
         }
       }
-      if (now() >= deadline) {return [];}
+      if (now() >= deadline) {
+        return [];
+      }
       await sleep(GOOGLE_POLL_INTERVAL_MS);
     }
   };
@@ -345,12 +379,20 @@ export const createComixBrowser = async (options: {
       while (true) {
         const href = await view.evaluate("location.href");
         const current = isString(href) ? href : view.url;
-        if (isGoogleBlockedPage(current, "")) {return "challenge";}
+        if (isGoogleBlockedPage(current, "")) {
+          return "challenge";
+        }
         const item = comixItemFromGoogleLink(current, link.title);
-        if (item !== undefined) {return [item];}
+        if (item !== undefined) {
+          return [item];
+        }
         // Landed on comix.to but not a /title/ page: try the next link.
-        if (isComixPageUrl(current)) {break;}
-        if (now() >= deadline) {break;}
+        if (isComixPageUrl(current)) {
+          break;
+        }
+        if (now() >= deadline) {
+          break;
+        }
         await sleep(GOOGLE_POLL_INTERVAL_MS);
       }
     }

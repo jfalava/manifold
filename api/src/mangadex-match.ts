@@ -5,20 +5,17 @@ import {
   type MangaDexMatchResult,
   type MangaDexMatchMethod,
 } from "@manifold/contract";
-import {
-  errorMessage,
-  isFiniteNumber,
-  isString,
-  manifoldUserAgent,
-} from "@manifold/json";
-import {
-  createMangaDexClient,
-  type MangaDexManga,
-} from "@manifold/mangadex";
+import { errorMessage, isFiniteNumber, isString, manifoldUserAgent } from "@manifold/json";
+import { createMangaDexClient, type MangaDexManga } from "@manifold/mangadex";
 import type { Ai, VectorizeIndex } from "@cloudflare/workers-types";
 import type { Env } from "./types";
 
-export type { MangaDexMatchInput, MangaDexMatchCandidate, MangaDexMatchResult, MangaDexMatchMethod };
+export type {
+  MangaDexMatchInput,
+  MangaDexMatchCandidate,
+  MangaDexMatchResult,
+  MangaDexMatchMethod,
+};
 
 export const MANGADEX_EMBEDDING_MODEL = "@cf/qwen/qwen3-embedding-0.6b" as const;
 
@@ -52,14 +49,20 @@ const stringValue = (value: VectorMetadata[string] | undefined): string | undefi
   isString(value) && value.trim().length > 0 ? value.trim() : undefined;
 
 const numberValue = (value: VectorMetadata[string] | undefined): number | undefined => {
-  if (isFiniteNumber(value)) {return value;}
-  if (!isString(value) || value.trim().length === 0) {return undefined;}
+  if (isFiniteNumber(value)) {
+    return value;
+  }
+  if (!isString(value) || value.trim().length === 0) {
+    return undefined;
+  }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
 const stringArray = (value: VectorMetadata[string] | undefined): readonly string[] => {
-  if (!Array.isArray(value)) {return [];}
+  if (!Array.isArray(value)) {
+    return [];
+  }
   return value.flatMap((item) => {
     const result = isString(item) && item.trim().length > 0 ? item.trim() : undefined;
     return result ? [result] : [];
@@ -71,9 +74,13 @@ const uniqueStrings = (values: readonly string[]): string[] => {
   const result: string[] = [];
   for (const value of values) {
     const normalized = value.trim();
-    if (!normalized) {continue;}
+    if (!normalized) {
+      continue;
+    }
     const key = normalizeTitle(normalized);
-    if (!key || seen.has(key)) {continue;}
+    if (!key || seen.has(key)) {
+      continue;
+    }
     seen.add(key);
     result.push(normalized);
   }
@@ -90,7 +97,9 @@ export const normalizeTitle = (value: string): string =>
 
 const yearFromDate = (value: string | undefined): number | undefined => {
   const year = value?.slice(0, 4);
-  if (!year || !/^\d{4}$/.test(year)) {return undefined;}
+  if (!year || !/^\d{4}$/.test(year)) {
+    return undefined;
+  }
   return Number(year);
 };
 
@@ -127,15 +136,10 @@ const hasExactTitle = (entry: MangaDexMatchInput, manga: MangaDexManga): boolean
   return mangaTitles(manga).some((title) => canonical.has(normalizeTitle(title)));
 };
 
-const linkedProviderId = (
-  entry: MangaDexMatchInput,
-  manga: MangaDexManga,
-): string | undefined =>
+const linkedProviderId = (entry: MangaDexMatchInput, manga: MangaDexManga): string | undefined =>
   entry.provider === "anilist" ? manga.anilistId : manga.myAnimeListId;
 
-const decisionCandidate = (
-  candidate: RankedMangaDexCandidate,
-): MangaDexMatchCandidate => ({
+const decisionCandidate = (candidate: RankedMangaDexCandidate): MangaDexMatchCandidate => ({
   externalId: candidate.manga.id,
   title: candidate.manga.title,
   score: Number(candidate.score.toFixed(6)),
@@ -196,7 +200,9 @@ export const chooseMangaDexMatch = (
   }
 
   const best = ordered[0];
-  if (!best) {return resultForCandidates(entry.id, "not_found", ordered);}
+  if (!best) {
+    return resultForCandidates(entry.id, "not_found", ordered);
+  }
 
   const second = ordered[1];
   const margin = second === undefined ? 1 : best.score - second.score;
@@ -216,11 +222,10 @@ export const chooseMangaDexMatch = (
   return resultForCandidates(entry.id, "ambiguous", ordered);
 };
 
-export const cosineSimilarity = (
-  left: readonly number[],
-  right: readonly number[],
-): number => {
-  if (left.length === 0 || left.length !== right.length) {return 0;}
+export const cosineSimilarity = (left: readonly number[], right: readonly number[]): number => {
+  if (left.length === 0 || left.length !== right.length) {
+    return 0;
+  }
   let dot = 0;
   let leftMagnitude = 0;
   let rightMagnitude = 0;
@@ -231,7 +236,9 @@ export const cosineSimilarity = (
     leftMagnitude += leftValue * leftValue;
     rightMagnitude += rightValue * rightValue;
   }
-  if (leftMagnitude === 0 || rightMagnitude === 0) {return 0;}
+  if (leftMagnitude === 0 || rightMagnitude === 0) {
+    return 0;
+  }
   return dot / Math.sqrt(leftMagnitude * rightMagnitude);
 };
 
@@ -252,7 +259,9 @@ const vectorCandidate = (
 ): MangaDexManga | undefined => {
   const mangaId = stringValue(metadata?.mangaId) ?? id.replace(/^mangadex:/, "");
   const title = stringValue(metadata?.title);
-  if (!mangaId || !title) {return undefined;}
+  if (!mangaId || !title) {
+    return undefined;
+  }
   const year = numberValue(metadata?.year);
   return {
     id: mangaId,
@@ -270,9 +279,15 @@ const vectorMetadata = (manga: MangaDexManga): VectorMetadata => {
   metadata.mangaId = manga.id;
   metadata.title = manga.title;
   metadata.aliases = [...manga.altTitles];
-  if (manga.anilistId) {metadata.anilistId = manga.anilistId;}
-  if (manga.myAnimeListId) {metadata.malId = manga.myAnimeListId;}
-  if (manga.year !== undefined) {metadata.year = manga.year;}
+  if (manga.anilistId) {
+    metadata.anilistId = manga.anilistId;
+  }
+  if (manga.myAnimeListId) {
+    metadata.malId = manga.myAnimeListId;
+  }
+  if (manga.year !== undefined) {
+    metadata.year = manga.year;
+  }
   return metadata;
 };
 
@@ -280,7 +295,9 @@ const uniqueManga = (values: readonly MangaDexManga[]): MangaDexManga[] => {
   const seen = new Set<string>();
   const result: MangaDexManga[] = [];
   for (const manga of values) {
-    if (seen.has(manga.id)) {continue;}
+    if (seen.has(manga.id)) {
+      continue;
+    }
     seen.add(manga.id);
     result.push(manga);
   }
@@ -291,8 +308,13 @@ const uniqueManga = (values: readonly MangaDexManga[]): MangaDexManga[] => {
 // below a hundred titles, so candidate embeddings go out in small batches.
 const EMBED_BATCH_SIZE = 16;
 
-export const embedMangaTitles = async (ai: Ai, texts: readonly string[]): Promise<readonly number[][]> => {
-  if (texts.length === 0) {return [];}
+export const embedMangaTitles = async (
+  ai: Ai,
+  texts: readonly string[],
+): Promise<readonly number[][]> => {
+  if (texts.length === 0) {
+    return [];
+  }
   const vectors: number[][] = [];
   for (let index = 0; index < texts.length; index += EMBED_BATCH_SIZE) {
     const chunk = [...texts].slice(index, index + EMBED_BATCH_SIZE);
@@ -323,13 +345,16 @@ const queryIndex = async (
   try {
     const exact = await index.query([...vector], {
       topK: 1,
-      filter: entry.provider === "anilist"
-        ? { anilistId: entry.providerId }
-        : { malId: entry.providerId },
+      filter:
+        entry.provider === "anilist"
+          ? { anilistId: entry.providerId }
+          : { malId: entry.providerId },
       returnMetadata: "all",
     });
     const exactCandidates = indexedCandidates(exact.matches);
-    if (exactCandidates.length > 0) {return exactCandidates;}
+    if (exactCandidates.length > 0) {
+      return exactCandidates;
+    }
   } catch (error) {
     console.warn(`[MangaDexMatch] exact Vectorize lookup failed: ${errorMessage(error)}`);
   }
@@ -346,10 +371,11 @@ const queryIndex = async (
   }
 };
 
-const searchMangaDex = async (
-  entry: MangaDexMatchInput,
-): Promise<readonly MangaDexManga[]> => {
-  const client = createMangaDexClient({ limit: MATCH_CANDIDATE_LIMIT, userAgent: manifoldUserAgent("api") });
+const searchMangaDex = async (entry: MangaDexMatchInput): Promise<readonly MangaDexManga[]> => {
+  const client = createMangaDexClient({
+    limit: MATCH_CANDIDATE_LIMIT,
+    userAgent: manifoldUserAgent("api"),
+  });
   const terms = uniqueStrings([entry.title, ...entry.aliases]).slice(0, SEARCH_TERM_LIMIT);
   // Sequential on purpose: parallel searches burst api.mangadex.org from
   // shared Cloudflare egress IPs and trip its 403 anomaly blocking — the same
@@ -364,7 +390,9 @@ const searchMangaDex = async (
       lastError = error;
     }
   }
-  if (searched.length === 0 && lastError !== undefined) {throw lastError;}
+  if (searched.length === 0 && lastError !== undefined) {
+    throw lastError;
+  }
   return uniqueManga(searched);
 };
 
@@ -391,18 +419,24 @@ export const resolveMangaDex = async (
   const sync = env.MANIFOLD_SYNC.getByName("default");
   const existing = await sync.getEntry(entry.id);
   const cached = existing?.providers.find((provider) => provider.provider === "mangadex");
-  if (cached) {return cachedResult(entry, cached.externalId, cached.title);}
+  if (cached) {
+    return cachedResult(entry, cached.externalId, cached.title);
+  }
 
   if (entry.externalIds?.mangadex) {
     return cachedResult(entry, entry.externalIds.mangadex, undefined);
   }
 
   const queryVector = (await embedMangaTitles(env.AI, [buildCanonicalEmbeddingText(entry)]))[0];
-  if (!queryVector) {throw new Error("Workers AI returned no MangaDex query embedding");}
+  if (!queryVector) {
+    throw new Error("Workers AI returned no MangaDex query embedding");
+  }
 
   const indexed = await queryIndex(env.MANGADEX_INDEX, queryVector, entry);
   const indexedDecision = chooseMangaDexMatch(entry, indexed);
-  if (indexedDecision.status === "matched") {return indexedDecision;}
+  if (indexedDecision.status === "matched") {
+    return indexedDecision;
+  }
 
   const searched = await searchMangaDex(entry);
   const fresh = await embedMangaTitles(env.AI, searched.map(buildMangaDexEmbeddingText));
@@ -427,7 +461,9 @@ export const resolveMangaDex = async (
   }
 
   const byId = new Map<string, RankedMangaDexCandidate>();
-  for (const candidate of indexed) {byId.set(candidate.manga.id, candidate);}
+  for (const candidate of indexed) {
+    byId.set(candidate.manga.id, candidate);
+  }
   for (const candidate of freshRanked) {
     const existingCandidate = byId.get(candidate.manga.id);
     if (!existingCandidate || candidate.score > existingCandidate.score) {

@@ -3,8 +3,7 @@
  * string is not a valid URL, even though the TypeScript field is required and
  * providers may legitimately have no cover.
  */
-export const PAPERBACK_FALLBACK_IMAGE_URL =
-  "https://manifold.jfa.dev/android-chrome-512x512.png";
+export const PAPERBACK_FALLBACK_IMAGE_URL = "https://manifold.jfa.dev/android-chrome-512x512.png";
 
 const HTTP_IMAGE_URL = /^https?:\/\/[^\s]+$/i;
 

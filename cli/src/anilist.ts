@@ -1,10 +1,5 @@
 import { ANILIST_GRAPHQL_ENDPOINT } from "@manifold/canonical/sources";
-import {
-  isFiniteNumber,
-  isString,
-  manifoldUserAgent,
-  type JsonObject,
-} from "@manifold/json";
+import { isFiniteNumber, isString, manifoldUserAgent, type JsonObject } from "@manifold/json";
 
 const USER_AGENT = manifoldUserAgent("cli");
 
@@ -48,7 +43,7 @@ const ANILIST_STATUSES = new Set([
   "COMPLETED",
   "DROPPED",
   "PAUSED",
-  "REPEATING"
+  "REPEATING",
 ]);
 
 const VIEWER_QUERY = `query { Viewer { id } }`;
@@ -79,7 +74,9 @@ let lastRequestAt = 0;
 
 const throttle = async (): Promise<void> => {
   const wait = REQUEST_INTERVAL_MS - (Date.now() - lastRequestAt);
-  if (wait > 0) {await sleep(wait);}
+  if (wait > 0) {
+    await sleep(wait);
+  }
   lastRequestAt = Date.now();
 };
 
@@ -98,7 +95,7 @@ const gql = async <A>(
       authorization: `Bearer ${token}`,
       "user-agent": USER_AGENT,
     },
-    body: JSON.stringify({ query, variables })
+    body: JSON.stringify({ query, variables }),
   });
   if (response.status === 429 && attempt < 5) {
     const retryAfter = Number(response.headers.get("retry-after") ?? "5");
@@ -110,7 +107,9 @@ const gql = async <A>(
   if (body.errors?.length) {
     throw new Error(body.errors.map((e) => e.message ?? "?").join("; "));
   }
-  if (!response.ok) {throw new Error(`AniList HTTP ${response.status}`);}
+  if (!response.ok) {
+    throw new Error(`AniList HTTP ${response.status}`);
+  }
   // SAFETY: value matches A; }; at this call site
   return body.data as A;
 };
@@ -145,7 +144,9 @@ export const fetchAniListTitles = async (
 export const fetchAniListViewerId = async (token: string): Promise<number> => {
   const data = await gql<{ Viewer?: { id?: number } }>(token, VIEWER_QUERY);
   const id = data.Viewer?.id;
-  if (!isFiniteNumber(id)) {throw new Error("AniList returned no Viewer id");}
+  if (!isFiniteNumber(id)) {
+    throw new Error("AniList returned no Viewer id");
+  }
   return id;
 };
 
@@ -218,9 +219,13 @@ export const fetchAniListRichEntries = async (
   for (const list of lists) {
     // SAFETY: optional field is { entries?: RichMediaList[] }).entri when present at this call site
     for (const entry of (list as { entries?: RichMediaList[] }).entries ?? []) {
-      if (!entry.mediaId || seen.has(entry.mediaId)) {continue;}
+      if (!entry.mediaId || seen.has(entry.mediaId)) {
+        continue;
+      }
       const status = entry.status ?? "";
-      if (!ANILIST_STATUSES.has(status)) {continue;}
+      if (!ANILIST_STATUSES.has(status)) {
+        continue;
+      }
       seen.add(entry.mediaId);
       const media = entry.media;
       const titles = [
@@ -228,10 +233,7 @@ export const fetchAniListRichEntries = async (
         media?.title?.romaji,
         ...(media?.synonyms ?? []),
       ].filter((t): t is string => isString(t) && t.length > 0);
-      const primary =
-        media?.title?.english ??
-        media?.title?.romaji ??
-        `AniList #${entry.mediaId}`;
+      const primary = media?.title?.english ?? media?.title?.romaji ?? `AniList #${entry.mediaId}`;
       entries.push({
         mediaId: entry.mediaId,
         status,
@@ -247,7 +249,8 @@ export const fetchAniListRichEntries = async (
         ...(isFiniteNumber(media?.averageScore) && {
           averageScore: media.averageScore,
         }),
-        ...(isFiniteNumber(entry.createdAt) && entry.createdAt > 0 && { createdAt: entry.createdAt })
+        ...(isFiniteNumber(entry.createdAt) &&
+          entry.createdAt > 0 && { createdAt: entry.createdAt }),
       });
     }
   }
@@ -258,9 +261,7 @@ export const fetchAniListRichEntries = async (
  * Fetches the authenticated user's manga list as flat entries with status and
  * integer progress. Entries with an unrecognized status are skipped.
  */
-export const fetchAniListMangaEntries = async (
-  token: string
-): Promise<readonly AniListEntry[]> => {
+export const fetchAniListMangaEntries = async (token: string): Promise<readonly AniListEntry[]> => {
   const userId = await fetchAniListViewerId(token);
   const data = await gql<ListCollection>(token, MEDIA_LIST_QUERY, { userId });
   const lists = data.MediaListCollection?.lists ?? [];
@@ -268,14 +269,16 @@ export const fetchAniListMangaEntries = async (
   const entries: AniListEntry[] = [];
   for (const list of lists) {
     for (const entry of list.entries ?? []) {
-      if (!entry.mediaId || seen.has(entry.mediaId)) {continue;}
+      if (!entry.mediaId || seen.has(entry.mediaId)) {
+        continue;
+      }
       const status = entry.status ?? "";
-      if (!ANILIST_STATUSES.has(status)) {continue;}
+      if (!ANILIST_STATUSES.has(status)) {
+        continue;
+      }
       seen.add(entry.mediaId);
       const title =
-        entry.media?.title?.english ??
-        entry.media?.title?.romaji ??
-        `AniList #${entry.mediaId}`;
+        entry.media?.title?.english ?? entry.media?.title?.romaji ?? `AniList #${entry.mediaId}`;
       const titleVariants = [
         entry.media?.title?.english,
         entry.media?.title?.romaji,
@@ -289,7 +292,8 @@ export const fetchAniListMangaEntries = async (
         mediaId: entry.mediaId,
         title,
         status,
-        ...(isFiniteNumber(entry.progress) && entry.progress >= 1 && { progress: Math.floor(entry.progress) }),
+        ...(isFiniteNumber(entry.progress) &&
+          entry.progress >= 1 && { progress: Math.floor(entry.progress) }),
         ...(malId && { malId }),
         ...(titleVariants.length > 0 && { titles: [...new Set(titleVariants)] }),
       });

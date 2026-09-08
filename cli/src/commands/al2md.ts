@@ -38,7 +38,10 @@ export const al2mdCommand = Command.make(
       Flag.withDescription("Do not backfill chapter read markers."),
     ),
     mangadexClientId: optional("mangadex-client-id", "Falls back to MANIFOLD_MANGADEX_CLIENT_ID."),
-    mangadexClientSecret: optional("mangadex-client-secret", "Falls back to MANIFOLD_MANGADEX_CLIENT_SECRET."),
+    mangadexClientSecret: optional(
+      "mangadex-client-secret",
+      "Falls back to MANIFOLD_MANGADEX_CLIENT_SECRET.",
+    ),
     mangadexUsername: optional("mangadex-username", "Falls back to MANIFOLD_MANGADEX_USERNAME."),
     mangadexPassword: optional("mangadex-password", "Falls back to MANIFOLD_MANGADEX_PASSWORD."),
   },
@@ -58,10 +61,14 @@ export const al2mdCommand = Command.make(
         ...names: readonly string[]
       ): string | undefined => {
         const direct = Option.getOrUndefined(flagValue);
-        if (direct !== undefined) {return direct;}
+        if (direct !== undefined) {
+          return direct;
+        }
         for (const name of names) {
           const value = process.env[name];
-          if (value !== undefined && value !== "") {return value;}
+          if (value !== undefined && value !== "") {
+            return value;
+          }
         }
         return undefined;
       };
@@ -71,26 +78,10 @@ export const al2mdCommand = Command.make(
           resolveAniListToken(Option.getOrUndefined(anilistToken)),
         )) ?? "";
       const credentials = {
-        clientId:
-          resolveValue(
-            mangadexClientId,
-            "MANIFOLD_MANGADEX_CLIENT_ID",
-          ) ?? "",
-        clientSecret:
-          resolveValue(
-            mangadexClientSecret,
-            "MANIFOLD_MANGADEX_CLIENT_SECRET",
-          ) ?? "",
-        username:
-          resolveValue(
-            mangadexUsername,
-            "MANIFOLD_MANGADEX_USERNAME",
-          ) ?? "",
-        password:
-          resolveValue(
-            mangadexPassword,
-            "MANIFOLD_MANGADEX_PASSWORD",
-          ) ?? "",
+        clientId: resolveValue(mangadexClientId, "MANIFOLD_MANGADEX_CLIENT_ID") ?? "",
+        clientSecret: resolveValue(mangadexClientSecret, "MANIFOLD_MANGADEX_CLIENT_SECRET") ?? "",
+        username: resolveValue(mangadexUsername, "MANIFOLD_MANGADEX_USERNAME") ?? "",
+        password: resolveValue(mangadexPassword, "MANIFOLD_MANGADEX_PASSWORD") ?? "",
       };
 
       if (!token) {
@@ -122,9 +113,7 @@ export const al2mdCommand = Command.make(
               task: async (ctx, task) => {
                 makePhaseReporter(task).detail("Fetching AniList manga list…");
                 ctx.entries = await fetchAniListMangaEntries(token);
-                makePhaseReporter(task).note(
-                  `Fetched ${ctx.entries.length} AniList entries.`,
-                );
+                makePhaseReporter(task).note(`Fetched ${ctx.entries.length} AniList entries.`);
               },
             },
             {
@@ -155,7 +144,7 @@ export const al2mdCommand = Command.make(
                   const target = entry.mangaDexId || "(unresolved)";
                   const status = entry.error
                     ? `ERROR: ${entry.error}`
-                    : entry.mangadexStatus ?? "skipped";
+                    : (entry.mangadexStatus ?? "skipped");
                   const progress =
                     entry.progress !== undefined && entry.chaptersToMark > 0
                       ? `, ${entry.chaptersToMark} chapters`
@@ -168,15 +157,10 @@ export const al2mdCommand = Command.make(
                   );
                 }
                 for (const entry of migrationReport.unmatched) {
-                  makePhaseReporter(task).problem(
-                    `${entry.title} — ${entry.reason}`,
-                  );
+                  makePhaseReporter(task).problem(`${entry.title} — ${entry.reason}`);
                 }
 
-                if (
-                  failures.length > 0 ||
-                  migrationReport.unmatched.length > 0
-                ) {
+                if (failures.length > 0 || migrationReport.unmatched.length > 0) {
                   process.exitCode = 1;
                 }
               },
@@ -192,10 +176,11 @@ export const al2mdCommand = Command.make(
             throw error;
           }
         },
-        catch: (cause) =>
-          new Error(errorMessage(cause)),
+        catch: (cause) => new Error(errorMessage(cause)),
       });
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
 ).pipe(
-  Command.withDescription("Bring your MangaDex library up to parity with AniList (statuses + chapter markers)."),
+  Command.withDescription(
+    "Bring your MangaDex library up to parity with AniList (statuses + chapter markers).",
+  ),
 );

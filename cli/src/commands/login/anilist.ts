@@ -69,9 +69,7 @@ export const anilistLoginCommand = Command.make("anilist", {
           const session = await exchangeAniListCode(id, secret, await callback.promise);
           const viewer = await validateAniListSession(session.accessToken);
           await Bun.secrets.set({ ...ANILIST_SECRET, value: JSON.stringify(session) });
-          closeFrame(
-            `Signed in as ${viewer.name} (${viewer.id}). Token saved in the OS keychain.`,
-          );
+          closeFrame(`Signed in as ${viewer.name} (${viewer.id}). Token saved in the OS keychain.`);
           if (process.env.MANIFOLD_ANILIST_TOKEN) {
             frameDetail(
               "MANIFOLD_ANILIST_TOKEN is set and overrides this login. Unset it to use the keychain token.",

@@ -50,14 +50,20 @@ const asString = (value: JsonValue | undefined, fallback = ""): string =>
   isString(value) ? value : isFiniteNumber(value) ? String(value) : fallback;
 
 const asNumber = (value: JsonValue | undefined): number | undefined => {
-  if (isFiniteNumber(value)) {return value;}
-  if (!isString(value)) {return undefined;}
+  if (isFiniteNumber(value)) {
+    return value;
+  }
+  if (!isString(value)) {
+    return undefined;
+  }
   const parsed = Number.parseFloat(value.replace(/[^\d.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
 const asDate = (value: JsonValue | undefined): Date | undefined => {
-  if (!isString(value) && !isFiniteNumber(value)) {return undefined;}
+  if (!isString(value) && !isFiniteNumber(value)) {
+    return undefined;
+  }
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? undefined : date;
 };
@@ -69,15 +75,16 @@ const titleFromUrl = (value: string): string => {
 
 export const mangaIdFromItem = (item: JsonObject): string => {
   const url = asString(item.url);
-  if (url) {return titleFromUrl(url);}
+  if (url) {
+    return titleFromUrl(url);
+  }
 
   const hashId = asString(first(item.hid, item.hash_id));
   const slug = asString(item.slug);
   return slug ? `${hashId}-${slug}` : hashId;
 };
 
-export const hashIdFromMangaId = (mangaId: string): string =>
-  mangaId.split("-", 1)[0] ?? mangaId;
+export const hashIdFromMangaId = (mangaId: string): string => mangaId.split("-", 1)[0] ?? mangaId;
 
 const posterUrl = (item: JsonObject): string => {
   const poster = asObject(item.poster);
@@ -89,16 +96,22 @@ const contentRatingFromItem = (item: JsonObject): ContentRating => {
   if (item.is_nsfw === true || rating === "nsfw" || rating === "adult") {
     return ContentRating.ADULT;
   }
-  if (rating === "suggestive" || rating === "mature") {return ContentRating.MATURE;}
+  if (rating === "suggestive" || rating === "mature") {
+    return ContentRating.MATURE;
+  }
   return ContentRating.EVERYONE;
 };
 
 const joinedTitles = (value: JsonValue | undefined): string[] =>
-  asArray(value).map((title) => {
-    if (isString(title)) {return title;}
-    const object = asObject(title);
-    return asString(first(object?.title, object?.name));
-  }).filter(Boolean);
+  asArray(value)
+    .map((title) => {
+      if (isString(title)) {
+        return title;
+      }
+      const object = asObject(title);
+      return asString(first(object?.title, object?.name));
+    })
+    .filter(Boolean);
 
 const joinedNames = (value: JsonValue | undefined): string | undefined => {
   const names = joinedTitles(value);
@@ -106,11 +119,15 @@ const joinedNames = (value: JsonValue | undefined): string | undefined => {
 };
 
 const itemGenres = (item: JsonObject): string[] =>
-  asArray(item.genres).map((genre) => {
-    if (isString(genre)) {return genre;}
-    const object = asObject(genre);
-    return asString(first(object?.title, object?.name));
-  }).filter(Boolean);
+  asArray(item.genres)
+    .map((genre) => {
+      if (isString(genre)) {
+        return genre;
+      }
+      const object = asObject(genre);
+      return asString(first(object?.title, object?.name));
+    })
+    .filter(Boolean);
 
 const synopsis = (item: JsonObject): string =>
   asString(first(item.synopsis, item.description, item.summary));
@@ -132,13 +149,16 @@ const toMangaInfo = (item: JsonObject): MangaInfo => {
     author,
     artist,
     rating: score,
-    tagGroups: genres.length > 0
-      ? [{ id: "genres", title: "Genres", tags: genres.map((id) => ({ id, title: id })) }]
-      : undefined,
+    tagGroups:
+      genres.length > 0
+        ? [{ id: "genres", title: "Genres", tags: genres.map((id) => ({ id, title: id })) }]
+        : undefined,
     additionalInfo: {
       ...(asString(item.type) && { Type: asString(item.type) }),
       ...(year && { Year: year }),
-      ...(asString(first(item.originalLanguage, item.original_language)) && { "Original language": asString(first(item.originalLanguage, item.original_language)) }),
+      ...(asString(first(item.originalLanguage, item.original_language)) && {
+        "Original language": asString(first(item.originalLanguage, item.original_language)),
+      }),
     },
   };
 };
@@ -172,20 +192,26 @@ export const paginationFromPayload = (payload: JsonValue): ComixPagination => {
   const result = resultObject(payload);
   const pagination = asObject(result.pagination) ?? asObject(result.meta);
   return {
-    currentPage: asNumber(first(pagination?.current_page, pagination?.currentPage, pagination?.page)),
+    currentPage: asNumber(
+      first(pagination?.current_page, pagination?.currentPage, pagination?.page),
+    ),
     lastPage: asNumber(first(pagination?.last_page, pagination?.lastPage, pagination?.pages)),
   };
 };
 
 const chapterIdFromItem = (item: JsonObject): string => {
   const explicit = asString(first(item.id, item.chapter_id, item.hid));
-  if (explicit) {return explicit;}
+  if (explicit) {
+    return explicit;
+  }
   const url = asString(first(item.url, item.chapterUrl, item.chapter_url));
-  return url ? url.split("/").at(-1)?.split("-")[0] ?? url : "";
+  return url ? (url.split("/").at(-1)?.split("-")[0] ?? url) : "";
 };
 
 const chapterNumberFromItem = (item: JsonObject): number =>
-  asNumber(first(item.number, item.chapter, item.chapterNumber, item.chapter_number, item.chapter_num)) ?? 0;
+  asNumber(
+    first(item.number, item.chapter, item.chapterNumber, item.chapter_number, item.chapter_num),
+  ) ?? 0;
 
 const chapterUrlFromItem = (item: JsonObject): string =>
   asString(first(item.url, item.chapterUrl, item.chapter_url));
@@ -197,21 +223,27 @@ export const toChapter = (item: JsonObject, sourceManga: SourceManga): Chapter =
   chapNum: chapterNumberFromItem(item),
   title: asString(first(item.title, item.name)) || undefined,
   volume: asNumber(first(item.volume, item.volumeNumber, item.volume_number)),
-  publishDate: asDate(first(item.publishDate, item.publishedAt, item.published_at, item.createdAt, item.created_at)),
+  publishDate: asDate(
+    first(item.publishDate, item.publishedAt, item.published_at, item.createdAt, item.created_at),
+  ),
   additionalInfo: {
     ...(chapterUrlFromItem(item) && { "Comix chapter URL": chapterUrlFromItem(item) }),
-    ...(asString(first(item.scanlationGroup, item.scanlation_group)) && { "Scanlation group": asString(first(item.scanlationGroup, item.scanlation_group)) }),
+    ...(asString(first(item.scanlationGroup, item.scanlation_group)) && {
+      "Scanlation group": asString(first(item.scanlationGroup, item.scanlation_group)),
+    }),
   },
 });
 
 const pageFromItem = (value: JsonValue): ComixPage | undefined => {
-  if (isString(value)) {return value ? { url: value } : undefined;}
+  if (isString(value)) {
+    return value ? { url: value } : undefined;
+  }
   const item = asObject(value);
-  if (!item) {return undefined;}
+  if (!item) {
+    return undefined;
+  }
   const url = asString(first(item.url, item.src, item.image, item.path));
-  return url
-    ? { url, width: asNumber(item.width), height: asNumber(item.height) }
-    : undefined;
+  return url ? { url, width: asNumber(item.width), height: asNumber(item.height) } : undefined;
 };
 
 export const pageItems = (payload: JsonValue): ComixPage[] => {
@@ -220,7 +252,8 @@ export const pageItems = (payload: JsonValue): ComixPage[] => {
   const candidates = asArray(first(pages?.items, pages?.pages, root.items, root.images));
   const baseUrl = asString(first(pages?.baseUrl, pages?.base_url));
 
-  return candidates.map(pageFromItem)
+  return candidates
+    .map(pageFromItem)
     .filter((page): page is ComixPage => page !== undefined)
     .map((page) => ({
       ...page,
@@ -231,7 +264,9 @@ export const pageItems = (payload: JsonValue): ComixPage[] => {
 export const toChapterDetails = (payload: JsonValue, chapter: Chapter): ChapterDetails => {
   const pages = pageItems(payload);
   if (pages.length === 0) {
-    throw new Error("Comix returned no readable pages; the chapter payload may still be signed or encrypted");
+    throw new Error(
+      "Comix returned no readable pages; the chapter payload may still be signed or encrypted",
+    );
   }
 
   return {

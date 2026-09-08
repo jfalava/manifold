@@ -1,7 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
-const run = (flags: string[], scenario = "normal") => spawnSync("bun", ["-e", `
+const run = (flags: string[], scenario = "normal") =>
+  spawnSync(
+    "bun",
+    [
+      "-e",
+      `
   import { BunServices } from '@effect/platform-bun';
   import { Effect } from 'effect';
   import { Command } from 'effect/unstable/cli';
@@ -48,7 +53,10 @@ const run = (flags: string[], scenario = "normal") => spawnSync("bun", ["-e", `
       ${JSON.stringify(["registry", "mal", "--delay", "0", ...flags])}
     ).pipe(Effect.provide(BunServices.layer)));
   } catch (error) { console.error(error); process.exitCode = 1; }
-`], { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 20_000 });
+`,
+    ],
+    { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 20_000 },
+  );
 
 describe("registry mal CLI", () => {
   it("audits without writes, skips linked/tombstoned rows and reports missing mappings", () => {
@@ -63,17 +71,22 @@ describe("registry mal CLI", () => {
   it("applies proven links through ingestion without changing list state", () => {
     const result = run(["--apply"]);
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('WRITE {"provider":"anilist","providerId":"42","title":"Registry title","links":[{"provider":"mal","externalId":"77"}]}');
+    expect(result.stdout).toContain(
+      'WRITE {"provider":"anilist","providerId":"42","title":"Registry title","links":[{"provider":"mal","externalId":"77"}]}',
+    );
     expect(result.stdout).not.toContain("list-state");
     expect(result.stdout).not.toContain("/providers");
   });
 
-  it.each(["conflict", "duplicate"])("reports %s ownership rather than stealing links", (scenario) => {
-    const result = run([], scenario);
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain("already belongs to");
-    expect(result.stdout).not.toContain("WRITE");
-  });
+  it.each(["conflict", "duplicate"])(
+    "reports %s ownership rather than stealing links",
+    (scenario) => {
+      const result = run([], scenario);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("already belongs to");
+      expect(result.stdout).not.toContain("WRITE");
+    },
+  );
 
   it("pages the whole registry before applying a lookup limit", () => {
     const result = run(["--limit", "1"], "pagination");

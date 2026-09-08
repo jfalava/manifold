@@ -32,7 +32,9 @@ export const STATUS_FILTER_HINT =
 /** Parse --status. undefined means keep every row ("auto"). */
 export const parseStatusFilter = (value: string): ReadonlySet<RegistryStatus> | undefined => {
   const trimmed = value.trim().toLowerCase();
-  if (trimmed === "" || trimmed === "auto") {return undefined;}
+  if (trimmed === "" || trimmed === "auto") {
+    return undefined;
+  }
   const names = trimmed
     .split(",")
     .map((part) => part.trim())
@@ -48,7 +50,9 @@ export const parseStatusFilter = (value: string): ReadonlySet<RegistryStatus> | 
         `--status: unknown status "${name}" (allowed: ${[...STATUS_ALIASES.keys()].join(", ")})`,
       );
     }
-    for (const status of mapped) {allowed.add(status);}
+    for (const status of mapped) {
+      allowed.add(status);
+    }
   }
   return allowed;
 };
@@ -57,8 +61,12 @@ export const matchesStatusFilter = (
   status: string | undefined,
   filter: ReadonlySet<RegistryStatus> | undefined,
 ): boolean => {
-  if (filter === undefined) {return true;}
-  if (status === undefined) {return false;}
+  if (filter === undefined) {
+    return true;
+  }
+  if (status === undefined) {
+    return false;
+  }
   // SAFETY: value matches RegistryStatus at this call site
   return filter.has(status as RegistryStatus);
 };

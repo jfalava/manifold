@@ -21,7 +21,10 @@ export interface ComixSearchItem {
 }
 
 export const normalizeTitle = (value: string): string =>
-  value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 
 const tokenize = (value: string): readonly string[] =>
   normalizeTitle(value).split(" ").filter(Boolean);
@@ -29,10 +32,14 @@ const tokenize = (value: string): readonly string[] =>
 // Longest-common-prefix stem match ("villains"/"villainess" share "villain"),
 // mirroring the source's pickComixMatch so CLI and device agree on a title.
 const tokensCompatible = (a: string, b: string): boolean => {
-  if (a === b) {return true;}
+  if (a === b) {
+    return true;
+  }
   const min = Math.min(a.length, b.length);
   let i = 0;
-  while (i < min && a.charCodeAt(i) === b.charCodeAt(i)) {i += 1;}
+  while (i < min && a.charCodeAt(i) === b.charCodeAt(i)) {
+    i += 1;
+  }
   return i >= 4;
 };
 
@@ -49,9 +56,13 @@ export const uniqueTitles = (titles: readonly string[]): readonly string[] => {
   const unique: string[] = [];
   for (const title of titles) {
     const trimmed = title.trim();
-    if (trimmed.length === 0) {continue;}
+    if (trimmed.length === 0) {
+      continue;
+    }
     const key = normalizeTitle(trimmed);
-    if (key.length === 0 || seen.has(key)) {continue;}
+    if (key.length === 0 || seen.has(key)) {
+      continue;
+    }
     seen.add(key);
     unique.push(trimmed);
   }
@@ -65,7 +76,9 @@ export const pickMatch = (
   const candidates = uniqueTitles(isString(titles) ? [titles] : titles)
     .map(normalizeTitle)
     .filter(Boolean);
-  if (candidates.length === 0) {return undefined;}
+  if (candidates.length === 0) {
+    return undefined;
+  }
   let best: ComixSearchItem | undefined;
   let bestScore = 0;
   for (const item of items) {
@@ -75,12 +88,18 @@ export const pickMatch = (
       .filter(Boolean);
     for (const candidate of candidates) {
       for (const name of names) {
-        if (name === candidate) {return item;}
+        if (name === candidate) {
+          return item;
+        }
         const candidateTokens = tokenize(candidate);
-        if (candidateTokens.length === 0) {continue;}
+        if (candidateTokens.length === 0) {
+          continue;
+        }
         let hits = 0;
         for (const token of candidateTokens) {
-          if (name.split(" ").some((n) => tokensCompatible(n, token))) {hits += 1;}
+          if (name.split(" ").some((n) => tokensCompatible(n, token))) {
+            hits += 1;
+          }
         }
         const score = hits / candidateTokens.length;
         if (score >= 0.65 && score > bestScore) {
@@ -127,14 +146,15 @@ const directComixUrl = (href: string): URL | undefined => {
   }
 };
 
-export const comixItemFromGoogleLink = (
-  href: string,
-  title = "",
-): ComixSearchItem | undefined => {
+export const comixItemFromGoogleLink = (href: string, title = ""): ComixSearchItem | undefined => {
   const url = directComixUrl(href);
-  if (url === undefined) {return undefined;}
+  if (url === undefined) {
+    return undefined;
+  }
   const encodedMangaId = url.pathname.match(/^\/title\/([^/]+)/)?.[1];
-  if (encodedMangaId === undefined) {return undefined;}
+  if (encodedMangaId === undefined) {
+    return undefined;
+  }
   let mangaId: string;
   try {
     mangaId = decodeURIComponent(encodedMangaId);
@@ -144,8 +164,12 @@ export const comixItemFromGoogleLink = (
   const separator = mangaId.indexOf("-");
   const hid = separator === -1 ? mangaId : mangaId.slice(0, separator);
   const slug = separator === -1 ? undefined : mangaId.slice(separator + 1);
-  if (slug !== undefined && slug.length === 0) {return undefined;}
-  if (!/^[a-z0-9]+$/i.test(hid)) {return undefined;}
+  if (slug !== undefined && slug.length === 0) {
+    return undefined;
+  }
+  if (!/^[a-z0-9]+$/i.test(hid)) {
+    return undefined;
+  }
   const resultTitle = title.trim() || slug?.replaceAll("-", " ");
   return {
     hid,
@@ -161,18 +185,24 @@ export const addComixSearchItems = (
   const indexByHid = new Map<string, number>();
   for (const [index, item] of target.entries()) {
     const hid = hidOf(item);
-    if (hid !== undefined) {indexByHid.set(hid, index);}
+    if (hid !== undefined) {
+      indexByHid.set(hid, index);
+    }
   }
   for (const item of incoming) {
     const hid = hidOf(item);
     const existingIndex = hid === undefined ? undefined : indexByHid.get(hid);
     if (existingIndex === undefined) {
-      if (hid !== undefined) {indexByHid.set(hid, target.length);}
+      if (hid !== undefined) {
+        indexByHid.set(hid, target.length);
+      }
       target.push(item);
       continue;
     }
     const existing = target[existingIndex];
-    if (existing === undefined) {continue;}
+    if (existing === undefined) {
+      continue;
+    }
     const titles = uniqueTitles([
       ...altTitlesOf(existing),
       ...altTitlesOf(item),
@@ -190,22 +220,32 @@ export const addComixSearchItems = (
 export const googleGotoLinks = (
   value: JsonValue,
 ): readonly { readonly href: string; readonly title: string }[] => {
-  if (!isJsonArray(value)) {return [];}
+  if (!isJsonArray(value)) {
+    return [];
+  }
   const seen = new Set<string>();
   const links: { href: string; title: string }[] = [];
   for (const entry of value) {
-    if (!isJsonObject(entry)) {continue;}
+    if (!isJsonObject(entry)) {
+      continue;
+    }
     const href = stringField(entry, "href");
-    if (href === undefined) {continue;}
+    if (href === undefined) {
+      continue;
+    }
     let absolute: string;
     try {
       const url = new URL(href, "https://www.google.com");
-      if (!url.hostname.includes("google.") || url.pathname !== "/goto") {continue;}
+      if (!url.hostname.includes("google.") || url.pathname !== "/goto") {
+        continue;
+      }
       absolute = url.toString();
     } catch {
       continue;
     }
-    if (seen.has(absolute)) {continue;}
+    if (seen.has(absolute)) {
+      continue;
+    }
     seen.add(absolute);
     links.push({ href: absolute, title: (stringField(entry, "title") ?? "").trim() });
   }
@@ -222,24 +262,34 @@ export const isComixPageUrl = (href: string): boolean => {
 };
 
 export const itemsFromGoogleLinks = (value: JsonValue): readonly ComixSearchItem[] => {
-  if (!isJsonArray(value)) {return [];}
+  if (!isJsonArray(value)) {
+    return [];
+  }
   const items: ComixSearchItem[] = [];
   for (const entry of value) {
-    if (!isJsonObject(entry)) {continue;}
+    if (!isJsonObject(entry)) {
+      continue;
+    }
     const href = stringField(entry, "href");
-    if (href === undefined) {continue;}
+    if (href === undefined) {
+      continue;
+    }
     const item = comixItemFromGoogleLink(href, stringField(entry, "title") ?? "");
-    if (item !== undefined) {addComixSearchItems(items, [item]);}
+    if (item !== undefined) {
+      addComixSearchItems(items, [item]);
+    }
   }
   return items;
 };
 
 export const isChallengeText = (value: string): boolean => {
   const lowered = value.toLowerCase();
-  return lowered.includes("just a moment") ||
+  return (
+    lowered.includes("just a moment") ||
     lowered.includes("cf-chl-") ||
     lowered.includes("challenge-platform") ||
-    lowered.includes("_cf_chl_");
+    lowered.includes("_cf_chl_")
+  );
 };
 
 /** Google's own interstitials: /sorry captcha, consent wall, rate-limit page. */
@@ -249,9 +299,11 @@ export const isGoogleBlockedPage = (url: string, title: string): boolean => {
     return true;
   }
   const loweredTitle = title.toLowerCase();
-  return loweredTitle.includes("before you continue") ||
+  return (
+    loweredTitle.includes("before you continue") ||
     loweredTitle.includes("antes de continuar") ||
-    loweredTitle.includes("unusual traffic");
+    loweredTitle.includes("unusual traffic")
+  );
 };
 
 /** Unwrapped Comix capture payload (the `r` field, or the value itself). */
@@ -283,17 +335,23 @@ export const unwrapComixResult = (value: JsonValue): JsonValue => {
 
 export const itemsFromCapture = (payload: JsonValue): readonly ComixSearchItem[] | undefined => {
   const unwrapped = unwrapComixResult(payload);
-  if (unwrapped === null) {return undefined;}
+  if (unwrapped === null) {
+    return undefined;
+  }
   try {
     let parsed: JsonValue = unwrapped;
     if (isString(unwrapped)) {
       // SAFETY: captured Comix JSON string is decoded via isJsonObject below
       parsed = JSON.parse(unwrapped) as JsonValue;
     }
-    if (!isJsonObject(parsed)) {return undefined;}
+    if (!isJsonObject(parsed)) {
+      return undefined;
+    }
     const result = objectField(parsed, "result");
     const items = result === undefined ? undefined : arrayField(result, "items");
-    if (items === undefined) {return undefined;}
+    if (items === undefined) {
+      return undefined;
+    }
     return items.filter(isJsonObject).map(parseComixSearchItem);
   } catch {
     return undefined;

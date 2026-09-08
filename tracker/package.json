@@ -8,15 +8,15 @@
     "./catalog": "./src/catalog.ts"
   },
   "scripts": {
-    "lint": "oxlint",
-    "check": "oxlint --fix",
-    "format": "oxfmt",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
     "bundle": "paperback-cli bundle --folder production",
     "bundle:debug": "paperback-cli bundle --debug --folder production",
+    "check": "oxlint --fix",
+    "dev": "paperback-cli serve --watch",
+    "format": "oxfmt",
+    "lint": "oxlint",
     "serve": "paperback-cli serve",
-    "dev": "paperback-cli serve --watch"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@manifold/canonical": "workspace:*",

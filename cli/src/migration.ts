@@ -10,7 +10,7 @@ import {
   createMangaDexClient,
   type MangaDexChapter,
   type MangaDexClient,
-  type MangaDexReadingStatus
+  type MangaDexReadingStatus,
 } from "@manifold/mangadex";
 
 import type { AniListEntry } from "./anilist";
@@ -32,17 +32,11 @@ export const ANILIST_TO_MANGADEX_STATUS = {
 
 type AniListMangaDexStatus = keyof typeof ANILIST_TO_MANGADEX_STATUS;
 
-const isAniListMangaDexStatus = (
-  status: string,
-): status is AniListMangaDexStatus =>
+const isAniListMangaDexStatus = (status: string): status is AniListMangaDexStatus =>
   Object.hasOwn(ANILIST_TO_MANGADEX_STATUS, status);
 
-const mangaDexStatusFor = (
-  anilistStatus: string,
-): MangaDexReadingStatus | undefined =>
-  isAniListMangaDexStatus(anilistStatus)
-    ? ANILIST_TO_MANGADEX_STATUS[anilistStatus]
-    : undefined;
+const mangaDexStatusFor = (anilistStatus: string): MangaDexReadingStatus | undefined =>
+  isAniListMangaDexStatus(anilistStatus) ? ANILIST_TO_MANGADEX_STATUS[anilistStatus] : undefined;
 
 export interface MigrationOptions {
   /** Push chapter read markers up to each entry's AniList progress. */
@@ -108,7 +102,9 @@ export const runMigration = async (
   const unmatched: UnmatchedEntry[] = [];
 
   for (const [index, entry] of anilistEntries.entries()) {
-    if (index > 0) {await sleep(MD_REQUEST_INTERVAL_MS);}
+    if (index > 0) {
+      await sleep(MD_REQUEST_INTERVAL_MS);
+    }
     const mangadexStatus = mangaDexStatusFor(entry.status);
 
     try {
@@ -119,23 +115,15 @@ export const runMigration = async (
           title: entry.title,
           anilistStatus: entry.status,
           ...(entry.progress !== undefined && { progress: entry.progress }),
-          reason: "No MangaDex candidate matched"
+          reason: "No MangaDex candidate matched",
         });
         continue;
       }
 
       let chaptersToMark = 0;
-      if (
-        options.includeProgress &&
-        entry.progress !== undefined &&
-        entry.progress >= 1
-      ) {
+      if (options.includeProgress && entry.progress !== undefined && entry.progress >= 1) {
         await sleep(MD_REQUEST_INTERVAL_MS);
-        const chapterIds = await chapterIdsUpTo(
-          client,
-          match.manga.id,
-          entry.progress
-        );
+        const chapterIds = await chapterIdsUpTo(client, match.manga.id, entry.progress);
         chaptersToMark = chapterIds.length;
         if (!options.dryRun && chapterIds.length > 0) {
           await client.markChaptersRead(match.manga.id, chapterIds);
@@ -156,7 +144,7 @@ export const runMigration = async (
         mangaDexId: match.manga.id,
         matchedTitle: match.manga.title,
         matchMethod: match.method,
-        chaptersToMark
+        chaptersToMark,
       });
     } catch (cause) {
       matched.push({
@@ -169,10 +157,7 @@ export const runMigration = async (
         matchedTitle: "",
         matchMethod: "links-al",
         chaptersToMark: 0,
-        error:
-          cause instanceof Error
-            ? cause.message
-            : `Unknown failure: ${errorMessage(cause)}`
+        error: cause instanceof Error ? cause.message : `Unknown failure: ${errorMessage(cause)}`,
       });
     }
   }
@@ -181,7 +166,7 @@ export const runMigration = async (
     scanned: anilistEntries.length,
     matched,
     unmatched,
-    dryRun: options.dryRun
+    dryRun: options.dryRun,
   };
 };
 
@@ -193,7 +178,9 @@ interface MangaDexAuthErrorPayload {
 }
 
 const isAuthFailure = (cause: unknown): cause is MangaDexAuthErrorPayload => {
-  if (!isJsonObject(cause)) {return false;}
+  if (!isJsonObject(cause)) {
+    return false;
+  }
   return (
     stringField(cause, "_tag") === "MangaDexSourceError" &&
     (numberField(cause, "status") === 401 || numberField(cause, "status") === 403)
@@ -202,18 +189,10 @@ const isAuthFailure = (cause: unknown): cause is MangaDexAuthErrorPayload => {
 
 /** Minimal promise-returning view over the Effect-based MangaDex client. */
 interface MangaDexAsyncClient {
-  search: (
-    query: string,
-  ) => Promise<readonly { id: string; title: string; anilistId?: string }[]>;
+  search: (query: string) => Promise<readonly { id: string; title: string; anilistId?: string }[]>;
   getChapters: (mangaId: string) => Promise<readonly MangaDexChapter[]>;
-  markChaptersRead: (
-    mangaId: string,
-    chapterIds: readonly string[],
-  ) => Promise<void>;
-  updateReadingStatus: (
-    mangaId: string,
-    status: MangaDexReadingStatus | null,
-  ) => Promise<void>;
+  markChaptersRead: (mangaId: string, chapterIds: readonly string[]) => Promise<void>;
+  updateReadingStatus: (mangaId: string, status: MangaDexReadingStatus | null) => Promise<void>;
 }
 
 /**
@@ -238,7 +217,10 @@ const createClient = (tokenManager: MangaDexTokenManager): MangaDexAsyncClient =
   ): Promise<A> =>
     withAuthRetry(async () => {
       const token = await tokenManager.current();
-      const client = createMangaDexClient({ accessToken: token, userAgent: manifoldUserAgent("cli") });
+      const client = createMangaDexClient({
+        accessToken: token,
+        userAgent: manifoldUserAgent("cli"),
+      });
       return Effect.runPromise(invoke(client));
     });
 
@@ -280,18 +262,16 @@ const matchMangaDex = async (
   // Prefer a search result whose links.al carries this exact AniList id —
   // the same direct-hit cascade the reverse migration relies on.
   const results = await client.search(entry.title);
-  const directHit = results.find(
-    (manga) => manga.anilistId === String(entry.mediaId),
-  );
+  const directHit = results.find((manga) => manga.anilistId === String(entry.mediaId));
   if (directHit) {
     return { manga: { id: directHit.id, title: directHit.title }, method: "links-al" };
   }
   const titleHit = results
-    .map((manga) =>
-      toMatch({ id: manga.id, title: manga.title }, normalized),
-    )
+    .map((manga) => toMatch({ id: manga.id, title: manga.title }, normalized))
     .find((hit): hit is TitleMatch => hit !== undefined);
-  if (titleHit) {return titleHit;}
+  if (titleHit) {
+    return titleHit;
+  }
 
   // Retry once with the first three significant words when the full title
   // returned nothing useful.
@@ -299,21 +279,19 @@ const matchMangaDex = async (
   if (shortened && shortened !== normalized) {
     await sleep(MD_REQUEST_INTERVAL_MS);
     const retry = await client.search(shortened);
-    const retryDirect = retry.find(
-      (manga) => manga.anilistId === String(entry.mediaId),
-    );
+    const retryDirect = retry.find((manga) => manga.anilistId === String(entry.mediaId));
     if (retryDirect) {
       return {
         manga: { id: retryDirect.id, title: retryDirect.title },
-        method: "links-al"
+        method: "links-al",
       };
     }
     const retryHit = retry
-      .map((manga) =>
-        toMatch({ id: manga.id, title: manga.title }, normalized),
-      )
+      .map((manga) => toMatch({ id: manga.id, title: manga.title }, normalized))
       .find((hit): hit is TitleMatch => hit !== undefined);
-    if (retryHit) {return retryHit;}
+    if (retryHit) {
+      return retryHit;
+    }
   }
 
   return undefined;
@@ -336,7 +314,9 @@ export const chapterIdsUpTo = async (
   for (const chapter of numbered) {
     // SAFETY: value matches number; at this call site
     const number = chapter.chapterNumber as number;
-    if (number > progress) {break;}
+    if (number > progress) {
+      break;
+    }
     ids.push(chapter.id);
   }
   return ids;

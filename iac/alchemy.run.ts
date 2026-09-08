@@ -16,12 +16,10 @@ export const ManifoldSync = Cloudflare.DurableObject<ManifoldSyncClass>("Manifol
 // Backups are independently retained so a stack teardown cannot remove the
 // R2 recovery path along with the Worker.
 export const RegistryBackups = Cloudflare.R2.Bucket("RegistryBackups", {
-  name: "manifold-registry-backups"
+  name: "manifold-registry-backups",
 }).pipe(RemovalPolicy.retain());
 
-export const SharedSecretsStore = Cloudflare.SecretsStore.Store(
-  "SharedSecretsStore"
-);
+export const SharedSecretsStore = Cloudflare.SecretsStore.Store("SharedSecretsStore");
 
 /** Secrets provisioned into the account Secrets Store and bound to SyncApi
  * as `secrets_store_secret` bindings. Non-sensitive identifiers (client IDs,
@@ -33,7 +31,7 @@ const SYNC_SECRET_NAMES = [
   "MANIFOLD_MAL_CLIENT_SECRET",
   "MANIFOLD_MANGADEX_CLIENT_SECRET",
   "MANIFOLD_MANGADEX_USERNAME",
-  "MANIFOLD_MANGADEX_PASSWORD"
+  "MANIFOLD_MANGADEX_PASSWORD",
 ] as const;
 
 const MANAGED_SECRET_NAMES = [...SYNC_SECRET_NAMES, "MANIFOLD_ADMIN_PANEL_ANALYTICS_API"];
@@ -44,7 +42,7 @@ export const MangaDexIndex = Cloudflare.Vectorize.Index("MangaDexIndex", {
   name: "manifold-mangadex",
   dimensions: 1024,
   metric: "cosine",
-  description: "MangaDex manga title embeddings for AniList canonical matching"
+  description: "MangaDex manga title embeddings for AniList canonical matching",
 });
 
 export const MangaDexAniListMetadataIndex = Effect.gen(function* () {
@@ -52,7 +50,7 @@ export const MangaDexAniListMetadataIndex = Effect.gen(function* () {
   return yield* Cloudflare.Vectorize.MetadataIndex("MangaDexAniListMetadataIndex", {
     indexName: index.indexName,
     propertyName: "anilistId",
-    indexType: "string"
+    indexType: "string",
   });
 });
 
@@ -61,7 +59,7 @@ export const MangaDexMalMetadataIndex = Effect.gen(function* () {
   return yield* Cloudflare.Vectorize.MetadataIndex("MangaDexMalMetadataIndex", {
     indexName: index.indexName,
     propertyName: "malId",
-    indexType: "string"
+    indexType: "string",
   });
 });
 
@@ -72,13 +70,13 @@ const debugObservability = {
     enabled: true,
     invocationLogs: true,
     headSamplingRate: 1,
-    persist: true
+    persist: true,
   },
   traces: {
     enabled: true,
     headSamplingRate: 1,
-    persist: true
-  }
+    persist: true,
+  },
 } as const;
 
 export const ManifoldApi = Cloudflare.Worker("ManifoldApi", {
@@ -88,7 +86,7 @@ export const ManifoldApi = Cloudflare.Worker("ManifoldApi", {
   observability: debugObservability,
   compatibility: {
     date: "2026-08-20",
-    flags: ["nodejs_compat"]
+    flags: ["nodejs_compat"],
   },
   assets: {
     directory: "../api/catalog-assets",
@@ -104,8 +102,8 @@ export const ManifoldApi = Cloudflare.Worker("ManifoldApi", {
     MANIFOLD_OAUTH_REDIRECT_BASE_URL: Config.string("MANIFOLD_OAUTH_REDIRECT_BASE_URL"),
     MANIFOLD_ANILIST_CLIENT_ID: Config.string("MANIFOLD_ANILIST_CLIENT_ID"),
     MANIFOLD_MAL_CLIENT_ID: Config.string("MANIFOLD_MAL_CLIENT_ID"),
-    MANIFOLD_MANGADEX_CLIENT_ID: Config.string("MANIFOLD_MANGADEX_CLIENT_ID")
-  }
+    MANIFOLD_MANGADEX_CLIENT_ID: Config.string("MANIFOLD_MANGADEX_CLIENT_ID"),
+  },
 }).pipe(RemovalPolicy.retain());
 
 export const Worker = ManifoldApi;
@@ -118,9 +116,9 @@ export const ManifoldDocsAssets = Cloudflare.Website.StaticSite("ManifoldDocsAss
   workersDev: false,
   compatibility: {
     date: "2026-08-20",
-    flags: ["nodejs_compat"]
+    flags: ["nodejs_compat"],
   },
-  assets: { notFoundHandling: "404-page" }
+  assets: { notFoundHandling: "404-page" },
 });
 
 export type WorkerEnv = Cloudflare.InferEnv<typeof ManifoldApi>;
@@ -132,18 +130,18 @@ export const ManifoldDocs = Cloudflare.Worker("ManifoldDocs", {
   observability: debugObservability,
   compatibility: {
     date: "2026-08-20",
-    flags: ["nodejs_compat"]
+    flags: ["nodejs_compat"],
   },
   env: {
-    DOCS_ASSETS: ManifoldDocsAssets
-  }
+    DOCS_ASSETS: ManifoldDocsAssets,
+  },
 });
 
 /** Snapshot cache for the admin dashboard's server functions (analytics,
  * cache metrics, library overview) — survives isolate eviction so the
  * Overview renders from the last stored snapshot instead of recomputing. */
 export const AdminCache = Cloudflare.KV.Namespace("AdminCache", {
-  title: "manifold-admin-cache"
+  title: "manifold-admin-cache",
 });
 
 export const ManifoldAdmin = Cloudflare.Website.Vite("ManifoldAdmin", {
@@ -154,7 +152,7 @@ export const ManifoldAdmin = Cloudflare.Website.Vite("ManifoldAdmin", {
   // always hits src/server.ts, which serves client files via env.ASSETS.
   main: "src/server.ts",
   assets: {
-    runWorkerFirst: true
+    runWorkerFirst: true,
   },
   workersDev: false,
   observability: debugObservability,
@@ -167,8 +165,8 @@ export const ManifoldAdmin = Cloudflare.Website.Vite("ManifoldAdmin", {
     // Direct service binding: admin's server functions call the sync API
     // without a public-hostname round trip (same-zone subrequests 522).
     SYNC_API: ManifoldApi,
-    ADMIN_CACHE: AdminCache
-  }
+    ADMIN_CACHE: AdminCache,
+  },
 });
 
 export const ManifoldRouter = Cloudflare.Worker("ManifoldRouter", {
@@ -179,20 +177,20 @@ export const ManifoldRouter = Cloudflare.Worker("ManifoldRouter", {
   observability: debugObservability,
   compatibility: {
     date: "2026-08-20",
-    flags: ["nodejs_compat"]
+    flags: ["nodejs_compat"],
   },
   env: {
     SYNC_API: ManifoldApi,
     DOCS_WORKER: ManifoldDocs,
-    ADMIN: ManifoldAdmin
-  }
+    ADMIN: ManifoldAdmin,
+  },
 });
 
 export default Alchemy.Stack(
   "Manifold",
   {
     providers: Cloudflare.providers(),
-    state: Cloudflare.state()
+    state: Cloudflare.state(),
   },
   Effect.gen(function* () {
     const mangaDexIndex = yield* MangaDexIndex;
@@ -211,8 +209,8 @@ export default Alchemy.Stack(
         type: "secrets_store_secret" as const,
         name: secretName,
         secretName,
-        storeId: sharedSecretsStore.storeId
-      }))
+        storeId: sharedSecretsStore.storeId,
+      })),
     });
 
     const router = yield* ManifoldRouter;
@@ -223,15 +221,15 @@ export default Alchemy.Stack(
           type: "secrets_store_secret" as const,
           name: "MANIFOLD_ADMIN_PANEL_ANALYTICS_API",
           secretName: "MANIFOLD_ADMIN_PANEL_ANALYTICS_API",
-          storeId: sharedSecretsStore.storeId
+          storeId: sharedSecretsStore.storeId,
         },
         {
           type: "secrets_store_secret" as const,
           name: "MANIFOLD_TOKEN",
           secretName: "MANIFOLD_TOKEN",
-          storeId: sharedSecretsStore.storeId
-        }
-      ]
+          storeId: sharedSecretsStore.storeId,
+        },
+      ],
     });
     return {
       url: router.url,
@@ -240,7 +238,7 @@ export default Alchemy.Stack(
       docsUrl: router.url,
       adminUrl: dfAdmin.url ?? Output.interpolate`${router.url}/admin`,
       paperbackUrl: Output.interpolate`${router.url}/paperback`,
-      mangaDexIndex: mangaDexIndex.indexName
+      mangaDexIndex: mangaDexIndex.indexName,
     };
-  })
+  }),
 );

@@ -30,18 +30,27 @@ const makeHarness = () => {
   let overlapped = false;
   const requests: Array<{ body: string }> = [];
 
-  const install = (respond: (index: number) => { status: number; headers?: Record<string, string>; body?: JsonValue }) => {
+  const install = (
+    respond: (index: number) => {
+      status: number;
+      headers?: Record<string, string>;
+      body?: JsonValue;
+    },
+  ) => {
     let index = 0;
     // SAFETY: vitest installs a Paperback Application stub on globalThis for this suite
     (globalThis as GlobalWithApplication).Application = {
       sleep: async (seconds: number): Promise<void> => {
         sleeps.push(seconds);
       },
-      arrayBufferToUTF8String: (buffer: ArrayBuffer): string =>
-        new TextDecoder().decode(buffer),
-      scheduleRequest: async (request: ScheduledRequestLike): Promise<[ResponseLike, ArrayBuffer]> => {
+      arrayBufferToUTF8String: (buffer: ArrayBuffer): string => new TextDecoder().decode(buffer),
+      scheduleRequest: async (
+        request: ScheduledRequestLike,
+      ): Promise<[ResponseLike, ArrayBuffer]> => {
         const callIndex = index++;
-        if (inFlight > 0) {overlapped = true;}
+        if (inFlight > 0) {
+          overlapped = true;
+        }
         inFlight += 1;
         requests.push({ body: request.body ?? "" });
         try {
@@ -178,9 +187,7 @@ describe("AniList field dates", () => {
     await saveAniListFields("t", "42", { startedAt: "2024-02-29" });
     await saveAniListFields("t", "42", { completedAt: null });
 
-    expect(harness.requests[0]?.body).toContain(
-      '"startedAt":{"year":2024,"month":2,"day":29}',
-    );
+    expect(harness.requests[0]?.body).toContain('"startedAt":{"year":2024,"month":2,"day":29}');
     expect(harness.requests[1]?.body).toContain('"completedAt":null');
   });
 
@@ -188,33 +195,57 @@ describe("AniList field dates", () => {
     const getCallCount = harness.install(() => ({ status: 200 }));
     const { saveAniListFields } = await harness.loadModule();
 
-    await expect(
-      saveAniListFields("t", "42-not-the-id", { notes: "unsafe" }),
-    ).rejects.toThrow("Invalid AniList manga id");
+    await expect(saveAniListFields("t", "42-not-the-id", { notes: "unsafe" })).rejects.toThrow(
+      "Invalid AniList manga id",
+    );
     expect(getCallCount()).toBe(0);
   });
 
   it("returns the MAL cross-link and all title variants from the status mutation", async () => {
-    const count = harness.install(() => ({ status: 200, body: { data: { SaveMediaListEntry: {
-      id: 10,
-      media: { idMal: 7, title: { english: "Title", romaji: "Romaji", native: "日本語" }, synonyms: ["Alias", "Title", " "] },
-    } } } }));
+    const count = harness.install(() => ({
+      status: 200,
+      body: {
+        data: {
+          SaveMediaListEntry: {
+            id: 10,
+            media: {
+              idMal: 7,
+              title: { english: "Title", romaji: "Romaji", native: "日本語" },
+              synonyms: ["Alias", "Title", " "],
+            },
+          },
+        },
+      },
+    }));
     const { saveAniListStatus } = await harness.loadModule();
     expect(await saveAniListStatus("t", "42", "reading")).toEqual({
       mediaListEntryId: 10,
-      backupIdentity: { anilistId: "42", malId: "7", titles: ["Title", "Romaji", "日本語", "Alias"] },
+      backupIdentity: {
+        anilistId: "42",
+        malId: "7",
+        titles: ["Title", "Romaji", "日本語", "Alias"],
+      },
     });
     expect(count()).toBe(1);
     expect(harness.requests[0]?.body).toContain("idMal title { english romaji native } synonyms");
   });
 
   it("preserves title evidence when AniList has no MAL cross-link", async () => {
-    harness.install(() => ({ status: 200, body: { data: { SaveMediaListEntry: {
-      id: 10, media: { idMal: null, title: { romaji: "Romaji", english: null }, synonyms: [] },
-    } } } }));
+    harness.install(() => ({
+      status: 200,
+      body: {
+        data: {
+          SaveMediaListEntry: {
+            id: 10,
+            media: { idMal: null, title: { romaji: "Romaji", english: null }, synonyms: [] },
+          },
+        },
+      },
+    }));
     const { saveAniListStatus } = await harness.loadModule();
     expect(await saveAniListStatus("t", "42", "reading")).toEqual({
-      mediaListEntryId: 10, backupIdentity: { anilistId: "42", titles: ["Romaji"] },
+      mediaListEntryId: 10,
+      backupIdentity: { anilistId: "42", titles: ["Romaji"] },
     });
   });
 });

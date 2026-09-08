@@ -24,69 +24,57 @@ interface Al2malCtx extends RunContext {
   report?: Al2malReport;
 }
 
-export const al2malCommand = Command.make(
-  "anilist-to-mal",
-  {
-    anilistToken: Flag.string("anilist-token").pipe(
-      Flag.optional,
-      Flag.withDescription(
-        "AniList access token override. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
-      ),
+export const al2malCommand = Command.make("anilist-to-mal", {
+  anilistToken: Flag.string("anilist-token").pipe(
+    Flag.optional,
+    Flag.withDescription(
+      "AniList access token override. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
     ),
-    malToken: Flag.string("mal-token").pipe(
-      Flag.optional,
-      Flag.withDescription(
-        "Overrides keychain login. Prefer MANIFOLD_MAL_TOKEN to keep tokens out of shell history.",
-      ),
+  ),
+  malToken: Flag.string("mal-token").pipe(
+    Flag.optional,
+    Flag.withDescription(
+      "Overrides keychain login. Prefer MANIFOLD_MAL_TOKEN to keep tokens out of shell history.",
     ),
-    apply: Flag.boolean("apply").pipe(
-      Flag.withDefault(false),
-      Flag.withDescription(
-        "Write MAL manga list status and chapter progress. Default is a read-only dry run.",
-      ),
+  ),
+  apply: Flag.boolean("apply").pipe(
+    Flag.withDefault(false),
+    Flag.withDescription(
+      "Write MAL manga list status and chapter progress. Default is a read-only dry run.",
     ),
-    backupPaused: Flag.boolean("backup-paused").pipe(
-      Flag.withDefault(false),
-      Flag.withDescription(
-        "Acknowledge all other MAL writers are paused/disconnected. Required with --apply.",
-      ),
+  ),
+  backupPaused: Flag.boolean("backup-paused").pipe(
+    Flag.withDefault(false),
+    Flag.withDescription(
+      "Acknowledge all other MAL writers are paused/disconnected. Required with --apply.",
     ),
-    skipProgress: Flag.boolean("skip-progress").pipe(
-      Flag.withDefault(false),
-      Flag.withDescription("Do not seed num_chapters_read from AniList progress."),
+  ),
+  skipProgress: Flag.boolean("skip-progress").pipe(
+    Flag.withDefault(false),
+    Flag.withDescription("Do not seed num_chapters_read from AniList progress."),
+  ),
+  limit: Flag.integer("limit").pipe(
+    Flag.optional,
+    Flag.withDescription("Only process the first N AniList entries after export."),
+  ),
+  apiOrigin: Flag.string("api-origin").pipe(
+    Flag.optional,
+    Flag.withDescription(
+      "Personal API origin for the backup-connection check. Falls back to MANIFOLD_API_ORIGIN.",
     ),
-    limit: Flag.integer("limit").pipe(
-      Flag.optional,
-      Flag.withDescription("Only process the first N AniList entries after export."),
+  ),
+  apiToken: Flag.string("api-token").pipe(
+    Flag.optional,
+    Flag.withDescription(
+      "Personal API token for the backup-connection check. Falls back to MANIFOLD_TOKEN.",
     ),
-    apiOrigin: Flag.string("api-origin").pipe(
-      Flag.optional,
-      Flag.withDescription(
-        "Personal API origin for the backup-connection check. Falls back to MANIFOLD_API_ORIGIN.",
-      ),
-    ),
-    apiToken: Flag.string("api-token").pipe(
-      Flag.optional,
-      Flag.withDescription(
-        "Personal API token for the backup-connection check. Falls back to MANIFOLD_TOKEN.",
-      ),
-    ),
-  },
-).pipe(
+  ),
+}).pipe(
   Command.withDescription(
     "Populate MAL manga from your AniList list (status + chapter progress). List↔list only.",
   ),
   Command.withHandler(
-    ({
-      anilistToken,
-      malToken,
-      apply,
-      backupPaused,
-      skipProgress,
-      limit,
-      apiOrigin,
-      apiToken,
-    }) =>
+    ({ anilistToken, malToken, apply, backupPaused, skipProgress, limit, apiOrigin, apiToken }) =>
       Effect.tryPromise({
         try: async () => {
           if (apply && !backupPaused) {
@@ -121,8 +109,7 @@ export const al2malCommand = Command.make(
             );
           }
 
-          const anilist =
-            (await resolveAniListToken(Option.getOrUndefined(anilistToken))) ?? "";
+          const anilist = (await resolveAniListToken(Option.getOrUndefined(anilistToken))) ?? "";
           if (!anilist) {
             throw new Error(
               "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
@@ -137,8 +124,7 @@ export const al2malCommand = Command.make(
             );
           }
 
-          const malClientId =
-            process.env.MANIFOLD_MAL_CLIENT_ID ?? session?.clientId;
+          const malClientId = process.env.MANIFOLD_MAL_CLIENT_ID ?? session?.clientId;
           if (!malClientId) {
             throw new Error(
               "Missing MANIFOLD_MAL_CLIENT_ID for MAL title search (public client id).",
@@ -155,9 +141,7 @@ export const al2malCommand = Command.make(
 
           const run = createRun<Al2malCtx>([
             {
-              title: apply
-                ? "Match AniList → MAL and write"
-                : "Match AniList → MAL (dry run)",
+              title: apply ? "Match AniList → MAL and write" : "Match AniList → MAL (dry run)",
               task: async (ctx, task) => {
                 const reporter = makePhaseReporter(task);
                 reporter.detail("Fetching AniList manga list…");
@@ -210,15 +194,15 @@ export const al2malCommand = Command.make(
               title: "Summarize",
               task: async (ctx, task) => {
                 const report = ctx.report;
-                if (!report) {throw new Error("Migration produced no report.");}
+                if (!report) {
+                  throw new Error("Migration produced no report.");
+                }
                 const reporter = makePhaseReporter(task);
                 const prefix = report.dryRun ? "[dry run] " : "";
                 reporter.note(
                   `${prefix}${report.scanned} scanned · ${report.matched.length} matched · ` +
                     `${report.unmatched.length} unmatched` +
-                    (report.dryRun
-                      ? ""
-                      : ` · ${report.written} written · ${report.failed} failed`),
+                    (report.dryRun ? "" : ` · ${report.written} written · ${report.failed} failed`),
                 );
 
                 for (const entry of report.matched) {
@@ -234,9 +218,7 @@ export const al2malCommand = Command.make(
                     .filter(Boolean)
                     .join(", ");
                   if (entry.error) {
-                    reporter.problem(
-                      `${entry.title} → mal:${entry.malId} [${fields}]`,
-                    );
+                    reporter.problem(`${entry.title} → mal:${entry.malId} [${fields}]`);
                   } else {
                     reporter.detail(
                       `${entry.title} → mal:${entry.malId} (${entry.matchedTitle}) [${fields}]`,

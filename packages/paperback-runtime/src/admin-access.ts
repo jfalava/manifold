@@ -1,9 +1,4 @@
-import {
-  isFiniteNumber,
-  isJsonObject,
-  isString,
-  type JsonObject,
-} from "@manifold/json";
+import { isFiniteNumber, isJsonObject, isString, type JsonObject } from "@manifold/json";
 import type { Cookie, Request } from "@paperback/types";
 
 /** Public admin SPA origin (CF Access gate sits in front). */
@@ -45,11 +40,7 @@ export const domainMatchesAdmin = (domain: string): boolean => {
   if (normalized.length === 0) {
     return true;
   }
-  return (
-    normalized === ADMIN_HOST ||
-    normalized === "jfa.dev" ||
-    normalized.endsWith(".jfa.dev")
-  );
+  return normalized === ADMIN_HOST || normalized === "jfa.dev" || normalized.endsWith(".jfa.dev");
 };
 
 const pinAdminDomain = (domain: string | undefined): string => {
@@ -102,8 +93,7 @@ const base64UrlToUtf8 = (segment: string): string | undefined => {
     }
 
     // Manual base64 → bytes → UTF-8 (no atob/Buffer dependency).
-    const alphabet =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     const cleaned = padded.replace(/=+$/, "");
     const bytes: number[] = [];
     let buffer = 0;
@@ -121,7 +111,7 @@ const base64UrlToUtf8 = (segment: string): string | undefined => {
       }
     }
     let out = "";
-    for (let i = 0; i < bytes.length; ) {
+    for (let i = 0; i < bytes.length;) {
       const c = bytes[i]!;
       if (c < 0x80) {
         out += String.fromCharCode(c);
@@ -229,18 +219,20 @@ export const serializeAdminAccessCookies = (
   cookies: readonly Cookie[],
   nowMs: number = Date.now(),
 ): string => {
-  const payload: PersistedAccessCookie[] = filterAdminAccessCookies(cookies, nowMs).map((cookie) => {
-    const base: PersistedAccessCookie = {
-      name: cookie.name,
-      value: cookie.value,
-      domain: cookie.domain,
-      path: cookie.path ?? "/",
-    };
-    if (cookie.expires instanceof Date && !Number.isNaN(cookie.expires.getTime())) {
-      return { ...base, expires: cookie.expires.toISOString() };
-    }
-    return base;
-  });
+  const payload: PersistedAccessCookie[] = filterAdminAccessCookies(cookies, nowMs).map(
+    (cookie) => {
+      const base: PersistedAccessCookie = {
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain,
+        path: cookie.path ?? "/",
+      };
+      if (cookie.expires instanceof Date && !Number.isNaN(cookie.expires.getTime())) {
+        return { ...base, expires: cookie.expires.toISOString() };
+      }
+      return base;
+    },
+  );
   return JSON.stringify(payload);
 };
 

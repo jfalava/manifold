@@ -6,9 +6,5 @@
     "rootDir": "src"
   },
   "include": ["src/**/*.ts"],
-  "references": [
-    { "path": "../json" },
-    { "path": "../canonical" },
-    { "path": "../contract" }
-  ]
+  "references": [{ "path": "../json" }, { "path": "../canonical" }, { "path": "../contract" }]
 }

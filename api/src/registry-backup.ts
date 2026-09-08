@@ -1,9 +1,4 @@
-import {
-  isFiniteNumber,
-  isJsonObject,
-  isString,
-  type JsonValue,
-} from "@manifold/json";
+import { isFiniteNumber, isJsonObject, isString, type JsonValue } from "@manifold/json";
 
 export const REGISTRY_BACKUP_PREFIX = "registry/";
 export const REGISTRY_BACKUP_VERSION = 1 as const;
@@ -132,10 +127,7 @@ export const toBackupRows = (
 const isBackupScalar = (value: unknown): value is BackupScalar =>
   value === null || isString(value) || isFiniteNumber(value);
 
-const parseRows = (
-  value: JsonValue,
-  table: RegistryBackupTableName,
-): readonly BackupRow[] => {
+const parseRows = (value: JsonValue, table: RegistryBackupTableName): readonly BackupRow[] => {
   if (!Array.isArray(value)) {
     throw new Error(`Backup table ${table} is not an array`);
   }
@@ -196,16 +188,22 @@ export const parseRegistryBackup = (input: JsonValue): RegistryBackup => {
 
 export const sha256 = async (value: string): Promise<string> =>
   [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))]
-    .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 
-export const readBackupBody = async (body: ReadableStream<Uint8Array>, expectedChecksum?: string): Promise<RegistryBackup> => {
+export const readBackupBody = async (
+  body: ReadableStream<Uint8Array>,
+  expectedChecksum?: string,
+): Promise<RegistryBackup> => {
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
     for (;;) {
       const next = await reader.read();
-      if (next.done) {break;}
+      if (next.done) {
+        break;
+      }
       size += next.value.byteLength;
       if (size > MAX_REGISTRY_BACKUP_BYTES) {
         await reader.cancel();
@@ -223,7 +221,7 @@ export const readBackupBody = async (body: ReadableStream<Uint8Array>, expectedC
     offset += chunk.byteLength;
   }
   const text = new TextDecoder().decode(bytes);
-  if (expectedChecksum !== undefined && await sha256(text) !== expectedChecksum) {
+  if (expectedChecksum !== undefined && (await sha256(text)) !== expectedChecksum) {
     throw new Error("Registry backup checksum mismatch");
   }
   const parsed: JsonValue = JSON.parse(text);

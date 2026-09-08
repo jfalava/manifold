@@ -12,19 +12,26 @@ export interface ProviderSearchInput {
   readonly scope: ProviderSearchScope;
 }
 
-export const parseProviderSearchInput = (
-  value: string,
-): ProviderSearchInput => {
+export const parseProviderSearchInput = (value: string): ProviderSearchInput => {
   const trimmed = value.trim();
   const separator = trimmed.indexOf(":");
-  if (separator <= 0) {return { query: trimmed, scope: "all" };}
+  if (separator <= 0) {
+    return { query: trimmed, scope: "all" };
+  }
   const prefix = trimmed.slice(0, separator).toLocaleLowerCase();
   const query = trimmed.slice(separator + 1).trim();
-  const scope = prefix === "registry" ? "registry" :
-    prefix === "anilist" || prefix === "al" ? "anilist" :
-    prefix === "mal" ? "mal" :
-    prefix === "mangadex" || prefix === "md" ? "mangadex" :
-    prefix === "comix" ? "comix" : undefined;
+  const scope =
+    prefix === "registry"
+      ? "registry"
+      : prefix === "anilist" || prefix === "al"
+        ? "anilist"
+        : prefix === "mal"
+          ? "mal"
+          : prefix === "mangadex" || prefix === "md"
+            ? "mangadex"
+            : prefix === "comix"
+              ? "comix"
+              : undefined;
   return scope && query ? { query, scope } : { query: trimmed, scope: "all" };
 };
 
@@ -51,10 +58,10 @@ export interface MangaDexCandidateInput {
   readonly coverUrl?: string;
 }
 
-export const canonicalProviderCandidate = (
-  result: CanonicalEntry,
-): ProviderCandidate => {
-  if (result.provider === "local") {throw new Error("Local entries are not provider candidates");}
+export const canonicalProviderCandidate = (result: CanonicalEntry): ProviderCandidate => {
+  if (result.provider === "local") {
+    throw new Error("Local entries are not provider candidates");
+  }
   return {
     provider: result.provider,
     providerId: result.providerId,
@@ -76,9 +83,7 @@ export const canonicalProviderCandidate = (
   };
 };
 
-export const mangaDexProviderCandidate = (
-  manga: MangaDexCandidateInput,
-): ProviderCandidate => ({
+export const mangaDexProviderCandidate = (manga: MangaDexCandidateInput): ProviderCandidate => ({
   provider: "mangadex",
   providerId: manga.id,
   title: manga.title,
@@ -86,12 +91,8 @@ export const mangaDexProviderCandidate = (
   imageUrl: safeImageUrl(manga.coverUrl),
   description: manga.description,
   links: [
-    ...(manga.anilistId
-      ? [{ provider: "anilist" as const, externalId: manga.anilistId }]
-      : []),
-    ...(manga.myAnimeListId
-      ? [{ provider: "mal" as const, externalId: manga.myAnimeListId }]
-      : []),
+    ...(manga.anilistId ? [{ provider: "anilist" as const, externalId: manga.anilistId }] : []),
+    ...(manga.myAnimeListId ? [{ provider: "mal" as const, externalId: manga.myAnimeListId }] : []),
   ],
 });
 
@@ -101,56 +102,72 @@ export const correlateProviderCandidates = (
 ): ProviderCandidate[] => {
   const mangaDexByIdentity = new Map<string, ProviderCandidate | null>();
   for (const candidate of candidates) {
-    if (candidate.provider !== "mangadex") {continue;}
+    if (candidate.provider !== "mangadex") {
+      continue;
+    }
     for (const link of candidate.links ?? []) {
       const key = `${link.provider}:${link.externalId}`;
       mangaDexByIdentity.set(key, mangaDexByIdentity.has(key) ? null : candidate);
     }
   }
   return candidates.map((candidate) => {
-    if (candidate.provider !== "anilist" && candidate.provider !== "mal") {return candidate;}
+    if (candidate.provider !== "anilist" && candidate.provider !== "mal") {
+      return candidate;
+    }
     const mangaDex = mangaDexByIdentity.get(`${candidate.provider}:${candidate.providerId}`);
     if (!mangaDex || candidate.links?.some((link) => link.provider === "mangadex")) {
       return candidate;
     }
-    if (mangaDex.links?.some((link) => candidate.links?.some(
-      (existing) => existing.provider === link.provider && existing.externalId !== link.externalId,
-    ))) {return candidate;}
+    if (
+      mangaDex.links?.some((link) =>
+        candidate.links?.some(
+          (existing) =>
+            existing.provider === link.provider && existing.externalId !== link.externalId,
+        ),
+      )
+    ) {
+      return candidate;
+    }
     return {
       ...candidate,
       links: [
         ...(candidate.links ?? []),
         { provider: "mangadex", externalId: mangaDex.providerId, title: mangaDex.title },
-        ...(mangaDex.links ?? []).filter((link) =>
-          link.provider !== candidate.provider &&
-          !candidate.links?.some((existing) => existing.provider === link.provider),
+        ...(mangaDex.links ?? []).filter(
+          (link) =>
+            link.provider !== candidate.provider &&
+            !candidate.links?.some((existing) => existing.provider === link.provider),
         ),
       ],
     };
   });
 };
 
-export const providerCandidateId = (
-  provider: RegistryProvider,
-  providerId: string,
-): string => `${CANDIDATE_PREFIX}${provider}:${encodeURIComponent(providerId)}`;
+export const providerCandidateId = (provider: RegistryProvider, providerId: string): string =>
+  `${CANDIDATE_PREFIX}${provider}:${encodeURIComponent(providerId)}`;
 
 export const parseProviderCandidateId = (
   value: string,
 ): { readonly provider: RegistryProvider; readonly providerId: string } | undefined => {
-  if (!value.startsWith(CANDIDATE_PREFIX)) {return undefined;}
+  if (!value.startsWith(CANDIDATE_PREFIX)) {
+    return undefined;
+  }
   const rest = value.slice(CANDIDATE_PREFIX.length);
   const separator = rest.indexOf(":");
-  if (separator <= 0) {return undefined;}
+  if (separator <= 0) {
+    return undefined;
+  }
   const provider = rest.slice(0, separator);
-  if (!isRegistryProvider(provider)) {return undefined;}
+  if (!isRegistryProvider(provider)) {
+    return undefined;
+  }
   const encodedId = rest.slice(separator + 1);
-  if (!encodedId) {return undefined;}
+  if (!encodedId) {
+    return undefined;
+  }
   try {
     const providerId = decodeURIComponent(encodedId);
-    return providerId
-      ? { provider, providerId }
-      : undefined;
+    return providerId ? { provider, providerId } : undefined;
   } catch {
     return undefined;
   }
@@ -161,9 +178,16 @@ export const toProviderCandidateSearchResult = (
 ): SearchResultItem => ({
   mangaId: providerCandidateId(candidate.provider, candidate.providerId),
   title: candidate.title,
-  subtitle: [candidate.provider === "mangadex" ? "MangaDex" :
-    candidate.provider === "comix" ? "Comix" :
-    candidate.provider === "anilist" ? "AniList" : "MyAnimeList", ...candidate.aliases]
+  subtitle: [
+    candidate.provider === "mangadex"
+      ? "MangaDex"
+      : candidate.provider === "comix"
+        ? "Comix"
+        : candidate.provider === "anilist"
+          ? "AniList"
+          : "MyAnimeList",
+    ...candidate.aliases,
+  ]
     .filter(Boolean)
     .join(" · "),
   imageUrl: safeImageUrl(candidate.imageUrl),

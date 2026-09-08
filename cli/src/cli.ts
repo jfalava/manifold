@@ -13,9 +13,7 @@ import { al2malCommand } from "@/commands/al2mal";
 import { md2alCommand } from "@/commands/md2al";
 
 const migrateCommand = Command.make("migrate").pipe(
-  Command.withDescription(
-    "Cross-provider library migrations (AniList ↔ MangaDex, AniList → MAL).",
-  ),
+  Command.withDescription("Cross-provider library migrations (AniList ↔ MangaDex, AniList → MAL)."),
   Command.withSubcommands([md2alCommand, al2mdCommand, al2malCommand]),
 );
 
@@ -26,7 +24,12 @@ const reconcileGroup = Command.make("reconcile").pipe(
 
 const registryCommand = Command.make("registry").pipe(
   Command.withDescription("Registry maintenance: backfill and inspect canonical rows."),
-  Command.withSubcommands([importCommand, malPrefillCommand, mangadexPrefillCommand, comixPrefillCommand]),
+  Command.withSubcommands([
+    importCommand,
+    malPrefillCommand,
+    mangadexPrefillCommand,
+    comixPrefillCommand,
+  ]),
 );
 
 export const makeRootCommand = () =>

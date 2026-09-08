@@ -39,9 +39,13 @@ const providerIdFor = (
   row: FullRegistryRow,
 ): { provider: "anilist" | "mal"; providerId: string } | undefined => {
   const anilist = row.providers.find((p) => p.provider === "anilist")?.externalId;
-  if (anilist) {return { provider: "anilist", providerId: anilist };}
+  if (anilist) {
+    return { provider: "anilist", providerId: anilist };
+  }
   const mal = row.providers.find((p) => p.provider === "mal")?.externalId;
-  if (mal) {return { provider: "mal", providerId: mal };}
+  if (mal) {
+    return { provider: "mal", providerId: mal };
+  }
   if (row.provider === "anilist" || row.provider === "mal") {
     return { provider: row.provider, providerId: row.providerId };
   }
@@ -167,7 +171,9 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
               const short = clean.length > budget ? `${clean.slice(0, budget - 1)}…` : clean;
               return suffix ? `${short}${suffix}` : short;
             };
-            if (total > 0) {reporter.progress(0, total, counts());}
+            if (total > 0) {
+              reporter.progress(0, total, counts());
+            }
 
             for (const row of ctx.unmatched) {
               task.title = `${baseTitle} — ${formatTitle(row.title)}`;
@@ -262,7 +268,9 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
             `${ctx.linked} linked · ${ctx.ambiguous} ambiguous · ${ctx.notFound} not_found` +
             (ctx.skipped ? ` · ${ctx.skipped} skipped` : "") +
             (ctx.errors ? ` · ${ctx.errors} errors` : "");
-          if (ctx.errors > 0) {frameDetail(`errors: ${ctx.errors} — re-run with --limit to retry`);}
+          if (ctx.errors > 0) {
+            frameDetail(`errors: ${ctx.errors} — re-run with --limit to retry`);
+          }
           closeFrame(
             apply
               ? `MangaDex prefill applied — ${summary}`

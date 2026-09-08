@@ -33,7 +33,12 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
   Effect.gen(function* () {
     const { path, request, env, url } = ctx;
 
-    if (path[0] === "v1" && path[1] === "registry" && path.length === 2 && request.method === "GET") {
+    if (
+      path[0] === "v1" &&
+      path[1] === "registry" &&
+      path.length === 2 &&
+      request.method === "GET"
+    ) {
       const sync = env.MANIFOLD_SYNC.getByName("default");
       const limit = Number(url.searchParams.get("limit") ?? 500) || 500;
       const offset = Number(url.searchParams.get("offset") ?? 0) || 0;
@@ -50,7 +55,9 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
       request.method === "GET"
     ) {
       const query = url.searchParams.get("q")?.trim() ?? "";
-      if (!query) {return jsonEncoded(ErrorBody, { error: "Query parameter q is required" }, 400);}
+      if (!query) {
+        return jsonEncoded(ErrorBody, { error: "Query parameter q is required" }, 400);
+      }
       const sync = env.MANIFOLD_SYNC.getByName("default");
       const limit = Number(url.searchParams.get("limit") ?? 25) || 25;
       return jsonEncoded(RegistryEntriesResponse, {
@@ -96,7 +103,9 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
       });
     }
 
-    if (path[0] !== "v1" || path[1] !== "entries") {return null;}
+    if (path[0] !== "v1" || path[1] !== "entries") {
+      return null;
+    }
 
     const sync = env.MANIFOLD_SYNC.getByName("default");
 
@@ -112,7 +121,9 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
       return jsonEncoded(RegistryEntry, yield* tryPromise(() => sync.upsertEntry(input)), 201);
     }
 
-    if (path.length < 3) {return jsonEncoded(ErrorBody, { error: "Not found" }, 404);}
+    if (path.length < 3) {
+      return jsonEncoded(ErrorBody, { error: "Not found" }, 404);
+    }
     const entryId = routeId(path[2]);
 
     if (path[3] === "canonical" && path.length === 4 && request.method === "GET") {

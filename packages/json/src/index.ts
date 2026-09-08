@@ -3,13 +3,7 @@
  * `typeof` and `unknown` parameters live only in the type predicates here.
  */
 
-export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly JsonValue[]
-  | JsonObject;
+export type JsonValue = string | number | boolean | null | readonly JsonValue[] | JsonObject;
 
 export type JsonObject = { readonly [key: string]: JsonValue };
 
@@ -72,10 +66,7 @@ export function objectField(record: JsonObject, key: string): JsonObject | undef
   return isJsonObject(value) ? value : undefined;
 }
 
-export function arrayField(
-  record: JsonObject,
-  key: string,
-): readonly JsonValue[] | undefined {
+export function arrayField(record: JsonObject, key: string): readonly JsonValue[] | undefined {
   const value = record[key];
   return isJsonArray(value) ? value : undefined;
 }

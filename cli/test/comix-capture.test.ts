@@ -68,7 +68,7 @@ class FakeView implements ComixView {
         url: this.url,
         ready: page?.ready ?? "complete",
         title: page?.title ?? this.title,
-        links: this.googlePolls > (page?.linksAfterPolls ?? 0) ? page?.payload ?? [] : [],
+        links: this.googlePolls > (page?.linksAfterPolls ?? 0) ? (page?.payload ?? []) : [],
       } as T;
     }
     if (script.includes("document.title")) {
@@ -128,9 +128,8 @@ describe("comix webview capture", () => {
 
   it("picks the first readable DevToolsActivePort candidate", () => {
     expect(
-      findChromeDevToolsUrl(
-        ["/missing", "/chrome/DevToolsActivePort"],
-        (file) => file.endsWith("DevToolsActivePort") ? "9222\n/devtools/browser/live" : undefined,
+      findChromeDevToolsUrl(["/missing", "/chrome/DevToolsActivePort"], (file) =>
+        file.endsWith("DevToolsActivePort") ? "9222\n/devtools/browser/live" : undefined,
       ),
     ).toBe("ws://127.0.0.1:9222/devtools/browser/live");
   });
@@ -187,7 +186,7 @@ describe("comix webview capture", () => {
 
   it("classifies Cloudflare interstitials before waiting on JSON.parse", () => {
     expect(classifyPage("Just a moment...", "<html></html>")).toBe("challenge");
-    expect(classifyPage("Browse", "<div class=\"cf-chl-widget\"></div>")).toBe("challenge");
+    expect(classifyPage("Browse", '<div class="cf-chl-widget"></div>')).toBe("challenge");
     expect(classifyPage("Browse", "<main>results</main>")).toBe("ok");
   });
 
@@ -204,7 +203,9 @@ describe("comix webview capture", () => {
       "Page.addScriptToEvaluateOnNewDocument",
       "Network.setCookies",
     ]);
-    const hook = view.cdpCalls.find((call) => call.method === "Page.addScriptToEvaluateOnNewDocument");
+    const hook = view.cdpCalls.find(
+      (call) => call.method === "Page.addScriptToEvaluateOnNewDocument",
+    );
     expect(hook?.params?.source).toBe(COMIX_CAPTURE_BOOTSTRAP);
     expect(view.cookies[0]).toMatchObject({ name: "cf_clearance", value: "tok" });
   });
@@ -219,11 +220,15 @@ describe("comix webview capture", () => {
       html: "<main>results</main>",
       payload: { r: { result: { items: [{ hid: "abc", title: "Solo Leveling" }] } } },
     });
-    view.cookies = [{ name: "cf_clearance", value: "fresh", domain: ".comix.to", expires: 1_800_000_000 }];
+    view.cookies = [
+      { name: "cf_clearance", value: "fresh", domain: ".comix.to", expires: 1_800_000_000 },
+    ];
 
     expect(await browser.search("solo leveling")).toEqual([{ hid: "abc", title: "Solo Leveling" }]);
     expect(await browser.harvest()).toEqual({
-      cookies: [{ name: "cf_clearance", value: "fresh", domain: ".comix.to", expires: 1_800_000_000 }],
+      cookies: [
+        { name: "cf_clearance", value: "fresh", domain: ".comix.to", expires: 1_800_000_000 },
+      ],
       userAgent: "Mozilla/5.0 Chrome/126",
     });
   });
@@ -231,22 +236,28 @@ describe("comix webview capture", () => {
   it("treats a challenge page as a session failure, not a miss", async () => {
     const view = new FakeView();
     const browser = await createComixBrowser({ view });
-    view.pages.set("https://comix.to/browse?q=naruto&sort=relevance%3Adesc&content_rating=safe%2Csuggestive%2Cerotica%2Cpornographic", {
-      title: "Just a moment...",
-      html: "<div id=\"challenge-platform\"></div>",
-      payload: { r: { result: { items: [{ hid: "should-not-use" }] } } },
-    });
+    view.pages.set(
+      "https://comix.to/browse?q=naruto&sort=relevance%3Adesc&content_rating=safe%2Csuggestive%2Cerotica%2Cpornographic",
+      {
+        title: "Just a moment...",
+        html: '<div id="challenge-platform"></div>',
+        payload: { r: { result: { items: [{ hid: "should-not-use" }] } } },
+      },
+    );
     expect(await browser.search("naruto")).toBe("challenge");
   });
 
   it("treats a timed-out capture as a challenge", async () => {
     const view = new FakeView();
     const browser = await createComixBrowser({ view });
-    view.pages.set("https://comix.to/browse?q=bleach&sort=relevance%3Adesc&content_rating=safe%2Csuggestive%2Cerotica%2Cpornographic", {
-      title: "Browse",
-      html: "<main></main>",
-      payload: { r: null },
-    });
+    view.pages.set(
+      "https://comix.to/browse?q=bleach&sort=relevance%3Adesc&content_rating=safe%2Csuggestive%2Cerotica%2Cpornographic",
+      {
+        title: "Browse",
+        html: "<main></main>",
+        payload: { r: null },
+      },
+    );
     expect(await browser.search("bleach")).toBe("challenge");
   });
 
@@ -299,14 +310,11 @@ describe("comix webview capture", () => {
   it("treats Google's captcha and consent interstitials as challenges", async () => {
     const view = new FakeView();
     const browser = await createComixBrowser({ view, sleep: async () => undefined });
-    view.pages.set(
-      "https://www.google.com/search?q=naruto%20site%3Acomix.to&udm=14&num=20&hl=en",
-      {
-        title: "Before you continue",
-        html: "<main></main>",
-        payload: [],
-      },
-    );
+    view.pages.set("https://www.google.com/search?q=naruto%20site%3Acomix.to&udm=14&num=20&hl=en", {
+      title: "Before you continue",
+      html: "<main></main>",
+      payload: [],
+    });
     expect(await browser.searchGoogle("naruto")).toBe("challenge");
   });
 
@@ -331,9 +339,7 @@ describe("comix webview capture", () => {
     view.pages.set(google, {
       title: "Makenshi no Maken Niyoru Maken no Tame no Harem Life - Google Search",
       html: "<main>results</main>",
-      payload: [
-        { href: goto, title: "Makenshi no Maken Niyoru Maken no Tame no Harem Life" },
-      ],
+      payload: [{ href: goto, title: "Makenshi no Maken Niyoru Maken no Tame no Harem Life" }],
     });
     view.redirects.set(
       goto,

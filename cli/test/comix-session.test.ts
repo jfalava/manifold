@@ -113,12 +113,16 @@ describe("comix CDP cookie conversion", () => {
   it("reads cookies from Network.getCookies envelopes and raw arrays", () => {
     expect(
       cookiesFromCdp({
-        cookies: [{ name: "cf_clearance", value: "tok", domain: ".comix.to", expires: 1_800_000_000 }],
+        cookies: [
+          { name: "cf_clearance", value: "tok", domain: ".comix.to", expires: 1_800_000_000 },
+        ],
       }),
     ).toEqual([
       { name: "cf_clearance", value: "tok", domain: ".comix.to", expires: 1_800_000_000 },
     ]);
-    expect(cookiesFromCdp([{ name: "session", value: "s" }])).toEqual([{ name: "session", value: "s" }]);
+    expect(cookiesFromCdp([{ name: "session", value: "s" }])).toEqual([
+      { name: "session", value: "s" },
+    ]);
   });
 
   it("converts millisecond expiry back to CDP seconds", () => {

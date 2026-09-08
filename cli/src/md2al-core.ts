@@ -25,8 +25,7 @@ const REQUEST_INTERVAL_MS = 2_500; // 30/min ÷ 1.25 safety margin → ≤24 req
 const MD_REQUEST_INTERVAL_MS = 250; // MangaDex global ~5 req/s
 const BATCH = 100;
 
-export const sleep = (ms: number): Promise<void> =>
-  new Promise((r) => setTimeout(r, ms));
+export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 export type MdStatus =
   | "reading"
@@ -68,11 +67,7 @@ interface GraphQLResponse<A> {
   errors?: { message?: string }[];
 }
 
-const gql = async <A>(
-  token: string,
-  query: string,
-  variables: JsonObject = {},
-): Promise<A> => {
+const gql = async <A>(token: string, query: string, variables: JsonObject = {}): Promise<A> => {
   const response = await fetch(ANILIST_ENDPOINT, {
     method: "POST",
     headers: {
@@ -81,7 +76,7 @@ const gql = async <A>(
       authorization: `Bearer ${token}`,
       "user-agent": USER_AGENT,
     },
-    body: JSON.stringify({ query, variables })
+    body: JSON.stringify({ query, variables }),
   });
   if (response.status === 429) {
     const retryAfter = Number(response.headers.get("retry-after") ?? "5");
@@ -93,7 +88,9 @@ const gql = async <A>(
   if (body.errors?.length) {
     throw new Error(body.errors.map((e) => e.message ?? "?").join("; "));
   }
-  if (!response.ok) {throw new Error(`AniList HTTP ${response.status}`);}
+  if (!response.ok) {
+    throw new Error(`AniList HTTP ${response.status}`);
+  }
   // SAFETY: value matches A; }; / at this call site
   return body.data as A;
 };
@@ -117,7 +114,9 @@ const mdFetch = async <A>(mdToken: string, path: string): Promise<A> => {
     await sleep(Math.max(retryAfter, 5) * 1000);
     return mdFetch<A>(mdToken, path);
   }
-  if (!response.ok) {throw new Error(`MangaDex HTTP ${response.status} for ${path}`);}
+  if (!response.ok) {
+    throw new Error(`MangaDex HTTP ${response.status} for ${path}`);
+  }
   // SAFETY: parsed JSON matches { data: A }; ret for this trusted/test payload
   const body = (await response.json()) as { data: A };
   return body.data;
@@ -139,12 +138,14 @@ const paths = (tmpDir: string) => ({
   snapshot: `${tmpDir}/md-library-snapshot.json`,
   matches: `${tmpDir}/md-match-results.json`,
   unmatched: `${tmpDir}/md-unmatched.csv`,
-  progress: `${tmpDir}/md-progress.json`
+  progress: `${tmpDir}/md-progress.json`,
 });
 
 export const loadSnapshot = (tmpDir: string): MdLibraryEntry[] | undefined => {
   const file = paths(tmpDir).snapshot;
-  if (!existsSync(file)) {return undefined;}
+  if (!existsSync(file)) {
+    return undefined;
+  }
   try {
     // SAFETY: parsed JSON matches MdLibraryEntry[]; } c for this trusted/test payload
     return JSON.parse(readFileSync(file, "utf8")) as MdLibraryEntry[];
@@ -155,7 +156,9 @@ export const loadSnapshot = (tmpDir: string): MdLibraryEntry[] | undefined => {
 
 export const loadMatches = (tmpDir: string): Map<string, MatchResult> => {
   const file = paths(tmpDir).matches;
-  if (!existsSync(file)) {return new Map();}
+  if (!existsSync(file)) {
+    return new Map();
+  }
   try {
     // SAFETY: parsed JSON matches MatchResult[]; r for this trusted/test payload
     const parsed = JSON.parse(readFileSync(file, "utf8")) as MatchResult[];
@@ -194,7 +197,7 @@ export const phaseExport = async (
   }
   // SAFETY: MangaDex /manga/status JSON is decoded via isJsonObject / isMdStatus below
   const statusBody: unknown = await statusResponse.json();
-  const statuses = isJsonObject(statusBody) ? objectField(statusBody, "statuses") ?? {} : {};
+  const statuses = isJsonObject(statusBody) ? (objectField(statusBody, "statuses") ?? {}) : {};
 
   const validStatuses = new Set<string>([
     "reading",
@@ -208,7 +211,9 @@ export const phaseExport = async (
     isString(value) && validStatuses.has(value);
   const entries: MdLibraryEntry[] = [];
   for (const [id, rawStatus] of Object.entries(statuses)) {
-    if (!isMdStatus(rawStatus)) {continue;}
+    if (!isMdStatus(rawStatus)) {
+      continue;
+    }
     entries.push({
       mangaDexId: id,
       status: rawStatus,
@@ -225,7 +230,9 @@ export const phaseExport = async (
     const batch = ids.slice(i, i + BATCH);
     const params = new URLSearchParams();
     params.set("limit", String(batch.length));
-    for (const id of batch) {params.append("ids[]", id);}
+    for (const id of batch) {
+      params.append("ids[]", id);
+    }
     const mangaList = await mdFetch<
       {
         id: string;
@@ -239,7 +246,9 @@ export const phaseExport = async (
 
     for (const m of mangaList) {
       const entry = idToEntry.get(m.id);
-      if (!entry) {continue;}
+      if (!entry) {
+        continue;
+      }
       const attrs = m.attributes;
       entry.title =
         attrs.title.en ??
@@ -249,13 +258,8 @@ export const phaseExport = async (
         "";
       entry.altTitles = attrs.altTitles.flatMap((t) => Object.values(t));
       entry.anilistId =
-        attrs.links?.al && /^\d+$/.test(attrs.links.al)
-          ? attrs.links.al
-          : undefined;
-      entry.malId =
-        attrs.links?.mal && /^\d+$/.test(attrs.links.mal)
-          ? attrs.links.mal
-          : undefined;
+        attrs.links?.al && /^\d+$/.test(attrs.links.al) ? attrs.links.al : undefined;
+      entry.malId = attrs.links?.mal && /^\d+$/.test(attrs.links.mal) ? attrs.links.mal : undefined;
     }
 
     fetched += mangaList.length;
@@ -270,17 +274,14 @@ export const phaseExport = async (
   return entries;
 };
 
-export const loadProgress = (
-  tmpDir: string,
-): Map<string, number> | undefined => {
+export const loadProgress = (tmpDir: string): Map<string, number> | undefined => {
   const file = paths(tmpDir).progress;
-  if (!existsSync(file)) {return undefined;}
+  if (!existsSync(file)) {
+    return undefined;
+  }
   try {
     // SAFETY: parsed JSON matches Record< string, number >; retur for this trusted/test payload
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<
-      string,
-      number
-    >;
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<string, number>;
     return new Map(Object.entries(parsed));
   } catch {
     return undefined;
@@ -289,10 +290,7 @@ export const loadProgress = (
 
 const saveProgress = (tmpDir: string, progress: Map<string, number>): void => {
   mkdirSync(tmpDir, { recursive: true });
-  writeFileSync(
-    paths(tmpDir).progress,
-    JSON.stringify(Object.fromEntries(progress), null, 2),
-  );
+  writeFileSync(paths(tmpDir).progress, JSON.stringify(Object.fromEntries(progress), null, 2));
 };
 
 // ---------- Phase B: match ----------
@@ -326,12 +324,9 @@ const searchAniListByTitle = async (
   );
   return (data.Page.media ?? []).map((m) => ({
     id: m.id,
-    titles: [
-      m.title.userPreferred,
-      m.title.english,
-      m.title.romaji,
-      ...(m.synonyms ?? []),
-    ].filter((t): t is string => Boolean(t)),
+    titles: [m.title.userPreferred, m.title.english, m.title.romaji, ...(m.synonyms ?? [])].filter(
+      (t): t is string => Boolean(t),
+    ),
   }));
 };
 
@@ -351,12 +346,17 @@ export const phaseMatch = async (
 
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
-    if (!entry) {continue;}
+    if (!entry) {
+      continue;
+    }
     const cached = existing.get(entry.mangaDexId);
     if (cached && (cached.anilistId || options?.useCache)) {
       results.push(cached);
-      if (cached.anilistId) {matched += 1;}
-      else {unmatched += 1;}
+      if (cached.anilistId) {
+        matched += 1;
+      } else {
+        unmatched += 1;
+      }
       skipped += 1;
       continue;
     }
@@ -399,13 +399,19 @@ export const phaseMatch = async (
       const candidates = [entry.title, ...entry.altTitles].filter(Boolean);
       let foundExact = false;
       for (const candidate of candidates.slice(0, 6)) {
-        if (foundExact) {break;}
+        if (foundExact) {
+          break;
+        }
         try {
           const media = await searchAniListByTitle(anilistToken, candidate);
           const normalizedCandidate = normalizeTitle(candidate);
-          if (!normalizedCandidate) {continue;}
+          if (!normalizedCandidate) {
+            continue;
+          }
           for (const item of media) {
-            if (foundExact) {break;}
+            if (foundExact) {
+              break;
+            }
             for (const title of item.titles) {
               if (normalizeTitle(title) === normalizedCandidate) {
                 result = {
@@ -427,8 +433,11 @@ export const phaseMatch = async (
       }
     }
 
-    if (result.anilistId) {matched += 1;}
-    else {unmatched += 1;}
+    if (result.anilistId) {
+      matched += 1;
+    } else {
+      unmatched += 1;
+    }
     results.push(result);
 
     const done = index + 1;
@@ -465,13 +474,13 @@ export const collectProgress = async (
 ): Promise<Map<string, number>> => {
   const progressByMdId = new Map<string, number>();
   const cachedProgress =
-    options?.tmpDir && options.useCache
-      ? loadProgress(options.tmpDir)
-      : undefined;
+    options?.tmpDir && options.useCache ? loadProgress(options.tmpDir) : undefined;
 
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
-    if (!entry) {continue;}
+    if (!entry) {
+      continue;
+    }
     if (cachedProgress?.has(entry.mangaDexId)) {
       progressByMdId.set(
         entry.mangaDexId,
@@ -481,39 +490,39 @@ export const collectProgress = async (
     } else {
       try {
         const mdToken = await getMdToken();
-        const markerResponse = await fetch(
-          `${MD_API}/manga/${entry.mangaDexId}/read`,
-          {
-            headers: {
-              authorization: `Bearer ${mdToken}`,
-              accept: "application/json",
-              "user-agent": USER_AGENT,
-            },
+        const markerResponse = await fetch(`${MD_API}/manga/${entry.mangaDexId}/read`, {
+          headers: {
+            authorization: `Bearer ${mdToken}`,
+            accept: "application/json",
+            "user-agent": USER_AGENT,
           },
-        );
-        if (!markerResponse.ok)
-          {throw new Error(`HTTP ${markerResponse.status}`);}
+        });
+        if (!markerResponse.ok) {
+          throw new Error(`HTTP ${markerResponse.status}`);
+        }
         // SAFETY: parsed JSON matches { data?: string[]; }; co for this trusted/test payload
         const markerBody = (await markerResponse.json()) as {
           data?: string[];
         };
-        const chapterIds = Array.isArray(markerBody.data)
-          ? markerBody.data
-          : [];
+        const chapterIds = Array.isArray(markerBody.data) ? markerBody.data : [];
         if (chapterIds.length > 0) {
           let maxChapter = 0;
           for (let i = 0; i < chapterIds.length; i += 100) {
             const batch = chapterIds.slice(i, i + 100);
             const params = new URLSearchParams();
             params.set("limit", String(batch.length));
-            for (const id of batch) {params.append("ids[]", id);}
+            for (const id of batch) {
+              params.append("ids[]", id);
+            }
             const chapters = await mdFetch<{ chapter?: string }[]>(
               mdToken,
               `/chapter?${params.toString()}`,
             );
             for (const c of chapters) {
               const num = Number.parseFloat(c.chapter ?? "");
-              if (Number.isFinite(num)) {maxChapter = Math.max(maxChapter, num);}
+              if (Number.isFinite(num)) {
+                maxChapter = Math.max(maxChapter, num);
+              }
             }
             await sleep(MD_REQUEST_INTERVAL_MS);
           }
@@ -522,9 +531,7 @@ export const collectProgress = async (
           }
         }
       } catch (cause) {
-        report?.problem(
-          `markers failed for ${entry.mangaDexId}: ${errorMessage(cause)}`,
-        );
+        report?.problem(`markers failed for ${entry.mangaDexId}: ${errorMessage(cause)}`);
       }
     }
 
@@ -536,23 +543,24 @@ export const collectProgress = async (
     }
     await sleep(MD_REQUEST_INTERVAL_MS);
   }
-  if (options?.tmpDir) {saveProgress(options.tmpDir, progressByMdId);}
+  if (options?.tmpDir) {
+    saveProgress(options.tmpDir, progressByMdId);
+  }
   report?.note(`Got progress for ${progressByMdId.size}/${entries.length} entries.`);
   return progressByMdId;
 };
 
 /** Existing AniList progress (one bulk call): lets us never regress progress
  * that is already ahead of what MangaDex markers claim. */
-export const fetchExistingProgress = async (
-  anilistToken: string,
-): Promise<Map<string, number>> => {
-  const viewer = await gql<{ Viewer?: { id?: number } }>(
-    anilistToken,
-    `query { Viewer { id } }`,
-  );
+export const fetchExistingProgress = async (anilistToken: string): Promise<Map<string, number>> => {
+  const viewer = await gql<{ Viewer?: { id?: number } }>(anilistToken, `query { Viewer { id } }`);
   const viewerId = viewer.Viewer?.id;
-  if (viewerId === undefined) {throw new Error("Could not resolve AniList viewer id.");}
-  const data = await gql<{ MediaListCollection?: { lists?: { entries?: { mediaId: number; progress?: number }[] }[] } }>(
+  if (viewerId === undefined) {
+    throw new Error("Could not resolve AniList viewer id.");
+  }
+  const data = await gql<{
+    MediaListCollection?: { lists?: { entries?: { mediaId: number; progress?: number }[] }[] };
+  }>(
     anilistToken,
     `query ($userId: Int) {
       MediaListCollection(userId: $userId, type: MANGA) {
@@ -590,7 +598,9 @@ export const saveMatches = async (
 
   for (const match of pushable) {
     const anilistId = match.anilistId;
-    if (!anilistId) {continue;}
+    if (!anilistId) {
+      continue;
+    }
     const status = STATUS_TO_ANILIST[match.status];
     // With progress enabled, always send a number: max of what MangaDex
     // markers claim and what AniList already stores — so entries without
@@ -616,12 +626,12 @@ export const saveMatches = async (
         );
       }
       done += 1;
-      if (progress !== undefined) {withProgress += 1;}
+      if (progress !== undefined) {
+        withProgress += 1;
+      }
     } catch (cause) {
       failed += 1;
-      report?.problem(
-        `${match.mangaDexId} -> ${anilistId} failed: ${errorMessage(cause)}`,
-      );
+      report?.problem(`${match.mangaDexId} -> ${anilistId} failed: ${errorMessage(cause)}`);
     }
 
     const current = done + failed;
@@ -632,7 +642,9 @@ export const saveMatches = async (
         ["prog", withProgress],
       ]);
     }
-    if (!options.dryRun) {await sleep(REQUEST_INTERVAL_MS);}
+    if (!options.dryRun) {
+      await sleep(REQUEST_INTERVAL_MS);
+    }
   }
   return { done, failed, withProgress };
 };

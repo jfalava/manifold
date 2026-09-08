@@ -9,9 +9,7 @@ import {
 
 export { MANIFOLD_API_TOKEN_KEY } from "./api.js";
 
-export const scheduledPersonalRequester = async (
-  request: PersonalApiRequest,
-) => {
+export const scheduledPersonalRequester = async (request: PersonalApiRequest) => {
   const [response, bodyBuffer] = await Application.scheduleRequest({
     url: request.url,
     method: request.method,

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createMangaDexPasswordGrant,
   createMangaDexRefreshGrant,
-  MANGADEX_TOKEN_ENDPOINT
+  MANGADEX_TOKEN_ENDPOINT,
 } from "@manifold/mangadex";
 import {
   adminOAuthReturnPath,
@@ -17,7 +17,7 @@ const environment = {
   MANIFOLD_ANILIST_CLIENT_ID: "anilist-client",
   MANIFOLD_ANILIST_CLIENT_SECRET: "anilist-secret",
   MANIFOLD_MAL_CLIENT_ID: "mal-client",
-  MANIFOLD_MAL_CLIENT_SECRET: ""
+  MANIFOLD_MAL_CLIENT_SECRET: "",
 };
 
 describe("OAuth provider configuration", () => {
@@ -67,7 +67,7 @@ describe("OAuth provider configuration", () => {
       await getOAuthClientConfig("mal", environment),
       "https://example.test/v1/auth/mal/callback",
       "state-value",
-      "verifier-value"
+      "verifier-value",
     );
 
     expect(url).toContain("code_challenge=verifier-value");
@@ -79,7 +79,7 @@ describe("OAuth provider configuration", () => {
     const url = createAuthorizationUrl(
       await getOAuthClientConfig("anilist", environment),
       "https://example.test/v1/auth/anilist/callback",
-      "state-value"
+      "state-value",
     );
 
     expect(url).not.toContain("code_challenge");
@@ -91,11 +91,11 @@ describe("OAuth provider configuration", () => {
       clientId: "personal-client-id",
       clientSecret: "personal-client-secret",
       username: "manga-user",
-      password: "manga-password"
+      password: "manga-password",
     });
 
     expect(MANGADEX_TOKEN_ENDPOINT).toBe(
-      "https://auth.mangadex.org/realms/mangadex/protocol/openid-connect/token"
+      "https://auth.mangadex.org/realms/mangadex/protocol/openid-connect/token",
     );
     expect(form.get("grant_type")).toBe("password");
     expect(form.get("username")).toBe("manga-user");
@@ -107,7 +107,7 @@ describe("OAuth provider configuration", () => {
   it("creates the MangaDex refresh grant without username credentials", () => {
     const form = createMangaDexRefreshGrant(
       { clientId: "personal-client-id", clientSecret: "personal-client-secret" },
-      "refresh-token"
+      "refresh-token",
     );
 
     expect(form.get("grant_type")).toBe("refresh_token");

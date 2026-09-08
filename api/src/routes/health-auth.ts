@@ -83,7 +83,11 @@ const anilistImplicitReturnPage = `<!DOCTYPE html>
 export const handleHealth = (ctx: RouteContext): RouteEffect =>
   Effect.sync(() => {
     if (ctx.request.method === "GET" && ctx.url.pathname === "/health") {
-      return jsonEncoded(HealthResponse, { ok: true as const, environment: ctx.env.ENVIRONMENT, build: "p1-oauth-fix-2" });
+      return jsonEncoded(HealthResponse, {
+        ok: true as const,
+        environment: ctx.env.ENVIRONMENT,
+        build: "p1-oauth-fix-2",
+      });
     }
     return null;
   });
@@ -103,15 +107,22 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
       });
     }
 
-    if (path[0] !== "v1" || path[1] !== "auth") {return null;}
+    if (path[0] !== "v1" || path[1] !== "auth") {
+      return null;
+    }
 
     if (path.length === 2 && request.method === "GET") {
       const sync = env.MANIFOLD_SYNC.getByName("default");
-      return jsonEncoded(AuthConnectionsResponse, yield* tryPromise(() => sync.listAuthConnections()));
+      return jsonEncoded(
+        AuthConnectionsResponse,
+        yield* tryPromise(() => sync.listAuthConnections()),
+      );
     }
 
     const provider = authProvider(path[2]);
-    if (!provider) {return jsonEncoded(ErrorBody, { error: "Unknown auth provider" }, 404);}
+    if (!provider) {
+      return jsonEncoded(ErrorBody, { error: "Unknown auth provider" }, 404);
+    }
 
     const sync = env.MANIFOLD_SYNC.getByName("default");
     if (
@@ -199,11 +210,17 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
             },
           });
         }
-        return jsonEncoded(ErrorBody, { error: "OAuth authorization was denied", provider: oauth }, 400);
+        return jsonEncoded(
+          ErrorBody,
+          { error: "OAuth authorization was denied", provider: oauth },
+          400,
+        );
       }
 
       const code = url.searchParams.get("code");
-      if (!code) {return jsonEncoded(ErrorBody, { error: "OAuth callback is missing code" }, 400);}
+      if (!code) {
+        return jsonEncoded(ErrorBody, { error: "OAuth callback is missing code" }, 400);
+      }
       const connection = yield* tryPromise(() => sync.completeOAuthSession(oauth, state, code));
       if (connection.returnPath) {
         return new Response(null, {

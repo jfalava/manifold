@@ -23,11 +23,13 @@ describe("managed collection registry resolution", () => {
         title: input.title,
         createdAt: 1,
         updatedAt: 1,
-        providers: [{
-          provider: "anilist" as const,
-          externalId: input.providerId,
-          updatedAt: 1,
-        }],
+        providers: [
+          {
+            provider: "anilist" as const,
+            externalId: input.providerId,
+            updatedAt: 1,
+          },
+        ],
       }));
     };
 
@@ -50,11 +52,13 @@ describe("managed collection registry resolution", () => {
         title: input.title,
         createdAt: 1,
         updatedAt: 1,
-        providers: [{
-          provider: "anilist" as const,
-          externalId: input.providerId,
-          updatedAt: 1,
-        }],
+        providers: [
+          {
+            provider: "anilist" as const,
+            externalId: input.providerId,
+            updatedAt: 1,
+          },
+        ],
       }));
     });
 

@@ -127,13 +127,19 @@ export const shouldAdvanceProgress = (
   chapterNumber: number | undefined,
   readAt: number,
 ): boolean => {
-  if (!current) {return true;}
+  if (!current) {
+    return true;
+  }
   if (chapterNumber === undefined) {
     return current.chapter_number === null && readAt >= current.read_at;
   }
-  if (current.chapter_number === null) {return true;}
-  return chapterNumber > current.chapter_number ||
-    (chapterNumber === current.chapter_number && readAt >= current.read_at);
+  if (current.chapter_number === null) {
+    return true;
+  }
+  return (
+    chapterNumber > current.chapter_number ||
+    (chapterNumber === current.chapter_number && readAt >= current.read_at)
+  );
 };
 
 export const toOp = (row: OpRow): SyncOp => ({
@@ -172,25 +178,14 @@ export const toListEvent = (row: ListEventRow): ListEvent => ({
   createdAt: row.created_at,
 });
 
-const CANONICAL_PROVIDERS: ReadonlySet<string> = new Set([
-  "anilist",
-  "mal",
-  "local",
-]);
-const REGISTRY_PROVIDERS: ReadonlySet<string> = new Set([
-  "anilist",
-  "mal",
-  "mangadex",
-  "comix",
-]);
+const CANONICAL_PROVIDERS: ReadonlySet<string> = new Set(["anilist", "mal", "local"]);
+const REGISTRY_PROVIDERS: ReadonlySet<string> = new Set(["anilist", "mal", "mangadex", "comix"]);
 
-const isRegistryProvider = (
-  provider: string,
-): provider is ProviderLink["provider"] => REGISTRY_PROVIDERS.has(provider);
+const isRegistryProvider = (provider: string): provider is ProviderLink["provider"] =>
+  REGISTRY_PROVIDERS.has(provider);
 
-const isCanonicalProvider = (
-  provider: string,
-): provider is RegistryEntry["provider"] => CANONICAL_PROVIDERS.has(provider);
+const isCanonicalProvider = (provider: string): provider is RegistryEntry["provider"] =>
+  CANONICAL_PROVIDERS.has(provider);
 
 const nonEmpty = (value: string | null | undefined): string | undefined => {
   if (value === null || value === undefined) {

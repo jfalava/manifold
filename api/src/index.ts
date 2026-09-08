@@ -1,9 +1,7 @@
 import { Hono } from "hono";
 import { Effect, Schema } from "effect";
 import { catalogApp } from "./catalog";
-import {
-  ErrorBody,
-} from "@manifold/contract";
+import { ErrorBody } from "@manifold/contract";
 import {
   authorized,
   isPublicOAuthRoute,
@@ -34,7 +32,9 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
     const ctx: RouteContext = { request, env, url, path };
 
     const health = yield* handleHealth(ctx);
-    if (health) {return health;}
+    if (health) {
+      return health;
+    }
 
     if (
       !isPublicOAuthRoute(request.method, path) &&
@@ -44,17 +44,29 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
     }
 
     const canonical = yield* handleCanonical(ctx);
-    if (canonical) {return canonical;}
+    if (canonical) {
+      return canonical;
+    }
     const backups = yield* handleBackups(ctx);
-    if (backups) {return backups;}
+    if (backups) {
+      return backups;
+    }
     const registry = yield* handleRegistry(ctx);
-    if (registry) {return registry;}
+    if (registry) {
+      return registry;
+    }
     const mangadex = yield* handleMangaDex(ctx);
-    if (mangadex) {return mangadex;}
+    if (mangadex) {
+      return mangadex;
+    }
     const ops = yield* handleOps(ctx);
-    if (ops) {return ops;}
+    if (ops) {
+      return ops;
+    }
     const auth = yield* handleAuth(ctx);
-    if (auth) {return auth;}
+    if (auth) {
+      return auth;
+    }
     return jsonEncoded(ErrorBody, { error: "Not found" }, 404);
   });
 

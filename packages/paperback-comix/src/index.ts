@@ -26,12 +26,7 @@ import {
   type SortingOption,
   type SourceManga,
 } from "@paperback/types";
-import {
-  isFiniteNumber,
-  isJsonObject,
-  isJsonValue,
-  objectField,
-} from "@manifold/json";
+import { isFiniteNumber, isJsonObject, isJsonValue, objectField } from "@manifold/json";
 import {
   hashIdFromMangaId,
   paginationFromPayload,
@@ -90,10 +85,12 @@ const requestFor = (url: string): Request => ({
 
 const isChallenge = (body: string): boolean => {
   const normalized = body.toLowerCase();
-  return normalized.includes("just a moment") ||
+  return (
+    normalized.includes("just a moment") ||
     normalized.includes("cf-chl-") ||
     normalized.includes("challenge-platform") ||
-    normalized.includes("_cf_chl_");
+    normalized.includes("_cf_chl_")
+  );
 };
 
 const requestJson = async (url: string): Promise<JsonRequest> => {
@@ -143,8 +140,12 @@ const requestHtml = async (url: string): Promise<HtmlRequest> => {
 };
 
 const pageFromMetadata = (metadata: Metadata | undefined): number => {
-  if (isFiniteNumber(metadata)) {return metadata;}
-  if (isJsonObject(metadata) && isFiniteNumber(metadata.page)) {return metadata.page;}
+  if (isFiniteNumber(metadata)) {
+    return metadata;
+  }
+  if (isJsonObject(metadata) && isFiniteNumber(metadata.page)) {
+    return metadata.page;
+  }
   return 1;
 };
 
@@ -173,12 +174,14 @@ class SafeCookieStorage extends CookieStorageInterceptor {
   }
 }
 
-export class ComixSource implements
-  Extension,
-  SearchResultsProviding,
-  ChapterProviding,
-  CloudflareBypassRequestProviding,
-  SettingsFormProviding {
+export class ComixSource
+  implements
+    Extension,
+    SearchResultsProviding,
+    ChapterProviding,
+    CloudflareBypassRequestProviding,
+    SettingsFormProviding
+{
   /**
    * Cookie jar that never learns from failed responses: a 403/503 challenge
    * carries Set-Cookie that would otherwise overwrite a still-valid
@@ -214,15 +217,12 @@ export class ComixSource implements
   }
 
   hasSavedComixCookies(): boolean {
-    return this.cookieStorage.cookies.some((cookie) =>
-      cookie.domain === "comix.to" || cookie.domain.endsWith(".comix.to"),
+    return this.cookieStorage.cookies.some(
+      (cookie) => cookie.domain === "comix.to" || cookie.domain.endsWith(".comix.to"),
     );
   }
 
-  private async executeComixWebView(
-    url: string,
-    inject: string,
-  ): Promise<ComixCaptureBody> {
+  private async executeComixWebView(url: string, inject: string): Promise<ComixCaptureBody> {
     const page = await requestHtml(url);
     const execution = await Application.executeInWebView({
       source: {
@@ -260,13 +260,16 @@ export class ComixSource implements
 
   async getMangaDetails(mangaId: string): Promise<SourceManga> {
     const hashId = hashIdFromMangaId(mangaId);
-    const response = await requestJson(`${COMIX_ORIGIN}/api/v1/manga/${encodeURIComponent(hashId)}`);
-    const items = resultItems(response.body);
-    const item = items[0] ?? (
-      isJsonObject(response.body) ? objectField(response.body, "result") : undefined
+    const response = await requestJson(
+      `${COMIX_ORIGIN}/api/v1/manga/${encodeURIComponent(hashId)}`,
     );
+    const items = resultItems(response.body);
+    const item =
+      items[0] ?? (isJsonObject(response.body) ? objectField(response.body, "result") : undefined);
 
-    if (!item) {throw new Error(`Comix manga not found: ${mangaId}`);}
+    if (!item) {
+      throw new Error(`Comix manga not found: ${mangaId}`);
+    }
     return { ...toSourceManga(item), mangaId };
   }
 
@@ -276,7 +279,9 @@ export class ComixSource implements
       `${COMIX_ORIGIN}/api/v1/manga/${encodeURIComponent(hashId)}/chapters`,
     );
     const apiChapters = resultItems(response.body);
-    if (apiChapters.length > 0) {return apiChapters.map((item) => toChapter(item, sourceManga));}
+    if (apiChapters.length > 0) {
+      return apiChapters.map((item) => toChapter(item, sourceManga));
+    }
 
     const webViewResult = await this.executeComixWebView(
       `${COMIX_ORIGIN}/title/${encodeURIComponent(sourceManga.mangaId)}`,
@@ -297,7 +302,8 @@ export class ComixSource implements
     try {
       return toChapterDetails(response.body, chapter);
     } catch {
-      const chapterUrl = chapter.additionalInfo?.["Comix chapter URL"] ??
+      const chapterUrl =
+        chapter.additionalInfo?.["Comix chapter URL"] ??
         `${COMIX_ORIGIN}/chapter/${encodeURIComponent(chapter.chapterId)}`;
       const webViewResult = await this.executeComixWebView(
         resolveComixUrl(chapterUrl),
@@ -334,7 +340,8 @@ class ComixSettingsForm extends Form {
         {
           id: "comix-access",
           header: "Comix access",
-          footer: "Cookies are kept in Paperback on this device and are not sent to manifold.jfa.dev.",
+          footer:
+            "Cookies are kept in Paperback on this device and are not sent to manifold.jfa.dev.",
         },
         [
           LabelRow("comix-status", {

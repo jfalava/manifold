@@ -6,9 +6,7 @@ export type AniListReadingStatus =
   | "re_reading"
   | "completed";
 
-export const parseAniListReadingStatus = (
-  value: string,
-): AniListReadingStatus | undefined => {
+export const parseAniListReadingStatus = (value: string): AniListReadingStatus | undefined => {
   switch (value) {
     case "reading":
     case "on_hold":

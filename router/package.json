@@ -3,10 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "check": "oxlint --fix",
+    "format": "oxfmt",
     "lint": "oxlint",
     "test": "bun test",
-    "format": "oxfmt",
-    "check": "oxlint --fix",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

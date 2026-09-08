@@ -102,14 +102,12 @@ export const md2alCommand = Command.make(
   }) =>
     Effect.gen(function* () {
       const env = (key: string): string => process.env[key] ?? "";
-      const flag = <A>(value: Option.Option<A>): A | undefined =>
-        Option.getOrUndefined(value);
+      const flag = <A>(value: Option.Option<A>): A | undefined => Option.getOrUndefined(value);
 
       const anilist = yield* Effect.tryPromise(() => resolveAniListToken(flag(anilistToken)));
       const credentials = {
         clientId: flag(mangadexClientId) || env("MANIFOLD_MANGADEX_CLIENT_ID"),
-        clientSecret:
-          flag(mangadexClientSecret) || env("MANIFOLD_MANGADEX_CLIENT_SECRET"),
+        clientSecret: flag(mangadexClientSecret) || env("MANIFOLD_MANGADEX_CLIENT_SECRET"),
         username: flag(mangadexUsername) || env("MANIFOLD_MANGADEX_USERNAME"),
         password: flag(mangadexPassword) || env("MANIFOLD_MANGADEX_PASSWORD"),
       };
@@ -137,10 +135,7 @@ export const md2alCommand = Command.make(
         const manager = mdTokenManager;
         mdToken = yield* Effect.tryPromise({
           try: () => manager.current(),
-          catch: (cause) =>
-            new Error(
-              `MangaDex token mint failed: ${errorMessage(cause)}`,
-            ),
+          catch: (cause) => new Error(`MangaDex token mint failed: ${errorMessage(cause)}`),
         });
       }
       if (!mdToken) {
@@ -169,20 +164,13 @@ export const md2alCommand = Command.make(
                 }
                 const snapshot = loadSnapshot(tmpDir);
                 if (!snapshot) {
-                  throw new Error(
-                    "No snapshot found. Run with --phase export first.",
-                  );
+                  throw new Error("No snapshot found. Run with --phase export first.");
                 }
                 const max = Option.getOrUndefined(limit);
-                const limited =
-                  max !== undefined && max > 0
-                    ? snapshot.slice(0, max)
-                    : snapshot;
+                const limited = max !== undefined && max > 0 ? snapshot.slice(0, max) : snapshot;
                 // Scope cached matches to the limited slice so --limit also
                 // bounds the push phase.
-                const limitedIds = new Set(
-                  limited.map((entry) => entry.mangaDexId),
-                );
+                const limitedIds = new Set(limited.map((entry) => entry.mangaDexId));
                 makePhaseReporter(task).detail(
                   `Processing ${limited.length} of ${snapshot.length} snapshot entries.`,
                 );
@@ -212,13 +200,8 @@ export const md2alCommand = Command.make(
                 (skipProgress ? "" : " with chapter progress"),
               skip: () => !(phase === "all" || phase === "push"),
               task: async (ctx, task) => {
-                if (
-                  (phase === "match" || phase === "push") &&
-                  ctx.matches.length === 0
-                ) {
-                  throw new Error(
-                    "No match results found. Run with --phase match first.",
-                  );
+                if ((phase === "match" || phase === "push") && ctx.matches.length === 0) {
+                  throw new Error("No match results found. Run with --phase match first.");
                 }
                 return task.newListr(
                   [
@@ -226,19 +209,18 @@ export const md2alCommand = Command.make(
                       title: "Fetch existing AniList progress",
                       enabled: () => !skipProgress && apply,
                       task: async (subCtx, _subTask) => {
-                        subCtx.existingProgress =
-                          await fetchExistingProgress(anilist);
+                        subCtx.existingProgress = await fetchExistingProgress(anilist);
                       },
                     },
                     {
                       title: "Fetch MangaDex read markers",
                       enabled: () => !skipProgress,
                       task: async (subCtx, subTask) => {
-                        const entryByMdId = new Map(
-                          ctx.limited.map((e) => [e.mangaDexId, e]),
-                        );
+                        const entryByMdId = new Map(ctx.limited.map((e) => [e.mangaDexId, e]));
                         const markerEntries = ctx.matches.flatMap((m) => {
-                          if (!m.anilistId) {return [];}
+                          if (!m.anilistId) {
+                            return [];
+                          }
                           const e = entryByMdId.get(m.mangaDexId);
                           return e ? [e] : [];
                         });
@@ -281,6 +263,4 @@ export const md2alCommand = Command.make(
         catch: (cause) => new Error(errorMessage(cause)),
       });
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
-).pipe(
-  Command.withDescription("Push your MangaDex library into AniList (private entries)."),
-);
+).pipe(Command.withDescription("Push your MangaDex library into AniList (private entries)."));

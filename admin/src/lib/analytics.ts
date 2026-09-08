@@ -1,6 +1,6 @@
+import { manifoldUserAgent } from "@manifold/json";
 import { createServerFn } from "@tanstack/react-start";
 
-import { manifoldUserAgent } from "@manifold/json";
 import {
   isFunctionValue,
   isJsonObject,
@@ -462,7 +462,10 @@ async function fetchCacheSnapshot(): Promise<CacheSnapshot> {
     const env = await workersEnv();
     const apiToken = await resolveSecret(env.MANIFOLD_ADMIN_PANEL_ANALYTICS_API);
     if (!isStringValue(apiToken) || apiToken === "") {
-      return emptyCacheSnapshot("MANIFOLD_ADMIN_PANEL_ANALYTICS_API binding is not configured", fetchedAt);
+      return emptyCacheSnapshot(
+        "MANIFOLD_ADMIN_PANEL_ANALYTICS_API binding is not configured",
+        fetchedAt,
+      );
     }
 
     const zoneTag = await resolveZoneTag(apiToken);

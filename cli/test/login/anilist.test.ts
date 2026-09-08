@@ -66,13 +66,14 @@ describe("AniList authorization", () => {
   it("validates a session via Viewer and rejects HTTP failures without saving", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        Response.json({ data: { Viewer: { id: 9, name: "reader" } } }),
-      ),
+      vi.fn(async () => Response.json({ data: { Viewer: { id: 9, name: "reader" } } })),
     );
     await expect(validateAniListSession("tok")).resolves.toEqual({ id: 9, name: "reader" });
 
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 401 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 401 })),
+    );
     await expect(validateAniListSession("tok")).rejects.toThrow(
       "AniList profile lookup failed: HTTP 401. Login has not been saved.",
     );

@@ -90,6 +90,7 @@
   "devDependencies": {
     "@oxlint/plugins": "catalog:build",
     "@types/node": "catalog:types",
+    "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
     "realm": "catalog:paperback",

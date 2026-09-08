@@ -96,13 +96,13 @@ export interface CanonicalSource {
   readonly provider: Exclude<CanonicalProvider, "local">;
   readonly search: (
     query: string,
-    options?: CanonicalSearchOptions
+    options?: CanonicalSearchOptions,
   ) => Effect.Effect<readonly CanonicalSearchResult[], CanonicalSourceError>;
   readonly getById: (
-    providerId: string
+    providerId: string,
   ) => Effect.Effect<CanonicalEntry | undefined, CanonicalSourceError>;
   readonly writeProgress: (
-    progress: CanonicalProgress
+    progress: CanonicalProgress,
   ) => Effect.Effect<void, CanonicalSourceError>;
 }
 
@@ -110,17 +110,15 @@ export interface CanonicalSearchSource {
   readonly provider: Exclude<CanonicalProvider, "local">;
   readonly search: (
     query: string,
-    options?: CanonicalSearchOptions
+    options?: CanonicalSearchOptions,
   ) => Effect.Effect<readonly CanonicalSearchResult[], CanonicalSourceError>;
   readonly getById: (
-    providerId: string
+    providerId: string,
   ) => Effect.Effect<CanonicalEntry | undefined, CanonicalSourceError>;
   readonly getByIdMal?: (
-    idMal: string
+    idMal: string,
   ) => Effect.Effect<CanonicalEntry | undefined, CanonicalSourceError>;
 }
 
-export const canonicalId = (
-  provider: CanonicalProvider,
-  providerId: string
-): string => `${provider}:${providerId}`;
+export const canonicalId = (provider: CanonicalProvider, providerId: string): string =>
+  `${provider}:${providerId}`;

@@ -9,27 +9,31 @@ const normalizeSearchText = (value: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
-const matchRank = (
-  query: string,
-  titles: readonly string[],
-): number | undefined => {
+const matchRank = (query: string, titles: readonly string[]): number | undefined => {
   const normalizedQuery = normalizeSearchText(query);
-  if (!normalizedQuery) {return undefined;}
+  if (!normalizedQuery) {
+    return undefined;
+  }
   const queryTokens = normalizedQuery.split(" ");
   let best: number | undefined;
   for (const title of titles) {
     const normalizedTitle = normalizeSearchText(title);
-    if (!normalizedTitle) {continue;}
-    const rank = normalizedTitle === normalizedQuery
-      ? 0
-      : normalizedTitle.startsWith(normalizedQuery)
-        ? 1
-        : normalizedTitle.includes(normalizedQuery)
-          ? 2
-          : queryTokens.every((token) => normalizedTitle.includes(token))
-            ? 3
-            : undefined;
-    if (rank !== undefined && (best === undefined || rank < best)) {best = rank;}
+    if (!normalizedTitle) {
+      continue;
+    }
+    const rank =
+      normalizedTitle === normalizedQuery
+        ? 0
+        : normalizedTitle.startsWith(normalizedQuery)
+          ? 1
+          : normalizedTitle.includes(normalizedQuery)
+            ? 2
+            : queryTokens.every((token) => normalizedTitle.includes(token))
+              ? 3
+              : undefined;
+    if (rank !== undefined && (best === undefined || rank < best)) {
+      best = rank;
+    }
   }
   return best;
 };

@@ -17,5 +17,4 @@ export const parsePas5 = async (buf: Buffer): Promise<Pas5Entities> => {
 };
 
 /** Serializes entity-file name → JSON-text map into `.pas5` bytes. */
-export const buildPas5Zip = (files: Record<string, string>): Buffer =>
-  buildZip(files);
+export const buildPas5Zip = (files: Record<string, string>): Buffer => buildZip(files);

@@ -69,13 +69,9 @@ export const wipeAlMangaCommand = Command.make("manga", {
             {
               title: "AniList profile",
               task: async (_, task) => {
-                makePhaseReporter(task).detail(
-                  "Fetching your AniList profile…",
-                );
+                makePhaseReporter(task).detail("Fetching your AniList profile…");
                 const viewer = await fetchViewer(token);
-                makePhaseReporter(task).note(
-                  `Signed in as ${viewer.name} (${viewer.id}).`,
-                );
+                makePhaseReporter(task).note(`Signed in as ${viewer.name} (${viewer.id}).`);
                 viewerId = viewer.id;
               },
             },
@@ -110,8 +106,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
             throw error;
           }
         },
-        catch: (cause) =>
-          new Error(errorMessage(cause)),
+        catch: (cause) => new Error(errorMessage(cause)),
       });
 
       if (scan.entries.length === 0 && scan.activities.length === 0) {
@@ -183,8 +178,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
             throw error;
           }
         },
-        catch: (cause) =>
-          new Error(errorMessage(cause)),
+        catch: (cause) => new Error(errorMessage(cause)),
       });
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),

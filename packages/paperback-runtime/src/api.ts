@@ -56,9 +56,7 @@ export type PersonalApiResponse = {
   readonly body: JsonValue;
 };
 
-export type PersonalApiRequester = (
-  request: PersonalApiRequest,
-) => Promise<PersonalApiResponse>;
+export type PersonalApiRequester = (request: PersonalApiRequest) => Promise<PersonalApiResponse>;
 
 /** Registry UUID row (HTTP). Prefer this name; PersonalEntry is a compat alias. */
 export type PersonalEntry = RegistryEntry;
@@ -109,14 +107,8 @@ export interface PersonalApiClient {
   }>;
   readonly getRegistryCanonical: (entryId: string) => Promise<CanonicalEntry>;
   readonly getEntry: (entryId: string) => Promise<PersonalEntry | undefined>;
-  readonly searchRegistry: (
-    query: string,
-    limit?: number,
-  ) => Promise<readonly PersonalEntry[]>;
-  readonly listRegistry: (
-    limit?: number,
-    offset?: number,
-  ) => Promise<readonly RegistryListEntry[]>;
+  readonly searchRegistry: (query: string, limit?: number) => Promise<readonly PersonalEntry[]>;
+  readonly listRegistry: (limit?: number, offset?: number) => Promise<readonly RegistryListEntry[]>;
   readonly ingestCandidate: (input: IngestCandidateInput) => Promise<PersonalEntry>;
   readonly upsertEntry: (
     entry: Pick<CanonicalSearchResult, "id" | "provider" | "providerId" | "title">,
@@ -147,10 +139,7 @@ export interface PersonalApiClient {
     readonly items: readonly (PersonalFeedChapter & { readonly language: string })[];
     readonly total?: number;
   }>;
-  readonly setMangaDexStatus: (
-    mangaDexId: string,
-    status: string | null,
-  ) => Promise<void>;
+  readonly setMangaDexStatus: (mangaDexId: string, status: string | null) => Promise<void>;
   /** Registry row linked to a MangaDex id (not a search identity). */
   readonly entryByMangaDex: (mangaDexId: string) => Promise<PersonalEntry | undefined>;
   readonly resolveEntry: (input: RegistryResolveInput) => Promise<PersonalEntry>;
@@ -217,7 +206,9 @@ export class PersonalApiError extends Error {
 
 const asErrorMessage = (body: JsonValue, status: number): string => {
   const error = isJsonObject(body) ? body.error : undefined;
-  if (isString(error)) {return error;}
+  if (isString(error)) {
+    return error;
+  }
   const providers = isJsonObject(body) ? arrayField(body, "providers") : undefined;
   const failures = (providers ?? []).flatMap((provider) => {
     const failure = isJsonObject(provider) ? objectField(provider, "error") : undefined;
@@ -305,7 +296,9 @@ export const createPersonalApiClient = (
       const response = await rawRequest(`/v1/canonical/search?${params}`);
       const body = requireDecoded(CanonicalSearchResponse, response.body, "canonical.search");
       for (const source of body.providers) {
-        if (source.error) {console.warn(`[manifold] ${source.provider} search: ${source.error.message}`);}
+        if (source.error) {
+          console.warn(`[manifold] ${source.provider} search: ${source.error.message}`);
+        }
       }
       return {
         query: body.query,
@@ -339,7 +332,9 @@ export const createPersonalApiClient = (
 
     getRegistryCanonical: async (entryId) => {
       const response = await rawRequest(`/v1/entries/${encodeURIComponent(entryId)}/canonical`);
-      return identityToCanonical(requireDecoded(CanonicalIdentity, response.body, "entries.canonical"));
+      return identityToCanonical(
+        requireDecoded(CanonicalIdentity, response.body, "entries.canonical"),
+      );
     },
 
     getEntry: async (entryId) => {
@@ -546,6 +541,5 @@ export const createPersonalApiClient = (
       const response = await rawRequest("/v1/ops/complete", "POST", { results });
       return requireDecoded(UpdatedCountResponse, response.body, "ops.complete");
     },
-
   };
 };

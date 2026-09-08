@@ -45,10 +45,14 @@ const readIacEnv = (): Map<string, string> => {
   const values = new Map<string, string>();
   for (const line of contents.split(/\r?\n/u)) {
     const match = line.match(/^\s*(?:export\s+)?([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/u);
-    if (!match) {continue;}
+    if (!match) {
+      continue;
+    }
 
     const [, key, rawValue] = match;
-    if (!key || rawValue === undefined) {continue;}
+    if (!key || rawValue === undefined) {
+      continue;
+    }
 
     const value =
       (rawValue.startsWith('"') && rawValue.endsWith('"')) ||
@@ -73,15 +77,11 @@ const managedSecretValue = (secretName: string): string | undefined =>
  * redacted plain-string Worker binding. Local workers accept string secrets
  * directly, which avoids booting a Secrets Store gateway per secret.
  */
-export const localSecretValue = (
-  secretName: string
-): Redacted.Redacted<string> => {
+export const localSecretValue = (secretName: string): Redacted.Redacted<string> => {
   const value = managedSecretValue(secretName);
 
   if (value === undefined || value === "") {
-    throw new Error(
-      `Missing local secret ${secretName}. Set ${secretName} in iac/.env.`
-    );
+    throw new Error(`Missing local secret ${secretName}. Set ${secretName} in iac/.env.`);
   }
 
   return Redacted.make(value);
@@ -94,24 +94,24 @@ export const localSecretValue = (
  * skipped — they must already exist in the account store for their bindings
  * to resolve.
  */
-export const defineManagedSecrets = Effect.fn("defineManagedSecrets")(
-  function* (store: SecretsStoreResource, secretNames: readonly string[]) {
-    const managed: Record<string, SecretResource> = {};
+export const defineManagedSecrets = Effect.fn("defineManagedSecrets")(function* (
+  store: SecretsStoreResource,
+  secretNames: readonly string[],
+) {
+  const managed: Record<string, SecretResource> = {};
 
-    for (const secretName of secretNames) {
-      const value = managedSecretValue(secretName);
-      if (value === undefined || value === "") {continue;}
-
-      managed[secretName] = yield* Cloudflare.SecretsStore.Secret(
-        `ManagedSecret${secretName}`,
-        {
-          store,
-          name: secretName,
-          value: Redacted.make(value)
-        }
-      ).pipe(adopt(true), retain());
+  for (const secretName of secretNames) {
+    const value = managedSecretValue(secretName);
+    if (value === undefined || value === "") {
+      continue;
     }
 
-    return managed;
+    managed[secretName] = yield* Cloudflare.SecretsStore.Secret(`ManagedSecret${secretName}`, {
+      store,
+      name: secretName,
+      value: Redacted.make(value),
+    }).pipe(adopt(true), retain());
   }
-);
+
+  return managed;
+});

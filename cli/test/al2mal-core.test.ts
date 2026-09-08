@@ -11,8 +11,9 @@ import {
 } from "../src/al2mal-core";
 import type { AniListEntry } from "../src/anilist";
 
-const entry = (partial: Partial<AniListEntry> & Pick<AniListEntry, "mediaId" | "title" | "status">): AniListEntry =>
-  partial;
+const entry = (
+  partial: Partial<AniListEntry> & Pick<AniListEntry, "mediaId" | "title" | "status">,
+): AniListEntry => partial;
 
 describe("malUpdateForAniList", () => {
   it.each([
@@ -30,8 +31,9 @@ describe("malUpdateForAniList", () => {
   });
 
   it("omits chapter progress when skip-progress is requested", () => {
-    expect(malUpdateForAniList({ status: "CURRENT", progress: 12 }, { includeProgress: false }))
-      .toEqual({ status: "reading", is_rereading: false });
+    expect(
+      malUpdateForAniList({ status: "CURRENT", progress: 12 }, { includeProgress: false }),
+    ).toEqual({ status: "reading", is_rereading: false });
   });
 
   it("rejects unknown AniList statuses", () => {
@@ -66,8 +68,11 @@ describe("createMalTitleSearch", () => {
 
   it("throws quietly (no console) on HTTP 400 so the bar can count errors", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify({ message: "invalid q", error: "bad_request" }), { status: 400 }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ message: "invalid q", error: "bad_request" }), {
+          status: 400,
+        }),
     );
     const search = createMalTitleSearch("client", fetcher, instant);
     await expect(search("Some Title")).rejects.toThrow("MAL title search HTTP 400");
@@ -78,21 +83,25 @@ describe("createMalTitleSearch", () => {
   it("parses node + alternative_titles on success", async () => {
     const fetcher = vi.fn(async () =>
       Response.json({
-        data: [{
-          node: {
-            id: 9,
-            title: "Berserk",
-            alternative_titles: { en: "Berserk", ja: "ベルセルク", synonyms: ["Berserk Max"] },
+        data: [
+          {
+            node: {
+              id: 9,
+              title: "Berserk",
+              alternative_titles: { en: "Berserk", ja: "ベルセルク", synonyms: ["Berserk Max"] },
+            },
           },
-        }],
+        ],
       }),
     );
     const search = createMalTitleSearch("client", fetcher, instant);
-    await expect(search("Berserk")).resolves.toEqual([{
-      id: 9,
-      title: "Berserk",
-      aliases: ["Berserk", "ベルセルク", "Berserk Max"],
-    }]);
+    await expect(search("Berserk")).resolves.toEqual([
+      {
+        id: 9,
+        title: "Berserk",
+        aliases: ["Berserk", "ベルセルク", "Berserk Max"],
+      },
+    ]);
   });
 
   it("spaces real searches by 1.5s after the first (same floor as createMalClient)", async () => {
@@ -110,7 +119,8 @@ describe("createMalTitleSearch", () => {
   });
 
   it("retries 429 with backoff before giving up", async () => {
-    const fetcher = vi.fn()
+    const fetcher = vi
+      .fn()
       .mockResolvedValueOnce(new Response(null, { status: 429, headers: { "retry-after": "1" } }))
       .mockResolvedValueOnce(Response.json({ data: [] }));
     const sleep = vi.fn(async () => undefined);
@@ -153,7 +163,11 @@ describe("matchAniListToMal", () => {
     );
     expect(result).toMatchObject({
       kind: "matched",
-      value: { malId: 5, method: "title-exact", update: { status: "completed", is_rereading: false } },
+      value: {
+        malId: 5,
+        method: "title-exact",
+        update: { status: "completed", is_rereading: false },
+      },
     });
   });
 
@@ -174,9 +188,7 @@ describe("matchAniListToMal", () => {
   });
 
   it("accepts a unique partial title when no exact hit", async () => {
-    const titleSearch: Al2malSearch = async () => [
-      { id: 8, title: "Vinland Saga", aliases: [] },
-    ];
+    const titleSearch: Al2malSearch = async () => [{ id: 8, title: "Vinland Saga", aliases: [] }];
     const result = await matchAniListToMal(
       entry({ mediaId: 4, title: "Vinland", status: "PAUSED" }),
       titleSearch,
@@ -184,7 +196,11 @@ describe("matchAniListToMal", () => {
     );
     expect(result).toMatchObject({
       kind: "matched",
-      value: { malId: 8, method: "title-partial", update: { status: "on_hold", is_rereading: false } },
+      value: {
+        malId: 8,
+        method: "title-partial",
+        update: { status: "on_hold", is_rereading: false },
+      },
     });
   });
 
@@ -228,7 +244,13 @@ describe("runAl2mal", () => {
       dryRun: true,
       includeProgress: true,
     });
-    expect(report).toMatchObject({ scanned: 1, matched: [{ malId: 10 }], written: 0, failed: 0, dryRun: true });
+    expect(report).toMatchObject({
+      scanned: 1,
+      matched: [{ malId: 10 }],
+      written: 0,
+      failed: 0,
+      dryRun: true,
+    });
     expect(updateManga).not.toHaveBeenCalled();
   });
 
@@ -262,7 +284,9 @@ describe("runAl2mal", () => {
 
   it("records per-entry write failures without aborting the rest", async () => {
     const updateManga = vi.fn(async (id: number) => {
-      if (id === 1) {throw new Error("HTTP 500");}
+      if (id === 1) {
+        throw new Error("HTTP 500");
+      }
     });
     const report = await runAl2mal({
       entries: [

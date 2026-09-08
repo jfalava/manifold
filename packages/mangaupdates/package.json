@@ -6,11 +6,11 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "lint": "oxlint",
-    "format": "oxfmt",
     "check": "oxlint --fix",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "format": "oxfmt",
+    "lint": "oxlint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@manifold/json": "workspace:*",

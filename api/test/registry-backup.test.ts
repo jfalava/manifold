@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "@manifold/json";
-import {
-  isRegistryBackupKey,
-  parseRegistryBackup,
-  toBackupRows,
-} from "../src/registry-backup";
+import { isRegistryBackupKey, parseRegistryBackup, toBackupRows } from "../src/registry-backup";
 
 const emptyBackup = {
   version: 1,
@@ -45,8 +41,9 @@ describe("registry backups", () => {
   });
 
   it("accepts only generated registry backup keys", () => {
-    expect(isRegistryBackupKey("registry/1700000000000-01234567-89ab-cdef-0123-456789abcdef.json"))
-      .toBe(true);
+    expect(
+      isRegistryBackupKey("registry/1700000000000-01234567-89ab-cdef-0123-456789abcdef.json"),
+    ).toBe(true);
     expect(isRegistryBackupKey("registry/../registry.json")).toBe(false);
     expect(isRegistryBackupKey("other/1700000000000-backup.json")).toBe(false);
   });

@@ -59,7 +59,10 @@ export interface MangaUpdatesClient {
   }) => Promise<MangaUpdatesPaged<MangaUpdatesRelease>>;
 }
 
-export type MangaUpdatesFetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+export type MangaUpdatesFetcher = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
 
 export interface MangaUpdatesClientOptions {
   readonly endpoint?: string;
@@ -79,13 +82,18 @@ const stringValue = (value: JsonValue | undefined): string | undefined =>
 const seriesFromRecord = (value: JsonValue | undefined): MangaUpdatesSeries | undefined => {
   const rec = asObject(value);
   const recordData = asObject(rec?.record) ?? rec;
-  if (recordData === undefined) {return undefined;}
+  if (recordData === undefined) {
+    return undefined;
+  }
   const id =
     numberField(recordData, "series_id") ??
     (rec === undefined ? undefined : numberField(rec, "series_id")) ??
     (rec === undefined ? undefined : numberField(rec, "id"));
-  const title = stringField(recordData, "title") ?? (rec === undefined ? undefined : stringField(rec, "title"));
-  if (id === undefined || title === undefined) {return undefined;}
+  const title =
+    stringField(recordData, "title") ?? (rec === undefined ? undefined : stringField(rec, "title"));
+  if (id === undefined || title === undefined) {
+    return undefined;
+  }
   const associated = arrayField(recordData, "associated") ?? [];
   const altTitles = associated
     .map((item) => (isJsonObject(item) ? stringField(item, "title") : undefined))
@@ -116,12 +124,17 @@ const seriesFromRecord = (value: JsonValue | undefined): MangaUpdatesSeries | un
 const releaseFromRecord = (value: JsonValue | undefined): MangaUpdatesRelease | undefined => {
   const rec = asObject(value);
   const recordData = asObject(rec?.record) ?? rec;
-  if (recordData === undefined) {return undefined;}
+  if (recordData === undefined) {
+    return undefined;
+  }
   const seriesId =
     numberField(recordData, "series_id") ??
     (rec === undefined ? undefined : numberField(rec, "series_id"));
-  const title = stringField(recordData, "title") ?? (rec === undefined ? undefined : stringField(rec, "title"));
-  if (seriesId === undefined || title === undefined) {return undefined;}
+  const title =
+    stringField(recordData, "title") ?? (rec === undefined ? undefined : stringField(rec, "title"));
+  if (seriesId === undefined || title === undefined) {
+    return undefined;
+  }
   const groupsRaw = recordData.groups;
   const groups = isJsonArray(groupsRaw)
     ? groupsRaw
@@ -146,7 +159,12 @@ const releaseFromRecord = (value: JsonValue | undefined): MangaUpdatesRelease | 
 
 const errorFrom = (cause: unknown, status?: number): MangaUpdatesSourceError => ({
   _tag: "MangaUpdatesSourceError",
-  message: cause instanceof Error ? cause.message : isString(cause) ? cause : "MangaUpdates request failed",
+  message:
+    cause instanceof Error
+      ? cause.message
+      : isString(cause)
+        ? cause
+        : "MangaUpdates request failed",
   ...(status !== undefined && { status }),
 });
 
@@ -157,12 +175,16 @@ const withSourceError = async <A>(action: () => Promise<A>): Promise<A> => {
   try {
     return await action();
   } catch (cause: unknown) {
-    if (isSourceError(cause)) {throw cause;}
+    if (isSourceError(cause)) {
+      throw cause;
+    }
     throw errorFrom(cause);
   }
 };
 
-export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}): MangaUpdatesClient => {
+export const createMangaUpdatesClient = (
+  options: MangaUpdatesClientOptions = {},
+): MangaUpdatesClient => {
   const fetcher = options.fetcher ?? defaultFetcher;
   const endpoint = (options.endpoint ?? `${MANGAUPDATES_API_ORIGIN}/v1`).replace(/\/$/, "");
 
@@ -201,7 +223,9 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
     search: (query) =>
       withSourceError(async () => {
         const normalized = query.trim();
-        if (!normalized) {throw errorFrom("MangaUpdates search query cannot be empty");}
+        if (!normalized) {
+          throw errorFrom("MangaUpdates search query cannot be empty");
+        }
         const body = await requestJson("/series/search", "POST", {
           search: normalized,
           perpage: 25,
@@ -216,7 +240,9 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
       withSourceError(async () => {
         const body = await requestJson(`/series/${encodeURIComponent(String(id))}`, "GET");
         const series = seriesFromRecord(body);
-        if (!series) {throw errorFrom(`MangaUpdates series not found: ${id}`, 404);}
+        if (!series) {
+          throw errorFrom(`MangaUpdates series not found: ${id}`, 404);
+        }
         return series;
       }),
     releases: (releaseOptions) =>
@@ -233,7 +259,10 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
         const items = results
           .map(releaseFromRecord)
           .filter((item): item is MangaUpdatesRelease => item !== undefined);
-        return { items, total: numberField(body, "total_hits") ?? numberField(body, "total") ?? items.length };
+        return {
+          items,
+          total: numberField(body, "total_hits") ?? numberField(body, "total") ?? items.length,
+        };
       }),
   };
 };

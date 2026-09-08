@@ -3,7 +3,9 @@ import type { Env } from "./types";
 
 export const toBase64Url = (bytes: Uint8Array): string => {
   let binary = "";
-  for (const byte of bytes) {binary += String.fromCharCode(byte);}
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 };
 
@@ -24,14 +26,8 @@ const encryptionKey = async (
     env.MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET,
     "MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET",
   );
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(encryptionSecret),
-  );
-  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, [
-    "encrypt",
-    "decrypt",
-  ]);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(encryptionSecret));
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 };
 
 export const encryptToken = async (

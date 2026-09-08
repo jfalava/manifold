@@ -32,7 +32,9 @@ const uniqueTitles = (titles: readonly string[]): string[] => {
   const values = new Map<string, string>();
   for (const title of titles) {
     const key = normalizeTitle(title);
-    if (key && !values.has(key)) {values.set(key, title.trim());}
+    if (key && !values.has(key)) {
+      values.set(key, title.trim());
+    }
   }
   return [...values.values()];
 };
@@ -43,15 +45,24 @@ export const chooseMalMatch = (
 ): MalMatch | undefined => {
   const normalized = new Set(uniqueTitles(titles).map(normalizeTitle));
   const exact = candidates.filter(({ entry }) =>
-    uniqueTitles([entry.title, ...entry.aliases]).some((title) => normalized.has(normalizeTitle(title))),
+    uniqueTitles([entry.title, ...entry.aliases]).some((title) =>
+      normalized.has(normalizeTitle(title)),
+    ),
   );
   // Conflicting exact matches must not be broken by semantic ranking.
-  if (exact.length > 1) {return undefined;}
+  if (exact.length > 1) {
+    return undefined;
+  }
   const ordered = [...candidates].sort((left, right) => right.score - left.score);
   const best = exact[0] ?? ordered[0];
-  if (!best) {return undefined;}
+  if (!best) {
+    return undefined;
+  }
   const margin = ordered[1] === undefined ? 1 : best.score - ordered[1].score;
-  if (exact.length === 0 && !(best.score >= VECTOR_ACCEPT_SCORE && margin >= VECTOR_ACCEPT_MARGIN)) {
+  if (
+    exact.length === 0 &&
+    !(best.score >= VECTOR_ACCEPT_SCORE && margin >= VECTOR_ACCEPT_MARGIN)
+  ) {
     return undefined;
   }
   return {
@@ -75,17 +86,21 @@ export const resolveMalBackup = async (
   }),
 ): Promise<MalMatch> => {
   const binding = entry.providers.find((link) => link.provider === "mal");
-  if (binding) {return { externalId: binding.externalId, title: binding.title, method: "binding" };}
+  if (binding) {
+    return { externalId: binding.externalId, title: binding.title, method: "binding" };
+  }
   const anilistId = entry.providers.find((link) => link.provider === "anilist")?.externalId;
   // An identity attached to another AniList title must never influence this entry.
   const observed = identity?.anilistId === anilistId ? identity : undefined;
   if (observed?.malId) {
-    if (!/^[1-9]\d*$/.test(observed.malId)) {throw new Error("Invalid AniList MAL cross-link");}
+    if (!/^[1-9]\d*$/.test(observed.malId)) {
+      throw new Error("Invalid AniList MAL cross-link");
+    }
     return { externalId: observed.malId, method: "anilist-id" };
   }
   const titles = uniqueTitles([
     entry.title,
-    ...entry.providers.flatMap((link) => link.title ? [link.title] : []),
+    ...entry.providers.flatMap((link) => (link.title ? [link.title] : [])),
     ...(observed?.titles ?? []),
   ]);
   const candidates = new Map<string, CanonicalSearchResult>();
@@ -93,22 +108,36 @@ export const resolveMalBackup = async (
   // one request fails: the missing response may contain a competing match.
   for (const title of titles) {
     const found = await Effect.runPromise(source.search(title, { limit: 25 }));
-    for (const candidate of found) {candidates.set(candidate.providerId, candidate);}
+    for (const candidate of found) {
+      candidates.set(candidate.providerId, candidate);
+    }
   }
   const entries = [...candidates.values()];
-  const exact = chooseMalMatch(titles, entries.map((candidate) => ({ entry: candidate, score: 0 })));
-  if (exact) {return exact;}
-  if (entries.length === 0) {throw new Error("MAL backup unmatched: no candidates");}
+  const exact = chooseMalMatch(
+    titles,
+    entries.map((candidate) => ({ entry: candidate, score: 0 })),
+  );
+  if (exact) {
+    return exact;
+  }
+  if (entries.length === 0) {
+    throw new Error("MAL backup unmatched: no candidates");
+  }
   const vectors = await embedMangaTitles(env.AI, [
     embeddingText(titles),
     ...entries.map((candidate) => embeddingText([candidate.title, ...candidate.aliases])),
   ]);
   const query = vectors[0] ?? [];
-  const match = chooseMalMatch(titles, entries.map((candidate, index) => ({
-    entry: candidate,
-    score: cosineSimilarity(query, vectors[index + 1] ?? []),
-  })));
-  if (!match) {throw new Error("MAL backup ambiguous: no unique confident match");}
+  const match = chooseMalMatch(
+    titles,
+    entries.map((candidate, index) => ({
+      entry: candidate,
+      score: cosineSimilarity(query, vectors[index + 1] ?? []),
+    })),
+  );
+  if (!match) {
+    throw new Error("MAL backup ambiguous: no unique confident match");
+  }
   return match;
 };
 
@@ -118,7 +147,9 @@ export const writeMalBackupStatus = async (
   status: ListStatus,
   accessToken: string,
 ): Promise<void> => {
-  if (!/^[1-9]\d*$/.test(externalId)) {throw new Error("Invalid MAL manga id");}
+  if (!/^[1-9]\d*$/.test(externalId)) {
+    throw new Error("Invalid MAL manga id");
+  }
   const response = await fetch(
     `https://api.myanimelist.net/v2/manga/${externalId}/my_list_status`,
     {
@@ -135,5 +166,7 @@ export const writeMalBackupStatus = async (
       signal: AbortSignal.timeout(15_000),
     },
   );
-  if (!response.ok) {throw new Error(`MAL backup status failed: HTTP ${response.status}`);}
+  if (!response.ok) {
+    throw new Error(`MAL backup status failed: HTTP ${response.status}`);
+  }
 };

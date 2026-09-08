@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  matchesStatusFilter,
-  parseStatusFilter,
-} from "../src/registry-status";
+import { matchesStatusFilter, parseStatusFilter } from "../src/registry-status";
 
 describe("registry prefill --status", () => {
   it("treats auto as no filter", () => {

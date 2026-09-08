@@ -35,10 +35,9 @@ const mangadexCover: Handler<App> = async (c) => {
   ) {
     return c.text("Bad cover path", 400);
   }
-  const upstream = await fetch(
-    `https://uploads.mangadex.org/covers/${mangaId}/${filename}`,
-    { headers: { "user-agent": "manifold/0.1 (+https://manifold.jfa.dev; manifold/router)" } },
-  );
+  const upstream = await fetch(`https://uploads.mangadex.org/covers/${mangaId}/${filename}`, {
+    headers: { "user-agent": "manifold/0.1 (+https://manifold.jfa.dev; manifold/router)" },
+  });
   const headers = new Headers();
   headers.set("content-type", upstream.headers.get("content-type") ?? "image/jpeg");
   headers.set("cache-control", "public, max-age=604800, stale-while-revalidate=86400");
@@ -47,7 +46,8 @@ const mangadexCover: Handler<App> = async (c) => {
 
 const forwardBinding =
   (binding: keyof Env): Handler<App> =>
-  async (c) => c.env[binding].fetch(c.req.raw);
+  async (c) =>
+    c.env[binding].fetch(c.req.raw);
 
 /**
  * Explicit docs allowlist (same idea as jfa.dev's router mounts).

@@ -19,13 +19,7 @@ import {
   type RegistrySummary,
   type SyncOp,
 } from "@manifold/contract";
-import {
-  errorMessage,
-  isJsonObject,
-  isJsonValue,
-  isString,
-  type JsonValue,
-} from "@manifold/json";
+import { errorMessage, isJsonObject, isJsonValue, isString, type JsonValue } from "@manifold/json";
 import type { AuthProvider, OAuthProvider } from "./domain";
 import { readSecret } from "./read-secret";
 import type { Env } from "./types";
@@ -63,7 +57,12 @@ export type JsonResponseBody =
   | { readonly id: string; readonly name?: string }
   | { readonly library: readonly MangaDexLibraryItem[] }
   | { readonly summary: MangaDexLibrarySummary | RegistrySummary | OpsSummary }
-  | { readonly ok: true; readonly build?: string; readonly environment?: string; readonly state?: ListState }
+  | {
+      readonly ok: true;
+      readonly build?: string;
+      readonly environment?: string;
+      readonly state?: ListState;
+    }
   | { readonly ops: readonly SyncOp[] }
   | { readonly progress: ReadingProgress | null }
   | { readonly retried: number }
@@ -127,7 +126,9 @@ export const parseJson = (request: Request): Effect.Effect<JsonValue, Error> =>
   });
 
 export const toError = (cause: unknown): Error => {
-  if (cause instanceof Error) {return cause;}
+  if (cause instanceof Error) {
+    return cause;
+  }
   if (isJsonObject(cause) && isString(cause.message)) {
     return new Error(cause.message);
   }
@@ -155,13 +156,13 @@ export const routeId = (value: string): string => decodeURIComponent(value);
 
 export const authorized = async (request: Request, env: Env): Promise<boolean> => {
   const authorization = request.headers.get("authorization");
-  if (!authorization?.startsWith("Bearer ")) {return false;}
+  if (!authorization?.startsWith("Bearer ")) {
+    return false;
+  }
 
   const expected = await readSecret(env.MANIFOLD_TOKEN, "MANIFOLD_TOKEN");
   const supplied = new TextEncoder().encode(authorization.slice("Bearer ".length));
-  const suppliedDigest = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", supplied),
-  );
+  const suppliedDigest = new Uint8Array(await crypto.subtle.digest("SHA-256", supplied));
   const expectedDigest = new Uint8Array(
     await crypto.subtle.digest("SHA-256", new TextEncoder().encode(expected)),
   );
@@ -173,12 +174,16 @@ export const authorized = async (request: Request, env: Env): Promise<boolean> =
 };
 
 export const authProvider = (value: string | undefined): AuthProvider | undefined => {
-  if (value === "anilist" || value === "mal" || value === "mangadex") {return value;}
+  if (value === "anilist" || value === "mal" || value === "mangadex") {
+    return value;
+  }
   return undefined;
 };
 
 export const oauthProvider = (value: string | undefined): OAuthProvider | undefined => {
-  if (value === "anilist" || value === "mal") {return value;}
+  if (value === "anilist" || value === "mal") {
+    return value;
+  }
   return undefined;
 };
 
@@ -217,20 +222,11 @@ export const adminOAuthReturnPath = (value: string | null): string | undefined =
 };
 
 /** Public site origin (router), derived from the OAuth redirect base. */
-export const publicSiteOrigin = (
-  env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_URL">,
-): string => new URL(oauthApiBaseUrl(env)).origin;
+export const publicSiteOrigin = (env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_URL">): string =>
+  new URL(oauthApiBaseUrl(env)).origin;
 
-export const isPublicOAuthRoute = (
-  method: string,
-  path: readonly string[],
-): boolean => {
-  if (
-    method !== "GET" ||
-    path.length !== 4 ||
-    path[0] !== "v1" ||
-    path[1] !== "auth"
-  ) {
+export const isPublicOAuthRoute = (method: string, path: readonly string[]): boolean => {
+  if (method !== "GET" || path.length !== 4 || path[0] !== "v1" || path[1] !== "auth") {
     return false;
   }
   return (

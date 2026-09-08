@@ -63,12 +63,16 @@ const loadStaleCache = async (): Promise<{
       return { usable: false, savedAt: undefined, entries: {} };
     }
     const savedAt = stringField(raw, "savedAt");
-    if (savedAt === undefined) {return { usable: false, savedAt: undefined, entries: {} };}
+    if (savedAt === undefined) {
+      return { usable: false, savedAt: undefined, entries: {} };
+    }
     const age = Date.now() - Date.parse(savedAt);
     const entries: Record<string, number> = {};
     const entriesRaw = objectField(raw, "entries") ?? {};
     for (const [id, entry] of Object.entries(entriesRaw)) {
-      if (!isJsonObject(entry)) {continue;}
+      if (!isJsonObject(entry)) {
+        continue;
+      }
       const lastUploadAt = numberField(entry, "lastUploadAt");
       if (lastUploadAt !== undefined) {
         entries[id] = lastUploadAt;
@@ -84,17 +88,12 @@ const loadStaleCache = async (): Promise<{
   }
 };
 
-const saveStaleCache = async (
-  entries: Record<string, number>,
-): Promise<void> => {
+const saveStaleCache = async (entries: Record<string, number>): Promise<void> => {
   const file: StaleCacheFile = {
     version: 1,
     savedAt: new Date().toISOString(),
     entries: Object.fromEntries(
-      Object.entries(entries).map(([id, lastUploadAt]) => [
-        id,
-        { lastUploadAt },
-      ]),
+      Object.entries(entries).map(([id, lastUploadAt]) => [id, { lastUploadAt }]),
     ),
   };
   await mkdir(".tmp", { recursive: true });
@@ -145,7 +144,9 @@ const DURATION_UNIT_MS = {
 /** Accepts "90", "90d", "12w", "6mo", "2y" (bare numbers mean days). */
 export const parseDurationMs = (raw: string): number | undefined => {
   const match = /^(\d+)(d|w|mo|y)?$/i.exec(raw.trim());
-  if (!match) {return undefined;}
+  if (!match) {
+    return undefined;
+  }
   const unit = (match[2] ?? "d").toLowerCase();
   if (unit !== "d" && unit !== "w" && unit !== "mo" && unit !== "y") {
     return undefined;
@@ -169,9 +170,7 @@ export const staleStatusCommand = Command.make(
   {
     olderThan: Flag.string("older-than").pipe(
       Flag.withDefault("365d"),
-      Flag.withDescription(
-        "Cutoff since the last uploaded chapter, e.g. 90, 90d, 12w, 6mo, 2y.",
-      ),
+      Flag.withDescription("Cutoff since the last uploaded chapter, e.g. 90, 90d, 12w, 6mo, 2y."),
     ),
     to: Flag.string("to").pipe(
       Flag.withDefault("on_hold"),
@@ -181,9 +180,7 @@ export const staleStatusCommand = Command.make(
     ),
     from: Flag.string("from").pipe(
       Flag.withDefault("reading,re_reading"),
-      Flag.withDescription(
-        "Comma-separated current statuses eligible for the change.",
-      ),
+      Flag.withDescription("Comma-separated current statuses eligible for the change."),
     ),
     apply: Flag.boolean("apply").pipe(
       Flag.withDefault(false),
@@ -196,7 +193,10 @@ export const staleStatusCommand = Command.make(
       ),
     ),
     mangadexClientId: optional("mangadex-client-id", "Falls back to MANIFOLD_MANGADEX_CLIENT_ID."),
-    mangadexClientSecret: optional("mangadex-client-secret", "Falls back to MANIFOLD_MANGADEX_CLIENT_SECRET."),
+    mangadexClientSecret: optional(
+      "mangadex-client-secret",
+      "Falls back to MANIFOLD_MANGADEX_CLIENT_SECRET.",
+    ),
     mangadexUsername: optional("mangadex-username", "Falls back to MANIFOLD_MANGADEX_USERNAME."),
     mangadexPassword: optional("mangadex-password", "Falls back to MANIFOLD_MANGADEX_PASSWORD."),
   },
@@ -217,23 +217,23 @@ export const staleStatusCommand = Command.make(
         ...names: readonly string[]
       ): string | undefined => {
         const direct = Option.getOrUndefined(flagValue);
-        if (direct !== undefined) {return direct;}
+        if (direct !== undefined) {
+          return direct;
+        }
         for (const name of names) {
           const value = process.env[name];
-          if (value !== undefined && value !== "") {return value;}
+          if (value !== undefined && value !== "") {
+            return value;
+          }
         }
         return undefined;
       };
 
       const credentials = {
-        clientId:
-          resolveValue(mangadexClientId, "MANIFOLD_MANGADEX_CLIENT_ID") ?? "",
-        clientSecret:
-          resolveValue(mangadexClientSecret, "MANIFOLD_MANGADEX_CLIENT_SECRET") ?? "",
-        username:
-          resolveValue(mangadexUsername, "MANIFOLD_MANGADEX_USERNAME") ?? "",
-        password:
-          resolveValue(mangadexPassword, "MANIFOLD_MANGADEX_PASSWORD") ?? "",
+        clientId: resolveValue(mangadexClientId, "MANIFOLD_MANGADEX_CLIENT_ID") ?? "",
+        clientSecret: resolveValue(mangadexClientSecret, "MANIFOLD_MANGADEX_CLIENT_SECRET") ?? "",
+        username: resolveValue(mangadexUsername, "MANIFOLD_MANGADEX_USERNAME") ?? "",
+        password: resolveValue(mangadexPassword, "MANIFOLD_MANGADEX_PASSWORD") ?? "",
       };
       const missing = Object.entries(credentials)
         .filter(([, value]) => !value)
@@ -284,10 +284,14 @@ export const staleStatusCommand = Command.make(
             cachePath: TOKEN_CACHE_PATH,
           });
           let client = createMangaDexClient({
-            accessToken: await manager.current(), userAgent: manifoldUserAgent("cli") });
+            accessToken: await manager.current(),
+            userAgent: manifoldUserAgent("cli"),
+          });
           const refreshClient = async () => {
             client = createMangaDexClient({
-              accessToken: await manager.current(), userAgent: manifoldUserAgent("cli") });
+              accessToken: await manager.current(),
+              userAgent: manifoldUserAgent("cli"),
+            });
             return client;
           };
 
@@ -303,164 +307,175 @@ export const staleStatusCommand = Command.make(
           };
           const scanTask: ListrTask<StaleCtx> = {
             title: `Scan for uploads since ${olderThan}`,
-              task: async (ctx, task) => {
-                const reporter = makePhaseReporter(task);
-                const candidates = Object.entries(ctx.statuses)
-                  .filter(([, status]) => fromStatuses.includes(status))
-                  .map(([id]) => id);
-                if (candidates.length === 0) {
-                  ctx.staleIds = [];
-                  reporter.note("No entries match --from; nothing to do.");
-                  return;
-                }
-                // MangaDex feed timestamps are second-precision UTC, no
-                // timezone suffix allowed.
-                const cutoff = cutoffIso.slice(0, 19);
-                const cutoffMs = Date.now() - olderThanMs;
+            task: async (ctx, task) => {
+              const reporter = makePhaseReporter(task);
+              const candidates = Object.entries(ctx.statuses)
+                .filter(([, status]) => fromStatuses.includes(status))
+                .map(([id]) => id);
+              if (candidates.length === 0) {
+                ctx.staleIds = [];
+                reporter.note("No entries match --from; nothing to do.");
+                return;
+              }
+              // MangaDex feed timestamps are second-precision UTC, no
+              // timezone suffix allowed.
+              const cutoff = cutoffIso.slice(0, 19);
+              const cutoffMs = Date.now() - olderThanMs;
 
-                const cached = await loadStaleCache();
-                // Cache verdicts are only used when the live sweep cannot
-                // finish; a completed sweep is always authoritative.
-                const knownUploads: Record<string, number> = {};
-                if (cached.usable) {
-                  Object.assign(knownUploads, cached.entries);
-                }
+              const cached = await loadStaleCache();
+              // Cache verdicts are only used when the live sweep cannot
+              // finish; a completed sweep is always authoritative.
+              const knownUploads: Record<string, number> = {};
+              if (cached.usable) {
+                Object.assign(knownUploads, cached.entries);
+              }
 
-                // Phase 1: one paginated sweep of the followed-manga feed
-                // since the cutoff; every manga that appears has fresh
-                // chapters. All four content ratings must be passed or adult
-                // titles are silently excluded from the feed.
-                const fresh = new Set<string>();
-                const seenUploads: Record<string, number> = {};
-                let offset = 0;
-                let requests = 1;
-                let sweepComplete = false;
-                try {
-                  while (true) {
-                    const page = await Effect.runPromise(
-                      client.followedFeed({ publishedAtSince: cutoff, limit: 500, offset }),
-                    );
-                    for (const chapter of page.items) {
-                      if (!fresh.has(chapter.mangaId)) {
-                        fresh.add(chapter.mangaId);
-                        // Pages are ordered newest-first, so the first hit
-                        // per manga is its latest upload.
-                        if (chapter.publishedAt !== undefined) {
-                          seenUploads[chapter.mangaId] = chapter.publishedAt;
-                        }
+              // Phase 1: one paginated sweep of the followed-manga feed
+              // since the cutoff; every manga that appears has fresh
+              // chapters. All four content ratings must be passed or adult
+              // titles are silently excluded from the feed.
+              const fresh = new Set<string>();
+              const seenUploads: Record<string, number> = {};
+              let offset = 0;
+              let requests = 1;
+              let sweepComplete = false;
+              try {
+                while (true) {
+                  const page = await Effect.runPromise(
+                    client.followedFeed({ publishedAtSince: cutoff, limit: 500, offset }),
+                  );
+                  for (const chapter of page.items) {
+                    if (!fresh.has(chapter.mangaId)) {
+                      fresh.add(chapter.mangaId);
+                      // Pages are ordered newest-first, so the first hit
+                      // per manga is its latest upload.
+                      if (chapter.publishedAt !== undefined) {
+                        seenUploads[chapter.mangaId] = chapter.publishedAt;
                       }
                     }
-                    offset += page.items.length;
-                    const total = page.total ?? offset;
-                    reporter.progress(fresh.size, candidates.length, [
-                      ["fresh", fresh.size],
-                      ["pages", requests],
-                    ] as const);
-                    if (page.items.length === 0 || offset >= total) {break;}
-                    requests += 1;
-                    await sleep(READ_SPACING_MS);
                   }
-                  sweepComplete = true;
-                } catch (cause) {
-                  reporter.problem(
-                    `Feed sweep failed after ${requests} pages (${errorMessage(cause)}); finishing with per-title checks.`,
-                  );
-                }
-
-                // Phase 2 (only needed when the sweep finished): the followed
-                // list. A library title that is not followed never appears in
-                // the feed above, so its freshness is unknown and needs an
-                // individual check.
-                const followed = new Set<string>();
-                if (sweepComplete) {
-                  offset = 0;
-                  while (true) {
-                    const page = await Effect.runPromise(
-                      client.followedManga({ limit: 100, offset }),
-                    );
-                    for (const manga of page.items) {followed.add(manga.id);}
-                    offset += page.items.length;
-                    const total = page.total ?? offset;
-                    reporter.progress(followed.size, candidates.length, [
-                      ["followed", followed.size],
-                    ] as const);
-                    if (page.items.length === 0 || offset >= total) {break;}
-                    await sleep(READ_SPACING_MS);
+                  offset += page.items.length;
+                  const total = page.total ?? offset;
+                  reporter.progress(fresh.size, candidates.length, [
+                    ["fresh", fresh.size],
+                    ["pages", requests],
+                  ] as const);
+                  if (page.items.length === 0 || offset >= total) {
+                    break;
                   }
-                }
-
-                // Entries with no chapters at all never appear in feeds, so
-                // they land here too — which is intended.
-                const staleIds: string[] = [];
-                const unverified: string[] = [];
-                for (const id of candidates) {
-                  if (fresh.has(id)) {continue;}
-                  const knownAt = knownUploads[id];
-                  // A recent cache entry can settle it without any request…
-                  if (!sweepComplete && knownAt !== undefined) {
-                    if (knownAt >= cutoffMs) {fresh.add(id);}
-                    else {staleIds.push(id);}
-                    continue;
-                  }
-                  // …otherwise follow-state decides after a complete sweep.
-                  if (sweepComplete && followed.has(id)) {
-                    staleIds.push(id);
-                    continue;
-                  }
-                  unverified.push(id);
-                }
-
-                for (const id of unverified) {
-                  const chapter = await Effect.runPromise(
-                    client.latestChapterSince(id, cutoff),
-                  );
                   requests += 1;
-                  if (chapter?.publishedAt !== undefined) {
+                  await sleep(READ_SPACING_MS);
+                }
+                sweepComplete = true;
+              } catch (cause) {
+                reporter.problem(
+                  `Feed sweep failed after ${requests} pages (${errorMessage(cause)}); finishing with per-title checks.`,
+                );
+              }
+
+              // Phase 2 (only needed when the sweep finished): the followed
+              // list. A library title that is not followed never appears in
+              // the feed above, so its freshness is unknown and needs an
+              // individual check.
+              const followed = new Set<string>();
+              if (sweepComplete) {
+                offset = 0;
+                while (true) {
+                  const page = await Effect.runPromise(
+                    client.followedManga({ limit: 100, offset }),
+                  );
+                  for (const manga of page.items) {
+                    followed.add(manga.id);
+                  }
+                  offset += page.items.length;
+                  const total = page.total ?? offset;
+                  reporter.progress(followed.size, candidates.length, [
+                    ["followed", followed.size],
+                  ] as const);
+                  if (page.items.length === 0 || offset >= total) {
+                    break;
+                  }
+                  await sleep(READ_SPACING_MS);
+                }
+              }
+
+              // Entries with no chapters at all never appear in feeds, so
+              // they land here too — which is intended.
+              const staleIds: string[] = [];
+              const unverified: string[] = [];
+              for (const id of candidates) {
+                if (fresh.has(id)) {
+                  continue;
+                }
+                const knownAt = knownUploads[id];
+                // A recent cache entry can settle it without any request…
+                if (!sweepComplete && knownAt !== undefined) {
+                  if (knownAt >= cutoffMs) {
                     fresh.add(id);
-                    seenUploads[id] = chapter.publishedAt;
                   } else {
                     staleIds.push(id);
                   }
-                  reporter.progress(unverified.indexOf(id) + 1, unverified.length);
-                  await sleep(READ_SPACING_MS);
+                  continue;
                 }
+                // …otherwise follow-state decides after a complete sweep.
+                if (sweepComplete && followed.has(id)) {
+                  staleIds.push(id);
+                  continue;
+                }
+                unverified.push(id);
+              }
 
-                ctx.staleIds = staleIds;
-                reporter.note(
-                  `❖ ${staleIds.length} stale of ${candidates.length} candidates ` +
-                    `(${requests} requests scanned${cached.usable ? `, cache from ${cached.savedAt}` : ""}).`,
+              for (const id of unverified) {
+                const chapter = await Effect.runPromise(client.latestChapterSince(id, cutoff));
+                requests += 1;
+                if (chapter?.publishedAt !== undefined) {
+                  fresh.add(id);
+                  seenUploads[id] = chapter.publishedAt;
+                } else {
+                  staleIds.push(id);
+                }
+                reporter.progress(unverified.indexOf(id) + 1, unverified.length);
+                await sleep(READ_SPACING_MS);
+              }
+
+              ctx.staleIds = staleIds;
+              reporter.note(
+                `❖ ${staleIds.length} stale of ${candidates.length} candidates ` +
+                  `(${requests} requests scanned${cached.usable ? `, cache from ${cached.savedAt}` : ""}).`,
+              );
+
+              const mergedUploads: Record<string, number> = {};
+              Object.assign(mergedUploads, knownUploads, seenUploads);
+              await saveStaleCache(mergedUploads);
+
+              const titles: Record<string, string> = {};
+              for (let start = 0; start < staleIds.length; start += TITLE_BATCH_SIZE) {
+                const batch = staleIds.slice(start, start + TITLE_BATCH_SIZE);
+                const page = await Effect.runPromise(
+                  client.listManga({
+                    ids: batch,
+                    contentRating: [...MANGADEX_CONTENT_RATINGS],
+                    limit: 100,
+                  }),
                 );
-
-                const mergedUploads: Record<string, number> = {};
-                Object.assign(mergedUploads, knownUploads, seenUploads);
-                await saveStaleCache(mergedUploads);
-
-                const titles: Record<string, string> = {};
-                for (let start = 0; start < staleIds.length; start += TITLE_BATCH_SIZE) {
-                  const batch = staleIds.slice(start, start + TITLE_BATCH_SIZE);
-                  const page = await Effect.runPromise(
-                    client.listManga({
-                      ids: batch,
-                      contentRating: [...MANGADEX_CONTENT_RATINGS],
-                      limit: 100,
-                    }),
-                  );
-                  for (const manga of page.items) {titles[manga.id] = manga.title;}
-                  await sleep(READ_SPACING_MS);
+                for (const manga of page.items) {
+                  titles[manga.id] = manga.title;
                 }
-                ctx.titles = titles;
-                await saveStalePlan({
-                  version: 1,
-                  savedAt: new Date().toISOString(),
-                  olderThan,
-                  from: fromStatuses,
-                  to: targetStatus,
-                  staleIds,
-                  titles,
-                });
-              },
-              rendererOptions: { outputBar: 1, persistentOutput: true },
-           };
+                await sleep(READ_SPACING_MS);
+              }
+              ctx.titles = titles;
+              await saveStalePlan({
+                version: 1,
+                savedAt: new Date().toISOString(),
+                olderThan,
+                from: fromStatuses,
+                to: targetStatus,
+                staleIds,
+                titles,
+              });
+            },
+            rendererOptions: { outputBar: 1, persistentOutput: true },
+          };
 
           const loadPlanTask: ListrTask<StaleCtx> = {
             title: "Load saved plan",
@@ -481,9 +496,7 @@ export const staleStatusCommand = Command.make(
               }
               ctx.staleIds = plan.staleIds;
               ctx.titles = plan.titles;
-              reporter.note(
-                `❖ ${plan.staleIds.length} entries from plan saved ${plan.savedAt}.`,
-              );
+              reporter.note(`❖ ${plan.staleIds.length} entries from plan saved ${plan.savedAt}.`);
             },
             rendererOptions: { outputBar: Infinity, persistentOutput: true },
           };
@@ -509,12 +522,16 @@ export const staleStatusCommand = Command.make(
                         if (isAuth) {
                           try {
                             await refreshClient();
-                            await Effect.runPromise(client.updateReadingStatus(mangaId, targetStatus));
+                            await Effect.runPromise(
+                              client.updateReadingStatus(mangaId, targetStatus),
+                            );
                             done += 1;
                             reporter.progress(done, ctx.staleIds.length, [
                               ["failed", failures.length],
                             ] as const);
-                            if (done < ctx.staleIds.length) {await sleep(WRITE_SPACING_MS);}
+                            if (done < ctx.staleIds.length) {
+                              await sleep(WRITE_SPACING_MS);
+                            }
                             continue;
                           } catch (retryCause) {
                             failures.push(
@@ -529,7 +546,9 @@ export const staleStatusCommand = Command.make(
                       reporter.progress(done, ctx.staleIds.length, [
                         ["failed", failures.length],
                       ] as const);
-                      if (done < ctx.staleIds.length) {await sleep(WRITE_SPACING_MS);}
+                      if (done < ctx.staleIds.length) {
+                        await sleep(WRITE_SPACING_MS);
+                      }
                     }
                     for (const failure of failures.slice(0, DETAIL_LINE_CAP)) {
                       reporter.problem(failure);
@@ -538,7 +557,9 @@ export const staleStatusCommand = Command.make(
                       reporter.problem(`…and ${failures.length - DETAIL_LINE_CAP} more failures`);
                     }
                     reporter.note(`❖ ${done - failures.length}/${done} updated.`);
-                    if (failures.length > 0) {process.exitCode = 1;}
+                    if (failures.length > 0) {
+                      process.exitCode = 1;
+                    }
                   },
                   rendererOptions: { outputBar: 1, persistentOutput: true },
                 }
