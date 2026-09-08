@@ -40,6 +40,8 @@ export const processReadActions = async (
   actions: readonly TrackedMangaChapterReadAction[],
   deps: ReadQueueDeps,
 ): Promise<{ successfulItems: string[]; failedItems: string[] }> => {
+  console.log(`[manifold] read queue received:${actions.length}`);
+
   const successfulItems: string[] = [];
   const failedItems: string[] = [];
   const maxByManga = new Map<
@@ -49,6 +51,9 @@ export const processReadActions = async (
 
   for (const action of actions) {
     try {
+      console.log(
+        `[manifold] read action:${action.id}:${action.chapterSourceId}:${action.chapterMangaId}:${action.sourceManga.mangaId}`,
+      );
       const sourceChapterId = action.readChapter?.chapterId ?? action.chapterId;
       if (!sourceChapterId) {throw new Error("Chapter read action has no source chapter ID");}
       if (!action.chapterMangaId) {throw new Error("Chapter read action has no source manga ID");}
