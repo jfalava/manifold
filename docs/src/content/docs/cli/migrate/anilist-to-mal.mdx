@@ -1,0 +1,124 @@
+---
+title: anilist-to-mal
+description: Populate MyAnimeList manga from your AniList list (status + chapter progress).
+sidebar:
+  order: 3
+---
+
+```text
+bun run manifold migrate anilist-to-mal [flags]
+```
+
+One-shot **list → list** importer: reads your AniList manga library and writes
+matching entries onto MAL (`status`, `is_rereading`, and `num_chapters_read`).
+Anime is never touched. The registry and continuous MAL backup projector are
+not involved.
+
+MAL is a disposable downstream backup. Prefer wiping MAL first, then importing
+from AniList while every other MAL writer stays disconnected.
+
+## Prerequisites
+
+1. [`login anilist`](/cli/login/anilist) and [`login mal`](/cli/login/mal)
+2. Pause or disconnect every MAL writer (including Manifold's MAL backup)
+3. Optional clean slate: [`mal wipe manga --apply --backup-paused`](/cli/mal/wipe-manga)
+4. Dry-run this command, review unmatched titles, then `--apply`
+
+## Flags
+
+### `--anilist-token <token>`
+
+Optional AniList access token override. Resolve order: flag →
+`MANIFOLD_ANILIST_TOKEN` → `login anilist` keychain.
+
+Example:
+
+```text
+bun run manifold login anilist
+bun run manifold migrate anilist-to-mal
+```
+
+### `--mal-token <token>`
+
+Optional MAL access token override. Resolve order: flag → `MANIFOLD_MAL_TOKEN`
+→ `login mal` keychain. A supplied token does not refresh.
+
+### `--apply`
+
+Write list status and chapter progress to MAL. Without this flag the command
+only reports matches.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold migrate anilist-to-mal --apply --backup-paused
+```
+
+### `--backup-paused`
+
+Acknowledge that every other MAL writer is paused or disconnected. **Required
+with `--apply`.** When `MANIFOLD_TOKEN` is set, the command also GETs
+`/v1/auth/mal` and **refuses `--apply`** while Manifold's backup connection is
+still active. `--backup-paused` does not bypass that check.
+
+### `--skip-progress`
+
+Do not seed `num_chapters_read` from AniList progress. Status (and reread flag)
+still write.
+
+- Default: `false`
+
+### `--limit <n>`
+
+Only process the first N AniList entries after export. Useful for smoke dry
+runs on large libraries.
+
+### `--api-origin <url>` / `--api-token <token>`
+
+Personal API origin and token for the backup-connection check. Fall back to
+`MANIFOLD_API_ORIGIN` and `MANIFOLD_TOKEN`.
+
+## Matching
+
+1. **AniList `idMal`** when the media carries a MAL cross-link
+2. **Title search** via the public MAL client id (`MANIFOLD_MAL_CLIENT_ID` or
+   the client id stored in the keychain session): unique exact normalized title
+   (including synonyms), then a unique conservative partial
+3. Ambiguous or empty candidate sets stay **unmatched** — never forced
+
+## Status map
+
+| AniList   | MAL                                      |
+| --------- | ---------------------------------------- |
+| CURRENT   | `reading`                                |
+| PLANNING  | `plan_to_read`                           |
+| COMPLETED | `completed`                              |
+| DROPPED   | `dropped`                                |
+| PAUSED    | `on_hold`                                |
+| REPEATING | `reading` + `is_rereading=true`          |
+
+Chapter progress floors to an integer and becomes `num_chapters_read` unless
+`--skip-progress` is set.
+
+## Behaviour
+
+- Dry-run by default; no MAL PATCH until `--apply --backup-paused`
+- Writes use the same 1.5s MAL client pacing and 429/5xx retry as wipe
+- Per-entry write failures are reported; successful entries still commit
+- Exit code `1` when any entry is unmatched or fails to write
+- Does not change tracker authority, registry bindings, or the continuous
+  backup projector (which remains status-only after reconnect)
+
+## Typical flow
+
+```text
+bun run manifold login anilist
+bun run manifold login mal
+# disconnect Manifold MAL backup in admin / credentials
+bun run manifold mal wipe manga --apply --backup-paused
+bun run manifold migrate anilist-to-mal
+bun run manifold migrate anilist-to-mal --apply --backup-paused
+# reconnect MAL backup only after the import looks right
+```

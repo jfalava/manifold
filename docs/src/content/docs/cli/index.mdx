@@ -72,8 +72,9 @@ bun run manifold registry import
 ### MyAnimeList authentication
 
 Prefer local OAuth over pasting tokens. Full setup:
-[login mal](/cli/login/mal). Primary consumer:
-[`mal wipe manga`](/cli/mal/wipe-manga).
+[login mal](/cli/login/mal). Consumers:
+[`mal wipe manga`](/cli/mal/wipe-manga),
+[`migrate anilist-to-mal`](/cli/migrate/anilist-to-mal).
 
 ```text
 bun run manifold login mal
@@ -88,8 +89,9 @@ refresh token.
 
 ### `--mal-token <token>`
 
-Optional MAL access token override for `mal wipe manga`. Resolve order: flag
-→ `MANIFOLD_MAL_TOKEN` → keychain login. A supplied token does not refresh.
+Optional MAL access token override for `mal wipe manga` and
+`migrate anilist-to-mal`. Resolve order: flag → `MANIFOLD_MAL_TOKEN` → keychain
+login. A supplied token does not refresh.
 
 Example:
 

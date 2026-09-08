@@ -10,6 +10,7 @@
     "manifold": "bun index.ts",
     "md2al": "bun index.ts migrate mangadex-to-anilist",
     "al2md": "bun index.ts migrate anilist-to-mangadex",
+    "al2mal": "bun index.ts migrate anilist-to-mal",
     "anilist:wipe": "bun index.ts anilist wipe manga",
     "anilist:pas5": "bun index.ts anilist create pas5",
     "mal:wipe": "bun index.ts mal wipe manga",

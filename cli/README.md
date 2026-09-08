@@ -18,6 +18,7 @@ manifold mangadex unfollow-dropped         # unfollow MangaDex titles by status
 manifold mal wipe manga                    # preview a MAL manga-only wipe
 manifold migrate mangadex-to-anilist       # MangaDex library → private AniList entries
 manifold migrate anilist-to-mangadex       # AniList list → MangaDex statuses + markers
+manifold migrate anilist-to-mal            # AniList list → MAL status + chapter progress
 manifold ops pending | retry               # op-log triage
 manifold reconcile diff                    # live AniList list vs registry (read-only)
 manifold registry import                   # snapshot AniList list into the registry
@@ -108,5 +109,6 @@ rerun the same command to scan and delete survivors. A DELETE 404 means the entr
 is already absent. Keep writers disconnected until the subsequent import is done;
 reconnecting can resume old backup operations.
 
-The planned population source is AniList. This command only clears MAL; it does
-not implement the AniList-to-MAL importer or switch the tracker's primary provider.
+After wipe, populate MAL with
+[`migrate anilist-to-mal`](../docs/src/content/docs/cli/migrate/anilist-to-mal.mdx).
+Wipe does not change the tracker's primary provider.

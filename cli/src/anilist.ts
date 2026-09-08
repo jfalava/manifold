@@ -16,13 +16,21 @@ export interface AniListEntry {
   readonly status: string;
   /** Integer chapter progress as reported by AniList. */
   readonly progress?: number;
+  /** MAL cross-link from AniList media when present (digits only). */
+  readonly malId?: string;
+  /** English / romaji / synonyms for title matching on other providers. */
+  readonly titles?: readonly string[];
 }
 
 interface MediaList {
   mediaId?: number;
   status?: string;
   progress?: number;
-  media?: { title?: { romaji?: string; english?: string } };
+  media?: {
+    idMal?: number | null;
+    title?: { romaji?: string; english?: string };
+    synonyms?: string[] | null;
+  };
 }
 
 interface ListCollection {
@@ -49,7 +57,11 @@ const MEDIA_LIST_QUERY = `query ($userId: Int) {
         mediaId
         status
         progress
-        media { title { romaji english } }
+        media {
+          idMal
+          title { romaji english }
+          synonyms
+        }
       }
     }
   }
@@ -260,11 +272,22 @@ export const fetchAniListMangaEntries = async (
         entry.media?.title?.english ??
         entry.media?.title?.romaji ??
         `AniList #${entry.mediaId}`;
+      const titleVariants = [
+        entry.media?.title?.english,
+        entry.media?.title?.romaji,
+        ...(entry.media?.synonyms ?? []),
+      ].filter((value): value is string => isString(value) && value.trim().length > 0);
+      const malId =
+        isFiniteNumber(entry.media?.idMal) && entry.media.idMal > 0
+          ? String(Math.floor(entry.media.idMal))
+          : undefined;
       entries.push({
         mediaId: entry.mediaId,
         title,
         status,
-        ...(isFiniteNumber(entry.progress) && entry.progress >= 1 && { progress: Math.floor(entry.progress) })
+        ...(isFiniteNumber(entry.progress) && entry.progress >= 1 && { progress: Math.floor(entry.progress) }),
+        ...(malId && { malId }),
+        ...(titleVariants.length > 0 && { titles: [...new Set(titleVariants)] }),
       });
     }
   }

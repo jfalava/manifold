@@ -118,8 +118,9 @@ bun run manifold mal wipe manga --apply --backup-paused
 - Keep writers disconnected until any subsequent import is finished;
   reconnecting can resume old backup operations.
 
-An empty manga list exits cleanly. This command only clears MAL. It does not
-implement an AniList-to-MAL importer or change the tracker's primary provider.
+An empty manga list exits cleanly. This command only clears MAL. Populate next
+with [`migrate anilist-to-mal`](/cli/migrate/anilist-to-mal). It does not change
+the tracker's primary provider.
 
 <Aside type="danger" title="Irreversible">
   This permanently removes every manga list entry on the signed-in MAL account.

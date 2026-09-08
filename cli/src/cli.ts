@@ -8,13 +8,14 @@ import { malCommand } from "@/commands/mal";
 import { mangadexCommand } from "@/commands/mangadex";
 import { mangadexPrefillCommand } from "@/commands/mangadex-prefill";
 import { importCommand, opsCommand, reconcileCommand } from "@/commands/toolbox";
+import { al2malCommand } from "@/commands/al2mal";
 import { md2alCommand } from "@/commands/md2al";
 
 const migrateCommand = Command.make("migrate").pipe(
   Command.withDescription(
-    "Cross-provider library migrations between AniList and MangaDex.",
+    "Cross-provider library migrations (AniList ↔ MangaDex, AniList → MAL).",
   ),
-  Command.withSubcommands([md2alCommand, al2mdCommand]),
+  Command.withSubcommands([md2alCommand, al2mdCommand, al2malCommand]),
 );
 
 const reconcileGroup = Command.make("reconcile").pipe(

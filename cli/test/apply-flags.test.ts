@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const mutatingCommands = [
   ["migrate", "mangadex-to-anilist"],
   ["migrate", "anilist-to-mangadex"],
+  ["migrate", "anilist-to-mal"],
   ["anilist", "wipe", "manga"],
   ["mal", "wipe", "manga"],
   ["anilist", "create", "pas5"],
