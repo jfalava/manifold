@@ -9,6 +9,7 @@ import {
   openBunComixView,
   waitForChromeDevToolsUrl,
 } from "@/comix-capture";
+import { resolveAniListToken } from "@/anilist-auth";
 import { loadRegistrySearchTitles, searchTitlesFor } from "@/comix-aliases";
 import { addComixSearchItems, hidOf, pickMatch, type ComixSearchItem } from "@/comix-match";
 import {
@@ -95,7 +96,7 @@ export const comixPrefillCommand = Command.make("comix", {
   anilistToken: Flag.string("anilist-token").pipe(
     Flag.optional,
     Flag.withDescription(
-      "Falls back to MANIFOLD_ANILIST_TOKEN. Used to search Comix with English/romaji aliases.",
+      "Optional AniList access token override for English/romaji aliases. Prefer anilist login (keychain) or MANIFOLD_ANILIST_TOKEN.",
     ),
   ),
 }).pipe(
@@ -133,9 +134,8 @@ export const comixPrefillCommand = Command.make("comix", {
           });
           const stored =
             seedCookies.length > 0 ? undefined : await loadStoredSession(bunSecretStore);
-          const anilist = resolveValue(
-            anilistToken,
-            "MANIFOLD_ANILIST_TOKEN",
+          const anilist = await resolveAniListToken(
+            Option.getOrUndefined(anilistToken),
           );
           let chromeUrl =
             resolveValue(chromeCdpUrl, "MANIFOLD_COMIX_CHROME_CDP_URL") ??
@@ -178,7 +178,7 @@ export const comixPrefillCommand = Command.make("comix", {
             );
           } else {
             frameDetail(
-              "no MANIFOLD_ANILIST_TOKEN: searching the registry title, then MangaDex alts if a mangadex link exists",
+              "no AniList login: searching the registry title, then MangaDex alts if a mangadex link exists",
             );
           }
 

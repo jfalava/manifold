@@ -1,0 +1,63 @@
+---
+title: anilist login
+description: Authorize AniList locally and store the access token in the OS keychain.
+sidebar:
+  order: 2
+---
+
+```text
+bun run manifold anilist login [flags]
+```
+
+Local authorization-code OAuth for CLI commands that talk to AniList (migrations,
+reconcile, registry import/prefill, wipe-al). Prefer this over pasting pin tokens.
+
+## Setup
+
+1. Create a **separate** AniList developer client at
+   [anilist.co/settings/developer](https://anilist.co/settings/developer).
+2. Set the redirect URI to exactly `http://127.0.0.1:8767/callback`.
+3. Put the client id and secret in `cli/.env`:
+
+```text
+MANIFOLD_ANILIST_CLIENT_ID=
+MANIFOLD_ANILIST_CLIENT_SECRET=
+```
+
+Do **not** reuse:
+
+- admin/tracker implicit client `49218` (`response_type=token`)
+- the Worker's confidential client used for API-side OAuth
+
+The CLI needs an authorization-code client with the loopback redirect above.
+
+## Flags
+
+### `--client-id <id>`
+
+AniList CLI client ID. Falls back to `MANIFOLD_ANILIST_CLIENT_ID`.
+
+Example:
+
+```text
+bun run manifold anilist login --client-id "$MANIFOLD_ANILIST_CLIENT_ID"
+```
+
+## Usage
+
+```text
+bun run manifold anilist login
+```
+
+The command prints a browser authorization URL, serves
+`http://127.0.0.1:8767/callback` for up to five minutes, exchanges the code for
+an access token, validates it with a Viewer query, and stores the session in the
+OS keychain under `manifold` / `anilist-session`.
+
+AniList does **not** issue refresh tokens. When the session expires, run login
+again. Optionally set `MANIFOLD_ANILIST_TOKEN` to override the keychain without
+expiry tracking (useful for one-off scripts). If that env var is set after
+login, the CLI warns that it still takes precedence.
+
+Downstream commands resolve credentials as: **flag → `MANIFOLD_ANILIST_TOKEN` →
+keychain**.

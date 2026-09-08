@@ -13,6 +13,7 @@ manifold migrate md2al                     # MangaDex library → private AniLis
 manifold migrate anilist-to-mangadex       # AniList list → MangaDex statuses + markers
 manifold migrate al2pas5                   # AniList list → Paperback .pas5 backup
 manifold migrate wipe-al                   # delete AniList manga state (destructive)
+manifold anilist login                     # authorize AniList and save the token in the OS keychain
 manifold mal login                         # authorize MAL and save tokens in the OS keychain
 manifold migrate wipe-mal                  # preview a MAL manga-only wipe
 manifold stale-status                      # move stale MangaDex titles to a new status
@@ -24,9 +25,10 @@ manifold registry mangadex                 # backfill MangaDex provider links
 manifold registry comix                    # backfill Comix hid links via local Chrome
 ```
 
-Credentials resolve flag → `MANIFOLD_*` env name
-(`MANIFOLD_TOKEN`, `MANIFOLD_ANILIST_TOKEN`, `MANIFOLD_API_ORIGIN`). AniList
-writes run locally — AniList blocks Cloudflare Worker egress IPs.
+Credentials resolve flag → `MANIFOLD_*` env → OS keychain login where applicable
+(`MANIFOLD_TOKEN`, `anilist login` / `MANIFOLD_ANILIST_TOKEN`, `mal login` /
+`MANIFOLD_MAL_TOKEN`, `MANIFOLD_API_ORIGIN`). AniList writes run locally —
+AniList blocks Cloudflare Worker egress IPs.
 
 `registry comix` does not paste `cf_clearance` into `fetch`. It opens a
 headed Chrome window with a dedicated `~/.manifold/comix-chrome` profile
@@ -40,7 +42,29 @@ bun run manifold registry comix
 
 If Cloudflare appears, solve it in that new Chrome window and press Enter.
 
+## AniList login
+
+Docs: [anilist login](../docs/src/content/docs/cli/anilist-login.mdx).
+
+Register a separate AniList authorization-code client with redirect URI
+`http://127.0.0.1:8767/callback`. Do not reuse the admin/tracker implicit client
+(`49218`) or the Worker's confidential client. Set `MANIFOLD_ANILIST_CLIENT_ID`
+and `MANIFOLD_ANILIST_CLIENT_SECRET` in `cli/.env`. From `cli/`:
+
+```sh
+bun index.ts anilist login
+```
+
+Login prints a browser authorization URL and waits up to five minutes for the
+loopback callback. The access token lives in the OS keychain under `manifold` /
+`anilist-session`. AniList does not issue refresh tokens, so re-run login when
+the session expires. Optionally set `MANIFOLD_ANILIST_TOKEN` to override the
+keychain (no expiry tracking). Prefer login over pasting pin tokens.
+
 ## MyAnimeList manga wipe
+
+Docs: [mal login](../docs/src/content/docs/cli/mal-login.mdx) ·
+[wipe-mal](../docs/src/content/docs/cli/migrate/wipe-mal.mdx).
 
 Register a MAL OAuth client with redirect URI `http://127.0.0.1:8766/callback`.
 Use a separate CLI client rather than replacing the deployed API's redirect URI.

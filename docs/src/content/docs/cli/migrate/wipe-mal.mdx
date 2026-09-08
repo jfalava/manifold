@@ -1,0 +1,128 @@
+---
+title: wipe-mal
+description: Delete every MyAnimeList manga list entry. Anime is never touched.
+sidebar:
+  order: 5
+---
+
+```text
+bun run manifold migrate wipe-mal [flags]
+```
+
+**Destructive.** Wipes the MAL **manga** list across every status, including
+adult entries. Anime, profile content, privacy settings, and AniList are never
+read or modified. No backup is created.
+
+The command defaults to a dry run: it scans every manga-list page, reports the
+account and count, and exits without deleting. `--apply` is the confirmation —
+including in non-interactive runs. There is no yes/no prompt and no `--yes`
+flag.
+
+Authenticate first with [mal login](/cli/mal-login), or pass a token override.
+
+## Flags
+
+### `--apply`
+
+Delete all scanned MAL manga list entries. Without this flag, the command only
+scans and reports.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold migrate wipe-mal --apply --backup-paused
+```
+
+### `--backup-paused`
+
+Acknowledge that every other MAL writer is paused or disconnected. **Required
+with `--apply`.** This flag does not stop writers and does not override the API
+connection check.
+
+- Default: `false`
+
+Example:
+
+```text
+bun run manifold migrate wipe-mal --apply --backup-paused
+```
+
+### `--mal-token <token>`
+
+Optional MAL access token override. Prefer [mal login](/cli/mal-login)
+(keychain) so refresh works. Falls back to `MANIFOLD_MAL_TOKEN`. A supplied
+token does **not** refresh automatically.
+
+Example:
+
+```text
+bun run manifold mal login
+bun run manifold migrate wipe-mal
+```
+
+### `--api-token <token>`
+
+Personal API token used only for the backup-connection check against
+`/v1/auth/mal`. Falls back to `MANIFOLD_TOKEN`.
+
+Example:
+
+```text
+bun run manifold migrate wipe-mal --api-token "$MANIFOLD_TOKEN"
+```
+
+### `--api-origin <url>`
+
+Personal API origin for the backup-connection check. Falls back to
+`MANIFOLD_API_ORIGIN`.
+
+- Default: `https://manifold.jfa.dev/api`
+
+Example:
+
+```text
+bun run manifold migrate wipe-mal --api-origin https://manifold.example/api
+```
+
+## Usage
+
+```text
+bun run manifold mal login
+bun run manifold migrate wipe-mal
+bun run manifold migrate wipe-mal --apply --backup-paused
+```
+
+## Before applying
+
+1. Disconnect the Manifold API's MAL connection in admin Credentials.
+2. Pause every other MAL writer and let in-flight writes finish.
+3. When `MANIFOLD_TOKEN` is set, the command GETs `/v1/auth/mal` and **refuses
+   `--apply`** while that connection remains active. `--backup-paused` does not
+   bypass this check.
+4. Without API credentials, the connection is not checked — verify writers
+   yourself.
+
+## Behaviour
+
+- Scans every manga-list page (including adult entries) **before** any delete.
+- Deletes sequentially with 1.5-second pacing.
+- Progress bar shows count, percentage, elapsed time, and ETA.
+- Retries HTTP 429 / 5xx at most three times; stops rather than waiting an
+  unbounded `Retry-After`.
+- After deletes, re-fetches the list and fails if any manga remain.
+- A DELETE 404 means the entry is already gone.
+- On failure, rerun the same command to scan and delete survivors (no checkpoint
+  file).
+- Keep writers disconnected until any subsequent import is finished;
+  reconnecting can resume old backup operations.
+
+An empty manga list exits cleanly. This command only clears MAL. It does not
+implement an AniList-to-MAL importer or change the tracker's primary provider.
+
+<Aside type="danger" title="Irreversible">
+  This permanently removes every manga list entry on the signed-in MAL account.
+  Prefer exporting or migrating first if you still need the data. Anime is
+  untouched.
+</Aside>

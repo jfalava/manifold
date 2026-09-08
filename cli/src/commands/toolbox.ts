@@ -15,6 +15,7 @@ import {
   fetchAniListMangaEntries,
   type AniListEntry,
 } from "@/anilist";
+import { resolveAniListToken } from "@/anilist-auth";
 import { resolveValue } from "@/env-resolve";
 import {
   abortFrame,
@@ -145,7 +146,9 @@ export const registryByAnilistId = async (
 
 const anilistTokenFlag = Flag.string("anilist-token").pipe(
   Flag.optional,
-  Flag.withDescription("Falls back to MANIFOLD_ANILIST_TOKEN.")
+  Flag.withDescription(
+    "AniList access token override. Prefer anilist login (keychain) or MANIFOLD_ANILIST_TOKEN.",
+  ),
 );
 
 const apiOriginFlag = Flag.string("api-origin").pipe(
@@ -261,8 +264,12 @@ export const reconcileCommand = Command.make("diff", {
       try: async () => {
         openFrame("reconcile diff");
         try {
-          const token = resolveValue(anilistToken, "MANIFOLD_ANILIST_TOKEN");
-          if (!token) {throw new Error("AniList token missing (MANIFOLD_ANILIST_TOKEN)");}
+          const token = await resolveAniListToken(Option.getOrUndefined(anilistToken));
+          if (!token) {
+            throw new Error(
+              "AniList token missing: run anilist login, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN",
+            );
+          }
           const config = apiConfig(apiOrigin, apiToken);
 
           const live: readonly AniListEntry[] = await fetchAniListMangaEntries(token);
@@ -320,8 +327,12 @@ export const importCommand = Command.make("import", {
       try: async () => {
         openFrame("registry import");
         try {
-          const token = resolveValue(anilistToken, "MANIFOLD_ANILIST_TOKEN");
-          if (!token) {throw new Error("AniList token missing (MANIFOLD_ANILIST_TOKEN)");}
+          const token = await resolveAniListToken(Option.getOrUndefined(anilistToken));
+          if (!token) {
+            throw new Error(
+              "AniList token missing: run anilist login, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN",
+            );
+          }
 
           const live = await fetchAniListMangaEntries(token);
           frameDetail(`fetched ${live.length} AniList entries`);

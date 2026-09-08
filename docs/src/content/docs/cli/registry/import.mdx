@@ -17,13 +17,13 @@ Dry-run until `--apply`. The dry run reports how many live AniList entries are i
 
 ### `--anilist-token <token>`
 
-AniList access token used to read the live manga list. Falls back to
-`MANIFOLD_ANILIST_TOKEN`.
+AniList access token for the live manga list. Resolve order: flag → `MANIFOLD_ANILIST_TOKEN` → `anilist login` keychain.
 
 Example:
 
 ```text
-bun run manifold registry import --anilist-token "$MANIFOLD_ANILIST_TOKEN"
+bun run manifold anilist login
+bun run manifold registry import
 ```
 
 ### `--apply`

@@ -1,6 +1,7 @@
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage } from "@manifold/json";
+import { resolveAniListToken } from "@/anilist-auth";
 import {
   deleteActivitiesWithProgress,
   deleteEntriesWithProgress,
@@ -36,18 +37,27 @@ export const wipeAlCommand = Command.make("wipe-al", {
   ),
   anilistToken: Flag.string("anilist-token").pipe(
     Flag.optional,
-    Flag.withDescription("Falls back to MANIFOLD_ANILIST_TOKEN."),
+    Flag.withDescription(
+      "AniList access token override. Prefer anilist login (keychain) or MANIFOLD_ANILIST_TOKEN.",
+    ),
   ),
 }).pipe(
   Command.withDescription(
     "NUKE: delete ALL manga list entries and ALL manga-related activities on AniList. Anime is never touched.",
   ),
-  Command.withHandler(({ apply, yes, anilistToken }) => {
-    const token =
-      Option.getOrUndefined(anilistToken) ??
-      process.env.MANIFOLD_ANILIST_TOKEN ??
-      "";
-    return Effect.gen(function* () {
+  Command.withHandler(({ apply, yes, anilistToken }) =>
+    Effect.gen(function* () {
+      const token =
+        (yield* Effect.tryPromise(() =>
+          resolveAniListToken(Option.getOrUndefined(anilistToken)),
+        )) ?? "";
+      if (!token) {
+        return yield* Effect.fail(
+          new Error(
+            "Missing AniList token: run anilist login, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
+          ),
+        );
+      }
       // Scan phase runs to completion before the interactive confirm so the
       // readline prompt never fights the listr2 renderer for the screen.
       const scan: WipeCtx = yield* Effect.tryPromise({
@@ -73,7 +83,7 @@ export const wipeAlCommand = Command.make("wipe-al", {
               title: "Fetch manga list entries",
               task: async (ctx, _task) => {
                 if (viewerId === undefined) {
-                  throw new Error("Viewer lookup failed (is MANIFOLD_ANILIST_TOKEN set?)");
+                  throw new Error("Viewer lookup failed after AniList login.");
                 }
                 ctx.entries = await fetchMangaEntries(token, viewerId);
               },
@@ -82,7 +92,7 @@ export const wipeAlCommand = Command.make("wipe-al", {
               title: "Fetch manga-related activities",
               task: async (ctx, task) => {
                 if (viewerId === undefined) {
-                  throw new Error("Viewer lookup failed (is MANIFOLD_ANILIST_TOKEN set?)");
+                  throw new Error("Viewer lookup failed after AniList login.");
                 }
                 ctx.activities = await fetchMangaActivities(
                   token,
@@ -176,6 +186,6 @@ export const wipeAlCommand = Command.make("wipe-al", {
         catch: (cause) =>
           new Error(errorMessage(cause)),
       });
-    }).pipe(Effect.onError(() => Effect.sync(abortFrame)));
-  }),
+    }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
+  ),
 );

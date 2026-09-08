@@ -2,6 +2,7 @@ import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage } from "@manifold/json";
 
+import { ANILIST_REDIRECT_URI, resolveAniListToken } from "@/anilist-auth";
 import { fetchAniListMangaEntries, type AniListEntry } from "@/anilist";
 import { runMigration } from "@/migration";
 import { createMangaDexTokenManager } from "@/mangadex-token";
@@ -24,7 +25,10 @@ const optional = (name: string, description: string) =>
 export const al2mdCommand = Command.make(
   "migrate",
   {
-    anilistToken: optional("anilist-token", "AniList access token. Falls back to MANIFOLD_ANILIST_TOKEN."),
+    anilistToken: optional(
+      "anilist-token",
+      "AniList access token override. Prefer anilist login (keychain) or MANIFOLD_ANILIST_TOKEN.",
+    ),
     apply: Flag.boolean("apply").pipe(
       Flag.withDefault(false),
       Flag.withDescription("Write statuses and read markers to MangaDex. Default is a dry run."),
@@ -63,7 +67,9 @@ export const al2mdCommand = Command.make(
       };
 
       const token =
-        resolveValue(anilistToken, "MANIFOLD_ANILIST_TOKEN") ?? "";
+        (yield* Effect.tryPromise(() =>
+          resolveAniListToken(Option.getOrUndefined(anilistToken)),
+        )) ?? "";
       const credentials = {
         clientId:
           resolveValue(
@@ -90,10 +96,8 @@ export const al2mdCommand = Command.make(
       if (!token) {
         return yield* Effect.fail(
           new Error(
-            "Missing AniList token: pass --anilist-token or set MANIFOLD_ANILIST_TOKEN.\n" +
-              "Create a client at https://anilist.co/settings/developer with\n" +
-              'redirect URI "https://anilist.co/api/v2/oauth/pin", then open\n' +
-              "https://anilist.co/api/v2/oauth/authorize?client_id=YOUR_ID&redirect_uri=https://anilist.co/api/v2/oauth/pin&response_type=token",
+            "Missing AniList token: run anilist login, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.\n" +
+              `Register ${ANILIST_REDIRECT_URI} on a separate authorization-code client, then run: bun index.ts anilist login`,
           ),
         );
       }

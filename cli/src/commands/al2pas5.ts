@@ -9,6 +9,7 @@ import {
   fetchAniListRichEntries,
   type AniListRichEntry,
 } from "@/anilist";
+import { resolveAniListToken } from "@/anilist-auth";
 import {
   buildPas5Zip,
   parsePas5,
@@ -427,7 +428,9 @@ export const al2Pas5Command = Command.make("al2pas5", {
   ),
   anilistToken: Flag.string("anilist-token").pipe(
     Flag.optional,
-    Flag.withDescription("Falls back to MANIFOLD_ANILIST_TOKEN."),
+    Flag.withDescription(
+      "AniList access token override. Prefer anilist login (keychain) or MANIFOLD_ANILIST_TOKEN.",
+    ),
   ),
   apiOrigin: Flag.string("api-origin").pipe(
     Flag.optional,
@@ -451,12 +454,19 @@ export const al2Pas5Command = Command.make("al2pas5", {
       anilistToken,
       apiOrigin,
       apiToken,
-    }) => {
-      const token =
-        Option.getOrUndefined(anilistToken) ??
-        process.env.MANIFOLD_ANILIST_TOKEN ??
-        "";
-      return Effect.gen(function* () {
+    }) =>
+      Effect.gen(function* () {
+        const token =
+          (yield* Effect.tryPromise(() =>
+            resolveAniListToken(Option.getOrUndefined(anilistToken)),
+          )) ?? "";
+        if (!token) {
+          return yield* Effect.fail(
+            new Error(
+              "Missing AniList token: run anilist login, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
+            ),
+          );
+        }
         const tabFilter = yield* Effect.try({
           try: () => parseTabsFlag(tabs),
           catch: (cause) =>
@@ -739,7 +749,6 @@ export const al2Pas5Command = Command.make("al2pas5", {
           catch: (cause) =>
             new Error(errorMessage(cause)),
         });
-      }).pipe(Effect.onError(() => Effect.sync(abortFrame)));
-    },
+      }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),
 );

@@ -13,8 +13,8 @@ own provider sessions separately.
 
 | Provider    | How you authenticate                               |
 | ----------- | -------------------------------------------------- |
-| AniList     | Browser OAuth (device / PIN flows for CLI)         |
-| MyAnimeList | Browser OAuth                                      |
+| AniList     | Admin: browser implicit OAuth; CLI: [`anilist login`](/cli/anilist-login) (authorization-code loopback) |
+| MyAnimeList | Admin: browser code flow; CLI: [`mal login`](/cli/mal-login) (PKCE loopback) |
 | MangaDex    | Personal-client (password grant or personal token) |
 | Comix       | Native Comix extension on the device               |
 
@@ -25,10 +25,13 @@ Set it in the tracker settings for Paperback and pass it through the CLI flag
 or environment variable for local commands. It authorizes access to your
 Durable Object; it is not an upstream AniList/MangaDex password.
 
-Upstream OAuth tokens (AniList, MAL, MangaDex) are obtained through the API's
-auth routes and stored encrypted on the DO. Worker egress cannot call AniList
-reliably (IP blocks), which is why AniList **writes** from migrations and
-`anilist:*` ops run on your machine or device.
+Admin/API upstream OAuth (MAL code flow; AniList browser-minted token import)
+stores encrypted tokens on the DO. Worker egress cannot call AniList reliably
+(IP blocks), so AniList **writes** from migrations and `anilist:*` ops run on
+your machine. The CLI keeps its own AniList/MAL sessions in the OS keychain via
+[`anilist login`](/cli/anilist-login) and [`mal login`](/cli/mal-login) —
+separate OAuth clients from the deployed API. MAL manga wipe:
+[`wipe-mal`](/cli/migrate/wipe-mal).
 
 ## Provider sessions are provider-owned
 

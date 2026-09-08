@@ -1,5 +1,6 @@
 import { Command } from "effect/unstable/cli";
 
+import { anilistCommand } from "@/commands/anilist-auth";
 import { al2mdCommand } from "@/commands/al2md";
 import { al2Pas5Command } from "@/commands/al2pas5";
 import { comixPrefillCommand } from "@/commands/comix-prefill";
@@ -44,6 +45,7 @@ export const makeRootCommand = () =>
       unfollowDroppedCommand,
       mangadexCommand,
       malCommand,
+      anilistCommand,
       opsCommand,
       reconcileGroup,
       registryCommand,

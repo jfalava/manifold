@@ -15,13 +15,13 @@ Exports your MangaDex library, matches each title to AniList (external links, ti
 
 ### `--anilist-token <token>`
 
-AniList access token used to create private list entries. Falls back to
-`MANIFOLD_ANILIST_TOKEN`.
+AniList access token override. Resolve order: flag → `MANIFOLD_ANILIST_TOKEN` → `anilist login` keychain.
 
 Example:
 
 ```text
-bun run manifold migrate md2al --anilist-token "$MANIFOLD_ANILIST_TOKEN"
+bun run manifold anilist login
+bun run manifold migrate md2al
 ```
 
 ### `--mangadex-token <token>`

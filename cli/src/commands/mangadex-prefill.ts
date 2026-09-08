@@ -2,8 +2,8 @@ import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import type { ListrTask } from "listr2";
 import { errorMessage } from "@manifold/json";
+import { resolveAniListToken } from "@/anilist-auth";
 import { loadRegistrySearchTitles } from "@/comix-aliases";
-import { resolveValue } from "@/env-resolve";
 import { matchesStatusFilter, parseStatusFilter, STATUS_FILTER_HINT } from "@/registry-status";
 import {
   abortFrame,
@@ -72,7 +72,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
   anilistToken: Flag.string("anilist-token").pipe(
     Flag.optional,
     Flag.withDescription(
-      "Falls back to MANIFOLD_ANILIST_TOKEN. Used to resolve with English/romaji/native/synonym aliases.",
+      "Optional AniList access token override for English/romaji/native/synonym aliases. Prefer anilist login (keychain) or MANIFOLD_ANILIST_TOKEN.",
     ),
   ),
 }).pipe(
@@ -84,7 +84,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
       try: async () => {
         const config: ApiConfig = apiConfig(apiOrigin, apiToken);
         const statusFilter = parseStatusFilter(status);
-        const anilist = resolveValue(anilistToken, "MANIFOLD_ANILIST_TOKEN");
+        const anilist = await resolveAniListToken(Option.getOrUndefined(anilistToken));
         openFrame(`MangaDex registry prefill → ${apply ? "apply" : "dry run"}`);
         if (statusFilter) {
           frameDetail(`status filter: ${[...statusFilter].join(", ")}`);
@@ -92,7 +92,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
         if (anilist) {
           frameDetail("resolving with AniList english/romaji/native/synonyms");
         } else {
-          frameDetail("no MANIFOLD_ANILIST_TOKEN: resolving with the registry title only");
+          frameDetail("no AniList login: resolving with the registry title only");
         }
 
         const limitValue = Option.getOrUndefined(limit);

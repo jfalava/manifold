@@ -1,0 +1,60 @@
+---
+title: mal login
+description: Authorize MyAnimeList locally and store access and refresh tokens in the OS keychain.
+sidebar:
+  order: 3
+---
+
+```text
+bun run manifold mal login [flags]
+```
+
+Local OAuth (authorization code + plain PKCE) for CLI commands that talk to
+MyAnimeList. Prefer this over pasting access tokens. The primary consumer today
+is [wipe-mal](/cli/migrate/wipe-mal).
+
+## Setup
+
+1. Create a **separate** MAL OAuth client in the
+   [MyAnimeList API console](https://myanimelist.net/apiconfig).
+2. Set the redirect URI to exactly `http://127.0.0.1:8766/callback`.
+3. Put the client id in `cli/.env`, plus the secret if the client requires it:
+
+```text
+MANIFOLD_MAL_CLIENT_ID=
+MANIFOLD_MAL_CLIENT_SECRET=
+```
+
+Do **not** reuse the deployed API's MAL OAuth client or its refresh token. The
+CLI needs its own redirect URI and stores its own session in the OS keychain.
+
+## Flags
+
+### `--client-id <id>`
+
+MAL OAuth client ID. Falls back to `MANIFOLD_MAL_CLIENT_ID`.
+
+Example:
+
+```text
+bun run manifold mal login --client-id "$MANIFOLD_MAL_CLIENT_ID"
+```
+
+## Usage
+
+```text
+bun run manifold mal login
+```
+
+The command prints a browser authorization URL, serves
+`http://127.0.0.1:8766/callback` for up to five minutes, exchanges the code
+(with the PKCE verifier) for tokens, validates the profile, and stores the
+session in the OS keychain under `manifold` / `mal-session`.
+
+Access **and** refresh tokens are saved. When the access token expires, CLI
+commands that use the keychain session refresh automatically and persist rotated
+tokens. Optionally set `MANIFOLD_MAL_TOKEN` for a one-shot access-token override
+with **no** automatic refresh.
+
+Downstream wipe credentials resolve as: **flag → `MANIFOLD_MAL_TOKEN` →
+keychain**.
