@@ -66,10 +66,10 @@ export const requestMalTokens = async (
     method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
     body: grant, signal: AbortSignal.timeout(30_000), redirect: "error",
   });
-  if (!response.ok) {throw new Error(`MAL token exchange failed: HTTP ${response.status}. Run mal login again.`);}
+  if (!response.ok) {throw new Error(`MAL token exchange failed: HTTP ${response.status}. Run login mal again.`);}
   // Schema errors can include the received payload. Never expose token responses.
   const tokens = await response.json().then((body) => Schema.decodeUnknownSync(Tokens)(body)).catch(() => {
-    throw new Error("MAL returned an invalid token response. Run mal login again.");
+    throw new Error("MAL returned an invalid token response. Run login mal again.");
   });
   return {
     clientId, accessToken: tokens.access_token, refreshToken: tokens.refresh_token,
@@ -94,7 +94,7 @@ export const createMalClient = (options: {
 
   const refresh = async (): Promise<void> => {
     if (options.accessToken || !session?.refreshToken) {
-      throw new Error("MAL token expired. Run mal login or replace MANIFOLD_MAL_TOKEN.");
+      throw new Error("MAL token expired. Run login mal or replace MANIFOLD_MAL_TOKEN.");
     }
     const next = await requestMalTokens(session.clientId, options.clientSecret,
       new URLSearchParams({ grant_type: "refresh_token", refresh_token: session.refreshToken }), fetcher);
@@ -104,7 +104,7 @@ export const createMalClient = (options: {
   };
 
   const request = async (path: string, method = "GET", body?: URLSearchParams): Promise<Response> => {
-    if (!token) {throw new Error("MAL token missing. Run mal login or set MANIFOLD_MAL_TOKEN.");}
+    if (!token) {throw new Error("MAL token missing. Run login mal or set MANIFOLD_MAL_TOKEN.");}
     if (!options.accessToken && session && session.expiresAt <= Date.now() + 60_000) {await refresh();}
     let refreshed = false;
     for (let attempt = 0; ; attempt += 1) {

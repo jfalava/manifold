@@ -35,14 +35,14 @@ export const exchangeAniListCode = async (clientId: string, clientSecret: string
       redirect_uri: ANILIST_REDIRECT_URI, code,
     }),
   });
-  if (!response.ok) {throw new Error(`AniList token exchange failed: HTTP ${response.status}. Check the CLI client credentials and run anilist login again.`);}
+  if (!response.ok) {throw new Error(`AniList token exchange failed: HTTP ${response.status}. Check the CLI client credentials and run login anilist again.`);}
   try {
     const tokens = Schema.decodeUnknownSync(TokenResponse)(await response.json());
     if (tokens.expires_in <= 0) {throw new Error("Expired token");}
     return { accessToken: tokens.access_token, expiresAt: Date.now() + tokens.expires_in * 1000 };
   } catch {
     // Schema errors can echo tokens. Do not propagate response payloads.
-    throw new Error("AniList returned an invalid token response. Run anilist login again.");
+    throw new Error("AniList returned an invalid token response. Run login anilist again.");
   }
 };
 
@@ -69,10 +69,10 @@ export const resolveAniListToken = async (
   try {
     session = Schema.decodeUnknownSync(Session)(JSON.parse(stored));
   } catch {
-    throw new Error("Invalid AniList keychain session. Run anilist login again.");
+    throw new Error("Invalid AniList keychain session. Run login anilist again.");
   }
   if (session.expiresAt <= Date.now() + 60_000) {
-    throw new Error("AniList login expired. Run anilist login again; AniList does not support refresh tokens.");
+    throw new Error("AniList login expired. Run login anilist again; AniList does not support refresh tokens.");
   }
   return session.accessToken;
 };

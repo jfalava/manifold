@@ -2,7 +2,7 @@ import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage } from "@manifold/json";
 
-import { ANILIST_REDIRECT_URI, resolveAniListToken } from "@/anilist-auth";
+import { ANILIST_REDIRECT_URI, resolveAniListToken } from "@/login/anilist";
 import { fetchAniListMangaEntries, type AniListEntry } from "@/anilist";
 import { runMigration } from "@/migration";
 import { createMangaDexTokenManager } from "@/mangadex-token";
@@ -27,7 +27,7 @@ export const al2mdCommand = Command.make(
   {
     anilistToken: optional(
       "anilist-token",
-      "AniList access token override. Prefer anilist login (keychain) or MANIFOLD_ANILIST_TOKEN.",
+      "AniList access token override. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
     ),
     apply: Flag.boolean("apply").pipe(
       Flag.withDefault(false),
@@ -96,8 +96,8 @@ export const al2mdCommand = Command.make(
       if (!token) {
         return yield* Effect.fail(
           new Error(
-            "Missing AniList token: run anilist login, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.\n" +
-              `Register ${ANILIST_REDIRECT_URI} on a separate authorization-code client, then run: bun index.ts anilist login`,
+            "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.\n" +
+              `Register ${ANILIST_REDIRECT_URI} on a separate authorization-code client, then run: bun index.ts login anilist`,
           ),
         );
       }

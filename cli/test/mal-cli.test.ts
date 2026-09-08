@@ -6,7 +6,7 @@ const runWipe = (flags: string[], connected: boolean) => spawnSync("bun", ["-e",
   import { BunServices } from "@effect/platform-bun";
   import { Effect } from "effect";
   import { Command } from "effect/unstable/cli";
-  import { wipeMalCommand } from "./src/commands/mal";
+  import { wipeMalCommand } from "./src/commands/wipe-mal";
   for (const key of Object.keys(process.env)) {
     if (key.startsWith("MANIFOLD_")) delete process.env[key];
   }

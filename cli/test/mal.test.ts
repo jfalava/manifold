@@ -187,6 +187,6 @@ describe("MAL authentication and retries", () => {
   it("does not leak malformed token payloads in errors", async () => {
     setup(Response.json({ access_token: "SECRET_TOKEN", expires_in: "SECRET_VALUE" }));
     await expect(requestMalTokens("client", undefined, new URLSearchParams()))
-      .rejects.toThrow(/^MAL returned an invalid token response\. Run mal login again\.$/);
+      .rejects.toThrow(/^MAL returned an invalid token response\. Run login mal again\.$/);
   });
 });

@@ -15,7 +15,7 @@ import {
   fetchAniListMangaEntries,
   type AniListEntry,
 } from "@/anilist";
-import { resolveAniListToken } from "@/anilist-auth";
+import { resolveAniListToken } from "@/login/anilist";
 import { resolveValue } from "@/env-resolve";
 import {
   abortFrame,
@@ -147,7 +147,7 @@ export const registryByAnilistId = async (
 const anilistTokenFlag = Flag.string("anilist-token").pipe(
   Flag.optional,
   Flag.withDescription(
-    "AniList access token override. Prefer anilist login (keychain) or MANIFOLD_ANILIST_TOKEN.",
+    "AniList access token override. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
   ),
 );
 
@@ -267,7 +267,7 @@ export const reconcileCommand = Command.make("diff", {
           const token = await resolveAniListToken(Option.getOrUndefined(anilistToken));
           if (!token) {
             throw new Error(
-              "AniList token missing: run anilist login, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN",
+              "AniList token missing: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN",
             );
           }
           const config = apiConfig(apiOrigin, apiToken);
@@ -330,7 +330,7 @@ export const importCommand = Command.make("import", {
           const token = await resolveAniListToken(Option.getOrUndefined(anilistToken));
           if (!token) {
             throw new Error(
-              "AniList token missing: run anilist login, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN",
+              "AniList token missing: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN",
             );
           }
 

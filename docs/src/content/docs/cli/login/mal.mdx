@@ -1,12 +1,12 @@
 ---
-title: mal login
+title: mal
 description: Authorize MyAnimeList locally and store access and refresh tokens in the OS keychain.
 sidebar:
-  order: 3
+  order: 2
 ---
 
 ```text
-bun run manifold mal login [flags]
+bun run manifold login mal [flags]
 ```
 
 Local OAuth (authorization code + plain PKCE) for CLI commands that talk to
@@ -37,13 +37,13 @@ MAL OAuth client ID. Falls back to `MANIFOLD_MAL_CLIENT_ID`.
 Example:
 
 ```text
-bun run manifold mal login --client-id "$MANIFOLD_MAL_CLIENT_ID"
+bun run manifold login mal --client-id "$MANIFOLD_MAL_CLIENT_ID"
 ```
 
 ## Usage
 
 ```text
-bun run manifold mal login
+bun run manifold login mal
 ```
 
 The command prints a browser authorization URL, serves

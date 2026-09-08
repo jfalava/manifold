@@ -1,12 +1,12 @@
 ---
-title: anilist login
+title: anilist
 description: Authorize AniList locally and store the access token in the OS keychain.
 sidebar:
-  order: 2
+  order: 1
 ---
 
 ```text
-bun run manifold anilist login [flags]
+bun run manifold login anilist [flags]
 ```
 
 Local authorization-code OAuth for CLI commands that talk to AniList (migrations,
@@ -40,13 +40,13 @@ AniList CLI client ID. Falls back to `MANIFOLD_ANILIST_CLIENT_ID`.
 Example:
 
 ```text
-bun run manifold anilist login --client-id "$MANIFOLD_ANILIST_CLIENT_ID"
+bun run manifold login anilist --client-id "$MANIFOLD_ANILIST_CLIENT_ID"
 ```
 
 ## Usage
 
 ```text
-bun run manifold anilist login
+bun run manifold login anilist
 ```
 
 The command prints a browser authorization URL, serves

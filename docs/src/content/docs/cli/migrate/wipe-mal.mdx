@@ -18,7 +18,7 @@ account and count, and exits without deleting. `--apply` is the confirmation —
 including in non-interactive runs. There is no yes/no prompt and no `--yes`
 flag.
 
-Authenticate first with [mal login](/cli/mal-login), or pass a token override.
+Authenticate first with [login mal](/cli/login/mal), or pass a token override.
 
 ## Flags
 
@@ -51,14 +51,14 @@ bun run manifold migrate wipe-mal --apply --backup-paused
 
 ### `--mal-token <token>`
 
-Optional MAL access token override. Prefer [mal login](/cli/mal-login)
+Optional MAL access token override. Prefer [login mal](/cli/login/mal)
 (keychain) so refresh works. Falls back to `MANIFOLD_MAL_TOKEN`. A supplied
 token does **not** refresh automatically.
 
 Example:
 
 ```text
-bun run manifold mal login
+bun run manifold login mal
 bun run manifold migrate wipe-mal
 ```
 
@@ -89,7 +89,7 @@ bun run manifold migrate wipe-mal --api-origin https://manifold.example/api
 ## Usage
 
 ```text
-bun run manifold mal login
+bun run manifold login mal
 bun run manifold migrate wipe-mal
 bun run manifold migrate wipe-mal --apply --backup-paused
 ```

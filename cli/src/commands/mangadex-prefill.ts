@@ -2,7 +2,7 @@ import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import type { ListrTask } from "listr2";
 import { errorMessage } from "@manifold/json";
-import { resolveAniListToken } from "@/anilist-auth";
+import { resolveAniListToken } from "@/login/anilist";
 import { loadRegistrySearchTitles } from "@/comix-aliases";
 import { matchesStatusFilter, parseStatusFilter, STATUS_FILTER_HINT } from "@/registry-status";
 import {
@@ -72,7 +72,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
   anilistToken: Flag.string("anilist-token").pipe(
     Flag.optional,
     Flag.withDescription(
-      "Optional AniList access token override for English/romaji/native/synonym aliases. Prefer anilist login (keychain) or MANIFOLD_ANILIST_TOKEN.",
+      "Optional AniList access token override for English/romaji/native/synonym aliases. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
     ),
   ),
 }).pipe(

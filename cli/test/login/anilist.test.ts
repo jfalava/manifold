@@ -6,7 +6,7 @@ import {
   exchangeAniListCode,
   resolveAniListToken,
   validateAniListSession,
-} from "../src/anilist-auth";
+} from "../../src/login/anilist";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -31,7 +31,7 @@ describe("AniList authorization", () => {
     );
     vi.stubGlobal("fetch", fetcher);
     await expect(exchangeAniListCode("client", "secret", "code")).rejects.toThrow(
-      /^AniList returned an invalid token response\. Run anilist login again\.$/,
+      /^AniList returned an invalid token response\. Run login anilist again\.$/,
     );
     expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://anilist.co/api/v2/oauth/token");
     const init = fetcher.mock.calls[0]?.[1];
@@ -107,10 +107,10 @@ describe("resolveAniListToken", () => {
         undefined,
         secrets(JSON.stringify({ accessToken: "keychain", expiresAt: Date.now() - 1 })),
       ),
-    ).rejects.toThrow(/AniList login expired\. Run anilist login again/);
+    ).rejects.toThrow(/AniList login expired\. Run login anilist again/);
 
     await expect(resolveAniListToken(undefined, secrets("{not-json"))).rejects.toThrow(
-      "Invalid AniList keychain session. Run anilist login again.",
+      "Invalid AniList keychain session. Run login anilist again.",
     );
   });
 

@@ -2,7 +2,7 @@ import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage } from "@manifold/json";
 
-import { resolveAniListToken } from "@/anilist-auth";
+import { resolveAniListToken } from "@/login/anilist";
 import { createMangaDexTokenManager } from "@/mangadex-token";
 import {
   abortFrame,
@@ -37,7 +37,7 @@ export const md2alCommand = Command.make(
     anilistToken: Flag.string("anilist-token").pipe(
       Flag.optional,
       Flag.withDescription(
-        "AniList access token override. Prefer anilist login (keychain) or MANIFOLD_ANILIST_TOKEN.",
+        "AniList access token override. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
       ),
     ),
     mangadexToken: Flag.string("mangadex-token").pipe(
@@ -117,7 +117,7 @@ export const md2alCommand = Command.make(
       if (!anilist) {
         return yield* Effect.fail(
           new Error(
-            "Missing AniList token: run anilist login, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
+            "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
           ),
         );
       }

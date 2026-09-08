@@ -9,7 +9,7 @@ import {
   fetchAniListRichEntries,
   type AniListRichEntry,
 } from "@/anilist";
-import { resolveAniListToken } from "@/anilist-auth";
+import { resolveAniListToken } from "@/login/anilist";
 import {
   buildPas5Zip,
   parsePas5,
@@ -429,7 +429,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
   anilistToken: Flag.string("anilist-token").pipe(
     Flag.optional,
     Flag.withDescription(
-      "AniList access token override. Prefer anilist login (keychain) or MANIFOLD_ANILIST_TOKEN.",
+      "AniList access token override. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
     ),
   ),
   apiOrigin: Flag.string("api-origin").pipe(
@@ -463,7 +463,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
         if (!token) {
           return yield* Effect.fail(
             new Error(
-              "Missing AniList token: run anilist login, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
+              "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
             ),
           );
         }

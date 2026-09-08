@@ -16,7 +16,7 @@ bun run manifold <subcommand> [flags]
 
 Remote-touching commands resolve credentials in this order: **flag →
 `MANIFOLD_*` env → OS keychain login** where applicable (from `cli/.env`, the
-process environment, or `anilist login` / `mal login`).
+process environment, or `login anilist` / `login mal`).
 
 ### `--api-token <token>`
 
@@ -45,10 +45,10 @@ bun run manifold reconcile diff --api-origin https://manifold.example/api
 ### AniList authentication
 
 Prefer local OAuth over pasting tokens. Full setup:
-[anilist login](/cli/anilist-login).
+[login anilist](/cli/login/anilist).
 
 ```text
-bun run manifold anilist login
+bun run manifold login anilist
 ```
 
 Register a separate authorization-code client with redirect URI
@@ -65,18 +65,18 @@ commands. Resolve order: flag → `MANIFOLD_ANILIST_TOKEN` → keychain login.
 Example:
 
 ```text
-bun run manifold anilist login
+bun run manifold login anilist
 bun run manifold registry import
 ```
 
 ### MyAnimeList authentication
 
 Prefer local OAuth over pasting tokens. Full setup:
-[mal login](/cli/mal-login). Primary consumer:
+[login mal](/cli/login/mal). Primary consumer:
 [wipe-mal](/cli/migrate/wipe-mal).
 
 ```text
-bun run manifold mal login
+bun run manifold login mal
 ```
 
 Register a separate MAL OAuth client with redirect URI
@@ -94,7 +94,7 @@ Optional MAL access token override for `migrate wipe-mal`. Resolve order: flag
 Example:
 
 ```text
-bun run manifold mal login
+bun run manifold login mal
 bun run manifold migrate wipe-mal
 ```
 

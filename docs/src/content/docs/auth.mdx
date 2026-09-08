@@ -13,8 +13,8 @@ own provider sessions separately.
 
 | Provider    | How you authenticate                               |
 | ----------- | -------------------------------------------------- |
-| AniList     | Admin: browser implicit OAuth; CLI: [`anilist login`](/cli/anilist-login) (authorization-code loopback) |
-| MyAnimeList | Admin: browser code flow; CLI: [`mal login`](/cli/mal-login) (PKCE loopback) |
+| AniList     | Admin: browser implicit OAuth; CLI: [`login anilist`](/cli/login/anilist) (authorization-code loopback) |
+| MyAnimeList | Admin: browser code flow; CLI: [`login mal`](/cli/login/mal) (PKCE loopback) |
 | MangaDex    | Personal-client (password grant or personal token) |
 | Comix       | Native Comix extension on the device               |
 
@@ -29,7 +29,7 @@ Admin/API upstream OAuth (MAL code flow; AniList browser-minted token import)
 stores encrypted tokens on the DO. Worker egress cannot call AniList reliably
 (IP blocks), so AniList **writes** from migrations and `anilist:*` ops run on
 your machine. The CLI keeps its own AniList/MAL sessions in the OS keychain via
-[`anilist login`](/cli/anilist-login) and [`mal login`](/cli/mal-login) —
+[`login anilist`](/cli/login/anilist) and [`login mal`](/cli/login/mal) —
 separate OAuth clients from the deployed API. MAL manga wipe:
 [`wipe-mal`](/cli/migrate/wipe-mal).
 

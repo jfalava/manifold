@@ -9,7 +9,7 @@ import {
   openBunComixView,
   waitForChromeDevToolsUrl,
 } from "@/comix-capture";
-import { resolveAniListToken } from "@/anilist-auth";
+import { resolveAniListToken } from "@/login/anilist";
 import { loadRegistrySearchTitles, searchTitlesFor } from "@/comix-aliases";
 import { addComixSearchItems, hidOf, pickMatch, type ComixSearchItem } from "@/comix-match";
 import {
@@ -96,7 +96,7 @@ export const comixPrefillCommand = Command.make("comix", {
   anilistToken: Flag.string("anilist-token").pipe(
     Flag.optional,
     Flag.withDescription(
-      "Optional AniList access token override for English/romaji aliases. Prefer anilist login (keychain) or MANIFOLD_ANILIST_TOKEN.",
+      "Optional AniList access token override for English/romaji aliases. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
     ),
   ),
 }).pipe(

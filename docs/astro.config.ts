@@ -25,11 +25,10 @@ const nimbusConfig = defineNimbusConfig({
         label: "CLI",
         items: [
           "cli",
+          { label: "login", autogenerate: { directory: "cli/login" } },
           { label: "migrate", autogenerate: { directory: "cli/migrate" } },
           { label: "ops", autogenerate: { directory: "cli/ops" } },
           { label: "registry", autogenerate: { directory: "cli/registry" } },
-          "cli/anilist-login",
-          "cli/mal-login",
           "cli/reconcile-diff",
           "cli/stale-status",
           "cli/unfollow-dropped",
