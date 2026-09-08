@@ -103,6 +103,62 @@ describe("al2pas5 source attachments", () => {
     ).toHaveLength(0);
   });
 
+  it("replaces a stale tracker UUID and prunes its orphaned metadata", () => {
+    const generated = buildEntitiesForEntry(entry, {
+      ...registryRow,
+      id: "91a074d5-6c22-42cc-9846-3d55a32bfa83",
+    }, new Map());
+    const base = entitiesFrom(generated);
+    expect(matchingBaseLibraryIds(base, entry, registryRow)).toEqual([generated.library.id]);
+    const result = migrateLibrarySources(base, generated.library.id, entry, registryRow);
+    expect(result.conflicts).toBe(0);
+    expect(result.sources).toEqual([
+      expect.objectContaining({ sourceId: "ManifoldTracker", mangaId: registryRow.id }),
+    ]);
+    const cleaned = sourceFreeEntities(base, {
+      __LIBRARY_MANGA_V5: { [generated.library.id]: result.library },
+      __SOURCE_MANGA_V5: Object.fromEntries(result.sources.map((source) => [source.id, source])),
+      __MANGA_INFO_V5: result.infos,
+    }).entities;
+    expect(Object.values(cleaned.__SOURCE_MANGA_V5)).toHaveLength(3);
+    expect(Object.values(cleaned.__SOURCE_MANGA_V5).filter((source) =>
+      source.sourceId === "ManifoldTracker"
+    ).map((source) => source.mangaId)).toEqual([registryRow.id]);
+    expect(Object.values(cleaned.__MANGA_INFO_V5).filter((info) =>
+      info.additionalInfo["Canonical ID"]
+    ).map((info) => info.additionalInfo["Canonical ID"])).toEqual([registryRow.id]);
+    expect(migrateLibrarySources(cleaned, generated.library.id, entry, registryRow).sources)
+      .toHaveLength(0);
+  });
+
+  it("fills missing tabs without new sources and preserves existing collections", () => {
+    const generated = buildEntitiesForEntry(entry, registryRow, new Map());
+    const base = entitiesFrom(generated);
+    const tab = { id: "shared-reading", name: "Reading", sortOrder: 0 };
+    const tabs = new Map([[tab.name, tab]]);
+    const result = migrateLibrarySources(base, generated.library.id, entry, registryRow, tabs);
+    expect(result.sources).toHaveLength(0);
+    expect(result.library.libraryTabs).toEqual([tab]);
+    expect(migrateLibrarySources(base, generated.library.id, entry, registryRow, new Map())
+      .library.libraryTabs).toEqual([]);
+    const custom = { id: "custom", name: "Favorites", sortOrder: 5 };
+    base.__LIBRARY_MANGA_V5[generated.library.id] = { ...generated.library, libraryTabs: [custom] };
+    expect(migrateLibrarySources(base, generated.library.id, entry, registryRow, tabs)
+      .library.libraryTabs).toEqual([custom]);
+  });
+
+  it("does not invent a tracker binding without a current registry row", () => {
+    const generated = buildEntitiesForEntry(entry, registryRow, new Map());
+    const base = entitiesFrom(generated);
+    base.__LIBRARY_MANGA_V5[generated.library.id] = {
+      ...generated.library,
+      attachedSources: generated.library.attachedSources.slice(0, 2),
+    };
+    const result = migrateLibrarySources(base, generated.library.id, entry, undefined);
+    expect(result.sources).toEqual([]);
+    expect(result.library.attachedSources).toHaveLength(2);
+  });
+
   it("does not replace a conflicting provider attachment", () => {
     const generated = buildEntitiesForEntry(entry, registryRow, new Map());
     const base = entitiesFrom(generated);

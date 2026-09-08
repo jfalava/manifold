@@ -563,7 +563,7 @@ export class ManifoldSync extends DurableObject<Env> {
     const eventId = input.eventId ?? crypto.randomUUID();
     const readAt = input.readAt ?? now();
     // Resolved target may differ from the caller's entryId when a
-    // tombstoned row has a live successor — never reassign the param.
+    // missing or tombstoned row has a live successor — never reassign the param.
     let targetEntryId = entryId;
 
     const corpse = this.ctx.storage.sql
@@ -572,13 +572,11 @@ export class ManifoldSync extends DurableObject<Env> {
         targetEntryId,
       )
       .toArray()[0];
-    if (!corpse) {
-      throw new Error(`Canonical entry not found: ${targetEntryId}`);
-    }
-    if (corpse.tombstoned_at !== null) {
-      // Reads are sacred: a stale library binding pointing at a nuked
-      // row must never lose a read. Follow any provider link to the
-      // row's live successor; with none, resurrect the corpse.
+    if (!corpse || corpse.tombstoned_at !== null) {
+      // Queued device actions can outlive registry rows as well as nukes.
+      // Recover only through the read's exact native provider identity;
+      // never invent an entry or match by title. Without a successor, only
+      // an existing tombstone can be resurrected.
       const successor = this.ctx.storage.sql
         .exec<{ entry_id: string }>(
           `SELECT pl.entry_id FROM provider_links pl
@@ -591,6 +589,8 @@ export class ManifoldSync extends DurableObject<Env> {
         .toArray()[0];
       if (successor) {
         targetEntryId = successor.entry_id;
+      } else if (!corpse) {
+        throw new Error(`Canonical entry not found: ${targetEntryId}`);
       } else {
         this.ctx.storage.sql.exec(
           "UPDATE canonical_entries SET tombstoned_at = NULL, updated_at = ? WHERE id = ?",

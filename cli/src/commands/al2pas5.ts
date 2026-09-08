@@ -252,6 +252,7 @@ export const migrateLibrarySources = (
   libraryId: string,
   entry: AniListRichEntry,
   registryRow: RegistryRow | undefined,
+  sharedTabs: ReadonlyMap<string, LibraryTab> = new Map(),
 ): ExistingUpstreamResult => {
   const library = base.__LIBRARY_MANGA_V5[libraryId];
   if (!library) {throw new Error(`Missing base library entry ${libraryId}`);}
@@ -262,7 +263,8 @@ export const migrateLibrarySources = (
   const mangaId = registryRow?.id ?? `anilist:${entry.mediaId}`;
   const trackerInfoId = mangaInfoKey(TRACKER_SOURCE_ID, mangaId);
   const tracker = makeSourceManga(TRACKER_SOURCE_ID, mangaId, trackerInfoId);
-  const candidates = [...upstream.sources, tracker];
+  // Only current registry rows can authorize a replacement tracker binding.
+  const candidates = [...upstream.sources, ...(registryRow ? [tracker] : [])];
   const candidateInfos = {
     ...upstream.infos,
     [trackerInfoId]: buildMangaInfo(entry, {
@@ -283,7 +285,7 @@ export const migrateLibrarySources = (
     if (sameSource.some((source) => source.mangaId === candidate.mangaId)) {
       continue;
     }
-    if (sameSource.length > 0) {
+    if (sameSource.length > 0 && candidate.sourceId !== TRACKER_SOURCE_ID) {
       conflicts++;
       continue;
     }
@@ -293,12 +295,24 @@ export const migrateLibrarySources = (
   }
 
   const retainedReferences = library.attachedSources.filter(
-    (reference) => base.__SOURCE_MANGA_V5[reference.id]?.sourceId !== SOURCE_ID,
+    (reference) => {
+      const source = base.__SOURCE_MANGA_V5[reference.id];
+      return source?.sourceId !== SOURCE_ID && !(
+        registryRow && source?.sourceId === TRACKER_SOURCE_ID &&
+        source.mangaId !== registryRow.id
+      );
+    },
   );
+  const tabName = tabForStatus(entry.status);
+  const tab = tabName === undefined ? undefined : sharedTabs.get(tabName);
+  const libraryTabs = library.libraryTabs.length === 0 && tab
+    ? [tab]
+    : library.libraryTabs;
 
   return {
     library: {
       ...library,
+      libraryTabs,
       attachedSources: [
         ...retainedReferences,
         ...sources.map((source) => ({
@@ -307,7 +321,8 @@ export const migrateLibrarySources = (
         })),
       ],
       lastUpdated:
-        sources.length > 0 || retainedReferences.length !== library.attachedSources.length
+        sources.length > 0 || retainedReferences.length !== library.attachedSources.length ||
+        libraryTabs !== library.libraryTabs
           ? coreDataNow()
           : library.lastUpdated,
     },
@@ -604,12 +619,19 @@ export const al2Pas5Command = Command.make("al2pas5", {
               libraryId,
               entry,
               registryRow,
+              sharedTabs,
             );
             providerConflicts += enriched.conflicts;
             if (!hasUpstreamProvider(registryRow)) {
               withoutContentProvider++;
             }
-            if (enriched.sources.length > 0) {
+            if (
+              enriched.sources.length > 0 ||
+              enriched.library.attachedSources.length !==
+                scan.base?.__LIBRARY_MANGA_V5[libraryId]?.attachedSources.length ||
+              enriched.library.libraryTabs !==
+                scan.base?.__LIBRARY_MANGA_V5[libraryId]?.libraryTabs
+            ) {
               entities.__LIBRARY_MANGA_V5[libraryId] = enriched.library;
               for (const source of enriched.sources) {
                 entities.__SOURCE_MANGA_V5[source.id] = source;
