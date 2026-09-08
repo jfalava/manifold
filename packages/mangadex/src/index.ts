@@ -4,6 +4,7 @@ import {
   isJsonArray,
   isJsonObject,
   isString,
+  manifoldUserAgent,
   type JsonObject,
   type JsonValue,
 } from "@manifold/json";
@@ -12,7 +13,8 @@ export const MANGADEX_TOKEN_ENDPOINT =
   "https://auth.mangadex.org/realms/mangadex/protocol/openid-connect/token";
 export const MANGADEX_API_ORIGIN = "https://api.mangadex.org";
 export const MANGADEX_COVER_ORIGIN = "https://uploads.mangadex.org/covers";
-export const MANGADEX_USER_AGENT = "manifold/0.1 (+https://manifold.jfa.dev)";
+/** @deprecated Prefer manifoldUserAgent("mangadex") / withManifoldUserAgent. */
+export const MANGADEX_USER_AGENT = manifoldUserAgent("mangadex");
 export const MANGADEX_CONTENT_RATINGS = ["safe", "suggestive", "erotica", "pornographic"] as const;
 
 export interface MangaDexPersonalClientCredentials {
@@ -214,6 +216,8 @@ export interface MangaDexClientOptions {
   readonly limit?: number;
   /** Base backoff for retrying transient failures; doubles each attempt. */
   readonly retryDelayMs?: number;
+  /** Override outbound User-Agent (defaults to manifold/mangadex). */
+  readonly userAgent?: string;
 }
 
 const defaultFetcher: MangaDexFetcher = (input, init) => fetch(input, init);
@@ -407,7 +411,7 @@ export const createMangaDexClient = (
     // Accumulator: start empty so known literals are not widened into Record.
     const headers: Record<string, string> = {};
     headers.accept = "application/json";
-    headers["user-agent"] = MANGADEX_USER_AGENT;
+    headers["user-agent"] = options.userAgent ?? MANGADEX_USER_AGENT;
     if (options.accessToken) {
       headers.authorization = `Bearer ${options.accessToken}`;
     }

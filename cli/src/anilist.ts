@@ -2,8 +2,11 @@ import { ANILIST_GRAPHQL_ENDPOINT } from "@manifold/canonical/sources";
 import {
   isFiniteNumber,
   isString,
+  manifoldUserAgent,
   type JsonObject,
 } from "@manifold/json";
+
+const USER_AGENT = manifoldUserAgent("cli");
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -92,7 +95,8 @@ const gql = async <A>(
     headers: {
       "content-type": "application/json",
       accept: "application/json",
-      authorization: `Bearer ${token}`
+      authorization: `Bearer ${token}`,
+      "user-agent": USER_AGENT,
     },
     body: JSON.stringify({ query, variables })
   });

@@ -121,3 +121,11 @@ export function requestInitText(init: RequestInit | undefined): string | undefin
   const body = init?.body;
   return isString(body) ? body : undefined;
 }
+
+export {
+  MANIFOLD_USER_AGENT_HOME,
+  MANIFOLD_USER_AGENT_PRODUCT,
+  manifoldUserAgent,
+  withManifoldUserAgent,
+  type ManifoldUserAgentSurface,
+} from "./user-agent";

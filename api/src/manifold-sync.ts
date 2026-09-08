@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect";
 import {
   errorMessage,
   isJsonObject,
+  manifoldUserAgent,
   stringField,
   type JsonObject,
 } from "@manifold/json";
@@ -11,7 +12,6 @@ import {
   createMangaDexPasswordGrant,
   createMangaDexRefreshGrant,
   MANGADEX_TOKEN_ENDPOINT,
-  MANGADEX_USER_AGENT,
   type MangaDexChapter,
   type MangaDexPaged,
 } from "@manifold/mangadex";
@@ -189,7 +189,10 @@ export class ManifoldSync extends DurableObject<Env> {
 
     const response = await fetch(config.tokenEndpoint, {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "user-agent": manifoldUserAgent("api"),
+      },
       body: form
     });
     if (!response.ok) {
@@ -229,7 +232,7 @@ export class ManifoldSync extends DurableObject<Env> {
       headers: {
         accept: "application/json",
         "content-type": "application/x-www-form-urlencoded",
-        "user-agent": MANGADEX_USER_AGENT
+        "user-agent": manifoldUserAgent("api"),
       },
       body: createMangaDexPasswordGrant({
         clientId: this.env.MANIFOLD_MANGADEX_CLIENT_ID,
@@ -347,7 +350,7 @@ export class ManifoldSync extends DurableObject<Env> {
       headers: {
         accept: "application/json",
         "content-type": "application/x-www-form-urlencoded",
-        ...(provider === "mangadex" && { "user-agent": MANGADEX_USER_AGENT })
+        "user-agent": manifoldUserAgent("api"),
       },
       body: form
     });
@@ -779,7 +782,7 @@ export class ManifoldSync extends DurableObject<Env> {
     if (wanted.length === 0) {return {};}
 
     const accessToken = await this.getAuthAccessToken("mangadex");
-    const client = createMangaDexClient({ accessToken });
+    const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
 
     // 1. Feed metadata from cache, upstream sweep only for stale ids.
     const meta = new Map<string, MdFeedStatsPayload>();
@@ -859,7 +862,7 @@ export class ManifoldSync extends DurableObject<Env> {
 
   async mangaDexLibrary(status?: string): Promise<readonly MangaDexLibraryItem[]> {
     const accessToken = await this.getAuthAccessToken("mangadex");
-    const client = createMangaDexClient({ accessToken });
+    const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
     const statusFilter =
       status === "reading" ||
       status === "on_hold" ||
@@ -1004,7 +1007,7 @@ export class ManifoldSync extends DurableObject<Env> {
    */
   async mangaDexLibrarySummary(): Promise<MangaDexLibrarySummary> {
     const accessToken = await this.getAuthAccessToken("mangadex");
-    const client = createMangaDexClient({ accessToken });
+    const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
 
     // Prefer the hydrated library cache when fresh — Overview then avoids any
     // upstream round-trip beyond what a prior full load already paid.
@@ -1106,13 +1109,13 @@ export class ManifoldSync extends DurableObject<Env> {
     offset: number,
   ): Promise<MangaDexPaged<MangaDexChapter>> {
     const accessToken = await this.getAuthAccessToken("mangadex");
-    const client = createMangaDexClient({ accessToken });
+    const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
     return Effect.runPromise(client.followedFeed({ limit, offset }));
   }
 
   async setMangaDexStatus(mangaDexId: string, input: SetMangaDexStatusInput): Promise<void> {
     const accessToken = await this.getAuthAccessToken("mangadex");
-    const client = createMangaDexClient({ accessToken });
+    const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
     await Effect.runPromise(client.updateReadingStatus(mangaDexId, input.status));
     this.mdLibraryCache = undefined;
   }
@@ -1136,13 +1139,13 @@ export class ManifoldSync extends DurableObject<Env> {
 
   async mangaDexCurrentUser(): Promise<{ id: string; name?: string }> {
     const accessToken = await this.getAuthAccessToken("mangadex");
-    const client = createMangaDexClient({ accessToken });
+    const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
     return Effect.runPromise(client.currentUser());
   }
 
   async mangaDexReadMarkers(mangaDexId: string): Promise<readonly string[]> {
     const accessToken = await this.getAuthAccessToken("mangadex");
-    const client = createMangaDexClient({ accessToken });
+    const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
     return Effect.runPromise(client.readMarkers(mangaDexId));
   }
 
@@ -2006,7 +2009,7 @@ export class ManifoldSync extends DurableObject<Env> {
 
   private async drainMangaDexOutbox(rows: readonly OpRow[]): Promise<void> {
     const accessToken = await this.getAuthAccessToken("mangadex");
-    const client = createMangaDexClient({ accessToken });
+    const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
 
     // One MangaDex round-trip per manga, not per chapter: per-chapter calls
     // kept the DO input gate closed for minutes during mass-read bursts and
@@ -2064,7 +2067,7 @@ export class ManifoldSync extends DurableObject<Env> {
 
     try {
       const accessToken = await this.getAuthAccessToken("mangadex");
-      const client = createMangaDexClient({ accessToken });
+      const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
       const statuses = await Effect.runPromise(client.readingStatuses());
       const known = new Set(Object.keys(statuses));
 

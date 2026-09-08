@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import type { ListrTask } from "listr2";
-import { errorMessage, isJsonObject, numberField } from "@manifold/json";
+import { errorMessage, isJsonObject, manifoldUserAgent, numberField } from "@manifold/json";
 
 import { createMangaDexTokenManager } from "@/mangadex-token";
 import {
@@ -129,12 +129,10 @@ export const unfollowDroppedCommand = Command.make(
             cachePath: TOKEN_CACHE_PATH,
           });
           let client = createMangaDexClient({
-            accessToken: await manager.current(),
-          });
+            accessToken: await manager.current(), userAgent: manifoldUserAgent("cli") });
           const refreshClient = async () => {
             client = createMangaDexClient({
-              accessToken: await manager.current(),
-            });
+              accessToken: await manager.current(), userAgent: manifoldUserAgent("cli") });
             return client;
           };
 

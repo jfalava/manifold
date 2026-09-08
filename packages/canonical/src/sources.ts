@@ -4,6 +4,7 @@ import {
   isJsonArray,
   isJsonObject,
   isString,
+  manifoldUserAgent,
   numberField,
   objectField,
   stringField,
@@ -31,12 +32,16 @@ export type CanonicalFetcher = (
 export interface AniListSourceOptions {
   readonly fetcher?: CanonicalFetcher;
   readonly endpoint?: string;
+  /** Override outbound User-Agent (defaults to manifold/canonical). */
+  readonly userAgent?: string;
 }
 
 export interface MyAnimeListSourceOptions {
   readonly clientId: string;
   readonly fetcher?: CanonicalFetcher;
   readonly endpoint?: string;
+  /** Override outbound User-Agent (defaults to manifold/canonical). */
+  readonly userAgent?: string;
 }
 
 /** Parsed JSON body from a canonical provider HTTP response. */
@@ -325,7 +330,7 @@ export const createAniListSource = (
       headers: {
         accept: "application/json",
         "content-type": "application/json",
-        "user-agent": "manifold/0.1 (+https://manifold.jfa.dev)",
+        "user-agent": options.userAgent ?? manifoldUserAgent("canonical"),
       },
       body: JSON.stringify({ query, variables }),
     });
@@ -452,7 +457,7 @@ export const createMyAnimeListSource = (
       headers: {
         accept: "application/json",
         "X-MAL-CLIENT-ID": options.clientId,
-        "user-agent": "manifold/0.1 (+https://manifold.jfa.dev)",
+        "user-agent": options.userAgent ?? manifoldUserAgent("canonical"),
       },
     });
 

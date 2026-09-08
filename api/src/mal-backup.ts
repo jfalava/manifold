@@ -2,6 +2,7 @@ import { Effect, Schema } from "effect";
 import { MalBackupIdentity, type ListStatus, type RegistryEntry } from "@manifold/contract";
 import type { CanonicalSearchResult, CanonicalSearchSource } from "@manifold/canonical";
 import { createMyAnimeListSource } from "@manifold/canonical/sources";
+import { manifoldUserAgent } from "@manifold/json";
 import {
   cosineSimilarity,
   embedMangaTitles,
@@ -69,6 +70,7 @@ export const resolveMalBackup = async (
   identity?: MalBackupIdentity,
   source: CanonicalSearchSource = createMyAnimeListSource({
     clientId: env.MANIFOLD_MAL_CLIENT_ID,
+    userAgent: manifoldUserAgent("api"),
     fetcher: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
   }),
 ): Promise<MalMatch> => {
@@ -124,6 +126,7 @@ export const writeMalBackupStatus = async (
       headers: {
         authorization: `Bearer ${accessToken}`,
         "content-type": "application/x-www-form-urlencoded",
+        "user-agent": manifoldUserAgent("api"),
       },
       body: new URLSearchParams({
         status: status === "re_reading" ? "reading" : status,

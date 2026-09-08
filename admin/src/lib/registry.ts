@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { Schema } from "effect";
+import { manifoldUserAgent } from "@manifold/json";
 import {
   AuthConnection as AuthConnectionSchema,
   type AuthConnection as ContractAuthConnection,
@@ -107,6 +108,7 @@ const call = async <A>(
   const headers: Record<string, string> = {
     accept: "application/json",
     authorization: `Bearer ${token}`,
+    "user-agent": manifoldUserAgent("admin"),
   };
   if (init?.body !== undefined) {
     headers["content-type"] = "application/json";

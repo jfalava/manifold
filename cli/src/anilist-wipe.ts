@@ -1,12 +1,15 @@
 import {
   arrayField,
   isJsonObject,
+  manifoldUserAgent,
   numberField,
   objectField,
   stringField,
 } from "@manifold/json";
 
 import type { PhaseReporter } from "@/ui";
+
+const USER_AGENT = manifoldUserAgent("cli");
 
 /**
  * AniList manga-list & activity wipe, ported from
@@ -35,7 +38,8 @@ export const fetchViewer = async (
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      Accept: "application/json"
+      Accept: "application/json",
+      "user-agent": USER_AGENT
     },
     body: JSON.stringify({ query: `query { Viewer { id name } }` })
   });
@@ -58,7 +62,8 @@ export const fetchMangaEntries = async (
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      Accept: "application/json"
+      Accept: "application/json",
+      "user-agent": USER_AGENT
     },
     body: JSON.stringify({
       query: `query ($userId: Int) {
@@ -109,7 +114,8 @@ export const deleteEntry = async (token: string, entryId: number): Promise<boole
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      Accept: "application/json"
+      Accept: "application/json",
+      "user-agent": USER_AGENT
     },
     body: JSON.stringify({
       query: `mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }`,
@@ -143,7 +149,8 @@ const fetchActivitiesPage = async (
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      Accept: "application/json"
+      Accept: "application/json",
+      "user-agent": USER_AGENT
     },
     body: JSON.stringify({
       query: `query ($userId: Int, $page: Int) {
@@ -238,7 +245,8 @@ export const deleteActivity = async (
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      Accept: "application/json"
+      Accept: "application/json",
+      "user-agent": USER_AGENT
     },
     body: JSON.stringify({
       query: `mutation ($id: Int) { DeleteActivity(id: $id) { deleted } }`,

@@ -6,6 +6,7 @@ import type { ListrTask } from "listr2";
 import {
   errorMessage,
   isJsonObject,
+  manifoldUserAgent,
   numberField,
   objectField,
   stringField,
@@ -283,12 +284,10 @@ export const staleStatusCommand = Command.make(
             cachePath: TOKEN_CACHE_PATH,
           });
           let client = createMangaDexClient({
-            accessToken: await manager.current(),
-          });
+            accessToken: await manager.current(), userAgent: manifoldUserAgent("cli") });
           const refreshClient = async () => {
             client = createMangaDexClient({
-              accessToken: await manager.current(),
-            });
+              accessToken: await manager.current(), userAgent: manifoldUserAgent("cli") });
             return client;
           };
 

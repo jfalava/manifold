@@ -35,6 +35,7 @@ import {
   isFiniteNumber,
   isJsonObject,
   isString,
+  manifoldUserAgent,
   requestHref,
   requestInitText,
 } from "@manifold/json";
@@ -145,10 +146,12 @@ export class ManifoldTrackerSource
   private readonly providerCandidates = new Map<string, ProviderCandidate>();
   private readonly aniList = createAniListSource({
     fetcher: scheduledAniListFetcher,
+    userAgent: manifoldUserAgent("tracker"),
   });
   private readonly mangaDex = createMangaDexClient({
     fetcher: scheduledAniListFetcher,
     limit: 25,
+    userAgent: manifoldUserAgent("tracker"),
   });
   private readonly comix = new ComixSource();
 

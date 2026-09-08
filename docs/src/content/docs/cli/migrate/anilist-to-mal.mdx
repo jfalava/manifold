@@ -85,7 +85,11 @@ Personal API origin and token for the backup-connection check. Fall back to
 1. **AniList `idMal`** when the media carries a MAL cross-link
 2. **Title search** via the public MAL client id (`MANIFOLD_MAL_CLIENT_ID` or
    the client id stored in the keychain session): unique exact normalized title
-   (including synonyms), then a unique conservative partial
+   (including synonyms), then a unique conservative partial. MAL accepts
+   search `q` only when it is **3–64** characters — shorter titles are
+   skipped, longer ones are truncated for the query. Search failures count
+   as `errors` on the progress line (no per-error console spam) and stay
+   unmatched; they do not abort the run.
 3. Ambiguous or empty candidate sets stay **unmatched** — never forced
 
 ## Status map
@@ -105,7 +109,8 @@ Chapter progress floors to an integer and becomes `num_chapters_read` unless
 ## Behaviour
 
 - Dry-run by default; no MAL PATCH until `--apply --backup-paused`
-- Writes use the same 1.5s MAL client pacing and 429/5xx retry as wipe
+- Title search and list writes both pace at **1.5 s** between HTTP calls
+  (~40/min floor; same as wipe). 429/5xx retry up to three times.
 - Per-entry write failures are reported; successful entries still commit
 - Exit code `1` when any entry is unmatched or fails to write
 - Does not change tracker authority, registry bindings, or the continuous

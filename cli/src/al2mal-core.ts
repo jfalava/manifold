@@ -1,6 +1,14 @@
-import { Effect } from "effect";
-import { createMyAnimeListSource } from "@manifold/canonical/sources";
-import { errorMessage } from "@manifold/json";
+import {
+  errorMessage,
+  isJsonArray,
+  isJsonObject,
+  isString,
+  manifoldUserAgent,
+  numberField,
+  objectField,
+  stringField,
+} from "@manifold/json";
+import { MYANIMELIST_MANGA_ENDPOINT } from "@manifold/canonical/sources";
 
 import type { AniListEntry } from "@/anilist";
 import type { MalClient, MalMangaUpdate } from "@/mal";
@@ -85,24 +93,119 @@ export type Al2malSearch = (
   query: string,
 ) => Promise<readonly Al2malSearchHit[]>;
 
-/** Public-client MAL title search (no user OAuth). */
-export const createMalTitleSearch = (clientId: string, fetcher: typeof fetch = fetch): Al2malSearch => {
-  const source = createMyAnimeListSource({ clientId, fetcher });
+/**
+ * MAL GET /manga `q`: 3–64 Unicode code points. Shorter or longer → HTTP 400
+ * `invalid q`. Count code points so CJK titles are measured correctly.
+ */
+export const MAL_SEARCH_Q_MIN = 3;
+export const MAL_SEARCH_Q_MAX = 64;
+
+export const malSearchQueryOk = (query: string): boolean => {
+  const length = [...query.trim()].length;
+  return length >= MAL_SEARCH_Q_MIN && length <= MAL_SEARCH_Q_MAX;
+};
+
+/** Clamp to MAL's accepted `q` window; empty when nothing usable remains. */
+export const malSearchQuery = (query: string): string | undefined => {
+  const trimmed = query.trim();
+  const chars = [...trimmed];
+  if (chars.length < MAL_SEARCH_Q_MIN) {return undefined;}
+  return chars.length <= MAL_SEARCH_Q_MAX
+    ? trimmed
+    : chars.slice(0, MAL_SEARCH_Q_MAX).join("");
+};
+
+/** Same floor as createMalClient (~40 req/min); MAL publishes no hard quota. */
+export const MAL_SEARCH_INTERVAL_MS = 1_500;
+
+/**
+ * Public-client MAL title search (no user OAuth). Talks to MAL directly so a
+ * 400 does not print `[Canonical:mal] …` on a new line and break the progress bar.
+ * Sequential calls are spaced like the OAuth list client (1.5s after the first).
+ */
+export const createMalTitleSearch = (
+  clientId: string,
+  fetcher: typeof fetch = fetch,
+  sleep: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
+): Al2malSearch => {
+  if (!clientId || clientId === "not-configured") {
+    return async () => {
+      throw new Error("MyAnimeList client id is not configured");
+    };
+  }
+  let requested = false;
   return async (query) => {
-    const found = await Effect.runPromise(source.search(query, { limit: 10 }));
-    return found.flatMap((entry) => {
-      const id = Number.parseInt(entry.providerId, 10);
-      if (!Number.isSafeInteger(id) || id <= 0) {return [];}
-      return [{ id, title: entry.title, aliases: entry.aliases }];
-    });
+    const q = malSearchQuery(query);
+    if (!q) {return [];}
+    if (requested) {await sleep(MAL_SEARCH_INTERVAL_MS);}
+    requested = true;
+    const href =
+      `${MYANIMELIST_MANGA_ENDPOINT}?q=${encodeURIComponent(q)}` +
+      `&limit=10&fields=${encodeURIComponent("alternative_titles")}`;
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await fetcher(href, {
+        headers: {
+          accept: "application/json",
+          "X-MAL-CLIENT-ID": clientId,
+          "user-agent": manifoldUserAgent("cli"),
+        },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if ((response.status === 429 || response.status >= 500) && attempt < 3) {
+        const retryAfter = response.headers.get("retry-after");
+        const seconds = retryAfter === null ? NaN : Number(retryAfter);
+        const wait = retryAfter === null
+          ? NaN
+          : Number.isFinite(seconds)
+            ? seconds * 1000
+            : Date.parse(retryAfter) - Date.now();
+        await response.body?.cancel();
+        if (wait > 300_000) {
+          throw new Error("MAL title search requested a long retry delay. Stop and resume later.");
+        }
+        await sleep(Number.isFinite(wait) ? Math.max(MAL_SEARCH_INTERVAL_MS, wait) : 5000 * 2 ** attempt);
+        continue;
+      }
+      if (!response.ok) {
+        const body = (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 200);
+        throw new Error(
+          `MAL title search HTTP ${response.status}${body ? `: ${body}` : ""}`,
+        );
+      }
+      const json: unknown = await response.json();
+      if (!isJsonObject(json)) {return [];}
+      const data = isJsonArray(json.data) ? json.data : [];
+      const hits: Al2malSearchHit[] = [];
+      for (const item of data) {
+        if (!isJsonObject(item)) {continue;}
+        const node = objectField(item, "node") ?? item;
+        const id = numberField(node, "id");
+        const title = stringField(node, "title");
+        if (id === undefined || id <= 0 || title === undefined) {continue;}
+        const alternative = objectField(node, "alternative_titles");
+        const aliases = [
+          alternative === undefined ? undefined : stringField(alternative, "en"),
+          alternative === undefined ? undefined : stringField(alternative, "ja"),
+          ...(alternative !== undefined && isJsonArray(alternative.synonyms)
+            ? alternative.synonyms.filter(isString)
+            : []),
+        ].filter((value): value is string => value !== undefined && value.trim().length > 0);
+        hits.push({ id, title, aliases });
+      }
+      return hits;
+    }
   };
 };
 
 const titlePool = (entry: AniListEntry): string[] => {
   const values = new Map<string, string>();
   for (const title of [entry.title, ...(entry.titles ?? [])]) {
-    const key = normalizeTitle(title);
-    if (key && !values.has(key)) {values.set(key, title.trim());}
+    const trimmed = title.trim();
+    // Keep short titles for exact compare against MAL hit aliases, but never
+    // send them as MAL search `q` (see malSearchQueryOk).
+    const key = normalizeTitle(trimmed);
+    if (key && !values.has(key)) {values.set(key, trimmed);}
   }
   return [...values.values()];
 };
@@ -169,9 +272,22 @@ export const matchAniListToMal = async (
   }
 
   const candidates = new Map<number, Al2malSearchHit>();
-  for (const title of titlePool(entry)) {
-    for (const hit of await search(title)) {
-      candidates.set(hit.id, hit);
+  let searchError: string | undefined;
+  const queries = [
+    ...new Set(
+      titlePool(entry)
+        .map(malSearchQuery)
+        .filter((value): value is string => value !== undefined),
+    ),
+  ];
+  for (const title of queries) {
+    try {
+      for (const hit of await search(title)) {
+        candidates.set(hit.id, hit);
+      }
+    } catch (cause) {
+      // One bad title must not abort the whole library import or spam stdout.
+      searchError = errorMessage(cause);
     }
   }
   const chosen = chooseTitleMatch(entry, [...candidates.values()]);
@@ -183,9 +299,13 @@ export const matchAniListToMal = async (
         title: entry.title,
         anilistStatus: entry.status,
         ...(entry.progress !== undefined && { progress: entry.progress }),
-        reason: candidates.size === 0
-          ? "No MAL candidates for title search"
-          : "Ambiguous or weak MAL title match",
+        reason: searchError
+          ? `MAL title search failed: ${searchError}`
+          : queries.length === 0
+            ? `No title usable for MAL search (q needs ${MAL_SEARCH_Q_MIN}–${MAL_SEARCH_Q_MAX} characters) and no idMal`
+            : candidates.size === 0
+              ? "No MAL candidates for title search"
+              : "Ambiguous or weak MAL title match",
       },
     };
   }

@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { manifoldUserAgent } from "@manifold/json";
 
 export const ANILIST_REDIRECT_URI = "http://127.0.0.1:8767/callback";
 export const ANILIST_SECRET = { service: "manifold", name: "anilist-session" };
@@ -29,7 +30,11 @@ export const createAniListAuthorization = (clientId: string) => {
 export const exchangeAniListCode = async (clientId: string, clientSecret: string, code: string) => {
   const response = await fetch("https://anilist.co/api/v2/oauth/token", {
     method: "POST", redirect: "error", signal: AbortSignal.timeout(30_000),
-    headers: { "content-type": "application/json", accept: "application/json" },
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+      "user-agent": manifoldUserAgent("cli"),
+    },
     body: JSON.stringify({
       grant_type: "authorization_code", client_id: clientId, client_secret: clientSecret,
       redirect_uri: ANILIST_REDIRECT_URI, code,
@@ -49,7 +54,12 @@ export const exchangeAniListCode = async (clientId: string, clientSecret: string
 export const validateAniListSession = async (accessToken: string) => {
   const response = await fetch("https://graphql.anilist.co", {
     method: "POST", redirect: "error", signal: AbortSignal.timeout(30_000),
-    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json", accept: "application/json" },
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      accept: "application/json",
+      "user-agent": manifoldUserAgent("cli"),
+    },
     body: JSON.stringify({ query: "query { Viewer { id name } }" }),
   });
   if (!response.ok) {throw new Error(`AniList profile lookup failed: HTTP ${response.status}. Login has not been saved.`);}

@@ -1,5 +1,11 @@
 import { Effect } from "effect";
-import { errorMessage, isJsonObject, numberField, stringField } from "@manifold/json";
+import {
+  errorMessage,
+  isJsonObject,
+  manifoldUserAgent,
+  numberField,
+  stringField,
+} from "@manifold/json";
 import {
   createMangaDexClient,
   type MangaDexChapter,
@@ -232,7 +238,7 @@ const createClient = (tokenManager: MangaDexTokenManager): MangaDexAsyncClient =
   ): Promise<A> =>
     withAuthRetry(async () => {
       const token = await tokenManager.current();
-      const client = createMangaDexClient({ accessToken: token });
+      const client = createMangaDexClient({ accessToken: token, userAgent: manifoldUserAgent("cli") });
       return Effect.runPromise(invoke(client));
     });
 

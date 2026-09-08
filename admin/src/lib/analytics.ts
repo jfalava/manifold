@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 
+import { manifoldUserAgent } from "@manifold/json";
 import {
   isFunctionValue,
   isJsonObject,
@@ -136,6 +137,7 @@ async function runGraphQL<T>(
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${apiToken}`,
+      "user-agent": manifoldUserAgent("admin"),
     },
     body: JSON.stringify({ query, variables }),
   });
@@ -410,7 +412,10 @@ async function resolveZoneTag(apiToken: string): Promise<string> {
     return zoneTagCache;
   }
   const response = await fetch(`${REST_URL}/zones?name=${encodeURIComponent(ZONE_NAME)}`, {
-    headers: { authorization: `Bearer ${apiToken}` },
+    headers: {
+      authorization: `Bearer ${apiToken}`,
+      "user-agent": manifoldUserAgent("admin"),
+    },
   });
   if (!response.ok) {
     throw new Error(`zone lookup HTTP ${response.status}`);

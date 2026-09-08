@@ -9,7 +9,13 @@ import {
   RegistryListResponse,
   SyncOp,
 } from "@manifold/contract";
-import { errorMessage, isJsonObject, isJsonValue, type JsonValue } from "@manifold/json";
+import {
+  errorMessage,
+  isJsonObject,
+  isJsonValue,
+  manifoldUserAgent,
+  type JsonValue,
+} from "@manifold/json";
 
 import {
   fetchAniListMangaEntries,
@@ -83,6 +89,7 @@ export const apiCall = async <A>(
     headers: {
       accept: "application/json",
       authorization: `Bearer ${config.token}`,
+      "user-agent": manifoldUserAgent("cli"),
       ...(!(body === undefined) && { "content-type": "application/json" }),
     },
     ...(!(body === undefined) && { body: JSON.stringify(body) }),

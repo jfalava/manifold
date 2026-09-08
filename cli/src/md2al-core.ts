@@ -5,6 +5,7 @@ import {
   isFiniteNumber,
   isJsonObject,
   isString,
+  manifoldUserAgent,
   objectField,
   type JsonObject,
 } from "@manifold/json";
@@ -19,6 +20,7 @@ import type { PhaseReporter } from "@/ui";
 
 const MD_API = "https://api.mangadex.org";
 const ANILIST_ENDPOINT = "https://graphql.anilist.co";
+const USER_AGENT = manifoldUserAgent("cli");
 const REQUEST_INTERVAL_MS = 2_500; // 30/min ÷ 1.25 safety margin → ≤24 req/min
 const MD_REQUEST_INTERVAL_MS = 250; // MangaDex global ~5 req/s
 const BATCH = 100;
@@ -76,7 +78,8 @@ const gql = async <A>(
     headers: {
       "content-type": "application/json",
       accept: "application/json",
-      authorization: `Bearer ${token}`
+      authorization: `Bearer ${token}`,
+      "user-agent": USER_AGENT,
     },
     body: JSON.stringify({ query, variables })
   });
@@ -103,7 +106,11 @@ export type MdTokenProvider = () => Promise<string>;
 
 const mdFetch = async <A>(mdToken: string, path: string): Promise<A> => {
   const response = await fetch(`${MD_API}${path}`, {
-    headers: { authorization: `Bearer ${mdToken}`, accept: "application/json" }
+    headers: {
+      authorization: `Bearer ${mdToken}`,
+      accept: "application/json",
+      "user-agent": USER_AGENT,
+    },
   });
   if (response.status === 429 || response.status === 403) {
     const retryAfter = Number(response.headers.get("retry-after") ?? "5");
@@ -176,7 +183,11 @@ export const phaseExport = async (
   // NOTE: /manga/status is one of the few endpoints whose payload is NOT
   // wrapped in a `data` envelope.
   const statusResponse = await fetch(`${MD_API}/manga/status`, {
-    headers: { authorization: `Bearer ${mdToken}`, accept: "application/json" },
+    headers: {
+      authorization: `Bearer ${mdToken}`,
+      accept: "application/json",
+      "user-agent": USER_AGENT,
+    },
   });
   if (!statusResponse.ok) {
     throw new Error(`MangaDex HTTP ${statusResponse.status} for /manga/status`);
@@ -476,6 +487,7 @@ export const collectProgress = async (
             headers: {
               authorization: `Bearer ${mdToken}`,
               accept: "application/json",
+              "user-agent": USER_AGENT,
             },
           },
         );

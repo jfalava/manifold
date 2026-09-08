@@ -37,7 +37,7 @@ const mangadexCover: Handler<App> = async (c) => {
   }
   const upstream = await fetch(
     `https://uploads.mangadex.org/covers/${mangaId}/${filename}`,
-    { headers: { "user-agent": "manifold-router/1.0" } },
+    { headers: { "user-agent": "manifold/0.1 (+https://manifold.jfa.dev; manifold/router)" } },
   );
   const headers = new Headers();
   headers.set("content-type", upstream.headers.get("content-type") ?? "image/jpeg");

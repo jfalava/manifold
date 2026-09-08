@@ -9,6 +9,7 @@ import {
   errorMessage,
   isFiniteNumber,
   isString,
+  manifoldUserAgent,
 } from "@manifold/json";
 import {
   createMangaDexClient,
@@ -348,7 +349,7 @@ const queryIndex = async (
 const searchMangaDex = async (
   entry: MangaDexMatchInput,
 ): Promise<readonly MangaDexManga[]> => {
-  const client = createMangaDexClient({ limit: MATCH_CANDIDATE_LIMIT });
+  const client = createMangaDexClient({ limit: MATCH_CANDIDATE_LIMIT, userAgent: manifoldUserAgent("api") });
   const terms = uniqueStrings([entry.title, ...entry.aliases]).slice(0, SEARCH_TERM_LIMIT);
   // Sequential on purpose: parallel searches burst api.mangadex.org from
   // shared Cloudflare egress IPs and trip its 403 anomaly blocking — the same

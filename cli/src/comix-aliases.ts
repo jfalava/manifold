@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { fetchAniListTitles } from "./anilist";
 import { uniqueTitles } from "./comix-match";
+import { manifoldUserAgent } from "@manifold/json";
 import { createMangaDexClient } from "@manifold/mangadex";
 
 export const MAX_COMIX_SEARCH_TERMS = 3;
@@ -54,7 +55,9 @@ export const loadRegistrySearchTitles = async (
   const mangadexId = providerIdOf(row, "mangadex");
   if (!mangadexId) {return unique;}
   const loadMangaDex = options.mangaDexTitles ?? (async (id: string) => {
-    const manga = await Effect.runPromise(createMangaDexClient().getManga(id));
+    const manga = await Effect.runPromise(
+      createMangaDexClient({ userAgent: manifoldUserAgent("cli") }).getManga(id),
+    );
     return [manga.title, ...manga.altTitles];
   });
   try {

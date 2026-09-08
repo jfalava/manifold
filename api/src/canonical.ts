@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import { isJsonObject, numberField, stringField } from "@manifold/json";
+import { isJsonObject, manifoldUserAgent, numberField, stringField } from "@manifold/json";
 import {
   createAniListSource,
   createMyAnimeListSource,
@@ -84,9 +84,15 @@ const selectedSources = (
   provider: CanonicalProviderFilter,
 ): readonly CanonicalSearchSource[] => {
   const sources: CanonicalSearchSource[] = [];
-  if (provider === "all" || provider === "anilist") {sources.push(createAniListSource());}
+  const userAgent = manifoldUserAgent("api");
+  if (provider === "all" || provider === "anilist") {
+    sources.push(createAniListSource({ userAgent }));
+  }
   if (provider === "all" || provider === "mal") {
-    sources.push(createMyAnimeListSource({ clientId: env.MANIFOLD_MAL_CLIENT_ID }));
+    sources.push(createMyAnimeListSource({
+      clientId: env.MANIFOLD_MAL_CLIENT_ID,
+      userAgent,
+    }));
   }
   return sources;
 };

@@ -3,6 +3,7 @@ import {
   isJsonArray,
   isJsonObject,
   isString,
+  manifoldUserAgent,
   numberField,
   objectField,
   stringField,
@@ -11,7 +12,8 @@ import {
 } from "@manifold/json";
 
 export const MANGAUPDATES_API_ORIGIN = "https://api.mangaupdates.com";
-export const MANGAUPDATES_USER_AGENT = "manifold/0.1 (+https://manifold.jfa.dev)";
+/** @deprecated Prefer manifoldUserAgent("mangaupdates") / withManifoldUserAgent. */
+export const MANGAUPDATES_USER_AGENT = manifoldUserAgent("mangaupdates");
 
 export interface MangaUpdatesSeries {
   readonly id: number;
@@ -62,6 +64,8 @@ export type MangaUpdatesFetcher = (input: RequestInfo | URL, init?: RequestInit)
 export interface MangaUpdatesClientOptions {
   readonly endpoint?: string;
   readonly fetcher?: MangaUpdatesFetcher;
+  /** Override outbound User-Agent (defaults to manifold/mangaupdates). */
+  readonly userAgent?: string;
 }
 
 const defaultFetcher: MangaUpdatesFetcher = (input, init) => fetch(input, init);
@@ -166,7 +170,7 @@ export const createMangaUpdatesClient = (options: MangaUpdatesClientOptions = {}
     // Accumulator: start empty so known literals are not widened into Record.
     const headers: Record<string, string> = {};
     headers.accept = "application/json";
-    headers["user-agent"] = MANGAUPDATES_USER_AGENT;
+    headers["user-agent"] = options.userAgent ?? MANGAUPDATES_USER_AGENT;
     if (body !== undefined) {
       headers["content-type"] = "application/json";
     }

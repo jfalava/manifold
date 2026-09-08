@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createMalTitleSearch,
+  malSearchQuery,
+  malSearchQueryOk,
   malUpdateForAniList,
   matchAniListToMal,
   runAl2mal,
@@ -33,6 +36,88 @@ describe("malUpdateForAniList", () => {
 
   it("rejects unknown AniList statuses", () => {
     expect(malUpdateForAniList({ status: "WATCHING" }, { includeProgress: true })).toBeUndefined();
+  });
+});
+
+describe("malSearchQuery", () => {
+  it("accepts 3–64 code points and clamps longer titles", () => {
+    expect(malSearchQueryOk("")).toBe(false);
+    expect(malSearchQueryOk("ab")).toBe(false);
+    expect(malSearchQueryOk("abc")).toBe(true);
+    expect(malSearchQueryOk("あい")).toBe(false);
+    expect(malSearchQueryOk("あいう")).toBe(true);
+    expect(malSearchQueryOk("x".repeat(64))).toBe(true);
+    expect(malSearchQueryOk("x".repeat(65))).toBe(false);
+    expect(malSearchQuery("x".repeat(70))).toBe("x".repeat(64));
+    expect(malSearchQuery("ab")).toBeUndefined();
+  });
+});
+
+describe("createMalTitleSearch", () => {
+  const instant = vi.fn(async () => undefined);
+
+  it("does not log and returns empty for short q without fetching", async () => {
+    const fetcher = vi.fn();
+    const search = createMalTitleSearch("client", fetcher, instant);
+    await expect(search("ab")).resolves.toEqual([]);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(instant).not.toHaveBeenCalled();
+  });
+
+  it("throws quietly (no console) on HTTP 400 so the bar can count errors", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify({ message: "invalid q", error: "bad_request" }), { status: 400 }),
+    );
+    const search = createMalTitleSearch("client", fetcher, instant);
+    await expect(search("Some Title")).rejects.toThrow("MAL title search HTTP 400");
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it("parses node + alternative_titles on success", async () => {
+    const fetcher = vi.fn(async () =>
+      Response.json({
+        data: [{
+          node: {
+            id: 9,
+            title: "Berserk",
+            alternative_titles: { en: "Berserk", ja: "ベルセルク", synonyms: ["Berserk Max"] },
+          },
+        }],
+      }),
+    );
+    const search = createMalTitleSearch("client", fetcher, instant);
+    await expect(search("Berserk")).resolves.toEqual([{
+      id: 9,
+      title: "Berserk",
+      aliases: ["Berserk", "ベルセルク", "Berserk Max"],
+    }]);
+  });
+
+  it("spaces real searches by 1.5s after the first (same floor as createMalClient)", async () => {
+    const fetcher = vi.fn(async () => Response.json({ data: [] }));
+    const sleep = vi.fn(async () => undefined);
+    const search = createMalTitleSearch("client", fetcher, sleep);
+    await search("One Piece");
+    await search("Berserk");
+    await search("ab"); // skipped — no HTTP, no extra sleep
+    await search("Vinland Saga");
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenNthCalledWith(1, 1_500);
+    expect(sleep).toHaveBeenNthCalledWith(2, 1_500);
+  });
+
+  it("retries 429 with backoff before giving up", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers: { "retry-after": "1" } }))
+      .mockResolvedValueOnce(Response.json({ data: [] }));
+    const sleep = vi.fn(async () => undefined);
+    const search = createMalTitleSearch("client", fetcher, sleep);
+    await expect(search("One Piece")).resolves.toEqual([]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(1_500);
   });
 });
 
@@ -100,6 +185,35 @@ describe("matchAniListToMal", () => {
     expect(result).toMatchObject({
       kind: "matched",
       value: { malId: 8, method: "title-partial", update: { status: "on_hold", is_rereading: false } },
+    });
+  });
+
+  it("does not call MAL search when no title is usable as q", async () => {
+    const titleSearch = vi.fn(async () => [{ id: 1, title: "X", aliases: [] }]);
+    const result = await matchAniListToMal(
+      entry({ mediaId: 5, title: "OK", status: "CURRENT", titles: ["OK", "A"] }),
+      titleSearch,
+      { includeProgress: false },
+    );
+    expect(titleSearch).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      kind: "unmatched",
+      value: { reason: expect.stringContaining("3–64 characters") },
+    });
+  });
+
+  it("treats a thrown title search as unmatched instead of aborting", async () => {
+    const titleSearch: Al2malSearch = async () => {
+      throw new Error('Canonical provider returned HTTP 400: body={"message":"invalid q"}');
+    };
+    const result = await matchAniListToMal(
+      entry({ mediaId: 6, title: "Some Long Title", status: "CURRENT" }),
+      titleSearch,
+      { includeProgress: false },
+    );
+    expect(result).toMatchObject({
+      kind: "unmatched",
+      value: { reason: expect.stringContaining("MAL title search failed") },
     });
   });
 });

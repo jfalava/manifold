@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { isFiniteNumber, isJsonObject, isString } from "@manifold/json";
+import { isFiniteNumber, isJsonObject, isString, manifoldUserAgent } from "@manifold/json";
 import {
   createMangaDexPasswordGrant,
   createMangaDexRefreshGrant,
@@ -79,7 +79,10 @@ export const createMangaDexTokenManager = (
   ): Promise<void> => {
     const response = await fetcher(MANGADEX_TOKEN_ENDPOINT, {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "user-agent": manifoldUserAgent("cli"),
+      },
       body: grant.toString()
     });
     if (!response.ok) {

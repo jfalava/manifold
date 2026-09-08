@@ -19,6 +19,7 @@
     "@fontsource/ibm-plex-sans": "catalog:fonts",
     "@fontsource/zilla-slab": "catalog:fonts",
     "@manifold/contract": "workspace:*",
+    "@manifold/json": "workspace:*",
     "@phosphor-icons/react": "2.1.10",
     "@tanstack/react-hotkeys": "0.10.0",
     "@tanstack/react-router": "1.170.32",

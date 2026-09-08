@@ -1,4 +1,4 @@
-import { isJsonObject, type JsonObject } from "@manifold/json";
+import { isJsonObject, manifoldUserAgent, type JsonObject } from "@manifold/json";
 import type { MalBackupIdentity } from "@manifold/canonical";
 import type { AniListReadingStatus } from "./anilist-types.js";
 
@@ -82,6 +82,7 @@ const rawAniListRequest = async <A>(
       "content-type": "application/json",
       accept: "application/json",
       authorization: `Bearer ${token}`,
+      "user-agent": manifoldUserAgent("paperback-runtime"),
     },
     body: JSON.stringify({ query, variables }),
   });

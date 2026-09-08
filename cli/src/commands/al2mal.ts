@@ -175,10 +175,12 @@ export const al2malCommand = Command.make(
 
                 let matchedSoFar = 0;
                 let unmatchedSoFar = 0;
+                let errorsSoFar = 0;
                 const tick = (index: number, total: number) => {
                   reporter.progress(index + 1, total, [
                     ["matched", matchedSoFar],
                     ["unmatched", unmatchedSoFar],
+                    ["errors", errorsSoFar],
                   ]);
                 };
                 ctx.report = await runAl2mal({
@@ -191,8 +193,11 @@ export const al2malCommand = Command.make(
                     matchedSoFar += 1;
                     tick(index, total);
                   },
-                  onUnmatched: (_entry, index, total) => {
+                  onUnmatched: (entry, index, total) => {
                     unmatchedSoFar += 1;
+                    if (entry.reason.startsWith("MAL title search failed")) {
+                      errorsSoFar += 1;
+                    }
                     tick(index, total);
                   },
                   onWritten: (done, total) => {

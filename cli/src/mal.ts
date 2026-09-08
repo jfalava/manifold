@@ -1,8 +1,10 @@
 import { Schema } from "effect";
+import { manifoldUserAgent } from "@manifold/json";
 
 const API = "https://api.myanimelist.net/v2";
 const TOKEN_URL = "https://myanimelist.net/v1/oauth2/token";
 export const MAL_REDIRECT_URI = "http://127.0.0.1:8766/callback";
+const USER_AGENT = manifoldUserAgent("cli");
 
 const Tokens = Schema.Struct({
   access_token: Schema.NonEmptyString,
@@ -63,7 +65,11 @@ export const requestMalTokens = async (
   if (clientSecret) {grant.set("client_secret", clientSecret);}
   // Do not retry token exchange: a lost response may have rotated the refresh token.
   const response = await fetcher(TOKEN_URL, {
-    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      "user-agent": USER_AGENT,
+    },
     body: grant, signal: AbortSignal.timeout(30_000), redirect: "error",
   });
   if (!response.ok) {throw new Error(`MAL token exchange failed: HTTP ${response.status}. Run login mal again.`);}
@@ -113,6 +119,7 @@ export const createMalClient = (options: {
       const response = await fetcher(`${API}${path}`, {
         method, headers: {
           authorization: `Bearer ${token}`, accept: "application/json",
+          "user-agent": USER_AGENT,
           ...(body && { "content-type": "application/x-www-form-urlencoded" }),
         },
         ...(body && { body }), signal: AbortSignal.timeout(30_000), redirect: "error",
