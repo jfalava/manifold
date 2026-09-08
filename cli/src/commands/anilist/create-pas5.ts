@@ -401,7 +401,7 @@ export const sourceFreeEntities = (
   };
 };
 
-export const al2Pas5Command = Command.make("al2pas5", {
+export const createPas5Command = Command.make("pas5", {
   apply: Flag.boolean("apply").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Write the .pas5 archive (default: dry-run report only)."),
@@ -480,7 +480,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
         }
         const scan: ScanCtx = yield* Effect.tryPromise({
           try: async () => {
-            openFrame("al2pas5");
+            openFrame("anilist create pas5");
             let fetchedEntries: readonly AniListRichEntry[] = [];
             let registry = new Map<string, RegistryRow>();
             let baseEntities: Pas5Entities | undefined;

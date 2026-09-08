@@ -6,7 +6,7 @@ const runWipe = (flags: string[], connected: boolean) => spawnSync("bun", ["-e",
   import { BunServices } from "@effect/platform-bun";
   import { Effect } from "effect";
   import { Command } from "effect/unstable/cli";
-  import { wipeMalCommand } from "./src/commands/wipe-mal";
+  import { wipeMalMangaCommand } from "./src/commands/mal/wipe-manga";
   for (const key of Object.keys(process.env)) {
     if (key.startsWith("MANIFOLD_")) delete process.env[key];
   }
@@ -28,7 +28,7 @@ const runWipe = (flags: string[], connected: boolean) => spawnSync("bun", ["-e",
     throw new Error("Unexpected request");
   };
   try {
-    await Effect.runPromise(Command.runWith(wipeMalCommand, { version: "test" })(${JSON.stringify(flags)}).pipe(
+    await Effect.runPromise(Command.runWith(wipeMalMangaCommand, { version: "test" })(${JSON.stringify(flags)}).pipe(
       Effect.provide(BunServices.layer),
     ));
   } catch (error) {

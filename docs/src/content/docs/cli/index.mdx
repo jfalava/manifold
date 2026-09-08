@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: Migrations, op-log triage, drift reconciliation, and registry backfill from the terminal.
+description: Provider ops, migrations, op-log triage, drift reconciliation, and registry backfill from the terminal.
 sidebar:
   order: 1
   label: Overview
@@ -73,7 +73,7 @@ bun run manifold registry import
 
 Prefer local OAuth over pasting tokens. Full setup:
 [login mal](/cli/login/mal). Primary consumer:
-[wipe-mal](/cli/migrate/wipe-mal).
+[`mal wipe manga`](/cli/mal/wipe-manga).
 
 ```text
 bun run manifold login mal
@@ -88,17 +88,17 @@ refresh token.
 
 ### `--mal-token <token>`
 
-Optional MAL access token override for `migrate wipe-mal`. Resolve order: flag
+Optional MAL access token override for `mal wipe manga`. Resolve order: flag
 → `MANIFOLD_MAL_TOKEN` → keychain login. A supplied token does not refresh.
 
 Example:
 
 ```text
 bun run manifold login mal
-bun run manifold migrate wipe-mal
+bun run manifold mal wipe manga
 ```
 
-`migrate anilist-to-mangadex`, `stale-status`, and `unfollow-dropped` require
+`migrate anilist-to-mangadex`, `mangadex stale-status`, and `mangadex unfollow-dropped` require
 all four MangaDex credentials.
 
 ### `--mangadex-client-id <id>`
@@ -109,7 +109,7 @@ OAuth client ID for the MangaDex password grant. Falls back to
 Example:
 
 ```text
-bun run manifold stale-status --mangadex-client-id "$MANIFOLD_MANGADEX_CLIENT_ID"
+bun run manifold mangadex stale-status --mangadex-client-id "$MANIFOLD_MANGADEX_CLIENT_ID"
 ```
 
 ### `--mangadex-client-secret <secret>`
@@ -120,7 +120,7 @@ OAuth client secret for the MangaDex password grant. Falls back to
 Example:
 
 ```text
-bun run manifold stale-status --mangadex-client-secret "$MANIFOLD_MANGADEX_CLIENT_SECRET"
+bun run manifold mangadex stale-status --mangadex-client-secret "$MANIFOLD_MANGADEX_CLIENT_SECRET"
 ```
 
 ### `--mangadex-username <username>`
@@ -131,7 +131,7 @@ MangaDex account username for the password grant. Falls back to
 Example:
 
 ```text
-bun run manifold stale-status --mangadex-username "$MANIFOLD_MANGADEX_USERNAME"
+bun run manifold mangadex stale-status --mangadex-username "$MANIFOLD_MANGADEX_USERNAME"
 ```
 
 ### `--mangadex-password <password>`
@@ -142,7 +142,7 @@ MangaDex account password for the password grant. Falls back to
 Example:
 
 ```text
-bun run manifold stale-status --mangadex-password "$MANIFOLD_MANGADEX_PASSWORD"
+bun run manifold mangadex stale-status --mangadex-password "$MANIFOLD_MANGADEX_PASSWORD"
 ```
 
 ### MangaDex credentials together
@@ -153,7 +153,7 @@ environment:
 Example:
 
 ```text
-bun run manifold stale-status \
+bun run manifold mangadex stale-status \
   --mangadex-client-id "$MANIFOLD_MANGADEX_CLIENT_ID" \
   --mangadex-client-secret "$MANIFOLD_MANGADEX_CLIENT_SECRET" \
   --mangadex-username "$MANIFOLD_MANGADEX_USERNAME" \
@@ -165,8 +165,8 @@ AniList writes always run on your machine — AniList blocks Cloudflare Worker e
 ## Dry-run defaults
 
 Every command that changes remote state is **dry-run until `--apply`**.
-`migrate wipe-al --apply` also requires interactive confirmation unless `--yes`
-is present. `migrate wipe-mal --apply` requires `--backup-paused` instead of a
+`anilist wipe manga --apply` also requires interactive confirmation unless `--yes`
+is present. `mal wipe manga --apply` requires `--backup-paused` instead of a
 prompt, and refuses to delete while the API's MAL connection is still active.
 
 ## Exit codes

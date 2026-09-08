@@ -7,7 +7,7 @@ import {
   matchingBaseLibraryIds,
   migrateLibrarySources,
   sourceFreeEntities,
-} from "../src/commands/al2pas5";
+} from "../src/commands/anilist/create-pas5";
 import type { RegistryRow } from "../src/commands/toolbox";
 import type { Pas5Entities } from "../src/pas5";
 

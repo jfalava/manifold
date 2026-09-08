@@ -10,7 +10,7 @@
     "lint:docs:fix": "nimbus-docs lint --fix",
     "lint:oxlint": "astro sync && oxlint src --ignore-pattern '**/*.astro'",
     "check": "bun typecheck && bun lint",
-    "dev": "astro dev",
+    "dev": "astro dev --host",
     "format": "prettier --write src",
     "format:check": "prettier --check src",
     "lint:astro": "eslint \"src/**/*.astro\"",

@@ -576,5 +576,4 @@ export const staleStatusCommand = Command.make(
   Command.withDescription(
     "Set reading status for library entries whose latest chapter predates a cutoff.",
   ),
-  Command.withAlias("prune-stale"),
 );

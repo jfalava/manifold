@@ -1,0 +1,26 @@
+---
+title: mangadex
+description: MangaDex library maintenance (follow and reading status).
+sidebar:
+  order: 1
+  label: Overview
+---
+
+```text
+bun run manifold mangadex <command> [flags]
+```
+
+MangaDex library ops. Auth is still password-grant env vars or
+`MANIFOLD_MANGADEX_TOKEN` (no interactive `login mangadex` yet). Cross-provider
+list copies stay under [`migrate`](/cli/migrate/md2al). Registry link backfill
+is under [`registry mangadex`](/cli/registry/mangadex).
+
+| Command | Purpose |
+| ------- | ------- |
+| [`stale-status`](/cli/mangadex/stale-status) | Move titles with old latest chapters to a new reading status |
+| [`unfollow-dropped`](/cli/mangadex/unfollow-dropped) | Unfollow titles in a given reading status (default dropped) |
+
+```text
+bun run manifold mangadex stale-status
+bun run manifold mangadex unfollow-dropped --status dropped,on_hold
+```

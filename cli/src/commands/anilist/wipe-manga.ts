@@ -26,7 +26,7 @@ interface WipeCtx extends RunContext {
   activities: Activity[];
 }
 
-export const wipeAlCommand = Command.make("wipe-al", {
+export const wipeAlMangaCommand = Command.make("manga", {
   apply: Flag.boolean("apply").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Permanently delete the scanned AniList data (default: dry-run)."),
@@ -62,7 +62,7 @@ export const wipeAlCommand = Command.make("wipe-al", {
       // readline prompt never fights the listr2 renderer for the screen.
       const scan: WipeCtx = yield* Effect.tryPromise({
         try: async () => {
-          openFrame("wipe-al");
+          openFrame("anilist wipe manga");
 
           let viewerId: number | undefined;
           const run = createRun<WipeCtx>([

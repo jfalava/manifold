@@ -302,5 +302,4 @@ export const unfollowDroppedCommand = Command.make(
     }),
 ).pipe(
   Command.withDescription("Uncheck the Follow box on MangaDex entries with a given reading status (default: dropped)."),
-  Command.withAlias("mangadex-unfollow"),
 );

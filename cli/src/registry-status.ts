@@ -11,7 +11,7 @@ export const REGISTRY_STATUSES = [
 export type RegistryStatus = (typeof REGISTRY_STATUSES)[number];
 
 /**
- * Prefill --status accepts the same short names as al2pas5 --tabs, then expands
+ * Prefill --status accepts the same short names as anilist create pas5 --tabs, then expands
  * them onto registry vocabulary. "reading" includes re_reading the same way
  * PAS5 maps REPEATING onto the Reading tab.
  */

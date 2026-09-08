@@ -1,12 +1,12 @@
 ---
-title: al2pas5
+title: create pas5
 description: Generate a Paperback .pas5 backup from the AniList manga list.
 sidebar:
-  order: 4
+  order: 2
 ---
 
 ```text
-bun run manifold migrate al2pas5 [flags]
+bun run manifold anilist create pas5 [flags]
 ```
 
 Builds a source-free Paperback `.pas5` archive. Every imported title has a
@@ -28,7 +28,7 @@ the titles and output it would generate without writing the archive.
 Example:
 
 ```text
-bun run manifold migrate al2pas5 --apply
+bun run manifold anilist create pas5 --apply
 ```
 
 ### `--tabs <value>`
@@ -43,7 +43,7 @@ comma-separated list of `reading`, `paused`, `dropped`, `completed`, and
 Example:
 
 ```text
-bun run manifold migrate al2pas5 --tabs reading,completed
+bun run manifold anilist create pas5 --tabs reading,completed
 ```
 
 ### `--base <path>`
@@ -61,7 +61,7 @@ tracker are dropped.
 Example:
 
 ```text
-bun run manifold migrate al2pas5 --base ./Paperback-Backup.pas5
+bun run manifold anilist create pas5 --base ./Paperback-Backup.pas5
 ```
 
 ### `--out <path>`
@@ -73,7 +73,7 @@ Set the path for the generated archive.
 Example:
 
 ```text
-bun run manifold migrate al2pas5 --out ./backups/manifold.pas5
+bun run manifold anilist create pas5 --out ./backups/manifold.pas5
 ```
 
 ### `--limit <n>`
@@ -86,7 +86,7 @@ archive before exporting the complete AniList list.
 Example:
 
 ```text
-bun run manifold migrate al2pas5 --limit 10
+bun run manifold anilist create pas5 --limit 10
 ```
 
 ### `--anilist-token <token>`
@@ -97,7 +97,7 @@ Example:
 
 ```text
 bun run manifold login anilist
-bun run manifold migrate al2pas5
+bun run manifold anilist create pas5
 ```
 
 ### `--api-token <token>`
@@ -108,7 +108,7 @@ back to `MANIFOLD_TOKEN`.
 Example:
 
 ```text
-bun run manifold migrate al2pas5 --api-token "$MANIFOLD_TOKEN"
+bun run manifold anilist create pas5 --api-token "$MANIFOLD_TOKEN"
 ```
 
 ### `--api-origin <url>`
@@ -120,15 +120,15 @@ Personal API origin used for registry lookups.
 Example:
 
 ```text
-bun run manifold migrate al2pas5 --api-origin https://manifold.example/api
+bun run manifold anilist create pas5 --api-origin https://manifold.example/api
 ```
 
 ## Usage
 
 ```text
-bun run manifold migrate al2pas5
-bun run manifold migrate al2pas5 --apply
-bun run manifold migrate al2pas5 --apply --base ./Paperback-Backup.pas5 --tabs reading,completed
+bun run manifold anilist create pas5
+bun run manifold anilist create pas5 --apply
+bun run manifold anilist create pas5 --apply --base ./Paperback-Backup.pas5 --tabs reading,completed
 ```
 
 `--tabs` filters which AniList statuses become library tabs. Install the

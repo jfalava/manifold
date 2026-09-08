@@ -1,0 +1,24 @@
+---
+title: migrate
+description: Cross-provider library migrations between AniList and MangaDex.
+sidebar:
+  order: 1
+  label: Overview
+---
+
+```text
+bun run manifold migrate <command> [flags]
+```
+
+Cross-provider list copies only. Single-provider maintenance lives under
+[`anilist`](/cli/anilist), [`mangadex`](/cli/mangadex), and [`mal`](/cli/mal).
+
+| Command | Purpose |
+| ------- | ------- |
+| [`md2al`](/cli/migrate/md2al) | Push MangaDex library into private AniList entries |
+| [`anilist-to-mangadex`](/cli/migrate/al2md) | Bring MangaDex up to parity with AniList |
+
+```text
+bun run manifold migrate md2al
+bun run manifold migrate anilist-to-mangadex
+```

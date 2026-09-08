@@ -1,0 +1,26 @@
+---
+title: anilist
+description: AniList list export and destructive manga maintenance.
+sidebar:
+  order: 1
+  label: Overview
+---
+
+```text
+bun run manifold anilist <command> [flags]
+```
+
+Provider ops for the signed-in AniList account. Authorize first with
+[`login anilist`](/cli/login/anilist). Cross-provider list copies stay under
+[`migrate`](/cli/migrate/md2al).
+
+| Command | Purpose |
+| ------- | ------- |
+| [`create pas5`](/cli/anilist/create-pas5) | Build a Paperback `.pas5` backup from the AniList manga list |
+| [`wipe manga`](/cli/anilist/wipe-manga) | Delete every AniList manga list entry and manga-related activity |
+
+```text
+bun run manifold login anilist
+bun run manifold anilist create pas5 --base ./Paperback-Backup.pas5
+bun run manifold anilist wipe manga
+```

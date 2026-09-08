@@ -10,7 +10,7 @@ import { resolveValue } from "@/env-resolve";
 import { createMalClient, wipeMalManga } from "@/mal";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
 
-export const wipeMalCommand = Command.make("wipe-mal", {
+export const wipeMalMangaCommand = Command.make("manga", {
   malToken: Flag.string("mal-token").pipe(Flag.optional,
     Flag.withDescription("Overrides keychain login. Prefer MANIFOLD_MAL_TOKEN to keep tokens out of shell history.")),
   apply: Flag.boolean("apply").pipe(Flag.withDefault(false),
@@ -28,7 +28,7 @@ export const wipeMalCommand = Command.make("wipe-mal", {
       if (apply && !backupPaused) {
         throw new Error("Pause/disconnect other MAL writers, then pass --backup-paused with --apply.");
       }
-      openFrame("wipe-mal (manga only)");
+      openFrame("mal wipe manga");
       if (resolveValue(apiToken, "MANIFOLD_TOKEN")) {
         const connection = await apiCall(apiConfig(apiOrigin, apiToken), "/v1/auth/mal", "GET", undefined, AuthConnection);
         if (connection.connected) {

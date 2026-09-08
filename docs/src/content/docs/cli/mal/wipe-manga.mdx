@@ -1,12 +1,12 @@
 ---
-title: wipe-mal
+title: wipe manga
 description: Delete every MyAnimeList manga list entry. Anime is never touched.
 sidebar:
-  order: 5
+  order: 2
 ---
 
 ```text
-bun run manifold migrate wipe-mal [flags]
+bun run manifold mal wipe manga [flags]
 ```
 
 **Destructive.** Wipes the MAL **manga** list across every status, including
@@ -32,7 +32,7 @@ scans and reports.
 Example:
 
 ```text
-bun run manifold migrate wipe-mal --apply --backup-paused
+bun run manifold mal wipe manga --apply --backup-paused
 ```
 
 ### `--backup-paused`
@@ -46,7 +46,7 @@ connection check.
 Example:
 
 ```text
-bun run manifold migrate wipe-mal --apply --backup-paused
+bun run manifold mal wipe manga --apply --backup-paused
 ```
 
 ### `--mal-token <token>`
@@ -59,7 +59,7 @@ Example:
 
 ```text
 bun run manifold login mal
-bun run manifold migrate wipe-mal
+bun run manifold mal wipe manga
 ```
 
 ### `--api-token <token>`
@@ -70,7 +70,7 @@ Personal API token used only for the backup-connection check against
 Example:
 
 ```text
-bun run manifold migrate wipe-mal --api-token "$MANIFOLD_TOKEN"
+bun run manifold mal wipe manga --api-token "$MANIFOLD_TOKEN"
 ```
 
 ### `--api-origin <url>`
@@ -83,15 +83,15 @@ Personal API origin for the backup-connection check. Falls back to
 Example:
 
 ```text
-bun run manifold migrate wipe-mal --api-origin https://manifold.example/api
+bun run manifold mal wipe manga --api-origin https://manifold.example/api
 ```
 
 ## Usage
 
 ```text
 bun run manifold login mal
-bun run manifold migrate wipe-mal
-bun run manifold migrate wipe-mal --apply --backup-paused
+bun run manifold mal wipe manga
+bun run manifold mal wipe manga --apply --backup-paused
 ```
 
 ## Before applying

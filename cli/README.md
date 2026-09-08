@@ -9,15 +9,15 @@ Full documentation lives in the docs site under **The manifold CLI**
 ```text
 bun run manifold <subcommand> [flags]
 
+manifold login anilist                     # authorize AniList (OS keychain)
+manifold login mal                         # authorize MAL (OS keychain)
+manifold anilist create pas5               # AniList list → Paperback .pas5 backup
+manifold anilist wipe manga                # delete AniList manga state (destructive)
+manifold mangadex stale-status             # move stale MangaDex titles to a new status
+manifold mangadex unfollow-dropped         # unfollow MangaDex titles by status
+manifold mal wipe manga                    # preview a MAL manga-only wipe
 manifold migrate md2al                     # MangaDex library → private AniList entries
 manifold migrate anilist-to-mangadex       # AniList list → MangaDex statuses + markers
-manifold migrate al2pas5                   # AniList list → Paperback .pas5 backup
-manifold migrate wipe-al                   # delete AniList manga state (destructive)
-manifold login anilist                     # authorize AniList and save the token in the OS keychain
-manifold login mal                         # authorize MAL and save tokens in the OS keychain
-manifold migrate wipe-mal                  # preview a MAL manga-only wipe
-manifold stale-status                      # move stale MangaDex titles to a new status
-manifold unfollow-dropped                  # unfollow MangaDex titles by status
 manifold ops pending | retry               # op-log triage
 manifold reconcile diff                    # live AniList list vs registry (read-only)
 manifold registry import                   # snapshot AniList list into the registry
@@ -64,7 +64,7 @@ keychain (no expiry tracking). Prefer login over pasting pin tokens.
 ## MyAnimeList manga wipe
 
 Docs: [login mal](../docs/src/content/docs/cli/login/mal.mdx) ·
-[wipe-mal](../docs/src/content/docs/cli/migrate/wipe-mal.mdx).
+[mal wipe manga](../docs/src/content/docs/cli/mal/wipe-manga.mdx).
 
 Register a MAL OAuth client with redirect URI `http://127.0.0.1:8766/callback`.
 Use a separate CLI client rather than replacing the deployed API's redirect URI.
@@ -73,7 +73,7 @@ if the client requires it. From `cli/`:
 
 ```sh
 bun index.ts login mal
-bun index.ts migrate wipe-mal
+bun index.ts mal wipe manga
 ```
 
 Login prints a browser authorization URL and waits up to five minutes for the
@@ -93,7 +93,7 @@ to delete while that connection remains active. Without API credentials, it
 cannot check the connection; you must verify it yourself.
 
 ```sh
-bun index.ts migrate wipe-mal --apply --backup-paused
+bun index.ts mal wipe manga --apply --backup-paused
 ```
 
 `--apply` is the confirmation, including in non-interactive execution. There is
