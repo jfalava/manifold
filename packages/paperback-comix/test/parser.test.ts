@@ -11,6 +11,7 @@ import {
   toSourceManga,
 } from "../src/parser.js";
 import { chaptersFromWebView, pagesFromWebView } from "../src/webview.js";
+import { comixSearchUrl, resolveComixUrl } from "../src/url.js";
 
 describe("Comix Paperback parser", () => {
   const manga = {
@@ -86,5 +87,15 @@ describe("Comix Paperback parser", () => {
     expect(pagesFromWebView({ pages: ["https://cdn.example/i/page-1.jpg"] })).toEqual([
       "https://cdn.example/i/page-1.jpg",
     ]);
+  });
+
+  it("builds Comix URLs without relying on Paperback's missing URL global", () => {
+    expect(comixSearchUrl("Haimiya senpai", 2)).toBe(
+      "https://comix.to/api/v1/manga?keyword=Haimiya%20senpai&page=2",
+    );
+    expect(resolveComixUrl("/chapter/example")).toBe("https://comix.to/chapter/example");
+    expect(resolveComixUrl("https://comix.to/chapter/example")).toBe(
+      "https://comix.to/chapter/example",
+    );
   });
 });

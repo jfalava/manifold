@@ -1,6 +1,6 @@
 {
   "name": "@manifold/tracker",
-  "version": "0.1.0-r51",
+  "version": "0.1.0-r52",
   "private": true,
   "description": "Canonical registry and progress orchestration for native Paperback providers",
   "type": "module",

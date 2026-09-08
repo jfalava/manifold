@@ -48,8 +48,9 @@ import {
   pagesFromWebView,
   pagesWebViewScript,
 } from "./webview.js";
+import { comixSearchUrl, COMIX_ORIGIN, resolveComixUrl } from "./url.js";
 
-export const COMIX_ORIGIN = "https://comix.to";
+export { COMIX_ORIGIN } from "./url.js";
 
 export const ComixInfo: ExtensionInfo = {
   version: "0.1.0",
@@ -247,11 +248,7 @@ export class ComixSource implements
     _sortingOption: SortingOption | undefined,
   ): Promise<PagedResults<SearchResultItem>> {
     const page = pageFromMetadata(metadata);
-    const url = new URL("/api/v1/manga", COMIX_ORIGIN);
-    url.searchParams.set("keyword", query.title.trim());
-    url.searchParams.set("page", String(page));
-
-    const response = await requestJson(url.toString());
+    const response = await requestJson(comixSearchUrl(query.title.trim(), page));
     const items = resultItems(response.body);
     const pagination = paginationFromPayload(response.body);
 
@@ -303,7 +300,7 @@ export class ComixSource implements
       const chapterUrl = chapter.additionalInfo?.["Comix chapter URL"] ??
         `${COMIX_ORIGIN}/chapter/${encodeURIComponent(chapter.chapterId)}`;
       const webViewResult = await this.executeComixWebView(
-        new URL(chapterUrl, COMIX_ORIGIN).href,
+        resolveComixUrl(chapterUrl),
         pagesWebViewScript,
       );
       const pages = pagesFromWebView(webViewResult);
