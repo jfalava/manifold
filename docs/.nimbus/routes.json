@@ -14,6 +14,7 @@
     "/cli/mal/wipe-manga",
     "/cli/mangadex/stale-status",
     "/cli/mangadex/unfollow-dropped",
+    "/cli/migrate/anilist-to-mal",
     "/cli/migrate/anilist-to-mangadex",
     "/cli/migrate/mangadex-to-anilist",
     "/cli/ops/pending",
@@ -21,6 +22,7 @@
     "/cli/reconcile-diff",
     "/cli/registry/comix",
     "/cli/registry/import",
+    "/cli/registry/mal",
     "/cli/registry/mangadex",
     "/development",
     "/install"

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalProviderCandidate,
   correlateProviderCandidates,
   parseProviderCandidateId,
   parseProviderSearchInput,
@@ -8,6 +9,52 @@ import {
 } from "../src/provider-candidate";
 
 describe("provider candidates", () => {
+  it("creates MAL candidates without relabeling their IDs as AniList", () => {
+    const candidate = canonicalProviderCandidate({
+      id: "mal:77", provider: "mal", providerId: "77", title: "Example", aliases: ["Alias"],
+      externalIds: { mal: "77" }, metadata: { coverUrl: "https://example.test/mal.jpg" },
+    });
+    expect(candidate).toMatchObject({ provider: "mal", providerId: "77", links: [] });
+    expect(toProviderCandidateSearchResult(candidate)).toMatchObject({
+      mangaId: "provider-candidate:mal:77", subtitle: "MyAnimeList · Alias",
+    });
+    expect(parseProviderSearchInput("mal: Example")).toEqual({ query: "Example", scope: "mal" });
+  });
+
+  it("carries proven MAL cross-links even when a candidate is reopened without a search cache", () => {
+    expect(canonicalProviderCandidate({
+      id: "anilist:42", provider: "anilist", providerId: "42", title: "Example", aliases: [],
+      externalIds: { anilist: "42", mal: "77" },
+    }).links).toEqual([{ provider: "mal", externalId: "77" }]);
+  });
+
+  it("correlates MAL through MangaDex and preserves its proven AniList link", () => {
+    const result = correlateProviderCandidates([
+      { provider: "mal", providerId: "77", title: "Example", aliases: [], imageUrl: "" },
+      { provider: "anilist", providerId: "77", title: "Different manga", aliases: [], imageUrl: "" },
+      { provider: "mangadex", providerId: "md-1", title: "Other language", aliases: [], imageUrl: "", links: [
+        { provider: "mal", externalId: "77" }, { provider: "anilist", externalId: "42" },
+      ] },
+    ]);
+    expect(result[0]?.links).toEqual([
+      { provider: "mangadex", externalId: "md-1", title: "Other language" },
+      { provider: "anilist", externalId: "42" },
+    ]);
+    expect(result[1]?.links).toBeUndefined();
+  });
+
+  it("rejects contradictory cross-links during correlation", () => {
+    const result = correlateProviderCandidates([
+      { provider: "mal", providerId: "77", title: "Example", aliases: [], imageUrl: "", links: [
+        { provider: "anilist", externalId: "99" },
+      ] },
+      { provider: "mangadex", providerId: "md-1", title: "Example", aliases: [], imageUrl: "", links: [
+        { provider: "mal", externalId: "77" }, { provider: "anilist", externalId: "42" },
+      ] },
+    ]);
+    expect(result[0]?.links).toEqual([{ provider: "anilist", externalId: "99" }]);
+  });
+
   it("round-trips provider ids without confusing them with registry UUIDs", () => {
     const id = providerCandidateId("comix", "abc/title:one");
     expect(parseProviderCandidateId(id)).toEqual({

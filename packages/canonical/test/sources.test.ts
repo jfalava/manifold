@@ -128,6 +128,28 @@ describe("AniList canonical source", () => {
 });
 
 describe("MyAnimeList canonical source", () => {
+  it.each(["ab", " 漫画 ", "𠮷𠮷"])("rejects short Unicode search %s without a request", async (query) => {
+    let calls = 0;
+    const source = createMyAnimeListSource({ clientId: "client", fetcher: async () => {
+      calls += 1;
+      return jsonResponse({ data: [] });
+    } });
+    await expect(Effect.runPromise(source.search(query))).rejects.toMatchObject({
+      provider: "mal", status: 400, message: "MyAnimeList search requires at least 3 characters",
+    });
+    expect(calls).toBe(0);
+  });
+
+  it("accepts three Unicode characters", async () => {
+    let href = "";
+    const source = createMyAnimeListSource({ clientId: "client", fetcher: async (input) => {
+      href = requestHref(input);
+      return jsonResponse({ data: [] });
+    } });
+    await expect(Effect.runPromise(source.search(" 漫画家 "))).resolves.toEqual([]);
+    expect(new URL(href).searchParams.get("q")).toBe("漫画家");
+  });
+
   it("uses the client id header and normalizes REST search results", async () => {
     let requestUrl: URL | undefined;
     let requestHeaders: Headers | undefined;

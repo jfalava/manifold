@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect";
 import {
+  CanonicalIdentity,
   ErrorBody,
   IngestCandidateInput,
   LinkProviderInput,
@@ -26,6 +27,7 @@ import {
   type RouteContext,
   type RouteEffect,
 } from "../http";
+import { getRegistryCanonical } from "../canonical";
 
 export const handleRegistry = (ctx: RouteContext): RouteEffect =>
   Effect.gen(function* () {
@@ -112,6 +114,13 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
 
     if (path.length < 3) {return jsonEncoded(ErrorBody, { error: "Not found" }, 404);}
     const entryId = routeId(path[2]);
+
+    if (path[3] === "canonical" && path.length === 4 && request.method === "GET") {
+      const entry = yield* tryPromise(() => sync.getEntry(entryId));
+      return entry
+        ? jsonEncoded(CanonicalIdentity, yield* tryPromise(() => getRegistryCanonical(env, entry)))
+        : jsonEncoded(ErrorBody, { error: "Not found" }, 404);
+    }
 
     if (path.length === 3 && request.method === "GET") {
       const entry = yield* tryPromise(() => sync.getEntry(entryId));

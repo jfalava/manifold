@@ -34,7 +34,7 @@ const matchRank = (
   return best;
 };
 
-export const filterAndRankAniListResults = (
+export const filterAndRankCanonicalResults = (
   query: string,
   results: readonly CanonicalSearchResult[],
 ): CanonicalSearchResult[] =>

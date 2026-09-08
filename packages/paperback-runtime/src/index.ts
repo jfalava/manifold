@@ -65,7 +65,7 @@ export {
 } from "./image-url.js";
 
 export {
-  aniListProviderCandidate,
+  canonicalProviderCandidate,
   correlateProviderCandidates,
   mangaDexProviderCandidate,
   parseProviderSearchInput,

@@ -8,6 +8,7 @@
   "type": "module",
   "scripts": {
     "manifold": "bun index.ts",
+    "format": "oxfmt",
     "md2al": "bun index.ts migrate mangadex-to-anilist",
     "al2md": "bun index.ts migrate anilist-to-mangadex",
     "al2mal": "bun index.ts migrate anilist-to-mal",
@@ -17,6 +18,7 @@
     "mangadex:stale-status": "bun index.ts mangadex stale-status",
     "mangadex:unfollow-dropped": "bun index.ts mangadex unfollow-dropped",
     "ops": "bun index.ts ops",
+    "check": "oxlint --fix",
     "reconcile:diff": "bun index.ts reconcile diff",
     "registry:import": "bun index.ts registry import",
     "lint": "oxlint",
@@ -37,8 +39,10 @@
     "picocolors": "1.1.1"
   },
   "devDependencies": {
-    "@types/bun": "catalog:types",
     "@types/cli-progress": "3.11.6",
+    "@types/node": "catalog:types",
+    "bun-types": "catalog:types",
+    "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
     "typescript": "catalog:build",

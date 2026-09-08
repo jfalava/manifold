@@ -9,6 +9,8 @@
   },
   "scripts": {
     "lint": "oxlint",
+    "format": "oxfmt",
+    "check": "oxlint --fix",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -17,6 +19,7 @@
     "@paperback/types": "catalog:paperback"
   },
   "devDependencies": {
+    "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
     "typescript": "catalog:build",

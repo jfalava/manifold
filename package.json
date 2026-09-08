@@ -1,9 +1,6 @@
 {
   "name": "manifold",
   "private": true,
-  "patchedDependencies": {
-    "alchemy@2.0.0-beta.76": "patches/alchemy@2.0.0-beta.76.patch"
-  },
   "workspaces": {
     "packages": [
       "iac",
@@ -23,15 +20,16 @@
       },
       "cloudflare": {
         "@cloudflare/vite-plugin": "1.54.2",
-        "@cloudflare/workers-types": "5.20260904.1",
-        "hono": "4.13.5",
+        "@cloudflare/workers-types": "5.20260908.1",
+        "hono": "4.13.7",
         "wrangler": "4.127.1"
       },
       "build": {
-        "oxlint": "1.81.0",
+        "oxlint": "1.82.0",
         "oxlint-tsgolint": "7.0.2001",
-        "@oxlint/plugins": "1.81.0",
+        "@oxlint/plugins": "1.82.0",
         "typescript": "7.0.2",
+        "oxfmt": "0.67.0",
         "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
         "vitest": "5.0.0"
       },
@@ -40,8 +38,8 @@
         "tailwindcss": "4.3.3"
       },
       "types": {
-        "@types/bun": "1.4.0",
-        "@types/node": "26.4.1"
+        "bun-types": "1.4.2",
+        "@types/node": "26.5.0"
       },
       "paperback": {
         "@paperback/toolchain": "1.0.0-alpha.91",
@@ -58,9 +56,10 @@
   "type": "module",
   "scripts": {
     "check": "bun run lint:global && bun run typecheck:global",
-    "check:global": "bun run lint:global && bun run typecheck:global",
+    "check:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/mangaupdates --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac check",
     "lint": "bun run lint:global",
     "lint:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/mangaupdates --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac lint",
+    "format:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/mangaupdates --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac format",
     "typecheck:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/mangaupdates --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac typecheck",
     "migrate:md2al": "bun run --cwd cli md2al",
     "migrate:al2md": "bun run --cwd cli al2md",
@@ -95,5 +94,8 @@
     "oxlint-tsgolint": "catalog:build",
     "realm": "catalog:paperback",
     "typescript": "catalog:build"
+  },
+  "patchedDependencies": {
+    "alchemy@2.0.0-beta.76": "patches/alchemy@2.0.0-beta.76.patch"
   }
 }

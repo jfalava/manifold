@@ -1,11 +1,11 @@
 import { ContentRating, type SearchResultItem } from "@paperback/types";
 import type { IngestCandidateInput, RegistryProvider } from "@manifold/contract";
-import type { CanonicalSearchResult } from "@manifold/canonical";
+import type { CanonicalEntry } from "@manifold/canonical";
 import { safeImageUrl } from "./image-url.js";
 
 const CANDIDATE_PREFIX = "provider-candidate:";
 
-export type ProviderSearchScope = "all" | "registry" | "anilist" | "mangadex" | "comix";
+export type ProviderSearchScope = "all" | "registry" | "anilist" | "mal" | "mangadex" | "comix";
 
 export interface ProviderSearchInput {
   readonly query: string;
@@ -22,6 +22,7 @@ export const parseProviderSearchInput = (
   const query = trimmed.slice(separator + 1).trim();
   const scope = prefix === "registry" ? "registry" :
     prefix === "anilist" || prefix === "al" ? "anilist" :
+    prefix === "mal" ? "mal" :
     prefix === "mangadex" || prefix === "md" ? "mangadex" :
     prefix === "comix" ? "comix" : undefined;
   return scope && query ? { query, scope } : { query: trimmed, scope: "all" };
@@ -50,24 +51,30 @@ export interface MangaDexCandidateInput {
   readonly coverUrl?: string;
 }
 
-export const aniListProviderCandidate = (
-  result: CanonicalSearchResult,
-): ProviderCandidate => ({
-  provider: "anilist",
-  providerId: result.providerId,
-  title: result.title,
-  aliases: result.aliases,
-  imageUrl: safeImageUrl(result.metadata?.coverUrl),
-  description: result.metadata?.description,
-  links: [
-    ...(result.externalIds?.mal
-      ? [{ provider: "mal" as const, externalId: result.externalIds.mal }]
-      : []),
-    ...(result.externalIds?.mangadex
-      ? [{ provider: "mangadex" as const, externalId: result.externalIds.mangadex }]
-      : []),
-  ],
-});
+export const canonicalProviderCandidate = (
+  result: CanonicalEntry,
+): ProviderCandidate => {
+  if (result.provider === "local") {throw new Error("Local entries are not provider candidates");}
+  return {
+    provider: result.provider,
+    providerId: result.providerId,
+    title: result.title,
+    aliases: result.aliases,
+    imageUrl: safeImageUrl(result.metadata?.coverUrl),
+    description: result.metadata?.description,
+    links: [
+      ...(result.provider !== "anilist" && result.externalIds?.anilist
+        ? [{ provider: "anilist" as const, externalId: result.externalIds.anilist }]
+        : []),
+      ...(result.provider !== "mal" && result.externalIds?.mal
+        ? [{ provider: "mal" as const, externalId: result.externalIds.mal }]
+        : []),
+      ...(result.externalIds?.mangadex
+        ? [{ provider: "mangadex" as const, externalId: result.externalIds.mangadex }]
+        : []),
+    ],
+  };
+};
 
 export const mangaDexProviderCandidate = (
   manga: MangaDexCandidateInput,
@@ -88,28 +95,36 @@ export const mangaDexProviderCandidate = (
   ],
 });
 
-/** Add MangaDex IDs to AniList hits only when MangaDex supplied that exact AniList cross-link. */
+/** Correlate canonical hits only through unique, exact MangaDex cross-links. */
 export const correlateProviderCandidates = (
   candidates: readonly ProviderCandidate[],
 ): ProviderCandidate[] => {
-  const mangaDexByAniList = new Map<string, ProviderCandidate | null>();
+  const mangaDexByIdentity = new Map<string, ProviderCandidate | null>();
   for (const candidate of candidates) {
     if (candidate.provider !== "mangadex") {continue;}
-    const anilistId = candidate.links?.find((link) => link.provider === "anilist")?.externalId;
-    if (!anilistId) {continue;}
-    mangaDexByAniList.set(anilistId, mangaDexByAniList.has(anilistId) ? null : candidate);
+    for (const link of candidate.links ?? []) {
+      const key = `${link.provider}:${link.externalId}`;
+      mangaDexByIdentity.set(key, mangaDexByIdentity.has(key) ? null : candidate);
+    }
   }
   return candidates.map((candidate) => {
-    if (candidate.provider !== "anilist") {return candidate;}
-    const mangaDex = mangaDexByAniList.get(candidate.providerId);
+    if (candidate.provider !== "anilist" && candidate.provider !== "mal") {return candidate;}
+    const mangaDex = mangaDexByIdentity.get(`${candidate.provider}:${candidate.providerId}`);
     if (!mangaDex || candidate.links?.some((link) => link.provider === "mangadex")) {
       return candidate;
     }
+    if (mangaDex.links?.some((link) => candidate.links?.some(
+      (existing) => existing.provider === link.provider && existing.externalId !== link.externalId,
+    ))) {return candidate;}
     return {
       ...candidate,
       links: [
         ...(candidate.links ?? []),
         { provider: "mangadex", externalId: mangaDex.providerId, title: mangaDex.title },
+        ...(mangaDex.links ?? []).filter((link) =>
+          link.provider !== candidate.provider &&
+          !candidate.links?.some((existing) => existing.provider === link.provider),
+        ),
       ],
     };
   });

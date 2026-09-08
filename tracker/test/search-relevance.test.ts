@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CanonicalSearchResult } from "@manifold/canonical";
 import {
-  filterAndRankAniListResults,
+  filterAndRankCanonicalResults,
   filterAndRankRegistryEntries,
 } from "../src/MANIFOLD/search-relevance";
 
@@ -21,7 +21,7 @@ const aniListResult = (
 
 describe("tracker search relevance", () => {
   it("keeps only tight AniList title/alias matches and ranks exact matches first", () => {
-    const results = filterAndRankAniListResults("Blue Box", [
+    const results = filterAndRankCanonicalResults("Blue Box", [
       aniListResult("1", "Blue Box: A Collection"),
       aniListResult("2", "Unrelated title"),
       aniListResult("3", "Blue Box", ["Ao no Hako"]),

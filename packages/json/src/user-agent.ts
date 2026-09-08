@@ -37,7 +37,7 @@ export const manifoldUserAgent = (surface: ManifoldUserAgentSurface): string => 
 export const withManifoldUserAgent = (
   surface: ManifoldUserAgentSurface,
   headers: Record<string, string> = {},
-): Record<string, string> => {
+) => {
   if (Object.hasOwn(headers, "user-agent") || Object.hasOwn(headers, "User-Agent")) {
     return headers;
   }

@@ -7,10 +7,13 @@
   },
   "scripts": {
     "lint": "oxlint",
+    "format": "oxfmt",
     "typecheck": "tsc --noEmit",
+    "check": "oxlint --fix",
     "test": "vitest run"
   },
   "devDependencies": {
+    "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
     "typescript": "catalog:build",

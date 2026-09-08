@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "lint": "oxlint",
+    "format": "oxfmt",
+    "check": "oxlint --fix",
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "test:oauth": "vitest run test/oauth.test.ts",
@@ -23,9 +25,10 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:cloudflare",
-    "@types/bun": "1.4.0",
+    "bun-types": "1.4.2",
     "esbuild": "0.28.2",
-    "miniflare": "5.20260828.0-alpha",
+    "miniflare": "5.20260907.0-alpha",
+    "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
     "typescript": "catalog:build",

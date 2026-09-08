@@ -24,7 +24,8 @@ import {
 import { resolveMangaDex } from "../mangadex-match";
 
 const canonicalProvider = (value: string | null): CanonicalProviderFilter | undefined => {
-  if (value === null || value === "all") {return "all";}
+  if (value === null || value === "auto") {return "auto";}
+  if (value === "all") {return "all";}
   if (value === "anilist" || value === "mal") {return value;}
   return undefined;
 };
@@ -45,7 +46,7 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
       if (!query) {return jsonEncoded(ErrorBody, { error: "Query parameter q is required" }, 400);}
       const provider = canonicalProvider(url.searchParams.get("provider"));
       if (!provider) {
-        return jsonEncoded(ErrorBody, { error: "provider must be all, anilist, or mal" }, 400);
+        return jsonEncoded(ErrorBody, { error: "provider must be auto, all, anilist, or mal" }, 400);
       }
 
       const result = yield* tryPromise(() =>
@@ -105,7 +106,7 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
 
     if (path.length === 4 && request.method === "GET") {
       const provider = canonicalProvider(path[2]);
-      if (!provider || provider === "all") {
+      if (!provider || provider === "all" || provider === "auto") {
         return jsonEncoded(ErrorBody, { error: "Unknown canonical provider" }, 404);
       }
       const outcome = yield* attempt(() => getCanonical(env, provider, routeId(path[3])));
@@ -117,4 +118,3 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
 
     return null;
   });
-

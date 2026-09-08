@@ -5,6 +5,8 @@
   "scripts": {
     "lint": "oxlint",
     "test": "bun test",
+    "format": "oxfmt",
+    "check": "oxlint --fix",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -12,7 +14,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:cloudflare",
-    "@types/bun": "catalog:types",
+    "bun-types": "catalog:types",
+    "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
     "typescript": "catalog:build"

@@ -56,7 +56,7 @@ export const MangaDexMatchMethod = Schema.Literals([
 ]);
 export type MangaDexMatchMethod = Schema.Schema.Type<typeof MangaDexMatchMethod>;
 
-export const CanonicalSearchProviderFilter = Schema.Literals(["all", "anilist", "mal"]);
+export const CanonicalSearchProviderFilter = Schema.Literals(["auto", "all", "anilist", "mal"]);
 export type CanonicalSearchProviderFilter = Schema.Schema.Type<
   typeof CanonicalSearchProviderFilter
 >;

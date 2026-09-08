@@ -5,6 +5,7 @@ import { al2mdCommand } from "@/commands/al2md";
 import { comixPrefillCommand } from "@/commands/comix-prefill";
 import { loginCommand } from "@/commands/login";
 import { malCommand } from "@/commands/mal";
+import { malPrefillCommand } from "@/commands/mal-prefill";
 import { mangadexCommand } from "@/commands/mangadex";
 import { mangadexPrefillCommand } from "@/commands/mangadex-prefill";
 import { importCommand, opsCommand, reconcileCommand } from "@/commands/toolbox";
@@ -25,7 +26,7 @@ const reconcileGroup = Command.make("reconcile").pipe(
 
 const registryCommand = Command.make("registry").pipe(
   Command.withDescription("Registry maintenance: backfill and inspect canonical rows."),
-  Command.withSubcommands([importCommand, mangadexPrefillCommand, comixPrefillCommand]),
+  Command.withSubcommands([importCommand, malPrefillCommand, mangadexPrefillCommand, comixPrefillCommand]),
 );
 
 export const makeRootCommand = () =>

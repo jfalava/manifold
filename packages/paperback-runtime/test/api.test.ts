@@ -37,10 +37,36 @@ describe("Paperback personal API client", () => {
 
     expect(result.results[0]?.id).toBe("anilist:1");
     expect(requests[0]).toMatchObject({
-      url: "https://personal.test/v1/canonical/search?q=One%20Piece%20%26%20Co&provider=anilist&limit=25",
+      url: "https://personal.test/v1/canonical/search?q=One%20Piece%20%26%20Co&provider=auto&limit=25",
       method: "GET",
       headers: { authorization: "Bearer secret" },
     });
+  });
+
+  it("loads registry metadata with its UUID and MAL provenance", async () => {
+    const client = createPersonalApiClient(async (request) => {
+      expect(request.url).toBe("https://personal.test/v1/entries/entry-42/canonical");
+      return { status: 200, body: {
+        id: "entry-42", provider: "mal", providerId: "77", title: "MAL title", aliases: ["Alias"],
+        metadata: { coverUrl: "https://example.test/mal.jpg" },
+      } };
+    }, { origin: "https://personal.test", token: "secret" });
+    expect(await client.getRegistryCanonical("entry-42")).toMatchObject({
+      id: "entry-42", provider: "mal", providerId: "77", aliases: ["Alias"],
+      metadata: { coverUrl: "https://example.test/mal.jpg" },
+    });
+  });
+
+  it("reports both providers' failures instead of a bare gateway status", async () => {
+    const client = createPersonalApiClient(async () => ({ status: 502, body: {
+      query: "ab", results: [], providers: [
+        { provider: "anilist", results: [], error: { message: "AniList blocked", status: 403 } },
+        { provider: "mal", results: [], error: { message: "MyAnimeList search requires at least 3 characters", status: 400 } },
+      ],
+    } }), { token: "secret" });
+    await expect(client.searchCanonical("ab")).rejects.toEqual(new PersonalApiError(
+      "AniList blocked; MyAnimeList search requires at least 3 characters", 502,
+    ));
   });
 
   it("turns a missing entry into undefined and preserves other errors", async () => {

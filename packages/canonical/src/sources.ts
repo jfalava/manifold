@@ -258,7 +258,13 @@ const anilistGraphQLError = (body: JsonObject): CanonicalSourceError | undefined
     const message = stringField(error, "message");
     return message === undefined ? [] : [message];
   });
-  return messages.length > 0 ? sourceError("anilist", messages.join("; ")) : undefined;
+  const status = errors.flatMap((error) => {
+    const value = isJsonObject(error) ? numberField(error, "status") : undefined;
+    return value === undefined ? [] : [value];
+  })[0];
+  return errors.length > 0
+    ? sourceError("anilist", messages.join("; ") || "AniList GraphQL request failed", status)
+    : undefined;
 };
 
 const anilistMediaFields = `
@@ -349,7 +355,8 @@ export const createAniListSource = (
         const data = objectField(body, "data");
         const page = data === undefined ? undefined : objectField(data, "Page");
         const media = page === undefined ? undefined : arrayField(page, "media");
-        return (media ?? []).flatMap((item) => {
+        if (!media) {throw sourceError("anilist", "AniList search returned no media array");}
+        return media.flatMap((item) => {
           const result = anilistMedia(item);
           return result === undefined ? [] : [result];
         });
@@ -468,12 +475,17 @@ export const createMyAnimeListSource = (
         if (!options.clientId || options.clientId === "not-configured") {
           throw sourceError("mal", "MyAnimeList client id is not configured");
         }
-        const q = encodeURIComponent(requireQuery(query, "mal"));
+        const normalized = requireQuery(query, "mal");
+        if ([...normalized].length < 3) {
+          throw sourceError("mal", "MyAnimeList search requires at least 3 characters", 400);
+        }
+        const q = encodeURIComponent(normalized);
         const limit = encodeURIComponent(String(limitFrom(searchOptions)));
         const fields = encodeURIComponent(malFields);
         const href = `${endpoint}?q=${q}&limit=${limit}&fields=${fields}`;
         const body = await request(href);
-        const data = arrayField(body, "data") ?? [];
+        const data = arrayField(body, "data");
+        if (!data) {throw sourceError("mal", "MyAnimeList search returned no data array");}
         return data.flatMap((item) => {
           const result = malEntry(isJsonObject(item) ? objectField(item, "node") : undefined);
           return result === undefined ? [] : [result];

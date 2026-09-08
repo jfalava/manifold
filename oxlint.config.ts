@@ -191,13 +191,13 @@ export const baseConfig: OxlintConfig = {
     ...builtinRules,
     ...antiSlopRules,
   },
+  options: {
+    typeAware: true,
+    typeCheck: true,
+  },
 };
 
 export default defineConfig({
   ...baseConfig,
   jsPlugins: antiSlopJsPlugins("."),
-  options: {
-    typeAware: true,
-    typeCheck: true,
-  },
 });

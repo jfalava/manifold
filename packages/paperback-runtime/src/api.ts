@@ -30,8 +30,11 @@ import {
   UpdatedCountResponse,
 } from "@manifold/contract";
 import {
+  arrayField,
   isJsonObject,
   isString,
+  objectField,
+  stringField,
   type JsonObject,
   type JsonValue,
 } from "@manifold/json";
@@ -99,11 +102,12 @@ export interface PersonalApiClient {
   readonly searchCanonical: (
     query: string,
     limit?: number,
-    provider?: "all" | "anilist" | "mal",
+    provider?: "auto" | "all" | "anilist" | "mal",
   ) => Promise<{
     readonly query: string;
     readonly results: readonly CanonicalSearchResult[];
   }>;
+  readonly getRegistryCanonical: (entryId: string) => Promise<CanonicalEntry>;
   readonly getEntry: (entryId: string) => Promise<PersonalEntry | undefined>;
   readonly searchRegistry: (
     query: string,
@@ -213,7 +217,14 @@ export class PersonalApiError extends Error {
 
 const asErrorMessage = (body: JsonValue, status: number): string => {
   const error = isJsonObject(body) ? body.error : undefined;
-  return isString(error) ? error : `Personal API returned HTTP ${status}`;
+  if (isString(error)) {return error;}
+  const providers = isJsonObject(body) ? arrayField(body, "providers") : undefined;
+  const failures = (providers ?? []).flatMap((provider) => {
+    const failure = isJsonObject(provider) ? objectField(provider, "error") : undefined;
+    const message = failure ? stringField(failure, "message") : undefined;
+    return message ? [message] : [];
+  });
+  return failures.join("; ") || `Personal API returned HTTP ${status}`;
 };
 
 const limitValue = (limit: number | undefined): number => {
@@ -285,7 +296,7 @@ export const createPersonalApiClient = (
   };
 
   return {
-    searchCanonical: async (query, limit, provider = "anilist") => {
+    searchCanonical: async (query, limit, provider = "auto") => {
       const params = [
         `q=${encodeURIComponent(query.trim())}`,
         `provider=${encodeURIComponent(provider)}`,
@@ -293,6 +304,9 @@ export const createPersonalApiClient = (
       ].join("&");
       const response = await rawRequest(`/v1/canonical/search?${params}`);
       const body = requireDecoded(CanonicalSearchResponse, response.body, "canonical.search");
+      for (const source of body.providers) {
+        if (source.error) {console.warn(`[manifold] ${source.provider} search: ${source.error.message}`);}
+      }
       return {
         query: body.query,
         results: body.results.map((hit) => ({
@@ -321,6 +335,11 @@ export const createPersonalApiClient = (
         }
         throw error;
       }
+    },
+
+    getRegistryCanonical: async (entryId) => {
+      const response = await rawRequest(`/v1/entries/${encodeURIComponent(entryId)}/canonical`);
+      return identityToCanonical(requireDecoded(CanonicalIdentity, response.body, "entries.canonical"));
     },
 
     getEntry: async (entryId) => {

@@ -40,7 +40,7 @@ import {
   requestInitText,
 } from "@manifold/json";
 import * as Effect from "effect/Effect";
-import { createAniListSource, type CanonicalFetcher } from "@manifold/canonical/sources";
+import type { CanonicalFetcher } from "@manifold/canonical/sources";
 import { createMangaDexClient } from "@manifold/mangadex";
 import { ComixSource } from "@manifold/paperback-comix";
 import { hashIdFromMangaId } from "@manifold/paperback-comix/parser";
@@ -50,7 +50,7 @@ import {
   ANILIST_STATUS_KEY,
   ANILIST_VIEWER_ID_KEY,
   AniListUnauthorizedError,
-  aniListProviderCandidate,
+  canonicalProviderCandidate,
   clearAdminAccessCookies,
   correlateProviderCandidates,
   readAdminAccessStatus,
@@ -83,7 +83,7 @@ import {
 } from "./managed-collections.js";
 import { processReadActions } from "./read-queue.js";
 import { canonicalResultForRegistryEntry } from "./registry-details.js";
-import { filterAndRankAniListResults, filterAndRankRegistryEntries } from "./search-relevance.js";
+import { filterAndRankCanonicalResults, filterAndRankRegistryEntries } from "./search-relevance.js";
 
 const piggybackDrain = (): void => {
   maybeDrainAniListOps();
@@ -144,10 +144,6 @@ export class ManifoldTrackerSource
 {
   private readonly canonicalResults = new Map<string, CanonicalSearchResult>();
   private readonly providerCandidates = new Map<string, ProviderCandidate>();
-  private readonly aniList = createAniListSource({
-    fetcher: scheduledAniListFetcher,
-    userAgent: manifoldUserAgent("tracker"),
-  });
   private readonly mangaDex = createMangaDexClient({
     fetcher: scheduledAniListFetcher,
     limit: 25,
@@ -186,12 +182,13 @@ export class ManifoldTrackerSource
     }
 
     const api = configuredPersonalApi();
-    const [registryResult, aniListResult, mangaDexResult, comixResult] = await Promise.allSettled([
+    const [registryResult, canonicalResult, mangaDexResult, comixResult] = await Promise.allSettled([
       search.scope === "all" || search.scope === "registry"
         ? api.searchRegistry(title, 25)
         : Promise.resolve([]),
-      search.scope === "all" || search.scope === "anilist"
-        ? Effect.runPromise(this.aniList.search(title, { limit: 25 }))
+      search.scope === "all" || search.scope === "anilist" || search.scope === "mal"
+        ? api.searchCanonical(title, 25, search.scope === "all" ? "auto" : search.scope)
+          .then((response) => response.results)
         : Promise.resolve([]),
       search.scope === "all" || search.scope === "mangadex"
         ? Effect.runPromise(this.mangaDex.search(title))
@@ -203,8 +200,8 @@ export class ManifoldTrackerSource
     const selectedResult =
       search.scope === "registry"
         ? registryResult
-        : search.scope === "anilist"
-          ? aniListResult
+        : search.scope === "anilist" || search.scope === "mal"
+          ? canonicalResult
           : search.scope === "mangadex"
             ? mangaDexResult
             : search.scope === "comix"
@@ -219,28 +216,28 @@ export class ManifoldTrackerSource
       registryResult.status === "fulfilled"
         ? filterAndRankRegistryEntries(title, registryResult.value)
         : [];
-    const aniListEntries =
-      aniListResult.status === "fulfilled"
-        ? filterAndRankAniListResults(title, aniListResult.value)
+    const canonicalEntries =
+      canonicalResult.status === "fulfilled"
+        ? filterAndRankCanonicalResults(title, canonicalResult.value)
         : [];
-    const aniListByProviderId = new Map(
-      aniListEntries.map((entry) => [entry.providerId, entry] as const),
+    const canonicalByIdentity = new Map<string, CanonicalSearchResult>(
+      canonicalEntries.map((entry) => [`${entry.provider}:${entry.providerId}`, entry] as const),
     );
     if (registryResult.status === "fulfilled") {
       for (const entry of registryEntries) {
         for (const link of entry.providers) {
           linkedKeys.add(`${link.provider}:${link.externalId}`);
         }
-        const anilist = entry.providers
+        const canonical = entry.providers
           .map((link) =>
-            link.provider === "anilist" ? aniListByProviderId.get(link.externalId) : undefined,
+            canonicalByIdentity.get(`${link.provider}:${link.externalId}`),
           )
           .find((result): result is CanonicalSearchResult => result !== undefined);
         items.push({
           mangaId: entry.id,
-          title: anilist?.title ?? entry.title,
+          title: canonical?.title ?? entry.title,
           subtitle: `Registry · ${entry.providers.map((link) => link.provider).join(" + ")}`,
-          imageUrl: safeImageUrl(anilist?.metadata?.coverUrl),
+          imageUrl: safeImageUrl(canonical?.metadata?.coverUrl),
         });
       }
     } else {
@@ -248,15 +245,15 @@ export class ManifoldTrackerSource
     }
 
     const candidates: ProviderCandidate[] = [];
-    if (aniListResult.status === "fulfilled") {
-      for (const result of aniListEntries) {
-        const candidate = aniListProviderCandidate(result);
+    if (canonicalResult.status === "fulfilled") {
+      for (const result of canonicalEntries) {
+        const candidate = canonicalProviderCandidate(result);
         const candidateId = providerCandidateId(candidate.provider, candidate.providerId);
         this.canonicalResults.set(candidateId, result);
         candidates.push(candidate);
       }
     } else {
-      console.error(`[MANIFOLD] AniList search failed: ${errorMessage(aniListResult.reason)}`);
+      console.error(`[MANIFOLD] canonical search failed: ${errorMessage(canonicalResult.reason)}`);
     }
     if (mangaDexResult.status === "fulfilled") {
       for (const manga of mangaDexResult.value) {
@@ -298,18 +295,18 @@ export class ManifoldTrackerSource
     const parsedCandidate = parseProviderCandidateId(mangaId);
     if (parsedCandidate) {
       const candidate = this.providerCandidates.get(mangaId);
-      if (parsedCandidate.provider === "anilist") {
+      if (parsedCandidate.provider === "anilist" || parsedCandidate.provider === "mal") {
         const canonical =
           this.canonicalResults.get(mangaId) ??
-          (await Effect.runPromise(this.aniList.getById(parsedCandidate.providerId)));
+          (await personalApi.getCanonical(parsedCandidate.provider, parsedCandidate.providerId));
         if (!canonical) {
-          throw new Error(`AniList title not found: ${parsedCandidate.providerId}`);
+          throw new Error(`${parsedCandidate.provider} title not found: ${parsedCandidate.providerId}`);
         }
         const stored = await personalApi.ingestCandidate({
-          provider: "anilist",
+          provider: parsedCandidate.provider,
           providerId: parsedCandidate.providerId,
           title: canonical.title,
-          ...(candidate?.links && { links: [...candidate.links] }),
+          links: [...(candidate?.links ?? canonicalProviderCandidate(canonical).links ?? [])],
         });
         this.canonicalResults.set(stored.id, { ...canonical, id: stored.id, score: 0 });
         return this.getMangaDetails(stored.id);
@@ -371,19 +368,9 @@ export class ManifoldTrackerSource
       if (!stored) {
         throw new Error(`Registry entry not found: ${mangaId}`);
       }
-      const anilistId = aniLinkOf(stored);
-      const malId = malLinkOf(stored);
-      let hydrated;
-      if (anilistId) {
-        hydrated = await Effect.runPromise(this.aniList.getById(anilistId)).catch(() => undefined);
-      } else {
-        const getByIdMal = this.aniList.getByIdMal;
-        if (malId && getByIdMal) {
-          hydrated = await Effect.runPromise(getByIdMal(malId)).catch(() => undefined);
-        }
-      }
+      const hydrated = await personalApi.getRegistryCanonical(mangaId).catch(() => undefined);
       entry = canonicalResultForRegistryEntry(stored, hydrated);
-      this.canonicalResults.set(entry.id, entry);
+      if (hydrated?.metadata) {this.canonicalResults.set(entry.id, entry);}
     }
 
     const anilistLink = aniLinkOf(stored);
@@ -501,15 +488,6 @@ const aniLinkOf = (
 ): string | undefined =>
   stored?.providers.find((provider) => provider.provider === "anilist")?.externalId;
 
-const malLinkOf = (
-  stored:
-    | {
-        readonly providers: readonly { readonly provider: string; readonly externalId: string }[];
-      }
-    | undefined,
-): string | undefined =>
-  stored?.providers.find((provider) => provider.provider === "mal")?.externalId;
-
 /**
  * Tracker-side AniList progress push. Mirrors the source-side behaviour:
  * never mutates list status — collections own status transitions.
@@ -550,7 +528,7 @@ interface ListFieldDiff {
  * Per-title list-status editor. Paperback 0.9 never wires managed-collection
  * pushes (the official trackers throw on commit), so the tracker's manage
  * form is the on-device status surface: type a status, submit, and the
- * change lands on AniList immediately with the registry following.
+ * remote failures leave the change in the registry with a pending retry.
  */
 class TrackerStatusForm extends Form {
   readonly requiresExplicitSubmission = true;
@@ -768,6 +746,10 @@ class TrackerStatusForm extends Form {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
         throw new Error(`${key} must be YYYY-MM-DD`);
       }
+      const date = new Date(`${trimmed}T00:00:00Z`);
+      if (trimmed.startsWith("0000") || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== trimmed) {
+        throw new Error(`${key} must be a real calendar date`);
+      }
       if (trimmed !== current) {
         changes[key] = trimmed;
       }
@@ -817,14 +799,17 @@ class TrackerStatusForm extends Form {
       }
       const token = aniListSessionToken();
       const anilistId = this.anilistId;
-      const appliedRemotely = token !== undefined && anilistId !== undefined;
+      let appliedRemotely = false;
       if (token !== undefined && anilistId !== undefined) {
-        await saveAniListFields(token, anilistId, {
+        appliedRemotely = await saveAniListFields(token, anilistId, {
           ...(changes.score !== undefined && { score: changes.score }),
           ...(changes.volumeProgress !== undefined && { volumeProgress: changes.volumeProgress }),
           ...(changes.startedAt !== undefined && { startedAt: changes.startedAt }),
           ...(changes.completedAt !== undefined && { completedAt: changes.completedAt }),
           ...(changes.notes !== undefined && { notes: changes.notes }),
+        }).then(() => true, (error) => {
+          console.warn(`[MANIFOLD] AniList fields deferred: ${errorMessage(error)}`);
+          return false;
         });
       }
       this.lastError = undefined;
@@ -880,10 +865,12 @@ class TrackerStatusForm extends Form {
       }
       const token = aniListSessionToken();
       const anilistId = this.anilistId;
-      const appliedRemotely = token !== undefined && anilistId !== undefined;
       const result =
         token !== undefined && anilistId !== undefined
-          ? await saveAniListStatus(token, anilistId, status)
+          ? await saveAniListStatus(token, anilistId, status).catch((error) => {
+            console.warn(`[MANIFOLD] AniList status deferred: ${errorMessage(error)}`);
+            return undefined;
+          })
           : undefined;
       this.statusText = status;
       this.selectedStatus = status;
@@ -891,7 +878,7 @@ class TrackerStatusForm extends Form {
       this.lastError = undefined;
       await api.setListState(this.entryId, {
         origin: "device",
-        appliedRemotely,
+        appliedRemotely: result !== undefined,
         status,
         ...(result?.backupIdentity && { backupIdentity: result.backupIdentity }),
       });

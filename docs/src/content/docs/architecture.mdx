@@ -13,6 +13,35 @@ The registry UUID is the stable identity. AniList, MangaDex, Comix, and other
 IDs are links on that identity, not competing sources of truth. List state and
 progress are stored canonically and synchronized outward.
 
+## AniList failures fall back to MAL
+
+Canonical search defaults to `provider=auto`: AniList first, then MyAnimeList
+when AniList returns 401, 403, 408, 429, 5xx, a network failure, a timeout, or
+an invalid response. Each upstream request has a five-second timeout. An empty
+successful search does not trigger fallback. Explicit `anilist`, `mal`, and
+`all` searches retain their provider selection.
+
+Paperback uses this API policy for ordinary searches. The `anilist:` and
+`mal:` prefixes request one provider explicitly. MAL candidates can be selected
+and ingested just like AniList candidates. MAL search needs at least three
+Unicode characters and the API's `MANIFOLD_MAL_CLIENT_ID`, not a user OAuth token.
+
+`GET /v1/entries/{uuid}/canonical` hydrates an existing registry entry from its
+recorded AniList link, then its recorded MAL link if AniList is unavailable or
+the title is absent. MAL-only entries read MAL directly. If neither provider
+can supply details, the API returns the registry title and identity. Provider
+recovery never replaces the UUID or local list state.
+
+Fallback does not guess identity from a title. Prepare older entries with
+[`registry mal`](/cli/registry/mal/), which backfills verified AniList `idMal`
+links without importing list state. New provider candidate ingestion preserves
+these cross-links and rejects conflicting ownership.
+
+Status and field edits still save to the registry when a device-side AniList
+write fails. Those writes remain queued for retry. MAL's status backup remains
+downstream of registry list state; metadata fallback does not import MAL list
+state or expand the backup to scores, notes, or progress.
+
 ## Production surface
 
 There is **no** separate development stack or `workers.dev` endpoint.

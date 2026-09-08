@@ -1,0 +1,82 @@
+---
+title: mal
+description: Audit and backfill verified MAL links for metadata fallback.
+sidebar:
+  order: 4
+---
+
+```text
+bun run manifold registry mal [flags]
+```
+
+Audits active registry rows and fills missing MAL links from AniList's `idMal`.
+It queries AniList from your machine, which can work when AniList blocks the
+Worker's IP. No AniList or MAL login is needed. The registry API token is required.
+
+The default is read-only. `--apply` uses registry ingestion to attach proven
+links, preserving UUIDs and rejecting conflicting ownership. It never changes
+list state, title-matches, or replaces an existing MAL link. Run it before an
+outage to prepare existing AniList entries for MAL detail fallback.
+
+## Flags
+
+### `--apply`
+
+Persist verified links. Default: `false`. Review the dry-run report first.
+
+Example:
+
+```text
+bun run manifold registry mal --apply
+```
+
+### `--limit <n>`
+
+Check at most `n` active AniList-linked rows missing a MAL link. The registry
+is fully paged before applying the limit. Default: all eligible rows.
+
+Example:
+
+```text
+bun run manifold registry mal --limit 50
+```
+
+### `--delay <ms>`
+
+Wait between AniList lookups. Default: `1500` milliseconds. Each lookup has a
+15-second timeout. Negative values are rejected.
+
+Example:
+
+```text
+bun run manifold registry mal --delay 2000
+```
+
+### `--api-token <token>`
+
+Override the registry API token. Defaults to `MANIFOLD_TOKEN`.
+
+Example:
+
+```text
+bun run manifold registry mal --api-token "$MANIFOLD_TOKEN"
+```
+
+### `--api-origin <url>`
+
+Override the API origin. Defaults to `MANIFOLD_API_ORIGIN`, then
+`https://manifold.jfa.dev/api`.
+
+Example:
+
+```text
+bun run manifold registry mal --api-origin https://manifold.example/api
+```
+
+## Reading the report
+
+The audit counts active rows, existing MAL links, missing links, and rows
+without an AniList link. Rows with no `idMal` remain unmapped. Tombstoned rows
+are skipped. Conflicts and upstream failures are errors, not missing matches.
+The command continues through individual errors and exits nonzero if any fail.
+Successful writes remain applied; rerunning skips their existing MAL links.
