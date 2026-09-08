@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 const mutatingCommands = [
-  ["migrate", "md2al"],
+  ["migrate", "mangadex-to-anilist"],
   ["migrate", "anilist-to-mangadex"],
   ["anilist", "wipe", "manga"],
   ["mal", "wipe", "manga"],

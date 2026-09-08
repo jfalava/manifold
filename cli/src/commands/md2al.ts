@@ -32,7 +32,7 @@ interface Md2alCtx extends RunContext {
 }
 
 export const md2alCommand = Command.make(
-  "md2al",
+  "mangadex-to-anilist",
   {
     anilistToken: Flag.string("anilist-token").pipe(
       Flag.optional,
@@ -158,7 +158,7 @@ export const md2alCommand = Command.make(
 
       yield* Effect.tryPromise({
         try: async () => {
-          openFrame(`md2al ${apply ? "(apply)" : "(dry run)"}`);
+          openFrame(`migrate mangadex-to-anilist ${apply ? "(apply)" : "(dry run)"}`);
 
           const run = createRun<Md2alCtx>([
             {

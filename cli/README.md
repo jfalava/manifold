@@ -16,7 +16,7 @@ manifold anilist wipe manga                # delete AniList manga state (destruc
 manifold mangadex stale-status             # move stale MangaDex titles to a new status
 manifold mangadex unfollow-dropped         # unfollow MangaDex titles by status
 manifold mal wipe manga                    # preview a MAL manga-only wipe
-manifold migrate md2al                     # MangaDex library → private AniList entries
+manifold migrate mangadex-to-anilist       # MangaDex library → private AniList entries
 manifold migrate anilist-to-mangadex       # AniList list → MangaDex statuses + markers
 manifold ops pending | retry               # op-log triage
 manifold reconcile diff                    # live AniList list vs registry (read-only)

@@ -9,8 +9,6 @@ sidebar:
 bun run manifold migrate anilist-to-mangadex [flags]
 ```
 
-Also registered as `manifold migrate migrate` (Effect command name). The historical `al2md` script name in `cli` is not the CLI path.
-
 Fetches your AniList manga list, matches titles on MangaDex, then sets reading status and optionally marks chapters up to AniList progress. Runs entirely locally because AniList blocks Cloudflare Worker IPs.
 
 ## Flags
@@ -130,6 +128,6 @@ bun run manifold migrate anilist-to-mangadex --apply
 Unmatched titles and per-title failures leave a non-zero exit code. Prefer a dry-run first on a large list. Secrets live in `cli/.env` — see `cli/.env.example`.
 
 <Aside type="caution" title="Credentials">
-  Unlike `md2al`, this path does not accept a MangaDex personal token. You need
+  Unlike `mangadex-to-anilist`, this path does not accept a MangaDex personal token. You need
   the OAuth client + username/password grant env vars.
 </Aside>

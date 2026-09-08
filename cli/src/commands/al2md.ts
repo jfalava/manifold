@@ -23,7 +23,7 @@ const optional = (name: string, description: string) =>
   Flag.string(name).pipe(Flag.optional, Flag.withDescription(description));
 
 export const al2mdCommand = Command.make(
-  "migrate",
+  "anilist-to-mangadex",
   {
     anilistToken: optional(
       "anilist-token",
@@ -198,5 +198,4 @@ export const al2mdCommand = Command.make(
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
 ).pipe(
   Command.withDescription("Bring your MangaDex library up to parity with AniList (statuses + chapter markers)."),
-  Command.withAlias("anilist-to-mangadex"),
 );

@@ -1,12 +1,12 @@
 ---
-title: md2al
+title: mangadex-to-anilist
 description: Push your MangaDex library into private AniList list entries.
 sidebar:
   order: 1
 ---
 
 ```text
-bun run manifold migrate md2al [flags]
+bun run manifold migrate mangadex-to-anilist [flags]
 ```
 
 Exports your MangaDex library, matches each title to AniList (external links, title search, Vectorize embeddings), then creates **private** AniList list entries. Optional chapter progress comes from MangaDex read markers.
@@ -21,7 +21,7 @@ Example:
 
 ```text
 bun run manifold login anilist
-bun run manifold migrate md2al
+bun run manifold migrate mangadex-to-anilist
 ```
 
 ### `--mangadex-token <token>`
@@ -33,7 +33,7 @@ password-grant flags below.
 Example:
 
 ```text
-bun run manifold migrate md2al --mangadex-token "$MANIFOLD_MANGADEX_TOKEN"
+bun run manifold migrate mangadex-to-anilist --mangadex-token "$MANIFOLD_MANGADEX_TOKEN"
 ```
 
 ### `--apply`
@@ -46,7 +46,7 @@ export and matching but does not write to AniList.
 Example:
 
 ```text
-bun run manifold migrate md2al --apply
+bun run manifold migrate mangadex-to-anilist --apply
 ```
 
 ### `--skip-progress`
@@ -59,7 +59,7 @@ markers.
 Example:
 
 ```text
-bun run manifold migrate md2al --skip-progress --apply
+bun run manifold migrate mangadex-to-anilist --skip-progress --apply
 ```
 
 ### `--use-cache`
@@ -72,7 +72,7 @@ progress stored in `.tmp` instead of fetching them again.
 Example:
 
 ```text
-bun run manifold migrate md2al --phase match --use-cache
+bun run manifold migrate mangadex-to-anilist --phase match --use-cache
 ```
 
 ### `--limit <n>`
@@ -85,7 +85,7 @@ small canary run before processing the full library.
 Example:
 
 ```text
-bun run manifold migrate md2al --limit 25
+bun run manifold migrate mangadex-to-anilist --limit 25
 ```
 
 ### `--phase <phase>`
@@ -98,7 +98,7 @@ Run one stage instead of the complete migration. Accepted values are `all`,
 Example:
 
 ```text
-bun run manifold migrate md2al --phase export
+bun run manifold migrate mangadex-to-anilist --phase export
 ```
 
 ### `--mangadex-client-id <id>`
@@ -109,7 +109,7 @@ OAuth client ID for the password-grant fallback. Falls back to
 Example:
 
 ```text
-bun run manifold migrate md2al --mangadex-client-id "$MANIFOLD_MANGADEX_CLIENT_ID"
+bun run manifold migrate mangadex-to-anilist --mangadex-client-id "$MANIFOLD_MANGADEX_CLIENT_ID"
 ```
 
 ### `--mangadex-client-secret <secret>`
@@ -120,7 +120,7 @@ OAuth client secret for the password-grant fallback. Falls back to
 Example:
 
 ```text
-bun run manifold migrate md2al --mangadex-client-secret "$MANIFOLD_MANGADEX_CLIENT_SECRET"
+bun run manifold migrate mangadex-to-anilist --mangadex-client-secret "$MANIFOLD_MANGADEX_CLIENT_SECRET"
 ```
 
 ### `--mangadex-username <username>`
@@ -131,7 +131,7 @@ MangaDex account username for the password-grant fallback. Falls back to
 Example:
 
 ```text
-bun run manifold migrate md2al --mangadex-username "$MANIFOLD_MANGADEX_USERNAME"
+bun run manifold migrate mangadex-to-anilist --mangadex-username "$MANIFOLD_MANGADEX_USERNAME"
 ```
 
 ### `--mangadex-password <password>`
@@ -142,7 +142,7 @@ MangaDex account password for the password-grant fallback. Falls back to
 Example:
 
 ```text
-bun run manifold migrate md2al --mangadex-password "$MANIFOLD_MANGADEX_PASSWORD"
+bun run manifold migrate mangadex-to-anilist --mangadex-password "$MANIFOLD_MANGADEX_PASSWORD"
 ```
 
 ## Matching
@@ -166,10 +166,10 @@ spaced (~1.2–2.5 s) with 429 backoff on library-wide passes.
 Phases are resumable. Delete the CLI `.tmp` directory to force a fresh pass. Long MangaDex runs refresh the token about every 15 minutes.
 
 ```text
-bun run manifold migrate md2al              # dry-run
-bun run manifold migrate md2al --apply
-bun run manifold migrate md2al --skip-progress --apply
-bun run manifold migrate md2al --phase match --use-cache
+bun run manifold migrate mangadex-to-anilist              # dry-run
+bun run manifold migrate mangadex-to-anilist --apply
+bun run manifold migrate mangadex-to-anilist --skip-progress --apply
+bun run manifold migrate mangadex-to-anilist --phase match --use-cache
 ```
 
 MangaDex auth falls back to password-grant credentials in `cli/.env`, or pass

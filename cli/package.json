@@ -8,8 +8,8 @@
   "type": "module",
   "scripts": {
     "manifold": "bun index.ts",
-    "md2al": "bun index.ts migrate md2al",
-    "al2md": "bun index.ts migrate al2md",
+    "md2al": "bun index.ts migrate mangadex-to-anilist",
+    "al2md": "bun index.ts migrate anilist-to-mangadex",
     "anilist:wipe": "bun index.ts anilist wipe manga",
     "anilist:pas5": "bun index.ts anilist create pas5",
     "mal:wipe": "bun index.ts mal wipe manga",
