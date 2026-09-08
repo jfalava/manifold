@@ -6,6 +6,7 @@ const mutatingCommands = [
   ["migrate", "md2al"],
   ["migrate", "anilist-to-mangadex"],
   ["migrate", "wipe-al"],
+  ["migrate", "wipe-mal"],
   ["stale-status"],
   ["unfollow-dropped"],
   ["ops", "retry"],

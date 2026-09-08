@@ -4,6 +4,7 @@ import { al2mdCommand } from "@/commands/al2md";
 import { al2Pas5Command } from "@/commands/al2pas5";
 import { comixPrefillCommand } from "@/commands/comix-prefill";
 import { mangadexPrefillCommand } from "@/commands/mangadex-prefill";
+import { malCommand, wipeMalCommand } from "@/commands/mal";
 import { importCommand, opsCommand, reconcileCommand } from "@/commands/toolbox";
 import { md2alCommand } from "@/commands/md2al";
 import { staleStatusCommand } from "@/commands/stale-status";
@@ -12,9 +13,9 @@ import { wipeAlCommand } from "@/commands/wipe-al";
 
 const migrateCommand = Command.make("migrate").pipe(
   Command.withDescription(
-    "One-shot migrations between AniList and MangaDex: statuses plus optional chapter-marker backfill.",
+    "One-shot migrations and list maintenance for AniList, MangaDex, and MyAnimeList.",
   ),
-  Command.withSubcommands([md2alCommand, al2mdCommand, wipeAlCommand, al2Pas5Command]),
+  Command.withSubcommands([md2alCommand, al2mdCommand, wipeAlCommand, wipeMalCommand, al2Pas5Command]),
 );
 
 const reconcileGroup = Command.make("reconcile").pipe(
@@ -42,6 +43,7 @@ export const makeRootCommand = () =>
       staleStatusCommand,
       unfollowDroppedCommand,
       mangadexCommand,
+      malCommand,
       opsCommand,
       reconcileGroup,
       registryCommand,
