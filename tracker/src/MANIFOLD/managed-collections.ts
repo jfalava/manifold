@@ -17,6 +17,8 @@ import {
   saveAniListProgress,
   saveAniListStatus,
   safeImageUrl,
+  type AniListLibraryItem,
+  type PersonalApiClient,
   type AniListReadingStatus,
 } from "@manifold/paperback-runtime";
 
@@ -52,6 +54,16 @@ interface PendingNukes {
 
 const PENDING_NUKES_KEY = "manifold.pending-nukes";
 const NUKE_QUIET_MS = 120_000;
+const REGISTRY_RESOLVE_BATCH_SIZE = 50;
+
+type ResolvedRegistryRow = {
+  readonly id: string;
+  readonly providers: readonly {
+    readonly provider: string;
+    readonly externalId: string;
+    readonly title?: string;
+  }[];
+};
 
 const readPendingNukes = (): PendingNukes => {
   const raw = Application.getState(PENDING_NUKES_KEY);
@@ -164,6 +176,36 @@ export const getManagedLibraryCollections = (): Promise<ManagedCollection[]> => 
   return Promise.resolve([...MANAGED_COLLECTIONS]);
 };
 
+export const resolveManagedCollectionEntries = async (
+  items: readonly AniListLibraryItem[],
+  api: Pick<PersonalApiClient, "resolveEntries">,
+): Promise<ReadonlyMap<string, ResolvedRegistryRow>> => {
+  const byAnilist = new Map<string, ResolvedRegistryRow>();
+  for (let index = 0; index < items.length; index += REGISTRY_RESOLVE_BATCH_SIZE) {
+    const chunk = items.slice(index, index + REGISTRY_RESOLVE_BATCH_SIZE);
+    try {
+      const resolved = await api.resolveEntries(
+        chunk.map((item) => ({
+          provider: "anilist" as const,
+          providerId: item.anilistId,
+          title: item.title,
+        })),
+      );
+      for (const entry of resolved) {
+        const link = entry.providers.find((provider) => provider.provider === "anilist");
+        if (link) {byAnilist.set(link.externalId, entry);}
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(
+        `[manifold] registry resolve batch failed:${index}-${index + chunk.length - 1}:` +
+          detail,
+      );
+    }
+  }
+  return byAnilist;
+};
+
 export const getSourceMangaInManagedCollection = async (
   managedCollection: ManagedCollection,
 ): Promise<SourceManga[]> => {
@@ -177,34 +219,7 @@ export const getSourceMangaInManagedCollection = async (
 
   // Registry first: every collection card carries the provider-neutral UUID
   // as its Paperback manga id so reads/collections bind to registry rows.
-  type ResolvedRow = {
-    readonly id: string;
-    readonly providers: readonly {
-      readonly provider: string;
-      readonly externalId: string;
-      readonly title?: string;
-    }[];
-  };
-  let byAnilist = new Map<string, ResolvedRow>();
-  try {
-    const resolved: readonly ResolvedRow[] = await configuredPersonalApi().resolveEntries(
-      items.map((item) => ({
-        provider: "anilist" as const,
-        providerId: item.anilistId,
-        title: item.title,
-      })),
-    );
-    byAnilist = new Map(
-      resolved.flatMap((entry) => {
-        const link = entry.providers.find((provider) => provider.provider === "anilist");
-        return link ? [[link.externalId, entry] as const] : [];
-      }),
-    );
-  } catch (error) {
-    console.error(
-      `[manifold] registry resolve failed:${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
+  const byAnilist = await resolveManagedCollectionEntries(items, configuredPersonalApi());
 
   return items.map((item) => {
     const entry = byAnilist.get(item.anilistId);
