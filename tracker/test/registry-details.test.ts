@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canonicalResultForRegistryEntry } from "../src/ManifoldTracker/registry-details";
+import { canonicalResultForRegistryEntry } from "../src/MANIFOLD/registry-details";
 
 const registryEntry = {
   id: "d579129d-1ecf-43d0-8eab-4c939e578eed",

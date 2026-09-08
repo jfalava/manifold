@@ -1065,4 +1065,4 @@ class TrackerSettingsForm extends Form {
 // folder name): Paperback resolves `source.<id>` when loading the bundle.
 export class ManifoldTrackerExtension extends ManifoldTrackerSource {}
 
-export const ManifoldTracker = new ManifoldTrackerExtension();
+export const MANIFOLD = new ManifoldTrackerExtension();

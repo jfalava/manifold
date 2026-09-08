@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SourceManga, TrackedMangaChapterReadAction } from "@paperback/types";
 import type { PersonalReadInput } from "@manifold/paperback-runtime";
 
-import { processReadActions } from "../src/ManifoldTracker/read-queue.js";
+import { processReadActions } from "../src/MANIFOLD/read-queue.js";
 
 const manga = (id: string): SourceManga => ({
   mangaId: id,

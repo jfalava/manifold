@@ -4,7 +4,7 @@ import type { CanonicalSearchResult } from "@manifold/canonical";
 import {
   filterAndRankAniListResults,
   filterAndRankRegistryEntries,
-} from "../src/ManifoldTracker/search-relevance";
+} from "../src/MANIFOLD/search-relevance";
 
 const aniListResult = (
   id: string,

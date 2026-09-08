@@ -53,7 +53,7 @@ describe("al2pas5 source attachments", () => {
       .toEqual([
         { sourceId: "MangaDex", mangaId: "mangadex-id" },
         { sourceId: "Comix", mangaId: "comix-id" },
-        { sourceId: "ManifoldTracker", mangaId: "canonical-id" },
+        { sourceId: "MANIFOLD", mangaId: "canonical-id" },
       ]);
     expect(generated.library.attachedSources.map((source) => source.id))
       .toEqual(generated.sources.map((source) => source.id));
@@ -113,7 +113,7 @@ describe("al2pas5 source attachments", () => {
     const result = migrateLibrarySources(base, generated.library.id, entry, registryRow);
     expect(result.conflicts).toBe(0);
     expect(result.sources).toEqual([
-      expect.objectContaining({ sourceId: "ManifoldTracker", mangaId: registryRow.id }),
+      expect.objectContaining({ sourceId: "MANIFOLD", mangaId: registryRow.id }),
     ]);
     const cleaned = sourceFreeEntities(base, {
       __LIBRARY_MANGA_V5: { [generated.library.id]: result.library },
@@ -122,7 +122,7 @@ describe("al2pas5 source attachments", () => {
     }).entities;
     expect(Object.values(cleaned.__SOURCE_MANGA_V5)).toHaveLength(3);
     expect(Object.values(cleaned.__SOURCE_MANGA_V5).filter((source) =>
-      source.sourceId === "ManifoldTracker"
+      source.sourceId === "MANIFOLD"
     ).map((source) => source.mangaId)).toEqual([registryRow.id]);
     expect(Object.values(cleaned.__MANGA_INFO_V5).filter((info) =>
       info.additionalInfo["Canonical ID"]

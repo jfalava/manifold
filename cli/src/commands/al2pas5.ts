@@ -45,7 +45,7 @@ import {
 } from "@/ui";
 
 const SOURCE_ID = "ManifoldSource";
-const TRACKER_SOURCE_ID = "ManifoldTracker";
+const TRACKER_SOURCE_ID = "MANIFOLD";
 const UPSTREAM_SOURCES = [
   { provider: "mangadex", sourceId: "MangaDex" },
   { provider: "comix", sourceId: "Comix" },
@@ -439,7 +439,7 @@ export const al2Pas5Command = Command.make("al2pas5", {
   ),
 }).pipe(
   Command.withDescription(
-    "Generate a source-free Paperback .pas5 backup with native MangaDex/Comix and ManifoldTracker attachments.",
+    "Generate a source-free Paperback .pas5 backup with native MangaDex/Comix and MANIFOLD attachments.",
   ),
   Command.withHandler(
     ({

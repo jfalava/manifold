@@ -5,7 +5,7 @@ const root = resolve(import.meta.dirname, "../..");
 const destination = resolve(import.meta.dirname, "../catalog-assets");
 
 const plugins = [
-  { packageName: "tracker", id: "ManifoldTracker" },
+  { packageName: "tracker", id: "MANIFOLD" },
 ] as const;
 
 rmSync(destination, { recursive: true, force: true });

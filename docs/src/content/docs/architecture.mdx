@@ -33,7 +33,7 @@ The router mounts:
 | `/paperback/*` | Paperback catalog / extension artifacts (`SyncApi`) |
 
 Native MangaDex and Comix extensions own chapter refresh and provider-specific
-sessions. ManifoldTracker uses the native chapter source and manga IDs as read
+sessions. MANIFOLD uses the native chapter source and manga IDs as read
 provenance; it does not guess a provider from chapter IDs.
 
 ## Workspace layout
@@ -49,7 +49,7 @@ packages/canonical/       Canonical identity and progress contracts
 packages/mangadex/        MangaDex API adapter
 packages/comix/           Comix adapter
 packages/paperback-*/     Shared Paperback tracker runtime pieces
-tracker/                  ManifoldTracker orchestration extension
+tracker/                  MANIFOLD orchestration extension
 ```
 
 Only `iac` owns production deployment. `plan` and `deploy` rebuild the

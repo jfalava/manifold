@@ -1,6 +1,6 @@
 ---
 title: Install
-description: Install native reading providers, ManifoldTracker, and a source-free library backup.
+description: Install native reading providers, MANIFOLD, and a source-free library backup.
 sidebar:
   order: 3
 ---
@@ -17,7 +17,7 @@ https://inkdex.github.io/extensions/0.9/stable
 Install the native **MangaDex** and **Comix** extensions from it. They own
 chapter discovery, updates, Cloudflare handling, and reading.
 
-## ManifoldTracker
+## MANIFOLD
 
 Add the Manifold repository:
 
@@ -25,7 +25,7 @@ Add the Manifold repository:
 https://manifold.jfa.dev/paperback/extensions/0.9/stable/
 ```
 
-Install **ManifoldTracker**, open its settings, and set the personal API token
+Install **MANIFOLD**, open its settings, and set the personal API token
 from `MANIFOLD_TOKEN`. The token stays in Paperback secure state.
 
 ## Import the library
@@ -41,7 +41,7 @@ Restore the generated archive in Paperback. Each eligible library entry is
 attached to:
 
 - its registry-linked native MangaDex and/or Comix source;
-- ManifoldTracker, using the canonical registry UUID.
+- MANIFOLD, using the canonical registry UUID.
 
 Entries without a canonical UUID or a linked native content provider are not
 created. Existing base entries are enriched when they can be matched; obsolete
@@ -54,7 +54,7 @@ ManifoldSource attachments and providerless remnants are removed.
 
 ## How updates flow
 
-Paperback asks the native provider for chapters. ManifoldTracker receives the
+Paperback asks the native provider for chapters. MANIFOLD receives the
 provider's exact source and manga IDs, records the read against the canonical
 entry, and fans progress out through the Durable Object outbox.
 
@@ -68,7 +68,7 @@ entry, and fans progress out through the Durable Object outbox.
 | Repository    | `https://manifold.jfa.dev/paperback/extensions/0.9/stable/` |
 
 ```text
-MangaDex / Comix → Paperback library entry → ManifoldTracker
+MangaDex / Comix → Paperback library entry → MANIFOLD
                  → POST /api/v1/entries/:entryId/read
                  → Durable Object outbox → linked trackers/providers
 ```

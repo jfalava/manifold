@@ -4,8 +4,8 @@ import { catalogApp } from "../src/catalog";
 import type { Env } from "../src/types";
 
 const assets = new Map<string, string>([
-  ["/ManifoldTracker/index.js", "tracker-bundle"],
-  ["/ManifoldTracker/icon.png", "png"],
+  ["/MANIFOLD/index.js", "tracker-bundle"],
+  ["/MANIFOLD/icon.png", "png"],
 ]);
 
 // SAFETY: test fixture supplies only the Worker Env bindings catalog routes use
@@ -33,27 +33,27 @@ describe("Paperback catalog routes", () => {
     const body = (await response.json()) as {
       sources: readonly { id: string; version: string }[];
     };
-    expect(body.sources.map((source) => source.id)).toEqual(["ManifoldTracker"]);
+    expect(body.sources.map((source) => source.id)).toEqual(["MANIFOLD"]);
   });
 
   it("serves info.json from pbconfig", async () => {
-    const response = await get("/extensions/0.9/stable/ManifoldTracker/info.json");
+    const response = await get("/extensions/0.9/stable/MANIFOLD/info.json");
     expect(response.status).toBe(200);
     // SAFETY: parsed JSON matches { id: string; name: string } for this trusted/test payload
     const body = (await response.json()) as { id: string; name: string };
-    expect(body.id).toBe("ManifoldTracker");
-    expect(body.name).toBe("manifold: tracker");
+    expect(body.id).toBe("MANIFOLD");
+    expect(body.name).toBe("MANIFOLD");
   });
 
   it("serves the staged index.js blob", async () => {
-    const response = await get("/extensions/0.9/stable/ManifoldTracker/index.js");
+    const response = await get("/extensions/0.9/stable/MANIFOLD/index.js");
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("tracker-bundle");
   });
 
   it("serves icon.png at the Paperback static/ path", async () => {
     const response = await get(
-      "/extensions/0.9/stable/ManifoldTracker/static/icon.png",
+      "/extensions/0.9/stable/MANIFOLD/static/icon.png",
     );
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("image/png");
@@ -61,7 +61,7 @@ describe("Paperback catalog routes", () => {
   });
 
   it("still serves icon.png at the flat path", async () => {
-    const response = await get("/extensions/0.9/stable/ManifoldTracker/icon.png");
+    const response = await get("/extensions/0.9/stable/MANIFOLD/icon.png");
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("png");
   });
@@ -71,8 +71,8 @@ describe("Paperback catalog routes", () => {
     expect(response.status).toBe(404);
   });
 
-  it("404s the removed ManifoldSource extension", async () => {
-    const response = await get("/extensions/0.9/stable/ManifoldSource/info.json");
+  it.each(["ManifoldSource", "ManifoldTracker"])("404s removed extension id %s", async (id) => {
+    const response = await get(`/extensions/0.9/stable/${id}/info.json`);
     expect(response.status).toBe(404);
   });
 });
