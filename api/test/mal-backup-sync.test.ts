@@ -168,11 +168,10 @@ describe("Worker-side MAL backup outbox", () => {
     });
     await request({ action: "drain" });
     expect(writes).toHaveLength(before);
-    expect((await readOps()).find((op) => op.payload.entryId === entry.id)).toMatchObject({
-      state: "pending",
-      attempts: 1,
-      lastError: expect.stringContaining("another registry entry"),
-    });
+    const conflict = (await readOps()).find((op) => op.payload.entryId === entry.id);
+    expect(conflict?.state).toBe("pending");
+    expect(conflict?.attempts).toBe(1);
+    expect(conflict?.lastError).toContain("another registry entry");
     await request({ action: "nuke", id: entry.id });
   });
 
@@ -194,11 +193,9 @@ describe("Worker-side MAL backup outbox", () => {
     expect(state.status).toBe("reading");
     await request({ action: "drain" });
     const failed = (await readOps()).find((op) => op.payload.entryId === entry.id);
-    expect(failed).toMatchObject({
-      state: "pending",
-      attempts: 1,
-      lastError: expect.stringContaining("503"),
-    });
+    expect(failed?.state).toBe("pending");
+    expect(failed?.attempts).toBe(1);
+    expect(failed?.lastError).toContain("503");
     upstreamStatus = 200;
     await request({
       action: "set",

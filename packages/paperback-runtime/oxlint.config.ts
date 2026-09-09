@@ -1,5 +1,3 @@
-import { defineConfig } from "oxlint";
-
 import {
   agentIgnores,
   antiSlopEffectRules,
@@ -7,7 +5,7 @@ import {
   baseConfig,
 } from "../../oxlint.config.ts";
 
-export default defineConfig({
+export default {
   ...baseConfig,
   jsPlugins: antiSlopJsPlugins("../..", { effect: true }),
   ignorePatterns: [...agentIgnores, "*.d.ts", "**/*.d.ts", "dist/**"],
@@ -17,4 +15,4 @@ export default defineConfig({
     // Paperback's JSCore console has log/warn/error, but no info method.
     "no-console": ["error", { allow: ["log", "warn", "error"] }],
   },
-});
+};

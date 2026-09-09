@@ -9,7 +9,32 @@ import {
   sourceFreeEntities,
 } from "../src/commands/anilist/create-pas5";
 import type { RegistryRow } from "../src/commands/toolbox";
-import type { Pas5Entities } from "../src/pas5";
+import type {
+  LibraryManga,
+  LibraryTab,
+  MangaInfo,
+  Pas5Entities,
+  SourceManga,
+} from "../src/pas5-model";
+
+interface TestGeneratedEntry {
+  readonly library: LibraryManga;
+  readonly sources: readonly SourceManga[];
+  readonly infos: Record<string, MangaInfo>;
+}
+
+interface TestExistingUpstreamResult {
+  readonly library: LibraryManga;
+  readonly sources: readonly SourceManga[];
+  readonly infos: Record<string, MangaInfo>;
+  readonly conflicts: number;
+}
+
+interface TestSourceFreeResult {
+  readonly entities: Pas5Entities;
+  readonly removedLegacySources: number;
+  readonly removedProviderlessLibraries: number;
+}
 
 const entry: AniListRichEntry = {
   mediaId: 123,
@@ -35,7 +60,40 @@ const registryRow: RegistryRow = {
   ],
 };
 
-const entitiesFrom = (generated: ReturnType<typeof buildEntitiesForEntry>): Pas5Entities => ({
+const buildEntry = (
+  entry: AniListRichEntry,
+  registryRow: RegistryRow | undefined,
+): TestGeneratedEntry => {
+  // SAFETY: buildEntitiesForEntry declares this exact structural result contract.
+  return buildEntitiesForEntry(entry, registryRow, new Map()) as TestGeneratedEntry;
+};
+
+const migrate = (
+  base: Pas5Entities,
+  libraryId: string,
+  entry: AniListRichEntry,
+  registryRow: RegistryRow | undefined,
+  sharedTabs: ReadonlyMap<string, LibraryTab> = new Map(),
+): TestExistingUpstreamResult => {
+  // SAFETY: migrateLibrarySources declares this exact structural result contract.
+  return migrateLibrarySources(
+    base,
+    libraryId,
+    entry,
+    registryRow,
+    sharedTabs,
+  ) as TestExistingUpstreamResult;
+};
+
+const sourceFree = (
+  base: Pas5Entities | undefined,
+  updates: Pas5Entities,
+): TestSourceFreeResult => {
+  // SAFETY: sourceFreeEntities declares this exact structural result contract.
+  return sourceFreeEntities(base, updates) as TestSourceFreeResult;
+};
+
+const entitiesFrom = (generated: TestGeneratedEntry): Pas5Entities => ({
   __LIBRARY_MANGA_V5: { [generated.library.id]: generated.library },
   __SOURCE_MANGA_V5: Object.fromEntries(generated.sources.map((source) => [source.id, source])),
   __MANGA_INFO_V5: generated.infos,
@@ -43,14 +101,16 @@ const entitiesFrom = (generated: ReturnType<typeof buildEntitiesForEntry>): Pas5
 
 describe("al2pas5 source attachments", () => {
   it("adds every proven upstream provider to new library entries", () => {
-    const generated = buildEntitiesForEntry(entry, registryRow, new Map());
+    const generated = buildEntry(entry, registryRow);
 
     expect(generated.sources.map(({ sourceId, mangaId }) => ({ sourceId, mangaId }))).toEqual([
       { sourceId: "MangaDex", mangaId: "mangadex-id" },
       { sourceId: "Comix", mangaId: "comix-id" },
       { sourceId: "MANIFOLD", mangaId: "canonical-id" },
     ]);
-    expect(generated.library.attachedSources.map((source) => source.id)).toEqual(
+    expect(
+      generated.library.attachedSources.map((source) => source.id),
+    ).toEqual(
       generated.sources.map((source) => source.id),
     );
     expect(Object.keys(generated.infos)).toHaveLength(3);
@@ -61,11 +121,16 @@ describe("al2pas5 source attachments", () => {
       ...registryRow,
       providers: registryRow.providers.filter((provider) => provider.provider === "anilist"),
     };
-    const original = entitiesFrom(buildEntitiesForEntry(entry, originalRow, new Map()));
+    const original = entitiesFrom(buildEntry(entry, originalRow));
     const matches = matchingBaseLibraryIds(original, entry, registryRow);
 
     expect(matches).toEqual([Object.keys(original.__LIBRARY_MANGA_V5)[0]]);
-    const result = migrateLibrarySources(original, matches[0]!, entry, registryRow);
+    const result = migrate(
+      original,
+      matches[0]!,
+      entry,
+      registryRow,
+    );
     expect(result.sources.map(({ sourceId, mangaId }) => ({ sourceId, mangaId }))).toEqual([
       { sourceId: "MangaDex", mangaId: "mangadex-id" },
       { sourceId: "Comix", mangaId: "comix-id" },
@@ -84,28 +149,32 @@ describe("al2pas5 source attachments", () => {
         ...result.infos,
       },
     };
-    expect(migrateLibrarySources(enriched, matches[0]!, entry, registryRow).sources).toHaveLength(
+    expect(migrate(enriched, matches[0]!, entry, registryRow).sources).toHaveLength(
       0,
     );
   });
 
   it("replaces a stale tracker UUID and prunes its orphaned metadata", () => {
-    const generated = buildEntitiesForEntry(
+    const generated = buildEntry(
       entry,
       {
         ...registryRow,
         id: "91a074d5-6c22-42cc-9846-3d55a32bfa83",
       },
-      new Map(),
     );
     const base = entitiesFrom(generated);
     expect(matchingBaseLibraryIds(base, entry, registryRow)).toEqual([generated.library.id]);
-    const result = migrateLibrarySources(base, generated.library.id, entry, registryRow);
+    const result = migrate(
+      base,
+      generated.library.id,
+      entry,
+      registryRow,
+    );
     expect(result.conflicts).toBe(0);
     expect(result.sources).toEqual([
       expect.objectContaining({ sourceId: "MANIFOLD", mangaId: registryRow.id }),
     ]);
-    const cleaned = sourceFreeEntities(base, {
+    const cleaned: Pas5Entities = sourceFree(base, {
       __LIBRARY_MANGA_V5: { [generated.library.id]: result.library },
       __SOURCE_MANGA_V5: Object.fromEntries(result.sources.map((source) => [source.id, source])),
       __MANGA_INFO_V5: result.infos,
@@ -122,44 +191,55 @@ describe("al2pas5 source attachments", () => {
         .map((info) => info.additionalInfo["Canonical ID"]),
     ).toEqual([registryRow.id]);
     expect(
-      migrateLibrarySources(cleaned, generated.library.id, entry, registryRow).sources,
+      migrate(cleaned, generated.library.id, entry, registryRow).sources,
     ).toHaveLength(0);
   });
 
   it("fills missing tabs without new sources and preserves existing collections", () => {
-    const generated = buildEntitiesForEntry(entry, registryRow, new Map());
+    const generated = buildEntry(entry, registryRow);
     const base = entitiesFrom(generated);
     const tab = { id: "shared-reading", name: "Reading", sortOrder: 0 };
     const tabs = new Map([[tab.name, tab]]);
-    const result = migrateLibrarySources(base, generated.library.id, entry, registryRow, tabs);
+    const result = migrate(
+      base,
+      generated.library.id,
+      entry,
+      registryRow,
+      tabs,
+    );
     expect(result.sources).toHaveLength(0);
     expect(result.library.libraryTabs).toEqual([tab]);
     expect(
-      migrateLibrarySources(base, generated.library.id, entry, registryRow, new Map()).library
+      migrate(base, generated.library.id, entry, registryRow).library
         .libraryTabs,
     ).toEqual([]);
     const custom = { id: "custom", name: "Favorites", sortOrder: 5 };
     base.__LIBRARY_MANGA_V5[generated.library.id] = { ...generated.library, libraryTabs: [custom] };
     expect(
-      migrateLibrarySources(base, generated.library.id, entry, registryRow, tabs).library
+      migrate(base, generated.library.id, entry, registryRow, tabs).library
         .libraryTabs,
     ).toEqual([custom]);
   });
 
   it("does not invent a tracker binding without a current registry row", () => {
-    const generated = buildEntitiesForEntry(entry, registryRow, new Map());
+    const generated = buildEntry(entry, registryRow);
     const base = entitiesFrom(generated);
     base.__LIBRARY_MANGA_V5[generated.library.id] = {
       ...generated.library,
       attachedSources: generated.library.attachedSources.slice(0, 2),
     };
-    const result = migrateLibrarySources(base, generated.library.id, entry, undefined);
+    const result = migrate(
+      base,
+      generated.library.id,
+      entry,
+      undefined,
+    );
     expect(result.sources).toEqual([]);
     expect(result.library.attachedSources).toHaveLength(2);
   });
 
   it("does not replace a conflicting provider attachment", () => {
-    const generated = buildEntitiesForEntry(entry, registryRow, new Map());
+    const generated = buildEntry(entry, registryRow);
     const base = entitiesFrom(generated);
     const mangaDex = generated.sources.find((source) => source.sourceId === "MangaDex")!;
     base.__SOURCE_MANGA_V5[mangaDex.id] = {
@@ -167,13 +247,18 @@ describe("al2pas5 source attachments", () => {
       mangaId: "different-mangadex-id",
     };
 
-    const result = migrateLibrarySources(base, generated.library.id, entry, registryRow);
+    const result = migrate(
+      base,
+      generated.library.id,
+      entry,
+      registryRow,
+    );
     expect(result.sources).toHaveLength(0);
     expect(result.conflicts).toBe(1);
   });
 
   it("removes ManifoldSource and drops tracker-only libraries", () => {
-    const generated = buildEntitiesForEntry(entry, registryRow, new Map());
+    const generated = buildEntry(entry, registryRow);
     const base = entitiesFrom(generated);
     const legacyInfoId = "ManifoldSource:canonical-id";
     const legacySource = {
@@ -194,7 +279,7 @@ describe("al2pas5 source attachments", () => {
       ],
     };
 
-    const cleaned = sourceFreeEntities(base, {
+    const cleaned = sourceFree(base, {
       __LIBRARY_MANGA_V5: {},
       __SOURCE_MANGA_V5: {},
       __MANGA_INFO_V5: {},
@@ -207,16 +292,15 @@ describe("al2pas5 source attachments", () => {
     );
 
     const trackerOnly = entitiesFrom(
-      buildEntitiesForEntry(
+      buildEntry(
         entry,
         {
           ...registryRow,
           providers: registryRow.providers.filter((provider) => provider.provider === "anilist"),
         },
-        new Map(),
       ),
     );
-    const pruned = sourceFreeEntities(undefined, trackerOnly);
+    const pruned = sourceFree(undefined, trackerOnly);
     expect(pruned.removedProviderlessLibraries).toBe(1);
     expect(pruned.entities.__LIBRARY_MANGA_V5).toEqual({});
     expect(pruned.entities.__SOURCE_MANGA_V5).toEqual({});
@@ -234,7 +318,7 @@ describe("al2pas5 source attachments", () => {
   });
 
   it("does not match unrelated base metadata when the registry is unresolved", () => {
-    const generated = buildEntitiesForEntry(entry, registryRow, new Map());
+    const generated = buildEntry(entry, registryRow);
     const base = entitiesFrom(generated);
     const unrelated: AniListRichEntry = {
       ...entry,

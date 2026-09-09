@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { requestHref, requestInitText } from "@manifold/json";
 
 import {
   ANILIST_REDIRECT_URI,
@@ -26,14 +27,16 @@ describe("AniList authorization", () => {
   });
 
   it("exchanges a code without leaking malformed token payloads", async () => {
-    const fetcher = vi.fn(async () =>
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       Response.json({ access_token: "SECRET_TOKEN", expires_in: "SECRET_VALUE" }),
     );
     vi.stubGlobal("fetch", fetcher);
     await expect(exchangeAniListCode("client", "secret", "code")).rejects.toThrow(
       /^AniList returned an invalid token response\. Run login anilist again\.$/,
     );
-    expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://anilist.co/api/v2/oauth/token");
+    expect(requestHref(fetcher.mock.calls[0]?.[0] ?? "")).toBe(
+      "https://anilist.co/api/v2/oauth/token",
+    );
     const init = fetcher.mock.calls[0]?.[1];
     expect(init).toBeDefined();
     expect(init?.method).toBe("POST");
@@ -41,7 +44,7 @@ describe("AniList authorization", () => {
       "content-type": "application/json",
       accept: "application/json",
     });
-    expect(JSON.parse(String(init?.body))).toEqual({
+    expect(JSON.parse(requestInitText(init) ?? "")).toEqual({
       grant_type: "authorization_code",
       client_id: "client",
       client_secret: "secret",

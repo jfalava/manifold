@@ -363,7 +363,7 @@ export class ManifoldTrackerSource
           },
         };
       }
-      throw new Error(`Unsupported provider candidate: ${parsedCandidate.provider}`);
+      throw new Error(`Unsupported provider candidate: ${String(parsedCandidate.provider)}`);
     }
     const stored = await personalApi.getEntry(mangaId).catch(() => undefined);
     let entry = this.canonicalResults.get(mangaId);

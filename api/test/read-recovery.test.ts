@@ -94,9 +94,9 @@ describe("queued reads with stale registry IDs", () => {
         const ops = Schema.decodeUnknownSync(Schema.Array(SyncOp))(
           await request({ action: "ops" }),
         );
-        expect(ops.filter((op) => op.opId === input.read.eventId)).toEqual([
-          expect.objectContaining({ payload: expect.objectContaining({ entryId: current.id }) }),
-        ]);
+        const matchingOps = ops.filter((op) => op.opId === input.read.eventId);
+        expect(matchingOps).toHaveLength(1);
+        expect(matchingOps[0]?.payload.entryId).toBe(current.id);
       }
     },
   );

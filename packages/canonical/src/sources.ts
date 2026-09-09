@@ -514,7 +514,7 @@ export const createMyAnimeListSource = (
           throw sourceError("mal", "MyAnimeList client id is not configured");
         }
         const normalized = requireQuery(query, "mal");
-        if ([...normalized].length < 3) {
+        if (Array.from(normalized).length < 3) {
           throw sourceError("mal", "MyAnimeList search requires at least 3 characters", 400);
         }
         const q = encodeURIComponent(normalized);

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Effect from "effect/Effect";
-import { requestHref } from "@manifold/json";
+import { requestHref, requestInitText } from "@manifold/json";
 import type { RegistryEntry } from "@manifold/contract";
 import { getRegistryCanonical, searchCanonical } from "../src/canonical";
 import { handleCanonical } from "../src/routes/canonical";
@@ -118,10 +118,11 @@ describe("personal canonical search", () => {
       });
       const result = await searchCanonical(environment("client"), "example", "auto", 3);
       expect(result.results.map((hit) => hit.id)).toEqual(["mal:77"]);
-      expect(result.providers).toMatchObject([
-        { provider: "anilist", error: { status, message: expect.stringContaining("Blocked") } },
-        { provider: "mal", results: [{ providerId: "77" }] },
-      ]);
+      expect(result.providers[0]?.provider).toBe("anilist");
+      expect(result.providers[0]?.error?.status).toBe(status);
+      expect(result.providers[0]?.error?.message).toContain("Blocked");
+      expect(result.providers[1]?.provider).toBe("mal");
+      expect(result.providers[1]?.results[0]?.providerId).toBe("77");
       expect(requests).toHaveLength(2);
     },
   );
@@ -250,7 +251,7 @@ describe("registry metadata fallback", () => {
     let blocked = true;
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (requestHref(input).includes("anilist.co")) {
-        expect(JSON.parse(String(init?.body))).toMatchObject({ variables: { id: 42 } });
+        expect(JSON.parse(requestInitText(init) ?? "")).toMatchObject({ variables: { id: 42 } });
         return blocked
           ? new Response("Blocked", { status: 403 })
           : Response.json({

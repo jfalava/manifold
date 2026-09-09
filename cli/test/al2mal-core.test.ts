@@ -37,7 +37,9 @@ describe("malUpdateForAniList", () => {
   });
 
   it("rejects unknown AniList statuses", () => {
-    expect(malUpdateForAniList({ status: "WATCHING" }, { includeProgress: true })).toBeUndefined();
+    expect(
+      malUpdateForAniList({ status: "WATCHING", progress: undefined }, { includeProgress: true }),
+    ).toBeUndefined();
   });
 });
 
@@ -212,10 +214,10 @@ describe("matchAniListToMal", () => {
       { includeProgress: false },
     );
     expect(titleSearch).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
-      kind: "unmatched",
-      value: { reason: expect.stringContaining("3–64 characters") },
-    });
+    expect(result.kind).toBe("unmatched");
+    if (result.kind === "unmatched") {
+      expect(result.value.reason).toContain("3–64 characters");
+    }
   });
 
   it("treats a thrown title search as unmatched instead of aborting", async () => {
@@ -227,10 +229,10 @@ describe("matchAniListToMal", () => {
       titleSearch,
       { includeProgress: false },
     );
-    expect(result).toMatchObject({
-      kind: "unmatched",
-      value: { reason: expect.stringContaining("MAL title search failed") },
-    });
+    expect(result.kind).toBe("unmatched");
+    if (result.kind === "unmatched") {
+      expect(result.value.reason).toContain("MAL title search failed");
+    }
   });
 });
 

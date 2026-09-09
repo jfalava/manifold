@@ -6,9 +6,14 @@ import { isJsonObject, isString, type JsonValue } from "@manifold/json";
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 
 const readEnvironment = async (): Promise<Record<string, string>> => {
-  let file: Record<string, string> = {};
+  const file: Record<string, string> = {};
   try {
-    file = parseEnv(await readFile(resolve(repositoryRoot, "iac/.env"), "utf8"));
+    const parsed = parseEnv(await readFile(resolve(repositoryRoot, "iac/.env"), "utf8"));
+    for (const [key, value] of Object.entries(parsed)) {
+      if (isString(value)) {
+        file[key] = value;
+      }
+    }
   } catch (error) {
     if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
       throw error;

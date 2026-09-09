@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Form, type Request as PaperbackRequest } from "@paperback/types";
+import { isJsonObject, isString, type JsonValue } from "@manifold/json";
 import { MANIFOLD_API_TOKEN_KEY, ANILIST_SESSION_KEY } from "@manifold/paperback-runtime";
 let ManifoldTrackerSource: typeof import("../src/MANIFOLD/main").ManifoldTrackerSource;
 
@@ -21,6 +22,17 @@ const canonical = {
   score: 0.8,
   externalIds: { mal: "77" },
   metadata: { coverUrl: "https://example.test/mal.jpg", description: "MAL details" },
+};
+
+const parseJsonObject = (value: PaperbackRequest["body"]): Record<string, JsonValue> => {
+  if (!isString(value)) {
+    throw new Error("Expected a JSON request body");
+  }
+  const parsed: unknown = JSON.parse(value);
+  if (!isJsonObject(parsed)) {
+    throw new Error("Expected a JSON object request body");
+  }
+  return parsed;
 };
 
 describe("Paperback canonical fallback", () => {
@@ -49,7 +61,7 @@ describe("Paperback canonical fallback", () => {
         requests.push(request);
         const url = new URL(request.url);
         let status = 200;
-        let body;
+        let body: JsonValue = {};
         const stored = {
           ...entry,
           providers: [
@@ -85,7 +97,7 @@ describe("Paperback canonical fallback", () => {
           body =
             request.method === "GET"
               ? { state: { entryId: entry.id, status: "reading", updatedAt: 2 } }
-              : { entryId: entry.id, updatedAt: 3, ...JSON.parse(String(request.body)) };
+              : { entryId: entry.id, updatedAt: 3, ...parseJsonObject(request.body) };
         } else if (url.hostname === "api.mangadex.org") {
           body = { data: [] };
         } else if (url.pathname.endsWith("/ops")) {
@@ -108,7 +120,7 @@ describe("Paperback canonical fallback", () => {
   it("uses auto search, labels MAL, and ingests the selected candidate with its own ID", async () => {
     const tracker = new ManifoldTrackerSource();
     const result = await tracker.getSearchResults(
-      { title: "Example", filters: [] },
+      { title: "Example" },
       undefined,
       undefined,
     );
@@ -130,9 +142,7 @@ describe("Paperback canonical fallback", () => {
     });
     expect(details.mangaInfo.additionalInfo?.["AniList ID"]).toBeUndefined();
     expect(
-      JSON.parse(
-        String(requests.find((request) => request.url.endsWith("/registry/ingest"))?.body),
-      ),
+      parseJsonObject(requests.find((request) => request.url.endsWith("/registry/ingest"))?.body),
     ).toEqual({ provider: "mal", providerId: "77", title: "Example", links: [] });
     expect(requests.some((request) => request.url.includes("graphql.anilist.co"))).toBe(false);
   });
@@ -146,7 +156,7 @@ describe("Paperback canonical fallback", () => {
   it("deduplicates an already-linked MAL search result against the registry", async () => {
     registrySearch = true;
     const result = await new ManifoldTrackerSource().getSearchResults(
-      { title: "Example", filters: [] },
+      { title: "Example" },
       undefined,
       undefined,
     );
@@ -171,15 +181,19 @@ describe("Paperback canonical fallback", () => {
       const details = await tracker.getMangaDetails(entry.id);
       const form = await tracker.getMangaProgressManagementForm(details);
       // Exercise the public form callback, not the private state implementation.
-      if (!("notesChanged" in form) || !(form.notesChanged instanceof Function)) {
+      // SAFETY: the tracker returns a Form with its public notes callback attached.
+      const callbacks = form as Form & {
+        notesChanged?: (value: string) => Promise<void>;
+      };
+      if (callbacks.notesChanged === undefined) {
         throw new Error("Missing notes callback");
       }
-      await form.notesChanged("Local notes");
+      await callbacks.notesChanged("Local notes");
       await form.formDidSubmit?.();
       const save = requests.find(
         (request) => request.method === "POST" && request.url.endsWith("/list-state"),
       );
-      expect(JSON.parse(String(save?.body))).toEqual({
+      expect(parseJsonObject(save?.body)).toEqual({
         notes: "Local notes",
         origin: "device",
         appliedRemotely: false,
@@ -193,14 +207,18 @@ describe("Paperback canonical fallback", () => {
     const form = await tracker.getMangaProgressManagementForm(
       await tracker.getMangaDetails(entry.id),
     );
-    if (!("statusSelected" in form) || !(form.statusSelected instanceof Function)) {
+    // SAFETY: the tracker returns a Form with its public status callback attached.
+    const callbacks = form as Form & {
+      statusSelected?: (values: string[]) => Promise<void>;
+    };
+    if (callbacks.statusSelected === undefined) {
       throw new Error("Missing status callback");
     }
-    await form.statusSelected(["completed"]);
+    await callbacks.statusSelected(["completed"]);
     const save = requests.find(
       (request) => request.method === "POST" && request.url.endsWith("/list-state"),
     );
-    expect(JSON.parse(String(save?.body))).toEqual({
+    expect(parseJsonObject(save?.body)).toEqual({
       status: "completed",
       origin: "device",
       appliedRemotely: false,

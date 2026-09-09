@@ -191,19 +191,20 @@ describe("canonical fallback with the real registry", () => {
       providerId: "88",
       title: "Different manga",
     });
-    expect(
+    const recovered = Schema.decodeUnknownSync(RegistryEntry)(
       await request("/v1/registry/ingest", {
         provider: "anilist",
         providerId: "53",
         title: "Recovered title",
         links: [{ provider: "mal", externalId: "88" }],
       }),
-    ).toMatchObject({
-      id: malOnly.id,
-      providers: expect.arrayContaining([
-        expect.objectContaining({ provider: "anilist", externalId: "53" }),
-      ]),
-    });
+    );
+    expect(recovered.id).toBe(malOnly.id);
+    expect(
+      recovered.providers.some(
+        (provider) => provider.provider === "anilist" && provider.externalId === "53",
+      ),
+    ).toBe(true);
     expect(
       (await worker.dispatchFetch("https://fixture.test/v1/entries/missing/canonical")).status,
     ).toBe(404);

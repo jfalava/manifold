@@ -71,7 +71,7 @@ const parseTabsFlag = (value: string): readonly string[] | "none" | undefined =>
   return [...new Set(names)].map((name) => allowed.get(name) as string);
 };
 
-interface GeneratedEntry {
+export interface GeneratedEntry {
   readonly library: LibraryManga;
   readonly sources: readonly SourceManga[];
   readonly infos: Record<string, MangaInfo>;
@@ -239,7 +239,7 @@ export const matchingBaseLibraryIds = (
     .map(([libraryId]) => libraryId);
 };
 
-interface ExistingUpstreamResult extends Pick<GeneratedEntry, "sources" | "infos"> {
+export interface ExistingUpstreamResult extends Pick<GeneratedEntry, "sources" | "infos"> {
   readonly library: LibraryManga;
   readonly conflicts: number;
 }
@@ -328,7 +328,7 @@ export const migrateLibrarySources = (
   };
 };
 
-interface SourceFreeResult {
+export interface SourceFreeResult {
   readonly entities: Pas5Entities;
   readonly removedLegacySources: number;
   readonly removedProviderlessLibraries: number;

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { isString, requestHref } from "@manifold/json";
 import {
   createMalAuthorization,
   createMalClient,
@@ -18,6 +19,17 @@ const page = (ids: number[], next?: string) =>
     data: ids.map((id) => ({ node: { id, title: `Manga ${id}` } })),
     paging: next ? { next } : {},
   });
+
+const requestBodyText = (init: RequestInit | undefined): string => {
+  const body = init?.body;
+  if (isString(body)) {
+    return body;
+  }
+  if (body instanceof URLSearchParams) {
+    return body.toString();
+  }
+  throw new Error("Expected a URL-encoded request body");
+};
 
 const setup = (...responses: Response[]) => {
   const fetcher = vi.fn(async () => {
@@ -67,12 +79,12 @@ describe("MAL manga wipe", () => {
       "GET",
     ]);
     expect(
-      calls.map((call) => String(call[0])).filter((url) => url.includes("mangalist")),
+      calls.map((call) => requestHref(call[0])).filter((url) => url.includes("mangalist")),
     ).toSatisfy((urls: string[]) =>
       urls.every((url) => new URL(url).searchParams.get("nsfw") === "true"),
     );
     expect(
-      calls.filter((call) => call[1]?.method === "DELETE").map((call) => String(call[0])),
+      calls.filter((call) => call[1]?.method === "DELETE").map((call) => requestHref(call[0])),
     ).toEqual([1, 2, 3].map((id) => `https://api.myanimelist.net/v2/manga/${id}/my_list_status`));
     expect(ctx.sleep).toHaveBeenCalledTimes(7);
   });
@@ -124,7 +136,7 @@ describe("MAL manga wipe", () => {
     await expect(wipeMalManga({ ...ctx, apply: true })).rejects.toThrow("HTTP 403");
     expect(await wipeMalManga({ ...ctx, apply: true })).toMatchObject({ scanned: 1, deleted: 1 });
     const deletes = vi.mocked(fetch).mock.calls.filter((call) => call[1]?.method === "DELETE");
-    expect(deletes.map((call) => String(call[0]))).toEqual(
+    expect(deletes.map((call) => requestHref(call[0]))).toEqual(
       [1, 2, 2].map((id) => `https://api.myanimelist.net/v2/manga/${id}/my_list_status`),
     );
   });
@@ -164,7 +176,7 @@ describe("MAL manga updates", () => {
     expect(call?.[1]?.headers).toMatchObject({
       "content-type": "application/x-www-form-urlencoded",
     });
-    expect(Object.fromEntries(new URLSearchParams(String(call?.[1]?.body)))).toEqual({
+    expect(Object.fromEntries(new URLSearchParams(requestBodyText(call?.[1])))).toEqual({
       status: "reading",
       score: "0",
       is_rereading: "false",
@@ -212,9 +224,9 @@ describe("MAL authentication and retries", () => {
       expect.objectContaining({ accessToken: "new", refreshToken: "rotated" }),
     );
     const calls = vi.mocked(fetch).mock.calls;
-    expect(String(calls[0]?.[0])).toBe("https://myanimelist.net/v1/oauth2/token");
-    expect(String(calls[0]?.[1]?.body)).toContain("grant_type=refresh_token");
-    expect(String(calls[0]?.[1]?.body)).toContain("client_secret=secret");
+    expect(requestHref(calls[0]?.[0] ?? "")).toBe("https://myanimelist.net/v1/oauth2/token");
+    expect(requestBodyText(calls[0]?.[1])).toContain("grant_type=refresh_token");
+    expect(requestBodyText(calls[0]?.[1])).toContain("client_secret=secret");
     expect(calls[1]?.[1]?.headers).toMatchObject({ authorization: "Bearer new" });
   });
 

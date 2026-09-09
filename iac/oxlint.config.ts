@@ -1,5 +1,3 @@
-import { defineConfig } from "oxlint";
-
 import {
   agentIgnores,
   antiSlopEffectRules,
@@ -9,7 +7,7 @@ import {
 
 // Object spread instead of oxlint `extends`: extends-based inheritance drops
 // env/globals/overrides from the parent config.
-export default defineConfig({
+export default {
   ...baseConfig,
   jsPlugins: antiSlopJsPlugins("..", { effect: true }),
   ignorePatterns: [...agentIgnores, "*.d.ts", "**/*.d.ts", ".alchemy/**"],
@@ -17,4 +15,4 @@ export default defineConfig({
     ...baseConfig.rules,
     ...antiSlopEffectRules,
   },
-});
+};

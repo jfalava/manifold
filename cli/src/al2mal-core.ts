@@ -101,14 +101,14 @@ export const MAL_SEARCH_Q_MIN = 3;
 export const MAL_SEARCH_Q_MAX = 64;
 
 export const malSearchQueryOk = (query: string): boolean => {
-  const length = [...query.trim()].length;
+  const length = Array.from(query.trim()).length;
   return length >= MAL_SEARCH_Q_MIN && length <= MAL_SEARCH_Q_MAX;
 };
 
 /** Clamp to MAL's accepted `q` window; empty when nothing usable remains. */
 export const malSearchQuery = (query: string): string | undefined => {
   const trimmed = query.trim();
-  const chars = [...trimmed];
+  const chars = Array.from(trimmed);
   if (chars.length < MAL_SEARCH_Q_MIN) {
     return undefined;
   }

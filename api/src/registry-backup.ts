@@ -1,4 +1,10 @@
-import { isFiniteNumber, isJsonObject, isString, type JsonValue } from "@manifold/json";
+import {
+  isFiniteNumber,
+  isJsonObject,
+  isJsonValue,
+  isString,
+  type JsonValue,
+} from "@manifold/json";
 
 export const REGISTRY_BACKUP_PREFIX = "registry/";
 export const REGISTRY_BACKUP_VERSION = 1 as const;
@@ -224,6 +230,14 @@ export const readBackupBody = async (
   if (expectedChecksum !== undefined && (await sha256(text)) !== expectedChecksum) {
     throw new Error("Registry backup checksum mismatch");
   }
-  const parsed: JsonValue = JSON.parse(text);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("Registry backup is not valid JSON");
+  }
+  if (!isJsonValue(parsed)) {
+    throw new Error("Registry backup is not a JSON value");
+  }
   return parseRegistryBackup(parsed);
 };

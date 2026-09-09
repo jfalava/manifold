@@ -16,10 +16,6 @@ interface ApplicationHarness {
   scheduleRequest: (request: ScheduledRequestLike) => Promise<[ResponseLike, ArrayBuffer]>;
 }
 
-interface GlobalWithApplication {
-  Application?: ApplicationHarness;
-}
-
 const jsonResponse = (payload: JsonValue): ArrayBuffer =>
   // SAFETY: Node runtime value is ArrayBuffer in this IAC/CLI context
   new TextEncoder().encode(JSON.stringify(payload)).buffer as ArrayBuffer;
@@ -38,33 +34,34 @@ const makeHarness = () => {
     },
   ) => {
     let index = 0;
-    // SAFETY: vitest installs a Paperback Application stub on globalThis for this suite
-    (globalThis as GlobalWithApplication).Application = {
-      sleep: async (seconds: number): Promise<void> => {
-        sleeps.push(seconds);
-      },
-      arrayBufferToUTF8String: (buffer: ArrayBuffer): string => new TextDecoder().decode(buffer),
-      scheduleRequest: async (
-        request: ScheduledRequestLike,
-      ): Promise<[ResponseLike, ArrayBuffer]> => {
-        const callIndex = index++;
-        if (inFlight > 0) {
-          overlapped = true;
-        }
-        inFlight += 1;
-        requests.push({ body: request.body ?? "" });
-        try {
-          await Promise.resolve();
-          const outcome = respond(callIndex);
-          return [
-            { status: outcome.status, headers: outcome.headers ?? {} },
-            jsonResponse(outcome.body ?? { data: {} }),
-          ];
-        } finally {
-          inFlight -= 1;
-        }
-      },
-    };
+    Object.assign(globalThis, {
+      Application: {
+        sleep: async (seconds: number): Promise<void> => {
+          sleeps.push(seconds);
+        },
+        arrayBufferToUTF8String: (buffer: ArrayBuffer): string => new TextDecoder().decode(buffer),
+        scheduleRequest: async (
+          request: ScheduledRequestLike,
+        ): Promise<[ResponseLike, ArrayBuffer]> => {
+          const callIndex = index++;
+          if (inFlight > 0) {
+            overlapped = true;
+          }
+          inFlight += 1;
+          requests.push({ body: request.body ?? "" });
+          try {
+            await Promise.resolve();
+            const outcome = respond(callIndex);
+            return [
+              { status: outcome.status, headers: outcome.headers ?? {} },
+              jsonResponse(outcome.body ?? { data: {} }),
+            ];
+          } finally {
+            inFlight -= 1;
+          }
+        },
+      } satisfies ApplicationHarness,
+    });
     return () => index;
   };
 
@@ -84,8 +81,7 @@ describe("aniListRequest throttling", () => {
   });
 
   afterEach(() => {
-    // SAFETY: clear the Application stub installed for this suite
-    delete (globalThis as GlobalWithApplication).Application;
+    Object.assign(globalThis, { Application: undefined });
     vi.restoreAllMocks();
   });
 
@@ -162,8 +158,7 @@ describe("AniList field dates", () => {
   });
 
   afterEach(() => {
-    // SAFETY: clear the Application stub installed for this suite
-    delete (globalThis as GlobalWithApplication).Application;
+    Object.assign(globalThis, { Application: undefined });
     vi.restoreAllMocks();
   });
 
