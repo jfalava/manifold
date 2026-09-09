@@ -16,6 +16,42 @@ chapter updates; the tracker owns canonical progress synchronization.
 
 Titles without a registry UUID or a linked native content provider are skipped.
 
+## After restoring: run Paperback database repair
+
+Run Paperback's **database repair** after restoring a generated archive, then
+check that a title keeps its library category when you leave and reopen it.
+Keep the original backup until this check passes.
+
+In device testing on September 9, 2026, imported titles appeared in the library
+but reopened as Uncategorized despite exported Reading memberships. Database
+repair restored category persistence without changing library IDs, timestamps,
+tabs, or attachments. Provider IDs were valid; changing UUID casing alone did
+not fix the problem. This is a verified workaround for the tested case, not a
+confirmed explanation of Paperback's internal failure.
+
+## `filter`: isolate providers in an existing archive
+
+Filter an existing backup offline, without AniList credentials, registry lookups,
+or new IDs. Exclude one or two providers with `--exclude-mangadex`,
+`--exclude-comix`, and `--exclude-tracker` (MANIFOLD). `--input` and `--out`
+are required and must point to different files. Without `--apply`, this is a dry run.
+
+```text
+bun run manifold anilist create pas5 filter --input generated.pas5 --out mangadex-only.pas5 --exclude-comix --exclude-tracker --apply
+bun run manifold anilist create pas5 filter --input generated.pas5 --out comix-only.pas5 --exclude-mangadex --exclude-tracker --apply
+bun run manifold anilist create pas5 filter --input generated.pas5 --out tracker-only.pas5 --exclude-mangadex --exclude-comix --apply
+```
+
+This diagnostic subcommand deliberately retains tracker-only libraries. It
+preserves existing library IDs, tabs, timestamps, and retained source metadata.
+Entries without a remaining attachment are omitted and counted; missing provider
+links are never invented. Excluded sources, their chapters and progress markers,
+and unreferenced manga metadata are removed. Other providers are left unchanged.
+
+Keep the original backup and test the outputs separately: restoring may replace
+the device library. A tracker-only archive tests saved/tracking behavior, not
+chapter reading. Normal generation below still requires a native content provider.
+
 ## Flags
 
 ### `--apply`
