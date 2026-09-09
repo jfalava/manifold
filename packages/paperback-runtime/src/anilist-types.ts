@@ -25,8 +25,7 @@ export const ANILIST_VIEWER_ID_KEY = "manifold.anilist-viewer-id";
 export const ANILIST_STATUS_KEY = "manifold.anilist-status";
 
 /**
- * Client used for the device-side implicit OAuth login. Client 49060 (the
- * sync API's confidential client) rejects response_type=token with
- * unsupported_grant_type; 49218 serves implicit fine.
+ * Worker AniList app used for device login. The CLI app (49218) redirects
+ * to localhost and must not be used by the tracker.
  */
-export const ANILIST_OAUTH_CLIENT_ID = "49218";
+export const ANILIST_OAUTH_CLIENT_ID = "49060";

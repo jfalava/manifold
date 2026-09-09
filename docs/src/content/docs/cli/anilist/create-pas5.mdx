@@ -5,6 +5,44 @@ sidebar:
   order: 2
 ---
 
+## Verified restore procedure: start with an empty database
+
+Verified on September 9, 2026: a full Reading, Paused, and Planning test
+archive restored into a fresh Paperback installation retained saved library
+membership. Every title checked had working MangaDex, Comix, and MANIFOLD
+attachments.
+
+1. Keep a separate full backup of your library and reading history before
+   deleting anything. The successful test archive contained no reading history.
+2. Start with a genuinely empty Paperback database. Delete App, rather than
+   Offload App, was used for the fresh-install test. Do not restore an older
+   backup or open/add titles before importing the test archive.
+3. Install MangaDex, Comix, and MANIFOLD, then restore the prepared `.pas5`.
+4. Run Paperback's database repair **before opening any imported title**.
+5. Open titles from each category and provider, leave, and reopen them to
+   verify that they remain saved. Export the Realm database and PAS5 before
+   attempting manual fixes if any title fails.
+
+The tested archive used uppercase **internal library and source-object UUIDs**.
+Actual provider manga IDs were unchanged. It contained 561 entries: 341 Reading,
+95 Paused, and 125 Planning. Of these, 547 had all three providers, 12 lacked one
+reader-provider link, and two were tracker-only. Missing registry links cannot
+be replaced with invented provider IDs.
+
+This was a specially prepared test archive, not unmodified CLI output. The
+current generator still creates lowercase random library/source UUIDs and skips
+titles without a reader-provider link. Do not assume its output is identical to
+the tested archive. Uppercase UUIDs and repair were tested together; neither is
+established as sufficient on its own.
+
+Restoring a backup replaces the visible library but does not necessarily remove
+old source objects or cached chapters. Realm exports showed titles split between
+an unattached object holding chapters and another object holding library
+membership. Repair did not merge those duplicates. A previously opened title
+continued to fail while newly tested titles worked after repair. These findings
+explain why an existing installation is not equivalent to the fresh-database
+test; they do not establish Paperback's exact internal failure mechanism.
+
 ```text
 bun run manifold anilist create pas5 [flags]
 ```
