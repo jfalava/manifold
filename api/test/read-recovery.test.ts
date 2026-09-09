@@ -9,6 +9,12 @@ const fixture = `
 import { ManifoldSync } from './src/manifold-sync.ts';
 export class TestSync extends ManifoldSync {
   async pause() { this.ctx.storage.kv.put('registry_sync_paused', true); }
+  async snapshot() {
+    return Object.fromEntries([
+      'canonical_entries', 'provider_links', 'read_events', 'progress_state',
+      'list_events', 'sync_ops', 'md_status_queue',
+    ].map(table => [table, this.ctx.storage.sql.exec('SELECT * FROM ' + table).toArray()]));
+  }
 }
 export default { async fetch(request, env) {
   const sync = env.MANIFOLD_SYNC.getByName('default');
@@ -22,6 +28,7 @@ export default { async fetch(request, env) {
       case 'get': result = await sync.getEntry(input.id); break;
       case 'nuke': result = await sync.nukeEntry(input.id, {origin:'device'}); break;
       case 'ops': result = await sync.listOps(); break;
+      case 'snapshot': result = await sync.snapshot(); break;
       default: throw new Error('Unknown fixture action');
     }
     return Response.json(result ?? null);
@@ -137,5 +144,66 @@ describe("queued reads with stale registry IDs", () => {
         read: read("comix", "recreated", "recreated-event"),
       }),
     ).toMatchObject({ entryId: current.id, chapterNumber: 12 });
+  });
+
+  it("rolls back a rejected resurrection but still allows a matching read", async () => {
+    const deleted = await entry("comix", "deleted-original");
+    await request({ action: "nuke", id: deleted.id });
+    const before = await request({ action: "snapshot" });
+    expect(before).toMatchObject({
+      canonical_entries: expect.arrayContaining([
+        expect.objectContaining({ id: deleted.id, tombstoned_at: expect.any(Number) }),
+      ]),
+    });
+
+    expect(
+      await request(
+        {
+          action: "read",
+          id: deleted.id,
+          read: read("comix", "deleted-wrong", "rejected-resurrection"),
+        },
+        500,
+      ),
+    ).toEqual({
+      error: `Registry entry ${deleted.id} has comix:deleted-original, not deleted-wrong`,
+    });
+    expect(await request({ action: "snapshot" })).toEqual(before);
+
+    expect(
+      await request({
+        action: "read",
+        id: deleted.id,
+        read: read("comix", "deleted-original", "accepted-resurrection"),
+      }),
+    ).toMatchObject({ entryId: deleted.id, chapterNumber: 12, version: 1 });
+    expect(await request({ action: "snapshot" })).toMatchObject({
+      canonical_entries: expect.arrayContaining([
+        expect.objectContaining({ id: deleted.id, tombstoned_at: null }),
+      ]),
+    });
+  });
+
+  it("does not retain an observed provider link when the event belongs to another entry", async () => {
+    const first = await entry("comix", "event-owner");
+    await request({
+      action: "read",
+      id: first.id,
+      read: read("comix", "event-owner", "owned-event"),
+    });
+    const second = await entry("anilist", "unlinked-entry");
+    const before = await request({ action: "snapshot" });
+
+    expect(
+      await request(
+        {
+          action: "read",
+          id: second.id,
+          read: read("mangadex", "new-md-link", "owned-event"),
+        },
+        500,
+      ),
+    ).toEqual({ error: "Read event owned-event belongs to another entry" });
+    expect(await request({ action: "snapshot" })).toEqual(before);
   });
 });
