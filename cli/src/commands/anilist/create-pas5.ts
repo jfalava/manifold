@@ -3,11 +3,11 @@ import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage, isFiniteNumber, type JsonObject } from "@manifold/json";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import { fetchAniListRichEntries, type AniListRichEntry } from "@/anilist";
 import { resolveAniListToken } from "@/login/anilist";
-import { buildPas5Zip, parsePas5, type Pas5Entities } from "@/pas5";
+import { buildPas5Zip, filterPas5Providers, parsePas5, type Pas5Entities } from "@/pas5";
 import {
   coreDataFromUnix,
   coreDataNow,
@@ -169,7 +169,8 @@ export const buildEntitiesForEntry = (
         [sharedTabs.get(tabName) as LibraryTab]
       : [];
 
-  const libraryId = randomUUID();
+  // Match the uppercase LibraryManga UUID representation in native device exports.
+  const libraryId = randomUUID().toUpperCase();
   return {
     library: {
       schemaVersion: 1,
@@ -355,9 +356,11 @@ export const sourceFreeEntities = (
   );
   const sourceFreeLibraries = Object.fromEntries(
     Object.entries(libraries).map(([id, library]) => [
-      id,
+      // Also repair library UUIDs emitted by older generator versions in --base.
+      id.toUpperCase(),
       {
         ...library,
+        id: library.id.toUpperCase(),
         attachedSources: library.attachedSources.filter((reference) => reference.id in sources),
       },
     ]),
@@ -395,6 +398,63 @@ export const sourceFreeEntities = (
       Object.keys(sourceFreeLibraries).length - Object.keys(retainedLibraries).length,
   };
 };
+
+const filterPas5Command = Command.make("filter", {
+  input: Flag.string("input").pipe(
+    Flag.withDescription("Existing .pas5 archive to filter offline."),
+  ),
+  out: Flag.string("out").pipe(
+    Flag.withDescription("Filtered archive path (must differ from input)."),
+  ),
+  apply: Flag.boolean("apply").pipe(Flag.withDefault(false)),
+  excludeMangadex: Flag.boolean("exclude-mangadex").pipe(Flag.withDefault(false)),
+  excludeComix: Flag.boolean("exclude-comix").pipe(Flag.withDefault(false)),
+  excludeTracker: Flag.boolean("exclude-tracker").pipe(Flag.withDefault(false)),
+}).pipe(
+  Command.withDescription(
+    "Isolate PAS5 providers without fetching AniList or registry data; tracker-only entries are retained.",
+  ),
+  Command.withHandler(({ input, out, apply, excludeMangadex, excludeComix, excludeTracker }) =>
+    Effect.tryPromise({
+      try: async () => {
+        const excluded = new Set([
+          ...(excludeMangadex ? ["MangaDex"] : []),
+          ...(excludeComix ? ["Comix"] : []),
+          ...(excludeTracker ? ["MANIFOLD"] : []),
+        ]);
+        if (excluded.size === 0 || excluded.size === 3) {
+          throw new Error(
+            "Exclude one or two providers with --exclude-mangadex, --exclude-comix, or --exclude-tracker.",
+          );
+        }
+        if (resolve(input) === resolve(out)) {
+          throw new Error("--out must differ from --input; keep the original backup.");
+        }
+        const original = await parsePas5(readFileSync(input));
+        const filtered = filterPas5Providers(original, excluded);
+        const count = Object.keys(filtered.__LIBRARY_MANGA_V5).length;
+        console.info(
+          `Libraries retained: ${count}; omitted without remaining attachments: ${Object.keys(original.__LIBRARY_MANGA_V5).length - count}`,
+        );
+        console.info(`Excluded providers: ${[...excluded].join(", ")}`);
+        if (!apply) {
+          console.info(`Dry-run complete. Re-run with --apply to write ${out}`);
+          return;
+        }
+        const files = Object.fromEntries(
+          Object.entries(filtered).map(([name, records]) => [name, JSON.stringify(records)]),
+        );
+        mkdirSync(dirname(out), { recursive: true });
+        writeFileSync(out, buildPas5Zip(files));
+        console.info(`Wrote ${out}`);
+        console.info(
+          "After restoring, run Paperback database repair and verify a title stays categorized after reopening.",
+        );
+      },
+      catch: (cause) => new Error(errorMessage(cause)),
+    }),
+  ),
+);
 
 export const createPas5Command = Command.make("pas5", {
   apply: Flag.boolean("apply").pipe(
@@ -710,10 +770,14 @@ export const createPas5Command = Command.make("pas5", {
           const zip = buildPas5Zip(merged);
           mkdirSync(dirname(outPath), { recursive: true });
           writeFileSync(outPath, zip);
+          frameDetail(
+            "After restoring, run Paperback database repair and verify a title stays categorized after reopening.",
+          );
           closeFrame(`Wrote ${outPath}`);
         },
         catch: (cause) => new Error(errorMessage(cause)),
       });
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),
+  Command.withSubcommands([filterPas5Command]),
 );
