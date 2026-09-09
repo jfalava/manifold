@@ -30,7 +30,7 @@ reader-provider link, and two were tracker-only. Missing registry links cannot
 be replaced with invented provider IDs.
 
 This was a specially prepared test archive, not unmodified CLI output. The
-current generator still creates lowercase random library/source UUIDs and skips
+current generator still creates lowercase random source UUIDs and skips
 titles without a reader-provider link. Do not assume its output is identical to
 the tested archive. Uppercase UUIDs and repair were tested together; neither is
 established as sufficient on its own.
@@ -56,16 +56,11 @@ Titles without a registry UUID or a linked native content provider are skipped.
 
 ## After restoring: run Paperback database repair
 
-Run Paperback's **database repair** after restoring a generated archive, then
-check that a title keeps its library category when you leave and reopen it.
-Keep the original backup until this check passes.
-
-In device testing on September 9, 2026, imported titles appeared in the library
-but reopened as Uncategorized despite exported Reading memberships. Database
-repair restored category persistence without changing library IDs, timestamps,
-tabs, or attachments. Provider IDs were valid; changing UUID casing alone did
-not fix the problem. This is a verified workaround for the tested case, not a
-confirmed explanation of Paperback's internal failure.
+Follow the [verified restore procedure](#verified-restore-procedure-start-with-an-empty-database)
+above. Repair alone did not fix every imported title in an existing database.
+The successful full-library test used a fresh installation and uppercase internal
+UUIDs, with repair before opening imported titles. Keep the original backup until
+saved state has been checked after reopening titles.
 
 ## `filter`: isolate providers in an existing archive
 

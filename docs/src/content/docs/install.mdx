@@ -43,10 +43,11 @@ attached to:
 - its registry-linked native MangaDex and/or Comix source;
 - MANIFOLD, using the canonical registry UUID.
 
-After restoring, run Paperback's **database repair**, then leave and reopen a
-title to verify its library category persists. Device testing found that repair
-resolved imported entries reopening as Uncategorized despite valid archive
-memberships. See [the import workaround](/cli/anilist/create-pas5/#after-restoring-run-paperback-database-repair).
+Follow the [verified import procedure](/cli/anilist/create-pas5/#verified-restore-procedure-start-with-an-empty-database):
+back up first, use an empty database and an archive with uppercase internal UUIDs,
+then run Paperback's **database repair before opening imported titles**.
+Repair alone did not fix every title in an existing database. Check saved state
+after leaving and reopening titles before discarding the original backup.
 
 Entries without a canonical UUID or a linked native content provider are not
 created. Existing base entries are enriched when they can be matched; obsolete
