@@ -25,10 +25,10 @@ MANIFOLD_ANILIST_CLIENT_ID=
 MANIFOLD_ANILIST_CLIENT_SECRET=
 ```
 
-Do **not** reuse:
+Do **not** reuse the shared implicit clients:
 
-- admin/tracker implicit client `49218` (`response_type=token`)
-- the Worker's confidential client used for API-side OAuth
+- `49218` (CLI app, localhost callback)
+- the Worker app `49060` (PIN flow)
 
 The CLI needs an authorization-code client with the loopback redirect above.
 

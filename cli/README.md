@@ -48,8 +48,8 @@ If Cloudflare appears, solve it in that new Chrome window and press Enter.
 Docs: [login anilist](../docs/src/content/docs/cli/login/anilist.mdx).
 
 Register a separate AniList authorization-code client with redirect URI
-`http://127.0.0.1:8767/callback`. Do not reuse the admin/tracker implicit client
-(`49218`) or the Worker's confidential client. Set `MANIFOLD_ANILIST_CLIENT_ID`
+`http://127.0.0.1:8767/callback`. Do not reuse the shared implicit clients —
+`49218` (CLI app, localhost callback) or the Worker app `49060` (PIN flow). Set `MANIFOLD_ANILIST_CLIENT_ID`
 and `MANIFOLD_ANILIST_CLIENT_SECRET` in `cli/.env`. From `cli/`:
 
 ```sh

@@ -28,7 +28,7 @@ const PROVIDER_LABELS: Record<AuthProvider, string> = {
 
 const PROVIDER_HINTS: Record<AuthProvider, string> = {
   anilist:
-    "Same client as the Paperback tracker (49218, implicit). Authorize in browser, or paste a token via the dialog.",
+    "Dedicated admin app (50915, implicit). Authorize in browser, or paste a token via the dialog.",
   mal: "Browser OAuth code flow. Connect uses the admin MANIFOLD_TOKEN binding; callback stores tokens on the personal Durable Object.",
   mangadex:
     "Personal-client password grant. Deployment secrets (MANGADEX_*) mint tokens into the Durable Object — env alone is not a connection.",
@@ -428,7 +428,8 @@ function CredentialsPage() {
       <p className="text-sm opacity-60">
         Admin holds <code className="text-xs">MANIFOLD_TOKEN</code> (Secrets Store) for API calls —
         the browser never sees the bearer. MangaDex uses <code className="text-xs">MANGADEX_*</code>{" "}
-        on the sync Worker. AniList uses client <code className="text-xs">49218</code> (implicit) →{" "}
+        on the sync Worker. AniList browser login uses the dedicated admin app{" "}
+        <code className="text-xs">50915</code> (implicit) →{" "}
         <code className="text-xs">/admin/api/anilist/callback</code>.
       </p>
     </div>

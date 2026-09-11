@@ -471,8 +471,8 @@ export const startMalOAuth = createServerFn({ method: "POST" }).handler(
 
 /**
  * Stores a browser-minted AniList access token on the personal DO.
- * Token is obtained via AniList implicit OAuth (client 49218) or paste;
- * the Worker never calls AniList's token endpoint.
+ * Token is obtained via AniList implicit OAuth (the dedicated admin app
+ * 50915) or paste; the Worker never calls AniList's token endpoint.
  */
 export const importAniListToken = createServerFn({ method: "POST" })
   .validator((data: { accessToken: string; expiresIn?: number }) => data)
@@ -494,13 +494,17 @@ export const importAniListToken = createServerFn({ method: "POST" })
   });
 
 /**
- * Public AniList client for browser/device implicit login (MANIFOLD_ADMIN_ANILIST_CLIENT_ID).
- * Confidential 49060 rejects response_type=token. Tracker/Paperback use the same id.
- * Registered redirect: https://manifold.jfa.dev/admin/api/anilist/callback
- * Authorize URL matches AniList implicit docs + tracker OAuthButtonRow: no redirect_uri
- * query param — AniList uses the app's registered redirect.
+ * AniList client for the admin browser implicit login: the dedicated admin
+ * app 50915. Register exactly this redirect on the app (AniList matches it
+ * exactly, and allows one per app):
+ * https://manifold.jfa.dev/admin/api/anilist/callback
+ * App assignment (memory 1067): the Worker/tracker app is 49060 (PIN
+ * callback); 49218 is the CLI app (localhost callback) — neither is used
+ * here. The authorize URL carries no redirect_uri — AniList uses the app's
+ * registered redirect, which lands on /api/anilist/callback to import the
+ * hash token.
  */
-export const ANILIST_IMPLICIT_CLIENT_ID = "49218";
+export const ANILIST_IMPLICIT_CLIENT_ID = "50915";
 
 export const ANILIST_IMPLICIT_CALLBACK_PATH = "/admin/api/anilist/callback";
 
