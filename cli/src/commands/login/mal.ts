@@ -8,7 +8,7 @@ import { createMalAuthorization, createMalClient, MAL_REDIRECT_URI, requestMalTo
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
 
 export const malLoginCommand = Command.make("mal", {
-  clientId: Flag.string("client-id").pipe(
+  clientId: Flag.String("client-id").pipe(
     Flag.optional,
     Flag.withDescription("MAL OAuth client ID. Falls back to MANIFOLD_MAL_CLIENT_ID."),
   ),

@@ -765,11 +765,11 @@ export class ManifoldSync extends DurableObject<Env> {
         }
       }
 
-      const progress = this.getProgressSync(targetEntryId);
-      if (!progress) {
+      const written = this.getProgressSync(targetEntryId);
+      if (!written) {
         throw new Error(`Progress was not written for entry ${targetEntryId}`);
       }
-      return progress;
+      return written;
     });
     try {
       await this.scheduleSync();

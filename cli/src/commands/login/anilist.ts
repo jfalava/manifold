@@ -12,7 +12,7 @@ import { resolveValue } from "@/env-resolve";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
 
 export const anilistLoginCommand = Command.make("anilist", {
-  clientId: Flag.string("client-id").pipe(
+  clientId: Flag.String("client-id").pipe(
     Flag.optional,
     Flag.withDescription("AniList CLI client ID. Falls back to MANIFOLD_ANILIST_CLIENT_ID."),
   ),

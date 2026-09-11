@@ -11,31 +11,31 @@ import { createMalClient, wipeMalManga } from "@/mal";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
 
 export const wipeMalMangaCommand = Command.make("manga", {
-  malToken: Flag.string("mal-token").pipe(
+  malToken: Flag.String("mal-token").pipe(
     Flag.optional,
     Flag.withDescription(
       "Overrides keychain login. Prefer MANIFOLD_MAL_TOKEN to keep tokens out of shell history.",
     ),
   ),
-  apply: Flag.boolean("apply").pipe(
+  apply: Flag.Boolean("apply").pipe(
     Flag.withDefault(false),
     Flag.withDescription(
       "Delete all MAL manga list entries. Default is a read-only dry run; anime is never touched.",
     ),
   ),
-  backupPaused: Flag.boolean("backup-paused").pipe(
+  backupPaused: Flag.Boolean("backup-paused").pipe(
     Flag.withDefault(false),
     Flag.withDescription(
       "Acknowledge all other MAL writers are paused/disconnected. Required with --apply.",
     ),
   ),
-  apiOrigin: Flag.string("api-origin").pipe(
+  apiOrigin: Flag.String("api-origin").pipe(
     Flag.optional,
     Flag.withDescription(
       "Personal API origin for the backup-connection check. Falls back to MANIFOLD_API_ORIGIN.",
     ),
   ),
-  apiToken: Flag.string("api-token").pipe(
+  apiToken: Flag.String("api-token").pipe(
     Flag.optional,
     Flag.withDescription(
       "Personal API token for the backup-connection check. Falls back to MANIFOLD_TOKEN.",

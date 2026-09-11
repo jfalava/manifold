@@ -53,27 +53,27 @@ const providerIdFor = (
 };
 
 export const mangadexPrefillCommand = Command.make("mangadex", {
-  apply: Flag.boolean("apply").pipe(
+  apply: Flag.Boolean("apply").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Write links to the registry (default: dry-run)."),
   ),
-  limit: Flag.integer("limit").pipe(
+  limit: Flag.Int("limit").pipe(
     Flag.optional,
     Flag.withDescription("Max entries to process this run (default: all unmatched)."),
   ),
-  status: Flag.string("status").pipe(
+  status: Flag.String("status").pipe(
     Flag.withDefault("auto"),
     Flag.withDescription(
       `Only prefill rows whose registry reading status matches. ${STATUS_FILTER_HINT}.`,
     ),
   ),
-  delay: Flag.integer("delay").pipe(
+  delay: Flag.Int("delay").pipe(
     Flag.withDefault(800),
     Flag.withDescription("Delay between resolve calls in ms (default 800)."),
   ),
-  apiOrigin: Flag.string("api-origin").pipe(Flag.optional),
-  apiToken: Flag.string("api-token").pipe(Flag.optional),
-  anilistToken: Flag.string("anilist-token").pipe(
+  apiOrigin: Flag.String("api-origin").pipe(Flag.optional),
+  apiToken: Flag.String("api-token").pipe(Flag.optional),
+  anilistToken: Flag.String("anilist-token").pipe(
     Flag.optional,
     Flag.withDescription(
       "Optional AniList access token override for English/romaji/native/synonym aliases. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",

@@ -41,7 +41,7 @@ const VALID_STATUSES: readonly MangaDexReadingStatus[] = [
 ];
 
 const optional = (name: string, description: string) =>
-  Flag.string(name).pipe(Flag.optional, Flag.withDescription(description));
+  Flag.String(name).pipe(Flag.optional, Flag.withDescription(description));
 
 const parseList = (raw: string): string[] =>
   raw
@@ -54,13 +54,13 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export const unfollowDroppedCommand = Command.make(
   "unfollow-dropped",
   {
-    status: Flag.string("status").pipe(
+    status: Flag.String("status").pipe(
       Flag.withDefault("dropped"),
       Flag.withDescription(
         `Reading status(es) to unfollow. Comma-separated; one of: ${VALID_STATUSES.join(", ")}. Default: dropped.`,
       ),
     ),
-    apply: Flag.boolean("apply").pipe(
+    apply: Flag.Boolean("apply").pipe(
       Flag.withDefault(false),
       Flag.withDescription("Actually unfollow on MangaDex. Default is a dry run."),
     ),

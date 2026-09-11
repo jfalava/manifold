@@ -403,16 +403,16 @@ export const sourceFreeEntities = (
 };
 
 const filterPas5Command = Command.make("filter", {
-  input: Flag.string("input").pipe(
+  input: Flag.String("input").pipe(
     Flag.withDescription("Existing .pas5 archive to filter offline."),
   ),
-  out: Flag.string("out").pipe(
+  out: Flag.String("out").pipe(
     Flag.withDescription("Filtered archive path (must differ from input)."),
   ),
-  apply: Flag.boolean("apply").pipe(Flag.withDefault(false)),
-  excludeMangadex: Flag.boolean("exclude-mangadex").pipe(Flag.withDefault(false)),
-  excludeComix: Flag.boolean("exclude-comix").pipe(Flag.withDefault(false)),
-  excludeTracker: Flag.boolean("exclude-tracker").pipe(Flag.withDefault(false)),
+  apply: Flag.Boolean("apply").pipe(Flag.withDefault(false)),
+  excludeMangadex: Flag.Boolean("exclude-mangadex").pipe(Flag.withDefault(false)),
+  excludeComix: Flag.Boolean("exclude-comix").pipe(Flag.withDefault(false)),
+  excludeTracker: Flag.Boolean("exclude-tracker").pipe(Flag.withDefault(false)),
 }).pipe(
   Command.withDescription(
     "Isolate PAS5 providers without fetching AniList or registry data; tracker-only entries are retained.",
@@ -460,41 +460,41 @@ const filterPas5Command = Command.make("filter", {
 );
 
 export const createPas5Command = Command.make("pas5", {
-  apply: Flag.boolean("apply").pipe(
+  apply: Flag.Boolean("apply").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Write the .pas5 archive (default: dry-run report only)."),
   ),
-  tabs: Flag.string("tabs").pipe(
+  tabs: Flag.String("tabs").pipe(
     Flag.withDefault("auto"),
     Flag.withDescription(
       "Library tabs: auto | none | comma-list of reading,paused,dropped,completed,planning.",
     ),
   ),
-  base: Flag.string("base").pipe(
+  base: Flag.String("base").pipe(
     Flag.optional,
     Flag.withDescription(`Seed from an existing .pas5 export (${DEFAULT_BASE_HINT}).`),
   ),
-  out: Flag.string("out").pipe(
+  out: Flag.String("out").pipe(
     Flag.optional,
     Flag.withDescription("Output path (default Paperback-Generated.<date>.<time>.pas5)."),
   ),
-  limit: Flag.integer("limit").pipe(
+  limit: Flag.Int("limit").pipe(
     Flag.optional,
     Flag.withDescription(
       "Only generate the first N titles (canary testing — pairs well with --base).",
     ),
   ),
-  anilistToken: Flag.string("anilist-token").pipe(
+  anilistToken: Flag.String("anilist-token").pipe(
     Flag.optional,
     Flag.withDescription(
       "AniList access token override. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
     ),
   ),
-  apiOrigin: Flag.string("api-origin").pipe(
+  apiOrigin: Flag.String("api-origin").pipe(
     Flag.optional,
     Flag.withDescription("Personal API origin for registry UUID resolution."),
   ),
-  apiToken: Flag.string("api-token").pipe(
+  apiToken: Flag.String("api-token").pipe(
     Flag.optional,
     Flag.withDescription("Falls back to MANIFOLD_TOKEN."),
   ),

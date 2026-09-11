@@ -27,21 +27,21 @@ interface WipeCtx extends RunContext {
 }
 
 export const wipeAlMangaCommand = Command.make("manga", {
-  apply: Flag.boolean("apply").pipe(
+  apply: Flag.Boolean("apply").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Permanently delete the scanned AniList data (default: dry-run)."),
   ),
-  yes: Flag.boolean("yes").pipe(
+  yes: Flag.Boolean("yes").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Skip the interactive confirmation when used with --apply."),
   ),
-  anilistToken: Flag.string("anilist-token").pipe(
+  anilistToken: Flag.String("anilist-token").pipe(
     Flag.optional,
     Flag.withDescription(
       "AniList access token override. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
     ),
   ),
-  includeTextActivities: Flag.boolean("include-text-activities").pipe(
+  includeTextActivities: Flag.Boolean("include-text-activities").pipe(
     Flag.withDefault(false),
     Flag.withDescription(
       "Also delete TEXT activities (your posts). Off by default: post text cannot be reliably classified as manga-related, so this is a separate explicit opt-in — preview with a dry run first.",

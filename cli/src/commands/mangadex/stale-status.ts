@@ -155,7 +155,7 @@ export const parseDurationMs = (raw: string): number | undefined => {
 };
 
 const optional = (name: string, description: string) =>
-  Flag.string(name).pipe(Flag.optional, Flag.withDescription(description));
+  Flag.String(name).pipe(Flag.optional, Flag.withDescription(description));
 
 const parseList = (raw: string): string[] =>
   raw
@@ -168,25 +168,25 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export const staleStatusCommand = Command.make(
   "stale-status",
   {
-    olderThan: Flag.string("older-than").pipe(
+    olderThan: Flag.String("older-than").pipe(
       Flag.withDefault("365d"),
       Flag.withDescription("Cutoff since the last uploaded chapter, e.g. 90, 90d, 12w, 6mo, 2y."),
     ),
-    to: Flag.string("to").pipe(
+    to: Flag.String("to").pipe(
       Flag.withDefault("on_hold"),
       Flag.withDescription(
         `Target reading status for stale entries. One of: ${VALID_STATUSES.join(", ")}.`,
       ),
     ),
-    from: Flag.string("from").pipe(
+    from: Flag.String("from").pipe(
       Flag.withDefault("reading,re_reading"),
       Flag.withDescription("Comma-separated current statuses eligible for the change."),
     ),
-    apply: Flag.boolean("apply").pipe(
+    apply: Flag.Boolean("apply").pipe(
       Flag.withDefault(false),
       Flag.withDescription("Write status changes to MangaDex. Default is a dry run."),
     ),
-    usePlan: Flag.boolean("use-plan").pipe(
+    usePlan: Flag.Boolean("use-plan").pipe(
       Flag.withDefault(false),
       Flag.withDescription(
         "Skip scanning: reuse the stale list saved by the last run. Flags must match that run.",

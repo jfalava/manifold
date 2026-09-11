@@ -25,45 +25,45 @@ interface Al2malCtx extends RunContext {
 }
 
 export const al2malCommand = Command.make("anilist-to-mal", {
-  anilistToken: Flag.string("anilist-token").pipe(
+  anilistToken: Flag.String("anilist-token").pipe(
     Flag.optional,
     Flag.withDescription(
       "AniList access token override. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
     ),
   ),
-  malToken: Flag.string("mal-token").pipe(
+  malToken: Flag.String("mal-token").pipe(
     Flag.optional,
     Flag.withDescription(
       "Overrides keychain login. Prefer MANIFOLD_MAL_TOKEN to keep tokens out of shell history.",
     ),
   ),
-  apply: Flag.boolean("apply").pipe(
+  apply: Flag.Boolean("apply").pipe(
     Flag.withDefault(false),
     Flag.withDescription(
       "Write MAL manga list status and chapter progress. Default is a read-only dry run.",
     ),
   ),
-  backupPaused: Flag.boolean("backup-paused").pipe(
+  backupPaused: Flag.Boolean("backup-paused").pipe(
     Flag.withDefault(false),
     Flag.withDescription(
       "Acknowledge all other MAL writers are paused/disconnected. Required with --apply.",
     ),
   ),
-  skipProgress: Flag.boolean("skip-progress").pipe(
+  skipProgress: Flag.Boolean("skip-progress").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Do not seed num_chapters_read from AniList progress."),
   ),
-  limit: Flag.integer("limit").pipe(
+  limit: Flag.Int("limit").pipe(
     Flag.optional,
     Flag.withDescription("Only process the first N AniList entries after export."),
   ),
-  apiOrigin: Flag.string("api-origin").pipe(
+  apiOrigin: Flag.String("api-origin").pipe(
     Flag.optional,
     Flag.withDescription(
       "Personal API origin for the backup-connection check. Falls back to MANIFOLD_API_ORIGIN.",
     ),
   ),
-  apiToken: Flag.string("api-token").pipe(
+  apiToken: Flag.String("api-token").pipe(
     Flag.optional,
     Flag.withDescription(
       "Personal API token for the backup-connection check. Falls back to MANIFOLD_TOKEN.",

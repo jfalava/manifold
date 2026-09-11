@@ -34,55 +34,55 @@ interface Md2alCtx extends RunContext {
 export const md2alCommand = Command.make(
   "mangadex-to-anilist",
   {
-    anilistToken: Flag.string("anilist-token").pipe(
+    anilistToken: Flag.String("anilist-token").pipe(
       Flag.optional,
       Flag.withDescription(
         "AniList access token override. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
       ),
     ),
-    mangadexToken: Flag.string("mangadex-token").pipe(
+    mangadexToken: Flag.String("mangadex-token").pipe(
       Flag.optional,
       Flag.withDescription(
         "MangaDex personal token with manga.read scope. Falls back to MANIFOLD_MANGADEX_TOKEN, or to the password-grant credentials below.",
       ),
     ),
-    apply: Flag.boolean("apply").pipe(
+    apply: Flag.Boolean("apply").pipe(
       Flag.withDefault(false),
       Flag.withDescription("Write entries to AniList. Default is a dry run."),
     ),
-    skipProgress: Flag.boolean("skip-progress").pipe(
+    skipProgress: Flag.Boolean("skip-progress").pipe(
       Flag.withDefault(false),
       Flag.withDescription("Do not push chapter progress from MD read markers."),
     ),
-    useCache: Flag.boolean("use-cache").pipe(
+    useCache: Flag.Boolean("use-cache").pipe(
       Flag.withDefault(false),
       Flag.withDescription(
         "Reuse cached snapshot, match results (including unmatched), and read-marker progress from .tmp instead of re-fetching.",
       ),
     ),
-    limit: Flag.integer("limit").pipe(
+    limit: Flag.Int("limit").pipe(
       Flag.optional,
       Flag.withDescription(
         "Only process the first N entries after export. Handy for quick dry runs on big libraries.",
       ),
     ),
-    phase: Flag.string("phase").pipe(
+    phase: Flag.String("phase").pipe(
       Flag.withDefault("all"),
       Flag.withDescription("Run a single phase: all | export | match | push."),
     ),
-    mangadexClientId: Flag.string("mangadex-client-id").pipe(
+    mangadexClientId: Flag.String("mangadex-client-id").pipe(
       Flag.optional,
       Flag.withDescription("Falls back to MANIFOLD_MANGADEX_CLIENT_ID."),
     ),
-    mangadexClientSecret: Flag.string("mangadex-client-secret").pipe(
+    mangadexClientSecret: Flag.String("mangadex-client-secret").pipe(
       Flag.optional,
       Flag.withDescription("Falls back to MANIFOLD_MANGADEX_CLIENT_SECRET."),
     ),
-    mangadexUsername: Flag.string("mangadex-username").pipe(
+    mangadexUsername: Flag.String("mangadex-username").pipe(
       Flag.optional,
       Flag.withDescription("Falls back to MANIFOLD_MANGADEX_USERNAME."),
     ),
-    mangadexPassword: Flag.string("mangadex-password").pipe(
+    mangadexPassword: Flag.String("mangadex-password").pipe(
       Flag.optional,
       Flag.withDescription("Falls back to MANIFOLD_MANGADEX_PASSWORD."),
     ),

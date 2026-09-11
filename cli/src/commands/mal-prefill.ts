@@ -7,20 +7,20 @@ import { apiCall, apiConfig } from "@/commands/toolbox";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
 
 export const malPrefillCommand = Command.make("mal", {
-  apply: Flag.boolean("apply").pipe(
+  apply: Flag.Boolean("apply").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Persist verified MAL links. Default: read-only audit."),
   ),
-  limit: Flag.integer("limit").pipe(
+  limit: Flag.Int("limit").pipe(
     Flag.optional,
     Flag.withDescription("Maximum missing links to look up. Default: all."),
   ),
-  delay: Flag.integer("delay").pipe(
+  delay: Flag.Int("delay").pipe(
     Flag.withDefault(1500),
     Flag.withDescription("Milliseconds between AniList lookups. Default: 1500."),
   ),
-  apiOrigin: Flag.string("api-origin").pipe(Flag.optional),
-  apiToken: Flag.string("api-token").pipe(Flag.optional),
+  apiOrigin: Flag.String("api-origin").pipe(Flag.optional),
+  apiToken: Flag.String("api-token").pipe(Flag.optional),
 }).pipe(
   Command.withDescription(
     "Audit and backfill MAL links from AniList idMal. Never changes list state or title-matches.",

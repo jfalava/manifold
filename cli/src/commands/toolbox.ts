@@ -139,19 +139,19 @@ export const registryByAnilistId = async (config: ApiConfig): Promise<Map<string
   return map;
 };
 
-const anilistTokenFlag = Flag.string("anilist-token").pipe(
+const anilistTokenFlag = Flag.String("anilist-token").pipe(
   Flag.optional,
   Flag.withDescription(
     "AniList access token override. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
   ),
 );
 
-const apiOriginFlag = Flag.string("api-origin").pipe(
+const apiOriginFlag = Flag.String("api-origin").pipe(
   Flag.optional,
   Flag.withDescription(`Personal API origin (default ${DEFAULT_API_ORIGIN}).`),
 );
 
-const apiTokenFlag = Flag.string("api-token").pipe(
+const apiTokenFlag = Flag.String("api-token").pipe(
   Flag.optional,
   Flag.withDescription("Falls back to MANIFOLD_TOKEN."),
 );
@@ -205,8 +205,8 @@ export const opsCommand = Command.make("ops").pipe(
       ),
     ),
     Command.make("retry", {
-      opId: Flag.string("op-id").pipe(Flag.withDescription("The op_id to reset to pending.")),
-      apply: Flag.boolean("apply").pipe(
+      opId: Flag.String("op-id").pipe(Flag.withDescription("The op_id to reset to pending.")),
+      apply: Flag.Boolean("apply").pipe(
         Flag.withDefault(false),
         Flag.withDescription("Reset the op remotely (default: dry-run)."),
       ),
@@ -309,7 +309,7 @@ export const reconcileCommand = Command.make("diff", {
 
 export const importCommand = Command.make("import", {
   anilistToken: anilistTokenFlag,
-  apply: Flag.boolean("apply").pipe(
+  apply: Flag.Boolean("apply").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Write imported rows and list state to the registry (default: dry-run)."),
   ),

@@ -49,47 +49,47 @@ interface ComixCtx extends RunContext {
 }
 
 export const comixPrefillCommand = Command.make("comix", {
-  apply: Flag.boolean("apply").pipe(
+  apply: Flag.Boolean("apply").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Write links to the registry (default: dry-run)."),
   ),
-  limit: Flag.integer("limit").pipe(
+  limit: Flag.Int("limit").pipe(
     Flag.optional,
     Flag.withDescription("Max entries to process this run (default: all without comix)."),
   ),
-  status: Flag.string("status").pipe(
+  status: Flag.String("status").pipe(
     Flag.withDefault("auto"),
     Flag.withDescription(
       `Only prefill rows whose registry reading status matches. ${STATUS_FILTER_HINT}.`,
     ),
   ),
-  chromeCdpUrl: Flag.string("chrome-cdp-url").pipe(
+  chromeCdpUrl: Flag.String("chrome-cdp-url").pipe(
     Flag.optional,
     Flag.withDescription(
       "DevTools WebSocket of a running Chrome (ws://127.0.0.1:9222/...). Overrides MANIFOLD_COMIX_CHROME_CDP_URL.",
     ),
   ),
-  refreshSession: Flag.boolean("refresh-session").pipe(
+  refreshSession: Flag.Boolean("refresh-session").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Drop the Keychain jar and harvest a new one."),
   ),
-  cfClearance: Flag.string("cf-clearance").pipe(
+  cfClearance: Flag.String("cf-clearance").pipe(
     Flag.optional,
     Flag.withDescription("Optional seed cf_clearance. Falls back to MANIFOLD_COMIX_CF_CLEARANCE."),
   ),
-  session: Flag.string("session").pipe(
+  session: Flag.String("session").pipe(
     Flag.optional,
     Flag.withDescription("Optional seed session cookie. Falls back to MANIFOLD_COMIX_SESSION."),
   ),
-  cookies: Flag.string("cookies").pipe(
+  cookies: Flag.String("cookies").pipe(
     Flag.optional,
     Flag.withDescription(
       "Optional seed Cookie header. Overrides the individual cookie flags. Falls back to MANIFOLD_COMIX_COOKIES.",
     ),
   ),
-  apiOrigin: Flag.string("api-origin").pipe(Flag.optional),
-  apiToken: Flag.string("api-token").pipe(Flag.optional),
-  anilistToken: Flag.string("anilist-token").pipe(
+  apiOrigin: Flag.String("api-origin").pipe(Flag.optional),
+  apiToken: Flag.String("api-token").pipe(Flag.optional),
+  anilistToken: Flag.String("anilist-token").pipe(
     Flag.optional,
     Flag.withDescription(
       "Optional AniList access token override for English/romaji aliases. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",

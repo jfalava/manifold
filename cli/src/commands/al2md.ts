@@ -20,7 +20,7 @@ interface Al2mdCtx extends RunContext {
 }
 
 const optional = (name: string, description: string) =>
-  Flag.string(name).pipe(Flag.optional, Flag.withDescription(description));
+  Flag.String(name).pipe(Flag.optional, Flag.withDescription(description));
 
 export const al2mdCommand = Command.make(
   "anilist-to-mangadex",
@@ -29,11 +29,11 @@ export const al2mdCommand = Command.make(
       "anilist-token",
       "AniList access token override. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
     ),
-    apply: Flag.boolean("apply").pipe(
+    apply: Flag.Boolean("apply").pipe(
       Flag.withDefault(false),
       Flag.withDescription("Write statuses and read markers to MangaDex. Default is a dry run."),
     ),
-    skipProgress: Flag.boolean("skip-progress").pipe(
+    skipProgress: Flag.Boolean("skip-progress").pipe(
       Flag.withDefault(false),
       Flag.withDescription("Do not backfill chapter read markers."),
     ),

@@ -3,7 +3,14 @@ import { build } from "esbuild";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { Schema } from "effect";
 import { ReadingProgress, RegistryEntry, SyncOp } from "@manifold/contract";
-import { isJsonValue, type JsonObject, type JsonValue } from "@manifold/json";
+import {
+  arrayField,
+  isFiniteNumber,
+  isJsonObject,
+  isJsonValue,
+  type JsonObject,
+  type JsonValue,
+} from "@manifold/json";
 
 const fixture = `
 import { ManifoldSync } from './src/manifold-sync.ts';
@@ -60,6 +67,25 @@ describe("queued reads with stale registry IDs", () => {
     chapterNumber: 12,
     readAt: 1_788_800_000_000,
   });
+
+  const snapshotEntries = async (): Promise<readonly JsonObject[]> => {
+    const snapshot = await request({ action: "snapshot" });
+    if (!isJsonObject(snapshot)) {
+      throw new Error("Invalid fixture snapshot");
+    }
+    const entries = arrayField(snapshot, "canonical_entries");
+    if (entries === undefined) {
+      throw new Error("Invalid fixture snapshot entries");
+    }
+    return entries.filter(isJsonObject);
+  };
+  const snapshotEntry = async (id: string): Promise<JsonObject> => {
+    const row = (await snapshotEntries()).find((entry) => entry["id"] === id);
+    if (row === undefined) {
+      throw new Error(`Missing fixture entry ${id}`);
+    }
+    return row;
+  };
 
   beforeAll(async () => {
     const built = await build({
@@ -150,11 +176,9 @@ describe("queued reads with stale registry IDs", () => {
     const deleted = await entry("comix", "deleted-original");
     await request({ action: "nuke", id: deleted.id });
     const before = await request({ action: "snapshot" });
-    expect(before).toMatchObject({
-      canonical_entries: expect.arrayContaining([
-        expect.objectContaining({ id: deleted.id, tombstoned_at: expect.any(Number) }),
-      ]),
-    });
+    const tombstoned = await snapshotEntry(deleted.id);
+    expect(tombstoned["id"]).toBe(deleted.id);
+    expect(isFiniteNumber(tombstoned["tombstoned_at"])).toBe(true);
 
     expect(
       await request(
@@ -177,11 +201,7 @@ describe("queued reads with stale registry IDs", () => {
         read: read("comix", "deleted-original", "accepted-resurrection"),
       }),
     ).toMatchObject({ entryId: deleted.id, chapterNumber: 12, version: 1 });
-    expect(await request({ action: "snapshot" })).toMatchObject({
-      canonical_entries: expect.arrayContaining([
-        expect.objectContaining({ id: deleted.id, tombstoned_at: null }),
-      ]),
-    });
+    expect((await snapshotEntry(deleted.id))["tombstoned_at"]).toBeNull();
   });
 
   it("does not retain an observed provider link when the event belongs to another entry", async () => {
