@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cloudflare/kumo": "2.12.0",
+    "@cloudflare/kumo": "2.13.2",
     "@fontsource/google-sans-code": "catalog:fonts",
     "@fontsource/ibm-plex-sans": "catalog:fonts",
     "@fontsource/zilla-slab": "catalog:fonts",
@@ -22,28 +22,28 @@
     "@manifold/json": "workspace:*",
     "@phosphor-icons/react": "2.1.10",
     "@tanstack/react-hotkeys": "0.10.0",
-    "@tanstack/react-router": "1.170.32",
-    "@tanstack/react-start": "1.168.49",
+    "@tanstack/react-router": "1.170.35",
+    "@tanstack/react-start": "1.168.52",
     "@tanstack/react-table": "9.2.4",
     "effect": "catalog:effect",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "catalog:cloudflare",
     "@cloudflare/workers-types": "catalog:cloudflare",
     "@oxlint/plugins": "catalog:build",
     "@tailwindcss/vite": "catalog:styling",
-    "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
-    "oxc-transform-react": "0.147.0",
+    "oxc-transform-react": "0.149.0",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
     "tailwindcss": "catalog:styling",
     "typescript": "catalog:build",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
-    "vite-plus": "0.3.0",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.1",
+    "vite-plus": "0.3.1",
     "wrangler": "catalog:cloudflare"
   }
 }

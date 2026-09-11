@@ -1,3 +1,14 @@
 [install]
-minimumReleaseAgeExcludes = ["@types/node", "effect", "@effect/*", "@cloudflare/workers-types"]
+minimumReleaseAgeExcludes = [
+  "@types/node",
+  "effect",
+  "@effect/platform",
+  "@effect/platform-bun",
+  "@effect/platform-node",
+  "@effect/platform-node-shared",
+  "@cloudflare/workers-types",
+  "alchemy",
+  "workerd",
+  "miniflare",
+]
 minimumReleaseAge = 86400

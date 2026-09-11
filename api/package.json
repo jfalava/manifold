@@ -28,7 +28,7 @@
     "@cloudflare/workers-types": "catalog:cloudflare",
     "bun-types": "1.4.2",
     "esbuild": "0.28.2",
-    "miniflare": "5.20260907.0-alpha",
+    "miniflare": "5.20260911.0-alpha",
     "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",

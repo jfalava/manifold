@@ -14,15 +14,15 @@
     ],
     "catalogs": {
       "effect": {
-        "effect": "4.0.0-rc.112",
-        "@effect/platform-bun": "4.0.0-rc.112",
-        "@effect/platform-node": "4.0.0-rc.112"
+        "effect": "3.22.2",
+        "@effect/platform-bun": "4.0.0-rc.115",
+        "@effect/platform-node": "4.0.0-rc.115"
       },
       "cloudflare": {
-        "@cloudflare/vite-plugin": "1.54.2",
-        "@cloudflare/workers-types": "5.20260908.1",
+        "@cloudflare/vite-plugin": "1.54.6",
+        "@cloudflare/workers-types": "5.20260911.1",
         "hono": "4.13.7",
-        "wrangler": "4.127.1"
+        "wrangler": "4.130.0"
       },
       "build": {
         "oxlint": "1.82.0",
@@ -55,37 +55,37 @@
   },
   "type": "module",
   "scripts": {
+    "anilist:pas5": "bun run --cwd cli anilist:pas5",
+    "anilist:wipe": "bun run --cwd cli anilist:wipe",
+    "backup": "bun api/scripts/backup.ts",
+    "build:catalog": "bun run --cwd tracker bundle && bun api/scripts/stage-catalog.ts",
+    "build:docs": "bun run --cwd docs build",
     "check": "bun run lint:global && bun run typecheck:global",
+    "check:docs": "bun run --cwd docs typecheck",
     "check:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/mangaupdates --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac check",
+    "deploy": "bun run build:catalog && bun run --cwd iac deploy",
+    "deploy:api": "bun run deploy",
+    "destroy": "bun run --cwd iac destroy",
+    "destroy:api": "bun run destroy",
+    "format:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/mangaupdates --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac format",
+    "inspect:realm": "node scripts/inspect-paperback-realm.mjs",
     "lint": "bun run lint:global",
     "lint:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/mangaupdates --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac lint",
-    "format:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/mangaupdates --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac format",
-    "typecheck:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/mangaupdates --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac typecheck",
-    "migrate:md2al": "bun run --cwd cli md2al",
-    "migrate:al2md": "bun run --cwd cli al2md",
-    "anilist:wipe": "bun run --cwd cli anilist:wipe",
-    "anilist:pas5": "bun run --cwd cli anilist:pas5",
     "mal:wipe": "bun run --cwd cli mal:wipe",
-    "toolbox:ops": "bun run --cwd cli ops",
-    "toolbox:reconcile": "bun run --cwd cli reconcile:diff",
-    "toolbox:import-al": "bun run --cwd cli registry:import",
+    "manifold": "bun run --cwd cli manifold",
+    "migrate:al2md": "bun run --cwd cli al2md",
+    "migrate:md2al": "bun run --cwd cli md2al",
+    "plan": "bun run build:catalog && bun run --cwd iac plan",
+    "plan:api": "bun run plan",
     "test": "bun run test:canonical && bun run test:mangadex && bun run --cwd api test && bun run --cwd cli test && bun run test:paperback",
-    "test:oauth": "bun run --cwd api test:oauth",
     "test:canonical": "bun run --cwd packages/canonical test",
     "test:mangadex": "bun run --cwd packages/mangadex test",
+    "test:oauth": "bun run --cwd api test:oauth",
     "test:paperback": "bun run --cwd packages/paperback-comix test && bun run --cwd packages/paperback-runtime test && bun run --cwd tracker test",
-    "build:docs": "bun run --cwd docs build",
-    "build:catalog": "bun run --cwd tracker bundle && bun api/scripts/stage-catalog.ts",
-    "check:docs": "bun run --cwd docs typecheck",
-    "plan": "bun run build:catalog && bun run --cwd iac plan",
-    "deploy": "bun run build:catalog && bun run --cwd iac deploy",
-    "destroy": "bun run --cwd iac destroy",
-    "plan:api": "bun run plan",
-    "deploy:api": "bun run deploy",
-    "destroy:api": "bun run destroy",
-    "backup": "bun api/scripts/backup.ts",
-    "inspect:realm": "node scripts/inspect-paperback-realm.mjs",
-    "manifold": "bun run --cwd cli manifold"
+    "toolbox:import-al": "bun run --cwd cli registry:import",
+    "toolbox:ops": "bun run --cwd cli ops",
+    "toolbox:reconcile": "bun run --cwd cli reconcile:diff",
+    "typecheck:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/mangaupdates --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac typecheck"
   },
   "devDependencies": {
     "@oxlint/plugins": "catalog:build",
@@ -95,8 +95,5 @@
     "oxlint-tsgolint": "catalog:build",
     "realm": "catalog:paperback",
     "typescript": "catalog:build"
-  },
-  "patchedDependencies": {
-    "alchemy@2.0.0-beta.76": "patches/alchemy@2.0.0-beta.76.patch"
   }
 }
