@@ -47,8 +47,7 @@ export async function GET({ props }: { props: SlugProps }) {
   const { item } = props;
   const { entry, title, description, markdownUrl, sourceUrl, version } = item;
   const socialImage =
-    (isEntryData(entry.data) ? entrySocialImage(entry.data) : undefined) ??
-    config.socialImage;
+    (isEntryData(entry.data) ? entrySocialImage(entry.data) : undefined) ?? config.socialImage;
 
   const markdown = renderEntryAsMarkdown(entry);
 
@@ -56,9 +55,7 @@ export async function GET({ props }: { props: SlugProps }) {
     "---",
     `title: ${JSON.stringify(title)}`,
     ...(description ? [`description: ${JSON.stringify(description)}`] : []),
-    ...(socialImage
-      ? [`image: ${JSON.stringify(new URL(socialImage, config.site).href)}`]
-      : []),
+    ...(socialImage ? [`image: ${JSON.stringify(new URL(socialImage, config.site).href)}`] : []),
     ...(version ? [`version: ${JSON.stringify(version)}`] : []),
     "---",
     "",

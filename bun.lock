@@ -7,6 +7,7 @@
       "devDependencies": {
         "@oxlint/plugins": "catalog:build",
         "@types/node": "catalog:types",
+        "mime": "4.1.0",
         "oxfmt": "catalog:build",
         "oxlint": "catalog:build",
         "oxlint-tsgolint": "catalog:build",
@@ -298,6 +299,10 @@
         "vitest": "catalog:build",
       },
     },
+  },
+  "patchedDependencies": {
+    "effect@4.0.0-rc.115": "patches/effect@4.0.0-rc.115.patch",
+    "alchemy@2.0.0-beta.77": "patches/alchemy@2.0.0-beta.77.patch",
   },
   "catalogs": {
     "build": {
@@ -2117,6 +2122,8 @@
     "micromark-util-types": ["micromark-util-types@2.0.2", "", {}, "sha512-Yw0ECSpJoViF1qTU4DC6NwtC4aWGt1EkzaQB8KPPyCRR8z9TWeV0HbEFGTO+ZY1wB22zmxnJqhPyTpOVCpeHTA=="],
 
     "micromatch": ["micromatch@4.0.8", "", { "dependencies": { "braces": "^3.0.3", "picomatch": "^2.3.1" } }, "sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA=="],
+
+    "mime": ["mime@4.1.0", "", { "bin": { "mime": "bin/cli.js" } }, "sha512-X5ju04+cAzsojXKes0B/S4tcYtFAJ6tTMuSPBEn9CPGlrWr8Fiw7qYeLT0XyH80HSoAoqWCaz+MWKh22P7G1cw=="],
 
     "mimic-function": ["mimic-function@5.0.1", "", {}, "sha512-VP79XUPxV2CigYP3jWwAUFSku2aKqBH7uTAapFWCBqutsbmDo96KY5o8uh6U+/YSIn5OxJnXp73beVkpqMIGhA=="],
 

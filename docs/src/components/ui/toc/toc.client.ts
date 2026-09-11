@@ -12,16 +12,13 @@ const REVEAL_PADDING = 12;
 
 function initToc(root: HTMLElement): () => void {
   const nav = root.querySelector<HTMLElement>("nav");
-  const activePath = root.querySelector<SVGPathElement>(
-    "[data-nb-toc-rail-active]",
-  );
+  const activePath = root.querySelector<SVGPathElement>("[data-nb-toc-rail-active]");
   const links = root.querySelectorAll<HTMLElement>("[data-nb-toc-link]");
   if (!nav || !activePath || links.length === 0) {
     return () => undefined;
   }
 
-  const scrollHost =
-    root.closest<HTMLElement>("[data-nb-toc-scroll-host]") ?? root;
+  const scrollHost = root.closest<HTMLElement>("[data-nb-toc-scroll-host]") ?? root;
   const slugs = Array.from(links).map((l) => l.dataset.nbSlug!);
   // Observe only resolvable headings, each carrying its original index, so
   // scroll-spy stays aligned with the full-length links/segments even when a
@@ -32,9 +29,7 @@ function initToc(root: HTMLElement): () => void {
   if (observed.length === 0) {
     return () => undefined;
   }
-  const indexOfEl = new Map<HTMLElement, number>(
-    observed.map((o) => [o.el, o.index]),
-  );
+  const indexOfEl = new Map<HTMLElement, number>(observed.map((o) => [o.el, o.index]));
 
   let segments: { start: number; length: number }[] = [];
   let totalLength = 0;
@@ -146,8 +141,7 @@ function initToc(root: HTMLElement): () => void {
     }
 
     if (linkRect.bottom > hostRect.bottom - REVEAL_PADDING) {
-      scrollHost.scrollTop +=
-        linkRect.bottom - hostRect.bottom + REVEAL_PADDING;
+      scrollHost.scrollTop += linkRect.bottom - hostRect.bottom + REVEAL_PADDING;
     }
   }
 
@@ -210,9 +204,7 @@ function initToc(root: HTMLElement): () => void {
   function updateBottom() {
     const scrollEl = document.scrollingElement ?? document.documentElement;
     const maxScroll = scrollEl.scrollHeight - window.innerHeight;
-    const next =
-      maxScroll > BOTTOM_EPSILON &&
-      scrollEl.scrollTop >= maxScroll - BOTTOM_EPSILON;
+    const next = maxScroll > BOTTOM_EPSILON && scrollEl.scrollTop >= maxScroll - BOTTOM_EPSILON;
     if (next !== atBottom) {
       atBottom = next;
       resolve();
@@ -302,9 +294,7 @@ function initToc(root: HTMLElement): () => void {
         return;
       }
       // SAFETY: DOM query returns the expected element type in this document
-      const link = (e.target as Element).closest<HTMLElement>(
-        "[data-nb-toc-link]",
-      );
+      const link = (e.target as Element).closest<HTMLElement>("[data-nb-toc-link]");
       if (!link) {
         return;
       }
@@ -316,9 +306,7 @@ function initToc(root: HTMLElement): () => void {
       const heading = document.getElementById(slugs[i]);
       const rect = heading?.getBoundingClientRect();
       pinnedEnteredViewport =
-        rect !== undefined &&
-        rect.bottom >= 0 &&
-        rect.top <= window.innerHeight;
+        rect !== undefined && rect.bottom >= 0 && rect.top <= window.innerHeight;
       resolve();
     },
     { signal: controller.signal },

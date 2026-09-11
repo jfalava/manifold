@@ -1,0 +1,66 @@
+diff --git a/dist/Config.js b/dist/Config.js
+index ff4699fe728d6755d4eb212629e1d85a31200f27..d6d24c9795fe090206c31271d481f7136289aa9d 100644
+--- a/dist/Config.js
++++ b/dist/Config.js
+@@ -1196,3 +1196,14 @@ export function Date(name) {
+  */
+ export const nested = /*#__PURE__*/dual(2, (self, name) => make((provider, pathPrefix) => evaluateAt(self, provider, [...pathPrefix, name])));
+ //# sourceMappingURL=Config.js.map
++
++// Compatibility aliases for the pre-rc.115 lowercase Config constructors.
++// Alchemy 2.0.0-beta.77 and @distilled.cloud 1.0.0-rc.9 still call these at
++// module top level. Drop this block once the deploy toolchain calls PascalCase.
++export const string = String;
++export const boolean = Boolean;
++export const number = Number;
++export const redacted = Redacted;
++
++// Compatibility alias for the pre-rc.115 lowercase API. Alchemy 2.0.0-beta.77 / @distilled.cloud 1.0.0-rc.9 still call it at module top level. Drop once the deploy toolchain calls PascalCase.
++export const mapOrFail = mapEffect;
+diff --git a/dist/unstable/cli/Argument.js b/dist/unstable/cli/Argument.js
+index e0bba1b567436b83130db8b585f18467e11c6963..b1639037976a4ae3e356acb633e063f7c3456605 100644
+--- a/dist/unstable/cli/Argument.js
++++ b/dist/unstable/cli/Argument.js
+@@ -651,3 +651,7 @@ export const orElse = /*#__PURE__*/dual(2, (self, that) => Param.orElse(self, th
+  */
+ export const orElseResult = /*#__PURE__*/dual(2, (self, that) => Param.orElseResult(self, that));
+ //# sourceMappingURL=Argument.js.map
++
++// Compatibility alias for the pre-rc.115 lowercase API. Alchemy 2.0.0-beta.77 / @distilled.cloud 1.0.0-rc.9 still call it at module top level. Drop once the deploy toolchain calls PascalCase.
++export const string = String;
++export const file = File;
+diff --git a/dist/unstable/cli/Flag.js b/dist/unstable/cli/Flag.js
+index ee8e56b08ddc5cd73dee16d3b2f65b6190bccdf7..c5fb54d100e1417b8213445f172bb6f60ca490a5 100644
+--- a/dist/unstable/cli/Flag.js
++++ b/dist/unstable/cli/Flag.js
+@@ -939,3 +939,8 @@ export const orElseResult = /*#__PURE__*/dual(2, (self, that) => Param.orElseRes
+  */
+ export const withSchema = /*#__PURE__*/dual(2, (self, schema) => Param.withSchema(self, schema));
+ //# sourceMappingURL=Flag.js.map
++
++// Compatibility alias for the pre-rc.115 lowercase API. Alchemy 2.0.0-beta.77 / @distilled.cloud 1.0.0-rc.9 still call it at module top level. Drop once the deploy toolchain calls PascalCase.
++export const string = String;
++export const boolean = Boolean;
++export const file = File;
+diff --git a/dist/unstable/cli/GlobalFlag.js b/dist/unstable/cli/GlobalFlag.js
+index 0f661cce16cb61e8801ef38551580678f8a159b8..c60b4efab604eaebf94d3e7014a9372a6ae99c09 100644
+--- a/dist/unstable/cli/GlobalFlag.js
++++ b/dist/unstable/cli/GlobalFlag.js
+@@ -177,3 +177,6 @@ export const LogLevel = /*#__PURE__*/Setting("log-level")({
+  */
+ export const BuiltIns = [Help, Version, Wizard, Completions, LogLevel];
+ //# sourceMappingURL=GlobalFlag.js.map
++
++// Compatibility alias for the pre-rc.115 lowercase API. Alchemy 2.0.0-beta.77 / @distilled.cloud 1.0.0-rc.9 still call it at module top level. Drop once the deploy toolchain calls PascalCase.
++export const setting = Setting;
+diff --git a/dist/unstable/cli/Prompt.js b/dist/unstable/cli/Prompt.js
+index a04fd7b37ea9315f1478f21549b90a768e9779d0..fbba8b5090e2025fba615ddcc55e2aa8497d3f84 100644
+--- a/dist/unstable/cli/Prompt.js
++++ b/dist/unstable/cli/Prompt.js
+@@ -2951,3 +2951,6 @@ const entriesToDisplay = (cursor, total, maxVisible) => {
+   };
+ };
+ //# sourceMappingURL=Prompt.js.map
++
++// Compatibility alias for the pre-rc.115 lowercase API. Alchemy 2.0.0-beta.77 / @distilled.cloud 1.0.0-rc.9 still call it at module top level. Drop once the deploy toolchain calls PascalCase.
++export const confirm = Confirm;

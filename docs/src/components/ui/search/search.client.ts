@@ -1,8 +1,5 @@
 import { mount } from "@cloudflare/nimbus-docs/client";
-import type {
-  SearchProvider,
-  SearchResult,
-} from "@cloudflare/nimbus-docs/types";
+import type { SearchProvider, SearchResult } from "@cloudflare/nimbus-docs/types";
 import { provider as pagefindProvider } from "./providers/pagefind";
 
 export interface SearchConfig {
@@ -28,9 +25,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
   let activeController: AbortController | undefined;
 
   function getOptions(): HTMLElement[] {
-    return Array.from(
-      resultsContainer.querySelectorAll<HTMLElement>("[role='option']"),
-    );
+    return Array.from(resultsContainer.querySelectorAll<HTMLElement>("[role='option']"));
   }
 
   function updateActive(newIndex: number): void {
@@ -63,11 +58,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
     input.removeAttribute("aria-activedescendant");
   }
 
-  function resultLink(
-    title: string,
-    href: string,
-    className: string,
-  ): HTMLAnchorElement {
+  function resultLink(title: string, href: string, className: string): HTMLAnchorElement {
     const link = document.createElement("a");
     link.href = href;
     link.className = className;
@@ -92,8 +83,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
 
     if (result.snippet) {
       const snippet = document.createElement("p");
-      snippet.className =
-        "mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground";
+      snippet.className = "mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground";
       snippet.innerHTML = result.snippet;
       option.appendChild(snippet);
     }
@@ -257,9 +247,7 @@ type SearchDialogElement = HTMLDialogElement & {
 };
 
 function primaryDialog(): SearchDialogElement | null {
-  return document.querySelector<SearchDialogElement>(
-    "[data-search-dialog][data-search-ready]",
-  );
+  return document.querySelector<SearchDialogElement>("[data-search-dialog][data-search-ready]");
 }
 
 // The open shortcut and trigger delegation live on `document`, which survives
@@ -278,9 +266,7 @@ function bindGlobals() {
 
   document.addEventListener("click", (domEvent) => {
     // SAFETY: DOM query returns the expected element type in this document
-    const trigger = (domEvent.target as Element | null)?.closest(
-      "[data-search-trigger]",
-    );
+    const trigger = (domEvent.target as Element | null)?.closest("[data-search-trigger]");
     if (!trigger) {
       return;
     }
@@ -288,10 +274,7 @@ function bindGlobals() {
   });
 
   document.addEventListener("keydown", (domEvent) => {
-    if (
-      !(domEvent.metaKey || domEvent.ctrlKey) ||
-      domEvent.key.toLowerCase() !== "k"
-    ) {
+    if (!(domEvent.metaKey || domEvent.ctrlKey) || domEvent.key.toLowerCase() !== "k") {
       return;
     }
     const dialog = primaryDialog();
@@ -316,9 +299,7 @@ mount("[data-search-dialog]", (root) => {
   dialog.setAttribute("data-search-ready", "true");
 
   const input = dialog.querySelector<HTMLInputElement>("[data-search-input]");
-  const resultsContainer = dialog.querySelector<HTMLElement>(
-    "[data-search-results]",
-  );
+  const resultsContainer = dialog.querySelector<HTMLElement>("[data-search-results]");
   const emptyState = dialog.querySelector<HTMLElement>("[data-search-empty]");
   if (!input || !resultsContainer || !emptyState) {
     return () => undefined;

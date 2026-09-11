@@ -90,10 +90,15 @@
   "devDependencies": {
     "@oxlint/plugins": "catalog:build",
     "@types/node": "catalog:types",
+    "mime": "4.1.0",
     "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
     "realm": "catalog:paperback",
     "typescript": "catalog:build"
+  },
+  "patchedDependencies": {
+    "alchemy@2.0.0-beta.77": "patches/alchemy@2.0.0-beta.77.patch",
+    "effect@4.0.0-rc.115": "patches/effect@4.0.0-rc.115.patch"
   }
 }
