@@ -1,8 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceManga, TrackedMangaChapterReadAction } from "@paperback/types";
 import type { PersonalReadInput } from "@manifold/paperback-runtime";
 
 import { processReadActions } from "../src/MANIFOLD/read-queue.js";
+
+// Installs the Application global stub backed by an in-memory map.
+import { applicationState, PENDING_PROGRESS_KEY_SAFE } from "./managed-collections-fixtures";
+beforeEach(() => {
+  applicationState.clear();
+});
 
 const manga = (id: string): SourceManga => ({
   mangaId: id,
@@ -88,7 +94,7 @@ describe("processReadActions", () => {
     expect(pushProgress.mock.calls[0]?.[1]).toBe(10);
   });
 
-  it("pushes once per manga and tolerates progress push failures", async () => {
+  it("pushes once per manga and durably queues progress push failures", async () => {
     const recordRead = vi.fn().mockResolvedValue({});
     const pushProgress = vi.fn().mockRejectedValue(new Error("AniList error: Too Many Requests."));
 
@@ -99,7 +105,15 @@ describe("processReadActions", () => {
 
     expect(result.successfulItems).toEqual(["a", "b"]);
     expect(result.failedItems).toEqual([]);
-    expect(pushProgress).toHaveBeenCalledTimes(2);
+    // Two immediate pushes plus the flush retrying both queued entries.
+    expect(pushProgress).toHaveBeenCalledTimes(4);
+    // SAFETY: the queued-progress JSON is fully controlled by this test.
+    const queued = JSON.parse(String(applicationState.get(PENDING_PROGRESS_KEY_SAFE))) as Record<
+      string,
+      { chapterNum: number }
+    >;
+    expect(queued["anilist:1"]).toMatchObject({ chapterNum: 4 });
+    expect(queued["anilist:2"]).toMatchObject({ chapterNum: 7 });
   });
 
   it("skips actions without a source chapter ID and actions without chapter numbers still sync reads", async () => {
@@ -162,5 +176,82 @@ describe("processReadActions", () => {
     expect(result).toEqual({ successfulItems: [], failedItems: ["bad"] });
     expect(recordRead).not.toHaveBeenCalled();
     expect(pushProgress).not.toHaveBeenCalled();
+  });
+
+  it("queues a 429'd progress push durably and retries it on the next run", async () => {
+    const recordRead = vi.fn().mockResolvedValue({});
+    let rateLimited = true;
+    const pushProgress = vi.fn(async (_sourceManga: SourceManga, _chapterNum: number) => {
+      if (rateLimited) {
+        throw new Error("AniList error: Too Many Requests.");
+      }
+      return true;
+    });
+
+    const result = await processReadActions([action("a", "c5", 5, "anilist:1")], {
+      recordRead,
+      pushProgress,
+    });
+
+    // The read itself still succeeded and the failed push is queued.
+    expect(result.successfulItems).toEqual(["a"]);
+    expect(result.failedItems).toEqual([]);
+    // SAFETY: the queued-progress JSON is fully controlled by this test.
+    const queued = JSON.parse(String(applicationState.get(PENDING_PROGRESS_KEY_SAFE))) as Record<
+      string,
+      { chapterNum: number }
+    >;
+    expect(queued["anilist:1"]).toMatchObject({ chapterNum: 5 });
+
+    // Next run (possibly after a restart): the queued push is retried first.
+    rateLimited = false;
+    const retried = await processReadActions([], { recordRead, pushProgress });
+    expect(retried.successfulItems).toEqual([]);
+    expect(pushProgress.mock.calls[0]?.[1]).toBe(5);
+    expect(applicationState.get(PENDING_PROGRESS_KEY_SAFE)).toBe("{}");
+  });
+
+  it("keeps the queued chapter across a restart and coalesces to the max", async () => {
+    // Simulate state written by a previous device session (restart).
+    applicationState.set(
+      PENDING_PROGRESS_KEY_SAFE,
+      JSON.stringify({
+        "anilist:1": {
+          sourceManga: manga("anilist:1"),
+          chapterNum: 9,
+          at: 1,
+        },
+      }),
+    );
+    const recordRead = vi.fn().mockResolvedValue({});
+    const pushProgress = vi.fn().mockResolvedValue(true);
+
+    await processReadActions([], { recordRead, pushProgress });
+
+    expect(pushProgress).toHaveBeenCalledTimes(1);
+    expect(pushProgress.mock.calls[0]?.[1]).toBe(9);
+    expect(applicationState.get(PENDING_PROGRESS_KEY_SAFE)).toBe("{}");
+  });
+
+  it("a higher fresh chapter supersedes and acknowledges the queued retry", async () => {
+    applicationState.set(
+      PENDING_PROGRESS_KEY_SAFE,
+      JSON.stringify({
+        "anilist:1": {
+          sourceManga: manga("anilist:1"),
+          chapterNum: 9,
+          at: 1,
+        },
+      }),
+    );
+    const recordRead = vi.fn().mockResolvedValue({});
+    const pushProgress = vi.fn().mockResolvedValue(true);
+
+    await processReadActions([action("a", "c12", 12, "anilist:1")], { recordRead, pushProgress });
+
+    // The fresh max (12) is pushed; the queued 9 needs no separate retry.
+    expect(pushProgress).toHaveBeenCalledTimes(1);
+    expect(pushProgress.mock.calls[0]?.[1]).toBe(12);
+    expect(applicationState.get(PENDING_PROGRESS_KEY_SAFE)).toBe("{}");
   });
 });

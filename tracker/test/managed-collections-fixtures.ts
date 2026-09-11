@@ -15,6 +15,9 @@ export const PENDING_RECONCILES_KEY = "manifold.pending-reconciles";
 /** Shared in-memory Application state backing the global stub below. */
 export const applicationState = new Map<string, unknown>();
 
+/** Progress-retry queue key (written by read-queue). */
+export const PENDING_PROGRESS_KEY_SAFE = "manifold.pending-progress";
+
 const installApplicationStub = (): void => {
   vi.stubGlobal("Application", {
     getState: (key: string) => applicationState.get(key),

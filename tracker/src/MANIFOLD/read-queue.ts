@@ -1,6 +1,6 @@
 import type { SourceManga, TrackedMangaChapterReadAction } from "@paperback/types";
 
-import { isFiniteNumber } from "@manifold/json";
+import { isFiniteNumber, isJsonObject, isString } from "@manifold/json";
 import {
   errorMessage,
   type PersonalReadInput,
@@ -19,6 +19,113 @@ interface ChapterProvenance {
   readonly provider: "mangadex" | "comix";
   readonly chapterKey: string;
 }
+
+// AniList progress pushes that failed (HTTP 429, offline, rate limit) are
+// queued durably in Application state — surviving restarts — and retried,
+// coalesced to the highest chapter per manga, on later read-queue activity.
+// Recorded reads never fail because of a progress-push failure, and pushes
+// never touch list status (DROPPED stays DROPPED).
+interface PendingProgressEntry {
+  readonly sourceManga: SourceManga;
+  readonly chapterNum: number;
+  readonly at: number;
+}
+
+type PendingProgressMap = { [mangaId: string]: PendingProgressEntry };
+
+const PENDING_PROGRESS_KEY = "manifold.pending-progress";
+const PENDING_PROGRESS_MAX = 200;
+
+const readPendingProgress = (): PendingProgressMap => {
+  const raw = Application.getState(PENDING_PROGRESS_KEY);
+  if (!isString(raw)) {
+    return {};
+  }
+  try {
+    // SAFETY: state was written by queueProgress from a live SourceManga on
+    // this device; malformed entries are skipped below.
+    const parsed = JSON.parse(raw) as PendingProgressMap;
+    if (!isJsonObject(parsed)) {
+      return {};
+    }
+    const entries: [string, PendingProgressEntry][] = [];
+    for (const [mangaId, value] of Object.entries(parsed)) {
+      if (
+        !isJsonObject(value) ||
+        !isJsonObject(value["sourceManga"]) ||
+        !isFiniteNumber(value["chapterNum"]) ||
+        value["chapterNum"] < 0 ||
+        !isFiniteNumber(value["at"]) ||
+        value["at"] < 0
+      ) {
+        continue;
+      }
+      // SAFETY: sourceManga is an opaque self-written payload; the progress
+      // push only reads mangaId and additionalInfo off it.
+      entries.push([
+        mangaId,
+        {
+          sourceManga: value["sourceManga"] as SourceManga,
+          chapterNum: value["chapterNum"],
+          at: value["at"],
+        },
+      ]);
+    }
+    return Object.fromEntries(entries);
+  } catch {
+    return {};
+  }
+};
+
+const queueProgress = (mangaId: string, entry: PendingProgressEntry): void => {
+  const pending = readPendingProgress();
+  const existing = pending[mangaId];
+  if (existing !== undefined && existing.chapterNum >= entry.chapterNum) {
+    return;
+  }
+  const ids = Object.keys(pending);
+  if (!pending[mangaId] && ids.length >= PENDING_PROGRESS_MAX) {
+    let oldestId = ids[0]!;
+    for (const id of ids) {
+      if (pending[id]!.at < pending[oldestId]!.at) {
+        oldestId = id;
+      }
+    }
+    delete pending[oldestId];
+  }
+  pending[mangaId] = entry;
+  Application.setState(JSON.stringify(pending), PENDING_PROGRESS_KEY);
+};
+
+const acknowledgeProgress = (mangaId: string, chapterNum: number): void => {
+  const pending = readPendingProgress();
+  const existing = pending[mangaId];
+  if (existing === undefined || existing.chapterNum > chapterNum) {
+    return;
+  }
+  delete pending[mangaId];
+  Application.setState(JSON.stringify(pending), PENDING_PROGRESS_KEY);
+};
+
+const flushPendingProgress = async (
+  pushProgress: ReadQueueDeps["pushProgress"],
+): Promise<number> => {
+  const pending = readPendingProgress();
+  let pushed = 0;
+  for (const [mangaId, entry] of Object.entries(pending)) {
+    try {
+      if (await pushProgress(entry.sourceManga, entry.chapterNum)) {
+        acknowledgeProgress(mangaId, entry.chapterNum);
+        pushed += 1;
+        console.log(`[manifold] anilist progress retry:${mangaId}:${entry.chapterNum}`);
+      }
+    } catch (error) {
+      // Keep it queued; the next read-queue run retries.
+      console.error(`[manifold] anilist progress retry failed:${mangaId}:${errorMessage(error)}`);
+    }
+  }
+  return pushed;
+};
 
 const chapterProvenance = (chapterSourceId: string, sourceChapterId: string): ChapterProvenance => {
   if (chapterSourceId === "MangaDex") {
@@ -89,12 +196,29 @@ export const processReadActions = async (
   for (const [mangaId, max] of maxByManga) {
     try {
       if (await deps.pushProgress(max.sourceManga, max.chapterNum)) {
+        acknowledgeProgress(mangaId, max.chapterNum);
         console.log(`[manifold] anilist progress:${mangaId}:${max.chapterNum}`);
+      } else {
+        // Nothing pushed yet (no link/token); queue for a later retry.
+        queueProgress(mangaId, {
+          sourceManga: max.sourceManga,
+          chapterNum: max.chapterNum,
+          at: Date.now(),
+        });
       }
     } catch (error) {
+      queueProgress(mangaId, {
+        sourceManga: max.sourceManga,
+        chapterNum: max.chapterNum,
+        at: Date.now(),
+      });
       console.error(`[manifold] anilist progress failed:${mangaId}:${errorMessage(error)}`);
     }
   }
+
+  // Retry queued AniList progress pushes (429s, offline) from earlier runs;
+  // fresh acknowledgements above already cleared superseded entries.
+  await flushPendingProgress(deps.pushProgress);
 
   return { successfulItems, failedItems };
 };
