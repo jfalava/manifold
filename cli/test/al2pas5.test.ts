@@ -196,6 +196,24 @@ describe("al2pas5 source attachments", () => {
     );
   });
 
+  it("uses uppercase source UUIDs and preserves actual provider IDs", () => {
+    const generated = buildEntry(entry, registryRow);
+    const uppercaseUuid = /^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/;
+    for (const source of generated.sources) {
+      expect(source.id).toMatch(uppercaseUuid);
+    }
+    // Attached references point at the same (uppercase) source ids.
+    expect(generated.library.attachedSources.map((reference) => reference.id)).toEqual(
+      generated.sources.map((source) => source.id),
+    );
+    // Provider identities are untouched: real registry UUID and provider IDs.
+    expect(generated.sources.map(({ sourceId, mangaId }) => ({ sourceId, mangaId }))).toEqual([
+      { sourceId: "MangaDex", mangaId: "mangadex-id" },
+      { sourceId: "Comix", mangaId: "comix-id" },
+      { sourceId: "MANIFOLD", mangaId: "canonical-id" },
+    ]);
+  });
+
   it("repairs lowercase base library keys and IDs without changing source identities", async () => {
     const generated = buildEntry(entry, registryRow);
     const lowercaseId = "8f856402-f384-4dc5-89da-25089bb9e15f";

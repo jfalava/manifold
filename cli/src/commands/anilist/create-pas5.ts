@@ -110,7 +110,10 @@ const buildMangaInfo = (
 };
 
 const makeSourceManga = (sourceId: string, mangaId: string, infoId: string): SourceManga => ({
-  id: randomUUID(),
+  // Uppercase, matching native device exports: the user-verified restore test
+  // archive has uppercase source+library UUIDs, while lowercase generator
+  // output was implicated in Paperback duplicate objects (memories 1202/1203).
+  id: randomUUID().toUpperCase(),
   sourceId,
   schemaVersion: 1,
   mangaId,
