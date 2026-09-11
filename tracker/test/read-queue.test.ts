@@ -94,7 +94,7 @@ describe("processReadActions", () => {
     expect(pushProgress.mock.calls[0]?.[1]).toBe(10);
   });
 
-  it("pushes once per manga and durably queues progress push failures", async () => {
+  it("pushes once per manga and durably queues thrown progress push failures", async () => {
     const recordRead = vi.fn().mockResolvedValue({});
     const pushProgress = vi.fn().mockRejectedValue(new Error("AniList error: Too Many Requests."));
 
@@ -105,15 +105,55 @@ describe("processReadActions", () => {
 
     expect(result.successfulItems).toEqual(["a", "b"]);
     expect(result.failedItems).toEqual([]);
-    // Two immediate pushes plus the flush retrying both queued entries.
-    expect(pushProgress).toHaveBeenCalledTimes(4);
+    // Two immediate pushes only: the same-tick flush skips just-attempted
+    // entries instead of doubling upstream load during a rate-limit window.
+    expect(pushProgress).toHaveBeenCalledTimes(2);
     // SAFETY: the queued-progress JSON is fully controlled by this test.
     const queued = JSON.parse(String(applicationState.get(PENDING_PROGRESS_KEY_SAFE))) as Record<
       string,
-      { chapterNum: number }
+      { chapterNum: number; sourceManga: SourceManga }
     >;
     expect(queued["anilist:1"]).toMatchObject({ chapterNum: 4 });
     expect(queued["anilist:2"]).toMatchObject({ chapterNum: 7 });
+    // Only the fields the push reads are persisted — no thumbnails or prose.
+    expect(queued["anilist:1"]?.sourceManga).toMatchObject({
+      mangaId: "anilist:1",
+      mangaInfo: { thumbnailUrl: "", synopsis: "", primaryTitle: "" },
+    });
+  });
+
+  it("never queues a false push (no token/link): the next read re-pushes", async () => {
+    const recordRead = vi.fn().mockResolvedValue({});
+    const pushProgress = vi.fn().mockResolvedValue(false);
+
+    const result = await processReadActions([action("a", "c5", 5, "anilist:1")], {
+      recordRead,
+      pushProgress,
+    });
+
+    expect(result.successfulItems).toEqual(["a"]);
+    expect(result.failedItems).toEqual([]);
+    expect(pushProgress).toHaveBeenCalledTimes(1);
+    expect(applicationState.get(PENDING_PROGRESS_KEY_SAFE)).toBeUndefined();
+  });
+
+  it("skips queued entries with a missing manga ID instead of retrying forever", async () => {
+    applicationState.set(
+      PENDING_PROGRESS_KEY_SAFE,
+      JSON.stringify({
+        "anilist:1": {
+          sourceManga: { mangaId: "", mangaInfo: {} },
+          chapterNum: 9,
+          at: 1,
+        },
+      }),
+    );
+    const recordRead = vi.fn().mockResolvedValue({});
+    const pushProgress = vi.fn().mockResolvedValue(true);
+
+    await processReadActions([], { recordRead, pushProgress });
+
+    expect(pushProgress).not.toHaveBeenCalled();
   });
 
   it("skips actions without a source chapter ID and actions without chapter numbers still sync reads", async () => {
@@ -194,8 +234,11 @@ describe("processReadActions", () => {
     });
 
     // The read itself still succeeded and the failed push is queued.
+    // Only the fresh attempt fired: the same-tick flush skips just-attempted
+    // entries, so the retry waits for the next run.
     expect(result.successfulItems).toEqual(["a"]);
     expect(result.failedItems).toEqual([]);
+    expect(pushProgress).toHaveBeenCalledTimes(1);
     // SAFETY: the queued-progress JSON is fully controlled by this test.
     const queued = JSON.parse(String(applicationState.get(PENDING_PROGRESS_KEY_SAFE))) as Record<
       string,
