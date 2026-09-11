@@ -271,6 +271,11 @@ export class ManifoldSync extends DurableObject<Env> {
        WHERE target = 'mangadex' AND state IN ('failed', 'blocked')`,
       now(),
     );
+    // Fresh credentials may unblock shelf rows parked on auth failures.
+    this.ctx.storage.sql.exec(
+      `UPDATE md_status_queue SET attempts = 0, last_error = NULL
+       WHERE attempts >= ${SYNC_MAX_ATTEMPTS}`,
+    );
     try {
       await this.scheduleSync();
     } catch (error) {
@@ -1194,10 +1199,16 @@ export class ManifoldSync extends DurableObject<Env> {
   }
 
   async retryFailedSync(): Promise<{ retried: number }> {
+    const timestamp = now();
     this.ctx.storage.sql.exec(
       `UPDATE sync_ops SET state = 'pending', attempts = 0, updated_at = ?
        WHERE target = 'mangadex' AND state IN ('failed', 'blocked')`,
-      now(),
+      timestamp,
+    );
+    // Re-arm shelf DLQ rows alongside sync_ops so one manual retry covers both.
+    this.ctx.storage.sql.exec(
+      `UPDATE md_status_queue SET attempts = 0, last_error = NULL
+       WHERE attempts >= ${SYNC_MAX_ATTEMPTS}`,
     );
     const pending =
       this.ctx.storage.sql
@@ -1205,8 +1216,14 @@ export class ManifoldSync extends DurableObject<Env> {
           "SELECT COUNT(*) AS count FROM sync_ops WHERE state = 'pending' AND target = 'mangadex'",
         )
         .toArray()[0]?.count ?? 0;
+    const shelfPending =
+      this.ctx.storage.sql
+        .exec<{ count: number }>(
+          `SELECT COUNT(*) AS count FROM md_status_queue WHERE attempts < ${SYNC_MAX_ATTEMPTS}`,
+        )
+        .toArray()[0]?.count ?? 0;
     await this.scheduleSync();
-    return { retried: pending };
+    return { retried: pending + shelfPending };
   }
 
   // ------------------------------------------------------------------
@@ -2150,9 +2167,13 @@ export class ManifoldSync extends DurableObject<Env> {
    * chose — we never overwrite.
    */
   private async drainMangaDexStatusQueue(): Promise<void> {
+    // Blocked rows (attempts >= max) are retained as the shelf DLQ with
+    // last_error; only pending rows drain here. Manual retry re-arms blocked
+    // rows via retryFailedSync.
     const pending = this.ctx.storage.sql
       .exec<{ entry_id: string; attempts: number }>(
         `SELECT entry_id, attempts FROM md_status_queue
+         WHERE attempts < ${SYNC_MAX_ATTEMPTS}
          ORDER BY created_at ASC
          LIMIT ${MD_STATUS_DRAIN_LIMIT}`,
       )
@@ -2189,25 +2210,7 @@ export class ManifoldSync extends DurableObject<Env> {
           }
           this.ctx.storage.sql.exec("DELETE FROM md_status_queue WHERE entry_id = ?", row.entry_id);
         } catch (error) {
-          const attempts = row.attempts + 1;
-          if (attempts >= SYNC_MAX_ATTEMPTS) {
-            this.ctx.storage.sql.exec(
-              "DELETE FROM md_status_queue WHERE entry_id = ?",
-              row.entry_id,
-            );
-            console.error(
-              `[ManifoldSync] MangaDex shelf mirror dropped:${row.entry_id}:attempts=${attempts}:${errorMessage(error)}`,
-            );
-          } else {
-            this.ctx.storage.sql.exec(
-              "UPDATE md_status_queue SET attempts = ? WHERE entry_id = ?",
-              attempts,
-              row.entry_id,
-            );
-            console.error(
-              `[ManifoldSync] MangaDex shelf mirror retry:${row.entry_id}:attempt=${attempts}:${errorMessage(error)}`,
-            );
-          }
+          this.failShelfEntry(row.entry_id, row.attempts + 1, error);
         }
       }
     } catch (error) {
@@ -2215,6 +2218,24 @@ export class ManifoldSync extends DurableObject<Env> {
       // let the next alarm retry.
       console.error(`[ManifoldSync] MangaDex shelf mirror batch failed: ${errorMessage(error)}`);
     }
+  }
+
+  /**
+   * Shelf-mirror DLQ: retryable failures bump attempts; the fifth failure
+   * parks the row as blocked with last_error instead of deleting it, mirroring
+   * failOps for sync_ops. Blocked rows are invisible to the drain until
+   * retryFailedSync re-arms them.
+   */
+  private failShelfEntry(entryId: string, attempts: number, cause: unknown): void {
+    const message = errorMessage(cause).slice(0, 500);
+    this.ctx.storage.sql.exec(
+      "UPDATE md_status_queue SET attempts = ?, last_error = ? WHERE entry_id = ?",
+      attempts,
+      message,
+      entryId,
+    );
+    const outcome = attempts >= SYNC_MAX_ATTEMPTS ? "blocked" : "retry";
+    console.error(`[ManifoldSync] MangaDex shelf mirror ${outcome}:${entryId}:attempt=${attempts}:${message}`);
   }
 
   private failOps(rows: readonly { id: number; attempts: number }[], cause: unknown): void {
@@ -2250,7 +2271,9 @@ export class ManifoldSync extends DurableObject<Env> {
         .toArray()[0]?.count ?? 0;
     const shelfPending =
       this.ctx.storage.sql
-        .exec<{ count: number }>("SELECT COUNT(*) AS count FROM md_status_queue")
+        .exec<{ count: number }>(
+          `SELECT COUNT(*) AS count FROM md_status_queue WHERE attempts < ${SYNC_MAX_ATTEMPTS}`,
+        )
         .toArray()[0]?.count ?? 0;
     if (pending === 0 && shelfPending === 0) {
       return;
@@ -2452,6 +2475,11 @@ export class ManifoldSync extends DurableObject<Env> {
 
       DROP TABLE IF EXISTS update_probe_failures;
     `);
+    try {
+      this.ctx.storage.sql.exec("ALTER TABLE md_status_queue ADD COLUMN last_error TEXT");
+    } catch {
+      // Column already exists.
+    }
     this.migrateLegacyOutbox();
   }
 
@@ -2636,8 +2664,8 @@ export class ManifoldSync extends DurableObject<Env> {
         ),
         md_status_queue: toBackupRows(
           this.ctx.storage.sql
-            .exec<{ entry_id: string; created_at: number; attempts: number }>(
-              "SELECT entry_id, created_at, attempts FROM md_status_queue",
+            .exec<{ entry_id: string; created_at: number; attempts: number; last_error: string | null }>(
+              "SELECT entry_id, created_at, attempts, last_error FROM md_status_queue",
             )
             .toArray(),
           REGISTRY_BACKUP_TABLE_COLUMNS.md_status_queue,

@@ -34,7 +34,7 @@ export const REGISTRY_BACKUP_TABLE_COLUMNS = {
     "read_at",
     "version",
   ],
-  md_status_queue: ["entry_id", "created_at", "attempts"],
+  md_status_queue: ["entry_id", "created_at", "attempts", "last_error"],
   md_feed_stats: ["manga_id", "payload", "computed_at"],
   oauth_tokens: [
     "provider",
@@ -133,6 +133,35 @@ export const toBackupRows = (
 const isBackupScalar = (value: unknown): value is BackupScalar =>
   value === null || isString(value) || isFiniteNumber(value);
 
+/**
+ * Shelf queue rows predate the last_error DLQ column; old backups omit it.
+ * Missing values restore as NULL so v1 backups remain restorable.
+ */
+const parseShelfQueueRows = (value: JsonValue): readonly BackupRow[] => {
+  if (!Array.isArray(value)) {
+    throw new Error("Backup table md_status_queue is not an array");
+  }
+  return value.map((rawRow, index) => {
+    if (!isJsonObject(rawRow)) {
+      throw new Error(`Backup table md_status_queue row ${index} is not an object`);
+    }
+    const row: Record<string, BackupScalar> = {};
+    for (const column of ["entry_id", "created_at", "attempts"] as const) {
+      const cell: unknown = rawRow[column];
+      if (!isBackupScalar(cell)) {
+        throw new Error(`Backup table md_status_queue row ${index} is missing ${column}`);
+      }
+      row[column] = cell;
+    }
+    const lastError: unknown = rawRow.last_error ?? null;
+    if (!isBackupScalar(lastError)) {
+      throw new Error(`Backup table md_status_queue row ${index} is missing last_error`);
+    }
+    row.last_error = lastError;
+    return row;
+  });
+};
+
 const parseRows = (value: JsonValue, table: RegistryBackupTableName): readonly BackupRow[] => {
   if (!Array.isArray(value)) {
     throw new Error(`Backup table ${table} is not an array`);
@@ -182,7 +211,7 @@ export const parseRegistryBackup = (input: JsonValue): RegistryBackup => {
       provider_links: parseRows(input.tables.provider_links, "provider_links"),
       read_events: parseRows(input.tables.read_events, "read_events"),
       progress_state: parseRows(input.tables.progress_state, "progress_state"),
-      md_status_queue: parseRows(input.tables.md_status_queue, "md_status_queue"),
+      md_status_queue: parseShelfQueueRows(input.tables.md_status_queue),
       md_feed_stats: parseRows(input.tables.md_feed_stats, "md_feed_stats"),
       oauth_tokens: parseRows(input.tables.oauth_tokens, "oauth_tokens"),
       list_state: parseRows(input.tables.list_state, "list_state"),

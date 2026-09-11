@@ -40,6 +40,34 @@ describe("registry backups", () => {
     expect(() => parseRegistryBackup(invalid)).toThrow(/canonical_entries.*provider/u);
   });
 
+  it("restores shelf rows predating the last_error DLQ column", () => {
+    const legacy = {
+      ...emptyBackup,
+      tables: {
+        ...emptyBackup.tables,
+        md_status_queue: [{ entry_id: "entry-1", created_at: 1, attempts: 5 }],
+      },
+    } satisfies JsonValue;
+
+    expect(parseRegistryBackup(legacy).tables.md_status_queue).toEqual([
+      { entry_id: "entry-1", created_at: 1, attempts: 5, last_error: null },
+    ]);
+  });
+
+  it("round-trips shelf rows with last_error", () => {
+    const current = {
+      ...emptyBackup,
+      tables: {
+        ...emptyBackup.tables,
+        md_status_queue: [{ entry_id: "entry-1", created_at: 1, attempts: 5, last_error: "boom" }],
+      },
+    } satisfies JsonValue;
+
+    expect(parseRegistryBackup(current).tables.md_status_queue).toEqual(
+      current.tables.md_status_queue,
+    );
+  });
+
   it("accepts only generated registry backup keys", () => {
     expect(
       isRegistryBackupKey("registry/1700000000000-01234567-89ab-cdef-0123-456789abcdef.json"),
