@@ -125,6 +125,8 @@ describe("Worker-side MAL backup outbox", () => {
     expect(writes).toEqual([
       { path: "/v2/manga/7/my_list_status", body: "status=completed&is_rereading=false" },
     ]);
+    // Retention: successful drains delete op rows instead of logging them.
+    expect(await readOps()).toHaveLength(0);
     const stored = Schema.decodeUnknownSync(RegistryEntry)(
       await request({ action: "get", id: entry.id }),
     );
@@ -258,8 +260,8 @@ describe("Worker-side MAL backup outbox", () => {
     await request({ action: "retry", opId: blocked.opId });
     await request({ action: "drain" });
     expect(writes.at(-1)?.body).toBe("status=completed&is_rereading=false");
+    // Successes are not logged: the op row is deleted instead of marked completed.
     const completed = (await readOps()).find((op) => op.opId === blocked.opId);
-    expect(completed?.state).toBe("completed");
-    expect(completed?.lastError).toBeUndefined();
+    expect(completed).toBeUndefined();
   });
 });

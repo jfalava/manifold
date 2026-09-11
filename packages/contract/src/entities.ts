@@ -136,6 +136,9 @@ export const OpsSummary = Schema.Struct({
   states: Schema.Record(Schema.String, Schema.Number),
   oldestPendingAt: Schema.NullOr(Schema.Number),
   lastFailedError: Schema.NullOr(Schema.String),
+  shelfPending: Schema.Number,
+  shelfBlocked: Schema.Number,
+  shelfLastBlockedError: Schema.NullOr(Schema.String),
 });
 export type OpsSummary = Schema.Schema.Type<typeof OpsSummary>;
 

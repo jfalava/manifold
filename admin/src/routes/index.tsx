@@ -115,7 +115,13 @@ function attentionCount(ops: OpsSummary | null): number {
   if (ops === null) {
     return 0;
   }
-  return (ops.states.pending ?? 0) + (ops.states.blocked ?? 0) + (ops.states.failed ?? 0);
+  return (
+    (ops.states.pending ?? 0) +
+    (ops.states.blocked ?? 0) +
+    (ops.states.failed ?? 0) +
+    ops.shelfPending +
+    ops.shelfBlocked
+  );
 }
 
 function LibrarySection({ state }: { readonly state: LoadState<LibraryOverview> }): ReactNode {
@@ -291,7 +297,19 @@ function OpsHealthCard({ ops }: { ops: OpsSummary | null }) {
                     {state} {count.toLocaleString("en")}
                   </Badge>
                 ))}
-              {ops.total === 0 && <Badge variant="neutral">no recent ops</Badge>}
+              {ops.shelfPending > 0 && (
+                <Badge variant="warning">
+                  shelf pending {ops.shelfPending.toLocaleString("en")}
+                </Badge>
+              )}
+              {ops.shelfBlocked > 0 && (
+                <Badge variant="error">
+                  shelf blocked {ops.shelfBlocked.toLocaleString("en")}
+                </Badge>
+              )}
+              {ops.total === 0 && ops.shelfPending === 0 && ops.shelfBlocked === 0 && (
+                <Badge variant="neutral">no recent ops</Badge>
+              )}
             </div>
             {ops.oldestPendingAt !== null && (
               <p className="text-sm opacity-60">
@@ -301,6 +319,11 @@ function OpsHealthCard({ ops }: { ops: OpsSummary | null }) {
             {ops.lastFailedError !== null && (
               <p className="text-sm text-kumo-danger" title={ops.lastFailedError}>
                 Last failure: <span className="break-all">{ops.lastFailedError}</span>
+              </p>
+            )}
+            {ops.shelfLastBlockedError !== null && (
+              <p className="text-sm text-kumo-danger" title={ops.shelfLastBlockedError}>
+                Shelf blocked: <span className="break-all">{ops.shelfLastBlockedError}</span>
               </p>
             )}
             <Link to="/operations" className="text-sm underline opacity-60 hover:opacity-100">

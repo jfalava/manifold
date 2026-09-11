@@ -1812,13 +1812,6 @@ export class ManifoldSync extends DurableObject<Env> {
         continue;
       }
       if (result.ok) {
-        this.ctx.storage.sql.exec(
-          `UPDATE sync_ops SET state = 'completed', attempts = ?, updated_at = ?
-           WHERE id = ?`,
-          row.attempts + 1,
-          timestamp,
-          row.id,
-        );
         if (result.mediaListEntryId !== undefined && row.target === "anilist") {
           let parsed: unknown;
           try {
@@ -1835,6 +1828,9 @@ export class ManifoldSync extends DurableObject<Env> {
             );
           }
         }
+        // Successes are not logged: the row is deleted so the outbox only
+        // retains actionable (pending/failed/blocked) ops.
+        this.ctx.storage.sql.exec("DELETE FROM sync_ops WHERE id = ?", row.id);
       } else {
         const attempts = row.attempts + 1;
         const state: OpState = attempts >= SYNC_MAX_ATTEMPTS ? "blocked" : "pending";
@@ -1900,6 +1896,9 @@ export class ManifoldSync extends DurableObject<Env> {
   /**
    * Compact outbox metrics for the admin Overview over the same recent window
    * as GET /v1/ops (newest N ops), without shipping full op payloads.
+   * Successes are deleted on write, so the op states only ever hold
+   * actionable rows; shelf DLQ counts ride along because the shelf queue has
+   * no op rows of its own.
    */
   async opsSummary(limit = 200): Promise<OpsSummary> {
     return Effect.runSync(
@@ -1940,11 +1939,34 @@ export class ManifoldSync extends DurableObject<Env> {
             lastFailedError = row.last_error;
           }
         }
+        const shelf = this.ctx.storage.sql
+          .exec<{ attempts: number; created_at: number; last_error: string | null }>(
+            "SELECT attempts, created_at, last_error FROM md_status_queue",
+          )
+          .toArray();
+        let shelfPending = 0;
+        let shelfBlocked = 0;
+        let shelfLastBlockedError: string | null = null;
+        let shelfLastBlockedAt = 0;
+        for (const row of shelf) {
+          if (row.attempts >= SYNC_MAX_ATTEMPTS) {
+            shelfBlocked += 1;
+            if (row.last_error !== null && row.created_at > shelfLastBlockedAt) {
+              shelfLastBlockedAt = row.created_at;
+              shelfLastBlockedError = row.last_error;
+            }
+          } else {
+            shelfPending += 1;
+          }
+        }
         return {
           total: rows.length,
           states: Object.fromEntries(states),
           oldestPendingAt,
           lastFailedError,
+          shelfPending,
+          shelfBlocked,
+          shelfLastBlockedError,
         };
       }),
     );
@@ -2007,12 +2029,11 @@ export class ManifoldSync extends DurableObject<Env> {
       ? Schema.decodeUnknownSync(MalBackupPayload)(JSON.parse(previous.payload)).backupIdentity
       : undefined;
     const identity = changes.backupIdentity ?? prior;
-    // Supersede old failures too: a newer update retries the latest state.
+    // Supersede old rows too: a newer update retries the latest state, and
+    // successes are not logged, so superseded rows are deleted outright.
     this.ctx.storage.sql.exec(
-      `UPDATE sync_ops SET state = 'completed', updated_at = ?
-       WHERE kind = 'mal.status' AND state <> 'completed'
-       AND json_extract(payload, '$.entryId') = ?`,
-      now(),
+      `DELETE FROM sync_ops
+       WHERE kind = 'mal.status' AND json_extract(payload, '$.entryId') = ?`,
       entryId,
     );
     this.enqueueOp({
@@ -2099,8 +2120,7 @@ export class ManifoldSync extends DurableObject<Env> {
           }
         }
         this.ctx.storage.sql.exec(
-          "UPDATE sync_ops SET state = 'completed', attempts = attempts + 1, last_error = NULL, updated_at = ? WHERE id = ? AND state = 'pending'",
-          now(),
+          "DELETE FROM sync_ops WHERE id = ? AND state = 'pending'",
           row.id,
         );
       } catch (error) {
@@ -2145,11 +2165,7 @@ export class ManifoldSync extends DurableObject<Env> {
         await Effect.runPromise(client.markChaptersRead(mangaDexId, [...group.chapters]));
         for (const row of group.rows) {
           this.ctx.storage.sql.exec(
-            `UPDATE sync_ops
-             SET state = 'completed', attempts = ?, updated_at = ?
-             WHERE id = ? AND state = 'pending'`,
-            row.attempts + 1,
-            now(),
+            "DELETE FROM sync_ops WHERE id = ? AND state = 'pending'",
             row.id,
           );
         }

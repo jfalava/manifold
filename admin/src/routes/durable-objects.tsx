@@ -137,7 +137,19 @@ function OutboxHealthCard({ state }: { readonly state: LoadState<OpsSummary | nu
                     {stateName} {count.toLocaleString("en")}
                   </Badge>
                 ))}
-              {state.value.total === 0 && <Badge variant="neutral">no recent ops</Badge>}
+              {state.value.shelfPending > 0 && (
+                <Badge variant="warning">
+                  shelf pending {state.value.shelfPending.toLocaleString("en")}
+                </Badge>
+              )}
+              {state.value.shelfBlocked > 0 && (
+                <Badge variant="error">
+                  shelf blocked {state.value.shelfBlocked.toLocaleString("en")}
+                </Badge>
+              )}
+              {state.value.total === 0 &&
+                state.value.shelfPending === 0 &&
+                state.value.shelfBlocked === 0 && <Badge variant="neutral">no recent ops</Badge>}
             </div>
             {state.value.oldestPendingAt !== null && (
               <p className="text-sm opacity-60">
@@ -147,6 +159,11 @@ function OutboxHealthCard({ state }: { readonly state: LoadState<OpsSummary | nu
             {state.value.lastFailedError !== null && (
               <p className="text-sm text-kumo-danger">
                 Last failure: <span className="break-all">{state.value.lastFailedError}</span>
+              </p>
+            )}
+            {state.value.shelfLastBlockedError !== null && (
+              <p className="text-sm text-kumo-danger">
+                Shelf blocked: <span className="break-all">{state.value.shelfLastBlockedError}</span>
               </p>
             )}
             <Link to="/operations" className="text-sm underline opacity-60 hover:opacity-100">
