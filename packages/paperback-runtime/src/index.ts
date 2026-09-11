@@ -22,7 +22,7 @@ export {
 
 export { scheduledPersonalRequester, secureStateString, configuredPersonalApi } from "./runtime.js";
 
-export { errorMessage } from "./errors.js";
+export { bridgeErrorDetail, errorMessage } from "./errors.js";
 
 export {
   ANILIST_SESSION_KEY,

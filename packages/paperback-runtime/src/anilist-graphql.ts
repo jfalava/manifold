@@ -1,6 +1,7 @@
 import { isJsonObject, manifoldUserAgent, type JsonObject } from "@manifold/json";
 import type { MalBackupIdentity } from "@manifold/canonical";
 import type { AniListReadingStatus } from "./anilist-types.js";
+import { bridgeErrorDetail } from "./errors.js";
 
 const ANILIST_GRAPHQL_ENDPOINT = "https://graphql.anilist.co";
 
@@ -79,17 +80,25 @@ const rawAniListRequest = async <A>(
   query: string,
   variables: JsonObject,
 ): Promise<RawOutcome<A>> => {
-  const [response, bodyBuffer] = await Application.scheduleRequest({
-    url: ANILIST_GRAPHQL_ENDPOINT,
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-      authorization: `Bearer ${token}`,
-      "user-agent": manifoldUserAgent("paperback-runtime"),
-    },
-    body: JSON.stringify({ query, variables }),
-  });
+  let scheduled: Awaited<ReturnType<typeof Application.scheduleRequest>>;
+  try {
+    scheduled = await Application.scheduleRequest({
+      url: ANILIST_GRAPHQL_ENDPOINT,
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+        "user-agent": manifoldUserAgent("paperback-runtime"),
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+  } catch (cause) {
+    // Offline and other transport failures reject with message-less bridge
+    // values; label the request so device logs stay actionable.
+    throw new Error(`AniList request failed: ${bridgeErrorDetail(cause)}`);
+  }
+  const [response, bodyBuffer] = scheduled;
   try {
     // SAFETY: I/O JSON.parse of the AniList GraphQL HTTP body at the scheduleRequest boundary.
     const parsed: unknown = JSON.parse(Application.arrayBufferToUTF8String(bodyBuffer));

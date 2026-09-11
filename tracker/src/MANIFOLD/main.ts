@@ -480,6 +480,9 @@ export class ManifoldTrackerSource
   }
 
   async getSettingsForm(): Promise<Form> {
+    // Opening tracker settings is a user-initiated sync point: reconnects
+    // with no search/details/read activity otherwise leave queued work stale.
+    piggybackDrain();
     return new TrackerSettingsForm();
   }
 }

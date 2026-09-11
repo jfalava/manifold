@@ -6,16 +6,27 @@ import {
   type PersonalApiClient,
   type PersonalApiRequest,
 } from "./api.js";
+import { bridgeErrorDetail } from "./errors.js";
 
 export { MANIFOLD_API_TOKEN_KEY } from "./api.js";
 
 export const scheduledPersonalRequester = async (request: PersonalApiRequest) => {
-  const [response, bodyBuffer] = await Application.scheduleRequest({
-    url: request.url,
-    method: request.method,
-    headers: request.headers,
-    ...(!(request.body === undefined) && { body: request.body }),
-  });
+  let scheduled: Awaited<ReturnType<typeof Application.scheduleRequest>>;
+  try {
+    scheduled = await Application.scheduleRequest({
+      url: request.url,
+      method: request.method,
+      headers: request.headers,
+      ...(!(request.body === undefined) && { body: request.body }),
+    });
+  } catch (cause) {
+    // Offline and other transport failures reject with message-less bridge
+    // values; label the request so device logs stay actionable.
+    throw new Error(
+      `Personal API request failed: ${request.method} ${request.url} (${bridgeErrorDetail(cause)})`,
+    );
+  }
+  const [response, bodyBuffer] = scheduled;
   const text = Application.arrayBufferToUTF8String(bodyBuffer);
   let body: JsonValue = text;
   try {

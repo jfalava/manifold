@@ -18,9 +18,13 @@ import { configuredPersonalApi } from "./runtime.js";
 // network activity piggybacks a throttled drain, executing the ops on the
 // device's own IP with the locally stored token.
 const DRAIN_MIN_INTERVAL_MS = 60_000;
+// A failed attempt (offline, gateway error) must not burn the full window:
+// the next piggyback retries soon so reconnects drain promptly.
+const DRAIN_RETRY_INTERVAL_MS = 15_000;
 const DRAIN_BATCH_LIMIT = 25;
 
 let lastDrainAt = 0;
+let lastAttemptAt = 0;
 let drainInFlight: Promise<void> | undefined;
 
 const aniListToken = (): string | undefined => {
@@ -137,14 +141,20 @@ export const maybeDrainAniListOps = (): void => {
   if (nowMs - lastDrainAt < DRAIN_MIN_INTERVAL_MS) {
     return;
   }
+  if (nowMs - lastAttemptAt < DRAIN_RETRY_INTERVAL_MS) {
+    return;
+  }
   if (!aniListToken()) {
     return;
   }
-  lastDrainAt = nowMs;
   if (drainInFlight) {
     return;
   }
+  lastAttemptAt = nowMs;
   drainInFlight = drainAniListOps()
+    .then(() => {
+      lastDrainAt = Date.now();
+    })
     .catch((cause) => {
       console.error(`[manifold] op drain error:${errorMessage(cause)}`);
     })
