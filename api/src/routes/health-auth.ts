@@ -96,9 +96,10 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
   Effect.gen(function* () {
     const { path, request, env, url } = ctx;
     if (path[0] === "v1" && path[1] === "auth" && path[2] === "anilist" && path[3] === "device") {
-      // Same as tracker OAuthButtonRow / AniList implicit docs: client_id + response_type only.
-      // App 49218's registered redirect is /admin/api/anilist/callback (not pin, not 49060).
-      const implicitClientId = "49218";
+      // Same as tracker OAuthButtonRow (memory 1067): Worker app 49060 with
+      // client_id + response_type=token only. The CLI app (49218) redirects
+      // to localhost and must never be used here.
+      const implicitClientId = "49060";
       const authorizeUrl =
         `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(implicitClientId)}` +
         `&response_type=token`;

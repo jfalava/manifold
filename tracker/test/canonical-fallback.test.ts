@@ -119,11 +119,7 @@ describe("Paperback canonical fallback", () => {
 
   it("uses auto search, labels MAL, and ingests the selected candidate with its own ID", async () => {
     const tracker = new ManifoldTrackerSource();
-    const result = await tracker.getSearchResults(
-      { title: "Example" },
-      undefined,
-      undefined,
-    );
+    const result = await tracker.getSearchResults({ title: "Example" }, undefined, undefined);
     expect(result.items).toContainEqual(
       expect.objectContaining({
         mangaId: "provider-candidate:mal:77",

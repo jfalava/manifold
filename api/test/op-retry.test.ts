@@ -68,16 +68,24 @@ describe("manual operation retry scheduling", () => {
     { target: "mal", paused: false, scheduled: true },
     { target: "anilist", paused: false, scheduled: false },
     { target: "mangadex", paused: true, scheduled: false },
-  ])("retries $target with paused=$paused, scheduled=$scheduled", async ({ target, paused, scheduled }) => {
-    const response = await worker.dispatchFetch("https://fixture.test", {
-      method: "POST",
-      body: JSON.stringify({ target, paused }),
-    });
-    expect(response.status).toBe(200);
-    const result = Schema.decodeUnknownSync(RetryResult)(await response.json());
-    expect(result.before).toBeNull();
-    expect(result.after).toEqual(scheduled ? expect.any(Number) : null);
-    expect(result.op).toMatchObject({ opId: "blocked-op", target, state: "pending", attempts: 0 });
-    expect(result.op.lastError).toBeUndefined();
-  });
+  ])(
+    "retries $target with paused=$paused, scheduled=$scheduled",
+    async ({ target, paused, scheduled }) => {
+      const response = await worker.dispatchFetch("https://fixture.test", {
+        method: "POST",
+        body: JSON.stringify({ target, paused }),
+      });
+      expect(response.status).toBe(200);
+      const result = Schema.decodeUnknownSync(RetryResult)(await response.json());
+      expect(result.before).toBeNull();
+      expect(result.after).toEqual(scheduled ? expect.any(Number) : null);
+      expect(result.op).toMatchObject({
+        opId: "blocked-op",
+        target,
+        state: "pending",
+        attempts: 0,
+      });
+      expect(result.op.lastError).toBeUndefined();
+    },
+  );
 });
