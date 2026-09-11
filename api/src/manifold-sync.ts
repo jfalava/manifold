@@ -1847,7 +1847,11 @@ export class ManifoldSync extends DurableObject<Env> {
     const row = this.ctx.storage.sql
       .exec<OpRow>("SELECT * FROM sync_ops WHERE op_id = ?", opId)
       .toArray()[0];
-    if (row?.target === "mal") {
+    // Both server-drained targets need an alarm: after retries exhaust, the
+    // alarm loop stops scheduling itself, so a manual retry of a blocked
+    // mangadex or mal op must re-arm it. Device anilist ops are drained by
+    // the device, not by alarms.
+    if (row?.target === "mal" || row?.target === "mangadex") {
       await this.scheduleSync();
     }
     return row ? toOp(row) : undefined;
