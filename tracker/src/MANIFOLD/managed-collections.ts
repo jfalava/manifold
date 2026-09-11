@@ -5,7 +5,8 @@ import {
   type SourceManga,
 } from "@paperback/types";
 
-import { isFiniteNumber, isJsonObject, isString } from "@manifold/json";
+import { isFiniteNumber, isJsonArray, isJsonObject, isString } from "@manifold/json";
+import type { MalBackupIdentity } from "@manifold/canonical";
 import {
   ANILIST_SESSION_KEY,
   ANILIST_VIEWER_ID_KEY,
@@ -55,6 +56,106 @@ interface PendingNukes {
 const PENDING_NUKES_KEY = "manifold.pending-nukes";
 const NUKE_QUIET_MS = 120_000;
 const REGISTRY_RESOLVE_BATCH_SIZE = 50;
+
+// Registry reconciliation (setListState / nukeEntry) must reach the personal
+// API even when the call fails: the device applies changes directly, but the
+// registry is the cross-device source of truth. Failed reconciles persist in
+// Application state — surviving restarts — and retry on every later flush.
+type PendingReconcile =
+  | {
+      readonly kind: "setListState";
+      readonly entryId: string;
+      readonly status: AniListReadingStatus;
+      readonly backupIdentity?: MalBackupIdentity;
+      readonly at: number;
+    }
+  | { readonly kind: "nukeEntry"; readonly entryId: string; readonly at: number };
+
+type PendingReconciles = { [entryId: string]: PendingReconcile };
+
+const PENDING_RECONCILES_KEY = "manifold.pending-reconciles";
+
+const isNonEmptyString = (value: unknown): value is string => isString(value) && value.length > 0;
+
+const isMalBackupIdentity = (value: unknown): value is MalBackupIdentity => {
+  if (!isJsonObject(value) || !isNonEmptyString(value["anilistId"])) {
+    return false;
+  }
+  if (value["malId"] !== undefined && !isNonEmptyString(value["malId"])) {
+    return false;
+  }
+  return isJsonArray(value["titles"]) && value["titles"].every(isNonEmptyString);
+};
+
+const readPendingReconciles = (): PendingReconciles => {
+  const raw = Application.getState(PENDING_RECONCILES_KEY);
+  if (!isString(raw)) {
+    return {};
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isJsonObject(parsed)) {
+      return {};
+    }
+    const reconciles: [string, PendingReconcile][] = [];
+    for (const [entryId, value] of Object.entries(parsed)) {
+      if (!isJsonObject(value) || !isFiniteNumber(value["at"]) || value["at"] < 0) {
+        continue;
+      }
+      if (
+        value["kind"] === "setListState" &&
+        isString(value["entryId"]) &&
+        value["entryId"] === entryId
+      ) {
+        const status = parseAniListReadingStatus(isString(value["status"]) ? value["status"] : "");
+        if (status === undefined) {
+          continue;
+        }
+        const backup = value["backupIdentity"];
+        reconciles.push([
+          entryId,
+          {
+            kind: "setListState",
+            entryId,
+            status,
+            ...(isMalBackupIdentity(backup) && { backupIdentity: backup }),
+            at: value["at"],
+          },
+        ]);
+      } else if (
+        value["kind"] === "nukeEntry" &&
+        isString(value["entryId"]) &&
+        value["entryId"] === entryId
+      ) {
+        reconciles.push([entryId, { kind: "nukeEntry", entryId, at: value["at"] }]);
+      }
+    }
+    return Object.fromEntries(reconciles);
+  } catch {
+    return {};
+  }
+};
+
+const writePendingReconciles = (pending: PendingReconciles): void => {
+  Application.setState(JSON.stringify(pending), PENDING_RECONCILES_KEY);
+};
+
+/** Queues a registry reconciliation, superseding any earlier one per entry. */
+const enqueueReconcile = (reconcile: PendingReconcile): void => {
+  const pending = readPendingReconciles();
+  pending[reconcile.entryId] = reconcile;
+  writePendingReconciles(pending);
+};
+
+/** Drops a reconcile once the registry acknowledged it. */
+const acknowledgeReconcile = (entryId: string): void => {
+  const pending = readPendingReconciles();
+  if (pending[entryId] === undefined) {
+    return;
+  }
+  delete pending[entryId];
+  writePendingReconciles(pending);
+};
 
 type ResolvedRegistryRow = {
   readonly id: string;
@@ -287,15 +388,29 @@ export const commitManagedCollectionChanges = async (
       `[manifold] collection:add:${resolved.anilistId}:${status}:entry=${result.mediaListEntryId ?? "?"}`,
     );
     // Device applied it directly; the registry records the new truth without
-    // enqueueing a redundant op.
-    await api
-      .setListState(resolved.entryId, {
+    // enqueueing a redundant op. The reconcile persists until acknowledged so
+    // a failed API call retries across flushes and restarts.
+    enqueueReconcile({
+      kind: "setListState",
+      entryId: resolved.entryId,
+      status,
+      ...(result.backupIdentity && { backupIdentity: result.backupIdentity }),
+      at: Date.now(),
+    });
+    try {
+      await api.setListState(resolved.entryId, {
         origin: "device",
         appliedRemotely: true,
         status,
         ...(result.backupIdentity && { backupIdentity: result.backupIdentity }),
-      })
-      .catch(() => undefined);
+      });
+      acknowledgeReconcile(resolved.entryId);
+    } catch (error) {
+      console.error(
+        `[manifold] registry setListState failed, queued for retry:${resolved.entryId}:` +
+          (error instanceof Error ? error.message : String(error)),
+      );
+    }
   }
 
   for (const deletion of changeset.deletions ?? []) {
@@ -316,12 +431,20 @@ export const commitManagedCollectionChanges = async (
 };
 
 /**
- * Executes pending nukes that outlived the quiet window. A live-status
- * recheck guards against racing moves: if the entry now sits in a different
- * collection, the deletion was the old half of a move and is cancelled.
- * Called from commitManagedCollectionChanges and the op-drain hook.
+ * Executes pending nukes that outlived the quiet window, then retries any
+ * queued registry reconciliations. A live-status recheck guards against
+ * racing moves: if the entry now sits in a different collection, the
+ * deletion was the old half of a move and is cancelled. Called from
+ * commitManagedCollectionChanges and the op-drain hook.
  */
 export const flushPendingNukes = async (): Promise<number> => {
+  const executed = await flushDueNukes();
+  // Reconcile retries run on every flush, even when no nukes were due.
+  await flushPendingReconciles();
+  return executed;
+};
+
+const flushDueNukes = async (): Promise<number> => {
   const pending = readPendingNukes();
   const nowMs = Date.now();
   const due = Object.entries(pending).filter(([, nuke]) => nowMs - nuke.at >= NUKE_QUIET_MS);
@@ -374,9 +497,20 @@ export const flushPendingNukes = async (): Promise<number> => {
       } else {
         console.log(`[manifold] nuke skipped, unlisted:${anilistId}`);
       }
-      await api.nukeEntry(nuke.entryId).catch(() => undefined);
+      // The AniList side is resolved; drop the pending nuke now. The registry
+      // reconciliation persists separately until nukeEntry is acknowledged.
       delete pending[anilistId];
       executed += 1;
+      enqueueReconcile({ kind: "nukeEntry", entryId: nuke.entryId, at: nowMs });
+      try {
+        await api.nukeEntry(nuke.entryId);
+        acknowledgeReconcile(nuke.entryId);
+      } catch (error) {
+        console.error(
+          `[manifold] registry nukeEntry failed, queued for retry:${nuke.entryId}:` +
+            (error instanceof Error ? error.message : String(error)),
+        );
+      }
       console.log(`[manifold] nuked:${anilistId}:${nuke.entryId}`);
     } catch (error) {
       // Keep it pending; the next flush retries.
@@ -387,4 +521,40 @@ export const flushPendingNukes = async (): Promise<number> => {
   }
   writePendingNukes(pending);
   return executed;
+};
+
+/**
+ * Retries registry reconciliations that earlier commits or nukes queued:
+ * failed setListState / nukeEntry calls stay in Application state until the
+ * registry acknowledges them, across flushes and restarts.
+ */
+export const flushPendingReconciles = async (
+  api: Pick<PersonalApiClient, "setListState" | "nukeEntry"> = configuredPersonalApi(),
+): Promise<number> => {
+  const pending = readPendingReconciles();
+  let acknowledged = 0;
+  for (const [entryId, reconcile] of Object.entries(pending)) {
+    try {
+      if (reconcile.kind === "setListState") {
+        await api.setListState(entryId, {
+          origin: "device",
+          appliedRemotely: true,
+          status: reconcile.status,
+          ...(reconcile.backupIdentity && { backupIdentity: reconcile.backupIdentity }),
+        });
+      } else {
+        await api.nukeEntry(entryId);
+      }
+      acknowledgeReconcile(entryId);
+      acknowledged += 1;
+      console.log(`[manifold] registry reconcile acknowledged:${entryId}:${reconcile.kind}`);
+    } catch (error) {
+      // Keep it queued; the next flush retries.
+      console.error(
+        `[manifold] registry reconcile retry failed:${entryId}:${reconcile.kind}:` +
+          (error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+  return acknowledged;
 };
