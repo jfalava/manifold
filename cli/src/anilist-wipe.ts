@@ -14,8 +14,9 @@ const USER_AGENT = manifoldUserAgent("cli");
 /**
  * AniList manga-list & activity wipe, ported from
  * github.com/criccadamus/anilist-manga-bulk-delete (bun/TS version).
- * Deletes ALL manga list entries and ALL manga-related activities.
- * Anime is never touched.
+ * Deletes ALL manga list entries and manga list activities.
+ * TEXT activities are only targeted with the explicit
+ * includeTextActivities opt-in; anime is never touched.
  */
 
 const API_URL = "https://graphql.anilist.co";
@@ -214,47 +215,55 @@ const fetchActivitiesPage = async (
   return { activities, hasNextPage: pageInfo !== undefined && pageInfo.hasNextPage === true };
 };
 
-const MANGA_KEYWORDS = [
-  "manga",
-  "chapter",
-  "volume",
-  "read",
-  "reading",
-  "manhwa",
-  "manhua",
-  "webtoon",
-  "light novel",
-  "ln",
-];
+export interface ActivitySelectionOptions {
+  /**
+   * Include TEXT activities (posts) in the deletion targets. Off by default:
+   * post text cannot be reliably classified as manga-related, so deleting it
+   * requires this explicit opt-in (preview first with a dry run).
+   */
+  includeTextActivities?: boolean;
+}
 
-const isMangaRelatedActivity = (activity: Activity): boolean => {
-  if (activity.type === "MANGA_LIST") {
-    return true;
-  }
-  if (activity.type === "TEXT") {
-    const text = activity.text.toLowerCase();
-    return MANGA_KEYWORDS.some((keyword) => text.includes(keyword));
-  }
-  return false;
+/**
+ * Deletion-target selection: typed MANGA_LIST activities always qualify.
+ * TEXT activities qualify only when explicitly opted in — never by keyword
+ * guessing, which pulled in unrelated prose such as "already watched anime".
+ */
+export const selectWipeActivities = (
+  activities: readonly Activity[],
+  options: ActivitySelectionOptions = {},
+): Activity[] => {
+  const includeTextActivities = options.includeTextActivities === true;
+  return activities.filter((activity) => {
+    if (activity.type === "MANGA_LIST") {
+      return true;
+    }
+    if (activity.type === "TEXT") {
+      return includeTextActivities;
+    }
+    return false;
+  });
 };
 
 export const fetchMangaActivities = async (
   token: string,
   userId: number,
   report?: PhaseReporter,
+  options: ActivitySelectionOptions = {},
 ): Promise<Activity[]> => {
+  const includeTextActivities = options.includeTextActivities === true;
   const all: Activity[] = [];
   let page = 1;
   let hasNextPage = true;
   while (hasNextPage) {
     const result = await fetchActivitiesPage(token, userId, page);
-    for (const activity of result.activities) {
-      if (isMangaRelatedActivity(activity)) {
-        all.push(activity);
-      }
+    for (const activity of selectWipeActivities(result.activities, options)) {
+      all.push(activity);
     }
     report?.detail(
-      `page ${page}: ${result.activities.length} activities (${all.length} manga-related so far)`,
+      `page ${page}: ${result.activities.length} activities (${all.length} ${
+        includeTextActivities ? "selected, text included" : "manga list"
+      } so far)`,
     );
     hasNextPage = result.hasNextPage;
     page += 1;

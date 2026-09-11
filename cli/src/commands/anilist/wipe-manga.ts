@@ -41,11 +41,17 @@ export const wipeAlMangaCommand = Command.make("manga", {
       "AniList access token override. Prefer login anilist (keychain) or MANIFOLD_ANILIST_TOKEN.",
     ),
   ),
+  includeTextActivities: Flag.boolean("include-text-activities").pipe(
+    Flag.withDefault(false),
+    Flag.withDescription(
+      "Also delete TEXT activities (your posts). Off by default: post text cannot be reliably classified as manga-related, so this is a separate explicit opt-in — preview with a dry run first.",
+    ),
+  ),
 }).pipe(
   Command.withDescription(
-    "NUKE: delete ALL manga list entries and ALL manga-related activities on AniList. Anime is never touched.",
+    "NUKE: delete ALL manga list entries and manga list activities on AniList. TEXT posts are only deleted with --include-text-activities. Anime is never touched.",
   ),
-  Command.withHandler(({ apply, yes, anilistToken }) =>
+  Command.withHandler(({ apply, yes, anilistToken, includeTextActivities }) =>
     Effect.gen(function* () {
       const token =
         (yield* Effect.tryPromise(() =>
@@ -94,6 +100,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
                   token,
                   viewerId,
                   makePhaseReporter(task),
+                  { includeTextActivities: includeTextActivities === true },
                 );
               },
             },
@@ -114,9 +121,15 @@ export const wipeAlMangaCommand = Command.make("manga", {
         return;
       }
 
+      const textActivityCount = scan.activities.filter(
+        (activity) => activity.type === "TEXT",
+      ).length;
+
       if (!apply) {
         closeFrame(
-          `Dry run: would delete ${scan.entries.length} list entries and ${scan.activities.length} activities. Re-run with --apply.`,
+          `Dry run: would delete ${scan.entries.length} list entries and ${scan.activities.length} activities${
+            textActivityCount > 0 ? ` (including ${textActivityCount} text posts)` : ""
+          }. Re-run with --apply.`,
         );
         return;
       }
@@ -125,7 +138,11 @@ export const wipeAlMangaCommand = Command.make("manga", {
         ? true
         : yield* Effect.tryPromise(() =>
             confirmInFrame(
-              `This permanently wipes ${scan.entries.length} list entries and ${scan.activities.length} activities from the manga side of your AniList account. Continue?`,
+              `This permanently wipes ${scan.entries.length} list entries and ${scan.activities.length} activities from the manga side of your AniList account${
+                textActivityCount > 0
+                  ? `, including ${textActivityCount} text posts (opted in via --include-text-activities)`
+                  : " (text posts are excluded unless you pass --include-text-activities)"
+              }. Continue?`,
             ),
           );
       if (!confirmed) {
@@ -155,7 +172,9 @@ export const wipeAlMangaCommand = Command.make("manga", {
           }
           if (scan.activities.length > 0) {
             deleteTasks.push({
-              title: `Delete ${scan.activities.length} manga-related activities`,
+              title: `Delete ${scan.activities.length} activities${
+                textActivityCount > 0 ? ` (including ${textActivityCount} text posts)` : ""
+              }`,
               task: async (_, task) => {
                 const result = await deleteActivitiesWithProgress(
                   token,
