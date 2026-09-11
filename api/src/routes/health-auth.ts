@@ -8,6 +8,7 @@ import {
   OAuthStart,
 } from "@manifold/contract";
 import { isJsonObject, isString, numberField } from "@manifold/json";
+import { ANILIST_OAUTH_CLIENT_ID } from "@manifold/paperback-runtime";
 import {
   adminOAuthReturnPath,
   authProvider,
@@ -96,12 +97,12 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
   Effect.gen(function* () {
     const { path, request, env, url } = ctx;
     if (path[0] === "v1" && path[1] === "auth" && path[2] === "anilist" && path[3] === "device") {
-      // Same as tracker OAuthButtonRow (memory 1067): Worker app 49060 with
+      // Single-sourced with the tracker (memory 1067): the Worker app (49060,
+      // registered callback https://anilist.co/api/v2/oauth/pin) uses
       // client_id + response_type=token only. The CLI app (49218) redirects
       // to localhost and must never be used here.
-      const implicitClientId = "49060";
       const authorizeUrl =
-        `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(implicitClientId)}` +
+        `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(ANILIST_OAUTH_CLIENT_ID)}` +
         `&response_type=token`;
       return new Response(anilistDevicePage(authorizeUrl), {
         headers: { "content-type": "text/html" },
