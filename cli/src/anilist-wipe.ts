@@ -1,5 +1,6 @@
 import {
   arrayField,
+  isBoolean,
   isJsonObject,
   manifoldUserAgent,
   numberField,
@@ -125,12 +126,37 @@ export const deleteEntry = async (token: string, entryId: number): Promise<boole
       variables: { id: entryId },
     }),
   });
-  // SAFETY: test/double or boundary cast through unknown to { errors?: unknown[] };
-  const data = (await response.json()) as { errors?: unknown[] };
-  if (data.errors) {
+  if (!response.ok) {
     return false;
   }
-  return true;
+  const deleted = await decodeDeletedEnvelope(response, "DeleteMediaListEntry");
+  return deleted === true;
+};
+
+/**
+ * Decodes an AniList mutation envelope ({ data: { <field>: { deleted } } })
+ * and returns the deleted flag, or undefined on GraphQL errors or a missing
+ * flag. Callers treat anything but true as failure.
+ */
+const decodeDeletedEnvelope = async (
+  response: Response,
+  field: string,
+): Promise<boolean | undefined> => {
+  const payload: unknown = await response.json();
+  if (!isJsonObject(payload)) {
+    return undefined;
+  }
+  const errors = arrayField(payload, "errors");
+  if (errors !== undefined && errors.length > 0) {
+    return undefined;
+  }
+  const envelope = objectField(payload, "data");
+  const mutation = envelope === undefined ? undefined : objectField(envelope, field);
+  if (mutation === undefined) {
+    return undefined;
+  }
+  const deleted = mutation["deleted"];
+  return isBoolean(deleted) ? deleted : undefined;
 };
 
 // ---------- activities ----------
@@ -294,13 +320,17 @@ export const deleteActivity = async (
     await sleep(retryAfter * 1000);
     return deleteActivity(token, activityId);
   }
-  if (response.status === 400) {
-    const body = (await response.text()).includes("The selected id is invalid")
-      ? { success: true, alreadyDeleted: true }
-      : { success: false, alreadyDeleted: false };
-    return body;
-  }
   if (!response.ok) {
+    if (response.status === 400) {
+      const body = await response.text();
+      if (body.includes("The selected id is invalid")) {
+        return { success: true, alreadyDeleted: true };
+      }
+    }
+    return { success: false, alreadyDeleted: false };
+  }
+  const deleted = await decodeDeletedEnvelope(response, "DeleteActivity");
+  if (deleted !== true) {
     return { success: false, alreadyDeleted: false };
   }
   return { success: true, alreadyDeleted: false };

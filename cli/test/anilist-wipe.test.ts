@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { selectWipeActivities, type Activity } from "../src/anilist-wipe";
+import { describe, expect, it, vi, afterEach } from "vitest";
+import {
+  deleteActivity,
+  deleteEntry,
+  selectWipeActivities,
+  type Activity,
+} from "../src/anilist-wipe";
 
 const mangaListActivity = (id: number): Activity => ({
   type: "MANGA_LIST",
@@ -10,6 +15,9 @@ const mangaListActivity = (id: number): Activity => ({
 });
 
 const textActivity = (id: number, text: string): Activity => ({ type: "TEXT", id, text });
+
+const jsonResponse = (status: number, body: string): Response =>
+  new Response(body, { status, headers: { "Content-Type": "application/json" } });
 
 describe("anilist wipe activity selection", () => {
   it("targets typed MANGA_LIST activities by default", () => {
@@ -54,5 +62,123 @@ describe("anilist wipe activity selection", () => {
     const selected = selectWipeActivities(activities, { includeTextActivities: true });
     expect(selected).toHaveLength(2);
     expect(selected).toEqual(activities);
+  });
+});
+
+describe("anilist wipe deletion envelopes", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const stubFetch = (response: Response): ReturnType<typeof vi.fn> => {
+    const fetcher = vi.fn(async () => response);
+    vi.stubGlobal("fetch", fetcher);
+    return fetcher;
+  };
+
+  describe("deleteEntry", () => {
+    it("succeeds only on HTTP 200 with no errors and deleted:true", async () => {
+      stubFetch(
+        jsonResponse(200, JSON.stringify({ data: { DeleteMediaListEntry: { deleted: true } } })),
+      );
+      await expect(deleteEntry("token", 1)).resolves.toBe(true);
+    });
+
+    it("fails on non-HTTP-200 responses", async () => {
+      stubFetch(jsonResponse(500, JSON.stringify({ errors: [{ message: "Internal" }] })));
+      await expect(deleteEntry("token", 1)).resolves.toBe(false);
+    });
+
+    it("fails when the HTTP 200 body carries GraphQL errors", async () => {
+      stubFetch(
+        jsonResponse(
+          200,
+          JSON.stringify({
+            errors: [{ message: "Not authenticated" }],
+            data: null,
+          }),
+        ),
+      );
+      await expect(deleteEntry("token", 1)).resolves.toBe(false);
+    });
+
+    it("fails when deleted:false is returned", async () => {
+      stubFetch(
+        jsonResponse(200, JSON.stringify({ data: { DeleteMediaListEntry: { deleted: false } } })),
+      );
+      await expect(deleteEntry("token", 1)).resolves.toBe(false);
+    });
+
+    it("fails on a malformed envelope", async () => {
+      stubFetch(jsonResponse(200, JSON.stringify({ data: {} })));
+      await expect(deleteEntry("token", 1)).resolves.toBe(false);
+    });
+  });
+
+  describe("deleteActivity", () => {
+    it("succeeds only on HTTP 200 with no errors and deleted:true", async () => {
+      stubFetch(jsonResponse(200, JSON.stringify({ data: { DeleteActivity: { deleted: true } } })));
+      await expect(deleteActivity("token", 1)).resolves.toEqual({
+        success: true,
+        alreadyDeleted: false,
+      });
+    });
+
+    it("fails when the HTTP 200 body carries GraphQL errors", async () => {
+      stubFetch(
+        jsonResponse(
+          200,
+          JSON.stringify({
+            errors: [{ message: "Not authenticated" }],
+            data: null,
+          }),
+        ),
+      );
+      await expect(deleteActivity("token", 1)).resolves.toEqual({
+        success: false,
+        alreadyDeleted: false,
+      });
+    });
+
+    it("fails when deleted:false is returned", async () => {
+      stubFetch(
+        jsonResponse(200, JSON.stringify({ data: { DeleteActivity: { deleted: false } } })),
+      );
+      await expect(deleteActivity("token", 1)).resolves.toEqual({
+        success: false,
+        alreadyDeleted: false,
+      });
+    });
+
+    it("fails on non-HTTP-200 responses", async () => {
+      stubFetch(jsonResponse(500, "oops"));
+      await expect(deleteActivity("token", 1)).resolves.toEqual({
+        success: false,
+        alreadyDeleted: false,
+      });
+    });
+
+    it("treats the invalid-id 400 as already deleted", async () => {
+      stubFetch(
+        jsonResponse(
+          400,
+          JSON.stringify({
+            errors: [{ message: "The selected id is invalid" }],
+          }),
+        ),
+      );
+      await expect(deleteActivity("token", 1)).resolves.toEqual({
+        success: true,
+        alreadyDeleted: true,
+      });
+    });
+
+    it("fails on other 400 responses", async () => {
+      stubFetch(jsonResponse(400, JSON.stringify({ errors: [{ message: "Bad request" }] })));
+      await expect(deleteActivity("token", 1)).resolves.toEqual({
+        success: false,
+        alreadyDeleted: false,
+      });
+    });
   });
 });
