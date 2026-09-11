@@ -24,6 +24,52 @@ const API_URL = "https://graphql.anilist.co";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Bulk deletes hit AniList rate limits routinely: entries and activities share
+// one 429-aware POST path with a bounded retry loop (no unbounded recursion).
+const DELETE_429_MAX_RETRIES = 5;
+const RETRY_AFTER_FALLBACK_MS = 60_000;
+
+/**
+ * Parses a retry-after response header (seconds) into milliseconds.
+ * Missing or malformed values fall back to 60s instead of hot-looping.
+ */
+export const retryAfterMs = (response: Response): number => {
+  const raw = response.headers.get("retry-after");
+  if (raw === null || raw.trim() === "") {
+    return RETRY_AFTER_FALLBACK_MS;
+  }
+  const seconds = Number(raw);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : RETRY_AFTER_FALLBACK_MS;
+};
+
+/** JSON scalar map for GraphQL request variables. */
+export interface GraphQLVariables {
+  readonly [key: string]: string | number | boolean | null | undefined;
+}
+
+const postGraphQL = async (
+  token: string,
+  query: string,
+  variables: GraphQLVariables,
+): Promise<Response> => {
+  for (let attempt = 0; ; attempt += 1) {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "user-agent": USER_AGENT,
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+    if (response.status !== 429 || attempt >= DELETE_429_MAX_RETRIES) {
+      return response;
+    }
+    await sleep(retryAfterMs(response));
+  }
+};
+
 export interface WipeListEntry {
   /** MediaListEntry id — the deletion target. */
   id: number;
@@ -113,19 +159,11 @@ export const fetchMangaEntries = async (
 };
 
 export const deleteEntry = async (token: string, entryId: number): Promise<boolean> => {
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      "user-agent": USER_AGENT,
-    },
-    body: JSON.stringify({
-      query: `mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }`,
-      variables: { id: entryId },
-    }),
-  });
+  const response = await postGraphQL(
+    token,
+    `mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }`,
+    { id: entryId },
+  );
   if (!response.ok) {
     return false;
   }
@@ -302,24 +340,11 @@ export const deleteActivity = async (
   token: string,
   activityId: number,
 ): Promise<{ success: boolean; alreadyDeleted: boolean }> => {
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      "user-agent": USER_AGENT,
-    },
-    body: JSON.stringify({
-      query: `mutation ($id: Int) { DeleteActivity(id: $id) { deleted } }`,
-      variables: { id: activityId },
-    }),
-  });
-  if (response.status === 429) {
-    const retryAfter = Number(response.headers.get("retry-after") ?? "60");
-    await sleep(retryAfter * 1000);
-    return deleteActivity(token, activityId);
-  }
+  const response = await postGraphQL(
+    token,
+    `mutation ($id: Int) { DeleteActivity(id: $id) { deleted } }`,
+    { id: activityId },
+  );
   if (!response.ok) {
     if (response.status === 400) {
       const body = await response.text();

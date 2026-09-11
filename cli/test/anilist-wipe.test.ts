@@ -2,6 +2,7 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   deleteActivity,
   deleteEntry,
+  retryAfterMs,
   selectWipeActivities,
   type Activity,
 } from "../src/anilist-wipe";
@@ -76,6 +77,41 @@ describe("anilist wipe deletion envelopes", () => {
     return fetcher;
   };
 
+  const stubFetchSequence = (responses: Response[]): ReturnType<typeof vi.fn> => {
+    if (responses.length === 0) {
+      throw new Error("stubFetchSequence needs at least one response");
+    }
+    const fetcher = vi.fn();
+    for (const response of responses.slice(0, -1)) {
+      fetcher.mockResolvedValueOnce(response);
+    }
+    fetcher.mockResolvedValue(responses[responses.length - 1]);
+    vi.stubGlobal("fetch", fetcher);
+    return fetcher;
+  };
+
+  const rateLimited = (): Response =>
+    new Response("rate limited", {
+      status: 429,
+      headers: { "retry-after": "0" },
+    });
+
+  describe("retryAfterMs", () => {
+    it("parses retry-after seconds into milliseconds", () => {
+      expect(retryAfterMs(rateLimited())).toBe(0);
+      expect(
+        retryAfterMs(new Response("x", { status: 429, headers: { "retry-after": "120" } })),
+      ).toBe(120_000);
+    });
+
+    it("falls back to 60s on missing or malformed headers", () => {
+      expect(retryAfterMs(new Response("x", { status: 429 }))).toBe(60_000);
+      expect(
+        retryAfterMs(new Response("x", { status: 429, headers: { "retry-after": "soon" } })),
+      ).toBe(60_000);
+    });
+  });
+
   describe("deleteEntry", () => {
     it("succeeds only on HTTP 200 with no errors and deleted:true", async () => {
       stubFetch(
@@ -112,6 +148,30 @@ describe("anilist wipe deletion envelopes", () => {
     it("fails on a malformed envelope", async () => {
       stubFetch(jsonResponse(200, JSON.stringify({ data: {} })));
       await expect(deleteEntry("token", 1)).resolves.toBe(false);
+    });
+
+    it("retries 429s with the shared rate-limit path, then succeeds", async () => {
+      const fetcher = stubFetchSequence([
+        rateLimited(),
+        jsonResponse(200, JSON.stringify({ data: { DeleteMediaListEntry: { deleted: true } } })),
+      ]);
+      await expect(deleteEntry("token", 1)).resolves.toBe(true);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    it("gives up after bounded 429 retries instead of recursing forever", async () => {
+      const fetcher = stubFetchSequence([
+        rateLimited(),
+        rateLimited(),
+        rateLimited(),
+        rateLimited(),
+        rateLimited(),
+        rateLimited(),
+        jsonResponse(200, JSON.stringify({ data: { DeleteMediaListEntry: { deleted: true } } })),
+      ]);
+      await expect(deleteEntry("token", 1)).resolves.toBe(false);
+      // 1 initial attempt + 5 retries; the trailing success is never reached.
+      expect(fetcher).toHaveBeenCalledTimes(6);
     });
   });
 
@@ -179,6 +239,18 @@ describe("anilist wipe deletion envelopes", () => {
         success: false,
         alreadyDeleted: false,
       });
+    });
+
+    it("retries a 429 in a loop instead of recursing, then succeeds", async () => {
+      const fetcher = stubFetchSequence([
+        rateLimited(),
+        jsonResponse(200, JSON.stringify({ data: { DeleteActivity: { deleted: true } } })),
+      ]);
+      await expect(deleteActivity("token", 1)).resolves.toEqual({
+        success: true,
+        alreadyDeleted: false,
+      });
+      expect(fetcher).toHaveBeenCalledTimes(2);
     });
   });
 });
