@@ -85,17 +85,19 @@
     "toolbox:import-al": "bun run --cwd cli registry:import",
     "toolbox:ops": "bun run --cwd cli ops",
     "toolbox:reconcile": "bun run --cwd cli reconcile:diff",
-    "typecheck:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/mangaupdates --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac typecheck"
+    "typecheck:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/mangaupdates --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac typecheck",
+    "prepare": "effect-tsgo patch --typescript --oxlint"
   },
   "devDependencies": {
     "@oxlint/plugins": "catalog:build",
     "@types/node": "catalog:types",
     "mime": "4.1.0",
     "oxfmt": "catalog:build",
-    "oxlint": "catalog:build",
-    "oxlint-tsgolint": "catalog:build",
+    "oxlint": "1.82.0",
+    "oxlint-tsgolint": "7.0.2001",
     "realm": "catalog:paperback",
-    "typescript": "catalog:build"
+    "typescript": "7.0.2",
+    "@effect/tsgo": "0.45.0"
   },
   "patchedDependencies": {
     "alchemy@2.0.0-beta.77": "patches/alchemy@2.0.0-beta.77.patch",

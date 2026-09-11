@@ -303,9 +303,7 @@ function OpsHealthCard({ ops }: { ops: OpsSummary | null }) {
                 </Badge>
               )}
               {ops.shelfBlocked > 0 && (
-                <Badge variant="error">
-                  shelf blocked {ops.shelfBlocked.toLocaleString("en")}
-                </Badge>
+                <Badge variant="error">shelf blocked {ops.shelfBlocked.toLocaleString("en")}</Badge>
               )}
               {ops.total === 0 && ops.shelfPending === 0 && ops.shelfBlocked === 0 && (
                 <Badge variant="neutral">no recent ops</Badge>

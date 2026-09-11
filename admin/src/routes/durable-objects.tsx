@@ -163,7 +163,8 @@ function OutboxHealthCard({ state }: { readonly state: LoadState<OpsSummary | nu
             )}
             {state.value.shelfLastBlockedError !== null && (
               <p className="text-sm text-kumo-danger">
-                Shelf blocked: <span className="break-all">{state.value.shelfLastBlockedError}</span>
+                Shelf blocked:{" "}
+                <span className="break-all">{state.value.shelfLastBlockedError}</span>
               </p>
             )}
             <Link to="/operations" className="text-sm underline opacity-60 hover:opacity-100">
