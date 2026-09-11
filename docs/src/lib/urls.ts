@@ -1,4 +1,8 @@
-import type { Breadcrumb, PrevNext, SidebarItem } from "@cloudflare/nimbus-docs/types";
+import type {
+  Breadcrumb,
+  PrevNext,
+  SidebarItem,
+} from "@cloudflare/nimbus-docs/types";
 
 const basePrefix = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -38,19 +42,28 @@ export function withBaseBreadcrumbs(items: Breadcrumb[]): Breadcrumb[] {
 
 export function withBasePrevNext(value: PrevNext): PrevNext {
   return {
-    prev: value.prev ? { ...value.prev, href: withBase(value.prev.href) } : undefined,
-    next: value.next ? { ...value.next, href: withBase(value.next.href) } : undefined,
+    prev: value.prev
+      ? { ...value.prev, href: withBase(value.prev.href) }
+      : undefined,
+    next: value.next
+      ? { ...value.next, href: withBase(value.next.href) }
+      : undefined,
   };
 }
 
-export function withBaseInText(value: string, site: string, paths: string[]): string {
+export function withBaseInText(
+  value: string,
+  site: string,
+  paths: string[],
+): string {
   if (basePrefix === "") {
     return value;
   }
 
   const siteOrigin = new URL(site).origin;
   return paths.reduce(
-    (text, path) => text.replaceAll(`${siteOrigin}${path}`, `${siteOrigin}${withBase(path)}`),
+    (text, path) =>
+      text.replaceAll(`${siteOrigin}${path}`, `${siteOrigin}${withBase(path)}`),
     value,
   );
 }

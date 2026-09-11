@@ -29,7 +29,9 @@ function prefersReducedMotion(): boolean {
 }
 
 function initMobileToc(root: HTMLElement): () => void {
-  const select = root.querySelector<HTMLSelectElement>("[data-nb-mobile-toc-select]");
+  const select = root.querySelector<HTMLSelectElement>(
+    "[data-nb-mobile-toc-select]",
+  );
   if (!select) {
     return () => undefined;
   }
@@ -66,7 +68,9 @@ function initMobileToc(root: HTMLElement): () => void {
         suppress = false;
       }, SUPPRESS_MS);
 
-      const behavior: ScrollBehavior = prefersReducedMotion() ? "auto" : "smooth";
+      const behavior: ScrollBehavior = prefersReducedMotion()
+        ? "auto"
+        : "smooth";
       if (slug === "_top") {
         window.scrollTo({ top: 0, behavior });
         return;
@@ -103,7 +107,8 @@ function initMobileToc(root: HTMLElement): () => void {
     // current value (we're mid-section between two headings).
     const bandTop = window.innerHeight * BAND_TOP;
     const firstTop = headings[0].el.getBoundingClientRect().top;
-    const lastTop = headings[headings.length - 1].el.getBoundingClientRect().top;
+    const lastTop =
+      headings[headings.length - 1].el.getBoundingClientRect().top;
     if (firstTop > bandTop) {
       setActive("_top");
     } else if (lastTop < bandTop) {

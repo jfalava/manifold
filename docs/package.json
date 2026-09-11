@@ -6,7 +6,7 @@
     "build": "bun scripts/build.ts",
     "check": "bun lint:fix",
     "dev": "astro dev --host",
-    "format": "prettier --write src && oxfmt",
+    "format": "prettier --write src",
     "format:check": "prettier --check src",
     "lint": "bun run lint:oxlint && bun run lint:astro && bun run lint:docs",
     "lint:astro": "eslint \"src/**/*.astro\"",
