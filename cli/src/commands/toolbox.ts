@@ -4,6 +4,7 @@ import {
   decodeResponse,
   ListState,
   OpsListResponse,
+  OpsSummaryResponse,
   RegistryEntriesResponse,
   RegistryListEntry,
   RegistryListResponse,
@@ -193,6 +194,23 @@ export const opsCommand = Command.make("ops").pipe(
                   }
                 }
                 total += body.ops.length;
+              }
+              // The shelf mirror queue has no op rows; its DLQ state rides on
+              // the summary endpoint.
+              const { summary } = await apiCall(
+                config,
+                "/v1/ops/summary?limit=200",
+                "GET",
+                undefined,
+                OpsSummaryResponse,
+              );
+              if (summary.shelfPending > 0 || summary.shelfBlocked > 0) {
+                frameDetail(
+                  `shelf: pending=${summary.shelfPending} blocked=${summary.shelfBlocked}`,
+                );
+                if (summary.shelfLastBlockedError) {
+                  frameDetail(`  └ ${summary.shelfLastBlockedError}`);
+                }
               }
               closeFrame(`Listed ${total} ops`);
             } catch (error) {

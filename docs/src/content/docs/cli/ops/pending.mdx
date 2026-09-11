@@ -9,7 +9,7 @@ sidebar:
 bun run manifold ops pending [flags]
 ```
 
-Read-only triage for the personal API op log. Prints every non-completed op (up to 200 per state) with id, kind, origin, attempt count, and last error.
+Read-only triage for the personal API op log. Successes are deleted, so this prints every retained op (up to 200 per state) with id, kind, origin, attempt count, and last error, plus the MangaDex shelf mirror queue (pending/blocked counts and last blocked error).
 
 ## Flags
 
