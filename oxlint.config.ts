@@ -1,3 +1,4 @@
+import { recommended } from "@effect/tsgo/oxlint-presets";
 import { defineConfig, type DummyRule, type DummyRuleMap, type OxlintConfig } from "oxlint";
 
 // Oxlint rejects relative jsPlugins specifiers inside configs consumed via
@@ -167,6 +168,7 @@ const builtinRules: DummyRuleMap = {
 // config other than the root. Workspace configs must spread `baseConfig`
 // (which omits `options`), never copying `options` into child configs.
 export const baseConfig: OxlintConfig = {
+  extends: [recommended],
   plugins: ["eslint", "react", "typescript", "unicorn", "oxc", "import", "promise"],
   env: {
     node: true,
