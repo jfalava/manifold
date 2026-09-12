@@ -1,4 +1,3 @@
-/** Admin server/route host (TanStack Start + React). */
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalDate:off */
 /** @effect-diagnostics globalFetch:off */

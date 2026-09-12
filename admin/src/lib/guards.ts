@@ -1,3 +1,9 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics newPromise:off */
+/** @effect-diagnostics globalTimers:off */
 /**
  * Centralized boundary parsers for untrusted payloads.
  * These are the only places where `typeof` and `unknown` are sanctioned;

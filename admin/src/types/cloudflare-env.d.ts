@@ -1,3 +1,9 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics newPromise:off */
+/** @effect-diagnostics globalTimers:off */
 /**
  * manifold-admin bindings deployed via iac/alchemy.run.ts. Augments the global
  * `Cloudflare.Env` from @cloudflare/workers-types — the same shape
