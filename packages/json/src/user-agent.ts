@@ -20,7 +20,6 @@ export type ManifoldUserAgentSurface =
   | "router"
   | "canonical"
   | "mangadex"
-  | "mangaupdates"
   | "paperback-runtime"
   | (string & {});
 

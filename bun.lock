@@ -220,20 +220,6 @@
         "vitest": "catalog:build",
       },
     },
-    "packages/mangaupdates": {
-      "name": "@manifold/mangaupdates",
-      "dependencies": {
-        "@manifold/json": "workspace:*",
-        "effect": "catalog:effect",
-      },
-      "devDependencies": {
-        "oxfmt": "catalog:build",
-        "oxlint": "catalog:build",
-        "oxlint-tsgolint": "catalog:build",
-        "typescript": "catalog:build",
-        "vitest": "catalog:build",
-      },
-    },
     "packages/paperback-comix": {
       "name": "@manifold/paperback-comix",
       "dependencies": {
@@ -837,8 +823,6 @@
     "@manifold/json": ["@manifold/json@workspace:packages/json"],
 
     "@manifold/mangadex": ["@manifold/mangadex@workspace:packages/mangadex"],
-
-    "@manifold/mangaupdates": ["@manifold/mangaupdates@workspace:packages/mangaupdates"],
 
     "@manifold/paperback-comix": ["@manifold/paperback-comix@workspace:packages/paperback-comix"],
 

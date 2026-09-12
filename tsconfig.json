@@ -4,7 +4,6 @@
     { "path": "./packages/json" },
     { "path": "./packages/canonical" },
     { "path": "./packages/mangadex" },
-    { "path": "./packages/mangaupdates" },
     { "path": "./packages/comix" },
     { "path": "./packages/contract" },
     { "path": "./packages/paperback-comix" },
