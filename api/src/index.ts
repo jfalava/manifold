@@ -1,3 +1,6 @@
+/** Cloudflare Worker / Hono entry: handlers are async by platform contract. */
+/** @effect-diagnostics asyncFunction:off */
+import { hostLogError, hostLogInfo } from "./effect-host";
 import { Hono } from "hono";
 import { Effect, Schema } from "effect";
 import { catalogApp } from "./catalog";
@@ -91,11 +94,11 @@ const app: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
         );
       }
       if (error instanceof Schema.SchemaError) {
-        console.error(`[manifold/api] schema error:${error.message}`);
+        hostLogError(`[manifold/api] schema error:${error.message}`);
         return jsonEncoded(ErrorBody, { error: "Invalid request", details: error.message }, 400);
       }
       const message = error instanceof Error ? error.message : "Internal server error";
-      console.error(`[manifold/api] request failed:${message}`);
+      hostLogError(`[manifold/api] request failed:${message}`);
       return jsonEncoded(ErrorBody, { error: message }, 500);
     }
   });
@@ -105,7 +108,7 @@ const worker = {
     app.fetch(request, env, executionContext),
   scheduled: async (_controller: ScheduledController, env: Env): Promise<void> => {
     const backup = await env.MANIFOLD_SYNC.getByName("default").backupRegistry();
-    console.info(`[manifold/api] scheduled registry backup:${backup.key}`);
+    hostLogInfo(`[manifold/api] scheduled registry backup:${backup.key}`);
   },
 };
 

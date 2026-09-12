@@ -18,11 +18,11 @@ export type MalBackupIdentity = Schema.Schema.Type<typeof MalBackupIdentity>;
 
 export const SetListStateInput = Schema.Struct({
   status: Schema.optional(Schema.NullOr(ListStatus)),
-  score: Schema.optional(Schema.NullOr(Schema.Number)),
+  score: Schema.optional(Schema.NullOr(Schema.Finite)),
   notes: Schema.optional(Schema.NullOr(Schema.String)),
   startedAt: Schema.optional(Schema.NullOr(Schema.String)),
   completedAt: Schema.optional(Schema.NullOr(Schema.String)),
-  volumeProgress: Schema.optional(Schema.NullOr(Schema.Number)),
+  volumeProgress: Schema.optional(Schema.NullOr(Schema.Finite)),
   origin: Schema.optional(OpOrigin),
   appliedRemotely: Schema.optional(Schema.Boolean),
   backupIdentity: Schema.optional(MalBackupIdentity),
@@ -66,12 +66,12 @@ export type IngestCandidateInput = Schema.Schema.Type<typeof IngestCandidateInpu
 export const RecordReadInput = Schema.Struct({
   eventId: Schema.optional(Schema.NonEmptyString),
   chapterKey: Schema.NonEmptyString,
-  chapterNumber: Schema.optional(Schema.Number),
-  volumeNumber: Schema.optional(Schema.Number),
+  chapterNumber: Schema.optional(Schema.Finite),
+  volumeNumber: Schema.optional(Schema.Finite),
   provider: ContentProvider,
   sourceMangaId: Schema.NonEmptyString,
   sourceChapterId: Schema.NonEmptyString,
-  readAt: Schema.optional(Schema.Number),
+  readAt: Schema.optional(Schema.Finite),
 });
 export type RecordReadInput = Schema.Schema.Type<typeof RecordReadInput>;
 
@@ -81,7 +81,7 @@ export const CompleteOpsInput = Schema.Struct({
       opId: Schema.NonEmptyString,
       ok: Schema.Boolean,
       error: Schema.optional(Schema.String),
-      mediaListEntryId: Schema.optional(Schema.Number),
+      mediaListEntryId: Schema.optional(Schema.Finite),
     }),
   ),
 });
@@ -119,8 +119,8 @@ export const MangaDexMatchInput = Schema.Struct({
   ),
   metadata: Schema.optional(
     Schema.Struct({
-      chapters: Schema.optional(Schema.Number),
-      volumes: Schema.optional(Schema.Number),
+      chapters: Schema.optional(Schema.Finite),
+      volumes: Schema.optional(Schema.Finite),
       startDate: Schema.optional(Schema.String),
       endDate: Schema.optional(Schema.String),
       status: Schema.optional(Schema.String),

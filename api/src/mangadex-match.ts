@@ -1,3 +1,6 @@
+/** Vectorize + MangaDex match orchestration at the Worker edge. */
+/** @effect-diagnostics asyncFunction:off */
+import { hostLogWarn } from "./effect-host";
 import { Effect } from "effect";
 import {
   type MangaDexMatchInput,
@@ -356,7 +359,7 @@ const queryIndex = async (
       return exactCandidates;
     }
   } catch (error) {
-    console.warn(`[MangaDexMatch] exact Vectorize lookup failed: ${errorMessage(error)}`);
+    hostLogWarn(`[MangaDexMatch] exact Vectorize lookup failed: ${errorMessage(error)}`);
   }
 
   try {
@@ -366,7 +369,7 @@ const queryIndex = async (
     });
     return indexedCandidates(matches.matches);
   } catch (error) {
-    console.warn(`[MangaDexMatch] Vectorize lookup failed: ${errorMessage(error)}`);
+    hostLogWarn(`[MangaDexMatch] Vectorize lookup failed: ${errorMessage(error)}`);
     return [];
   }
 };
@@ -456,7 +459,7 @@ export const resolveMangaDex = async (
         }),
       );
     } catch (error) {
-      console.warn(`[MangaDexMatch] Vectorize upsert failed: ${errorMessage(error)}`);
+      hostLogWarn(`[MangaDexMatch] Vectorize upsert failed: ${errorMessage(error)}`);
     }
   }
 

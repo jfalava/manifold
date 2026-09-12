@@ -1,3 +1,5 @@
+/** CF Secrets Store .get() host boundary. */
+/** @effect-diagnostics asyncFunction:off */
 import { isString } from "@manifold/json";
 import type { SecretsStoreSecret } from "@cloudflare/workers-types";
 

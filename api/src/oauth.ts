@@ -1,3 +1,5 @@
+/** OAuth PKCE uses Web Crypto digests at the Worker edge. */
+/** @effect-diagnostics asyncFunction:off */
 import { Schema } from "effect";
 import type { OAuthProvider } from "./domain";
 import { readSecret, readSecretOptional } from "./read-secret";

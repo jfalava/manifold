@@ -1,3 +1,6 @@
+/** Hono/Request host helpers; tryPromise wrappers stay Promise-based. */
+/** @effect-diagnostics asyncFunction:off */
+import { hostLogError } from "./effect-host";
 import { Data, Effect, Schema } from "effect";
 import {
   encodeResponse,
@@ -112,7 +115,7 @@ export const jsonEncoded = <S extends Schema.ConstraintEncoder<JsonResponseBody>
     return json(encodeResponse(schema, value), status);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    console.error(`[manifold/api] encode failed:${message}`);
+    hostLogError(`[manifold/api] encode failed:${message}`);
     throw new ResponseEncodeError({ details: message });
   }
 };

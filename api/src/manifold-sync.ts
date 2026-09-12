@@ -1,5 +1,9 @@
+/** CF Durable Object host: public methods are async by platform contract. */
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalFetch:off */
 import { DurableObject } from "cloudflare:workers";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
+import { epochMillisNow, hostLogError, newId } from "./effect-host";
 import {
   errorMessage,
   isJsonObject,
@@ -101,7 +105,7 @@ import type { Env } from "./types";
 
 export type { MangaDexEntryStat };
 
-const now = () => Date.now();
+const now = () => epochMillisNow();
 
 const SYNC_DRAIN_LIMIT = 500;
 const SYNC_RETRY_DELAY_MS = 5_000;
@@ -279,7 +283,7 @@ export class ManifoldSync extends DurableObject<Env> {
     try {
       await this.scheduleSync();
     } catch (error) {
-      console.error(`[ManifoldSync] failed to schedule MangaDex sync: ${errorMessage(error)}`);
+      hostLogError(`[ManifoldSync] failed to schedule MangaDex sync: ${errorMessage(error)}`);
     }
     return connection;
   }
@@ -593,7 +597,7 @@ export class ManifoldSync extends DurableObject<Env> {
     // Validation can reject after recovery or link observation. Commit those
     // changes together with progress and queued work, or roll all of them back.
     const progress = this.ctx.storage.transactionSync(() => {
-      const eventId = input.eventId ?? crypto.randomUUID();
+      const eventId = input.eventId ?? newId();
       const readAt = input.readAt ?? now();
       // Resolved target may differ from the caller's entryId when a
       // missing or tombstoned row has a live successor — never reassign the param.
@@ -779,7 +783,7 @@ export class ManifoldSync extends DurableObject<Env> {
     try {
       await this.scheduleSync();
     } catch (error) {
-      console.error(`[ManifoldSync] failed to schedule MangaDex sync: ${errorMessage(error)}`);
+      hostLogError(`[ManifoldSync] failed to schedule MangaDex sync: ${errorMessage(error)}`);
     }
     return progress;
   }
@@ -1034,7 +1038,7 @@ export class ManifoldSync extends DurableObject<Env> {
     // Serve from cache when fresh, but still refresh ratings live.
     if (
       this.mdLibraryCache &&
-      Date.now() - this.mdLibraryCache.at < ManifoldSync.MD_LIBRARY_TTL_MS
+      epochMillisNow() - this.mdLibraryCache.at < ManifoldSync.MD_LIBRARY_TTL_MS
     ) {
       const withRatings = await attachRatings(this.mdLibraryCache.data);
       // Keep the cached snapshot in sync with the freshest ratings so a
@@ -1047,7 +1051,7 @@ export class ManifoldSync extends DurableObject<Env> {
 
     const statuses = await Effect.runPromise(client.readingStatuses());
     const data = await hydrate(statuses);
-    this.mdLibraryCache = { at: Date.now(), data };
+    this.mdLibraryCache = { at: epochMillisNow(), data };
     return data;
   }
 
@@ -1065,7 +1069,7 @@ export class ManifoldSync extends DurableObject<Env> {
     // upstream round-trip beyond what a prior full load already paid.
     if (
       this.mdLibraryCache &&
-      Date.now() - this.mdLibraryCache.at < ManifoldSync.MD_LIBRARY_TTL_MS
+      epochMillisNow() - this.mdLibraryCache.at < ManifoldSync.MD_LIBRARY_TTL_MS
     ) {
       const data = this.mdLibraryCache.data;
       const statusCounts = new Map<string, number>();
@@ -1189,7 +1193,7 @@ export class ManifoldSync extends DurableObject<Env> {
   async mangaDexCurrentUser(): Promise<{ id: string; name?: string }> {
     const accessToken = await this.getAuthAccessToken("mangadex");
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
-    return Effect.runPromise(client.currentUser());
+    return Effect.runPromise(client.currentUser);
   }
 
   async mangaDexReadMarkers(mangaDexId: string): Promise<readonly string[]> {
@@ -1283,7 +1287,7 @@ export class ManifoldSync extends DurableObject<Env> {
 
     const timestamp = now();
     const matchedId = [...matchingEntryIds][0];
-    const entryId = matchedId ?? crypto.randomUUID();
+    const entryId = matchedId ?? newId();
     if (matchedId) {
       const existingLinks = this.ctx.storage.sql
         .exec<ProviderRow>(
@@ -1374,7 +1378,7 @@ export class ManifoldSync extends DurableObject<Env> {
       return entry;
     }
 
-    const id = crypto.randomUUID();
+    const id = newId();
     // canonical_entries.provider is CanonicalProvider (anilist|mal|local). Content
     // providers (mangadex/comix) only live on provider_links — mint source stays local.
     const mintProvider =
@@ -1703,7 +1707,7 @@ export class ManifoldSync extends DurableObject<Env> {
         changes.completedAt === undefined &&
         changes.volumeProgress === undefined;
       this.enqueueOp({
-        opId: crypto.randomUUID(),
+        opId: newId(),
         target: "anilist",
         kind: onlyStatus ? "anilist.status" : "anilist.fields",
         origin,
@@ -1738,7 +1742,7 @@ export class ManifoldSync extends DurableObject<Env> {
 
     if (origin !== "device" && anilistId) {
       this.enqueueOp({
-        opId: crypto.randomUUID(),
+        opId: newId(),
         target: "anilist",
         kind: "anilist.delete",
         origin,
@@ -2025,9 +2029,17 @@ export class ManifoldSync extends DurableObject<Env> {
         entryId,
       )
       .toArray()[0];
-    const prior = previous
-      ? Schema.decodeUnknownSync(MalBackupPayload)(JSON.parse(previous.payload)).backupIdentity
-      : undefined;
+    let prior: Schema.Schema.Type<typeof MalBackupPayload>["backupIdentity"];
+    if (previous) {
+      try {
+        const decoded = Schema.decodeUnknownOption(MalBackupPayload)(JSON.parse(previous.payload));
+        if (Option.isSome(decoded)) {
+          prior = decoded.value.backupIdentity;
+        }
+      } catch {
+        // Corrupt prior payload: treat as no prior identity.
+      }
+    }
     const identity = changes.backupIdentity ?? prior;
     // Supersede old rows too: a newer update retries the latest state, and
     // successes are not logged, so superseded rows are deleted outright.
@@ -2037,7 +2049,7 @@ export class ManifoldSync extends DurableObject<Env> {
       entryId,
     );
     this.enqueueOp({
-      opId: crypto.randomUUID(),
+      opId: newId(),
       target: "mal",
       kind: "mal.status",
       origin: "device",
@@ -2062,7 +2074,19 @@ export class ManifoldSync extends DurableObject<Env> {
       .toArray();
     for (const row of rows) {
       try {
-        const payload = Schema.decodeUnknownSync(MalBackupPayload)(JSON.parse(row.payload));
+        let rawPayload: unknown;
+        try {
+          rawPayload = JSON.parse(row.payload);
+        } catch {
+          this.failOps([row], new Error("Invalid mal backup payload"));
+          continue;
+        }
+        const decodedPayload = Schema.decodeUnknownOption(MalBackupPayload)(rawPayload);
+        if (Option.isNone(decodedPayload)) {
+          this.failOps([row], new Error("Invalid mal backup payload"));
+          continue;
+        }
+        const payload = decodedPayload.value;
         const entry = this.readMalBackupEntry(payload.entryId);
         if (entry && this.readListState(entry.id)?.status) {
           const accessToken = await this.getAuthAccessToken("mal");
@@ -2232,7 +2256,7 @@ export class ManifoldSync extends DurableObject<Env> {
     } catch (error) {
       // Token refresh or readingStatuses failed: leave the queue intact and
       // let the next alarm retry.
-      console.error(`[ManifoldSync] MangaDex shelf mirror batch failed: ${errorMessage(error)}`);
+      hostLogError(`[ManifoldSync] MangaDex shelf mirror batch failed: ${errorMessage(error)}`);
     }
   }
 
@@ -2251,7 +2275,7 @@ export class ManifoldSync extends DurableObject<Env> {
       entryId,
     );
     const outcome = attempts >= SYNC_MAX_ATTEMPTS ? "blocked" : "retry";
-    console.error(`[ManifoldSync] MangaDex shelf mirror ${outcome}:${entryId}:attempt=${attempts}:${message}`);
+    hostLogError(`[ManifoldSync] MangaDex shelf mirror ${outcome}:${entryId}:attempt=${attempts}:${message}`);
   }
 
   private failOps(rows: readonly { id: number; attempts: number }[], cause: unknown): void {
@@ -2268,7 +2292,7 @@ export class ManifoldSync extends DurableObject<Env> {
         now(),
         row.id,
       );
-      console.error(
+      hostLogError(
         `[ManifoldSync] op failed:${row.id}:attempt=${attempt}:` +
           `${state}:${errorMessage(cause)}`,
       );

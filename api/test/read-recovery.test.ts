@@ -1,3 +1,6 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics schemaSync:off */
+/** @effect-diagnostics effectSucceedWithVoid:off */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { build } from "esbuild";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
@@ -80,7 +83,7 @@ describe("queued reads with stale registry IDs", () => {
     return entries.filter(isJsonObject);
   };
   const snapshotEntry = async (id: string): Promise<JsonObject> => {
-    const row = (await snapshotEntries()).find((entry) => entry["id"] === id);
+    const row = (await snapshotEntries()).find((row) => row["id"] === id);
     if (row === undefined) {
       throw new Error(`Missing fixture entry ${id}`);
     }

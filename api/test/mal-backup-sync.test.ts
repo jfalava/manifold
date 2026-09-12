@@ -1,3 +1,6 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics schemaSync:off */
+/** @effect-diagnostics effectSucceedWithVoid:off */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { build } from "esbuild";
 import { convertV4MiniflareOptions, Miniflare, Response as WorkerResponse } from "miniflare";

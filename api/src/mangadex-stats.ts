@@ -1,3 +1,6 @@
+/** MangaDex stats sampling at the Worker edge. */
+/** @effect-diagnostics asyncFunction:off */
+import { DateTime } from "effect";
 import {
   isFiniteNumber,
   isJsonObject,
@@ -155,7 +158,7 @@ export const composeMangaDexEntryStat = (
     latestChapter: feed?.latestChapter ?? null,
     latestDate:
       feed?.latestPublishedAt !== undefined && feed?.latestPublishedAt !== null
-        ? new Date(feed.latestPublishedAt).toISOString().slice(0, 10)
+        ? DateTime.formatIsoDateUtc(DateTime.makeUnsafe(feed.latestPublishedAt))
         : null,
     percent,
   };

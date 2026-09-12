@@ -1,3 +1,6 @@
+/** R2 registry backup I/O at the Worker edge. */
+/** @effect-diagnostics asyncFunction:off */
+import { newId } from "./effect-host";
 import {
   isFiniteNumber,
   isJsonObject,
@@ -104,7 +107,7 @@ export interface RegistryBackup {
 }
 
 export const backupKey = (createdAt: number): string =>
-  `${REGISTRY_BACKUP_PREFIX}${createdAt}-${crypto.randomUUID()}.json`;
+  `${REGISTRY_BACKUP_PREFIX}${createdAt}-${newId()}.json`;
 
 export const isRegistryBackupKey = (key: string): boolean => {
   if (!key.startsWith(REGISTRY_BACKUP_PREFIX) || key.includes("..") || !key.endsWith(".json")) {

@@ -105,11 +105,11 @@ export type OpsSummaryResponse = Schema.Schema.Type<typeof OpsSummaryResponse>;
 
 export const RegistryBackupMetadata = Schema.Struct({
   key: Schema.NonEmptyString,
-  createdAt: Schema.Number,
-  uploadedAt: Schema.Number,
-  size: Schema.Number,
-  databaseSize: Schema.Number,
-  entryCount: Schema.Number,
+  createdAt: Schema.Finite,
+  uploadedAt: Schema.Finite,
+  size: Schema.Finite,
+  databaseSize: Schema.Finite,
+  entryCount: Schema.Finite,
   bookmark: Schema.NonEmptyString,
 });
 export type RegistryBackupMetadata = Schema.Schema.Type<typeof RegistryBackupMetadata>;
@@ -149,22 +149,22 @@ export const MangaDexStatsResponse = Schema.Struct({
 export type MangaDexStatsResponse = Schema.Schema.Type<typeof MangaDexStatsResponse>;
 
 export const RecordedCountResponse = Schema.Struct({
-  recorded: Schema.Number,
+  recorded: Schema.Finite,
 });
 export type RecordedCountResponse = Schema.Schema.Type<typeof RecordedCountResponse>;
 
 export const UpdatedCountResponse = Schema.Struct({
-  updated: Schema.Number,
+  updated: Schema.Finite,
 });
 export type UpdatedCountResponse = Schema.Schema.Type<typeof UpdatedCountResponse>;
 
 export const RetriedCountResponse = Schema.Struct({
-  retried: Schema.Number,
+  retried: Schema.Finite,
 });
 export type RetriedCountResponse = Schema.Schema.Type<typeof RetriedCountResponse>;
 
 export const EnqueuedCountResponse = Schema.Struct({
-  enqueued: Schema.Number,
+  enqueued: Schema.Finite,
 });
 export type EnqueuedCountResponse = Schema.Schema.Type<typeof EnqueuedCountResponse>;
 

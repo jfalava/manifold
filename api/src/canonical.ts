@@ -1,3 +1,7 @@
+/** Canonical search fans out to provider fetchers at the Worker edge. */
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalFetch:off */
+import { hostLogWarn } from "./effect-host";
 import * as Effect from "effect/Effect";
 import { manifoldUserAgent } from "@manifold/json";
 import type { CanonicalSearchProviderFilter, RegistryEntry } from "@manifold/contract";
@@ -144,7 +148,7 @@ export const getRegistryCanonical = async (
       return { ...outcome.value, id: entry.id };
     }
     if (outcome.error) {
-      console.warn(
+      hostLogWarn(
         JSON.stringify({
           event: "canonical.details.failed",
           entryId: entry.id,

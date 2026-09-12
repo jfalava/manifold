@@ -1,3 +1,6 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics schemaSync:off */
+/** @effect-diagnostics effectSucceedWithVoid:off */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Effect } from "effect";
 import type { CanonicalSearchResult, CanonicalSearchSource } from "@manifold/canonical";

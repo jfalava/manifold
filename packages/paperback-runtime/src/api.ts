@@ -1,3 +1,7 @@
+/** Paperback / device host callbacks are async by Application contract. */
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalDate:off */
 import type {
   CanonicalEntry,
   CanonicalListState,
@@ -38,7 +42,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@manifold/json";
-import { Schema } from "effect";
+import { Data, Schema } from "effect";
 
 export const MANIFOLD_API_ORIGIN = "https://manifold.jfa.dev/api";
 export const MANIFOLD_API_TOKEN_KEY = "manifold.api-token";
@@ -194,15 +198,10 @@ type PersonalApiPostBody =
       readonly title: string;
     }[];
 
-export class PersonalApiError extends Error {
+export class PersonalApiError extends Data.TaggedError("PersonalApiError")<{
+  readonly message: string;
   readonly status: number;
-
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = "PersonalApiError";
-    this.status = status;
-  }
-}
+}> {}
 
 const asErrorMessage = (body: JsonValue, status: number): string => {
   const error = isJsonObject(body) ? body.error : undefined;
@@ -255,7 +254,10 @@ const requireDecoded = <T>(
   try {
     return decodeResponse(schema, body, label);
   } catch {
-    throw new PersonalApiError(`Personal API response failed schema decode (${label})`, 502);
+    throw new PersonalApiError({
+      message: `Personal API response failed schema decode (${label})`,
+      status: 502,
+    });
   }
 };
 
@@ -281,7 +283,10 @@ export const createPersonalApiClient = (
       ...(!(body === undefined) && { body: JSON.stringify(body) }),
     });
     if (response.status < 200 || response.status >= 300) {
-      throw new PersonalApiError(asErrorMessage(response.body, response.status), response.status);
+      throw new PersonalApiError({
+        message: asErrorMessage(response.body, response.status),
+        status: response.status,
+      });
     }
     return response;
   };

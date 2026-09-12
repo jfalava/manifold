@@ -1,3 +1,9 @@
+/** Docs site browser/Worker host (Astro + client scripts). */
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalTimers:off */
 /**
  * Mobile TOC — keeps the "jump to section" <select> in sync with the page.
  *

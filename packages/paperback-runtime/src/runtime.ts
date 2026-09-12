@@ -1,3 +1,7 @@
+/** Paperback / device host callbacks are async by Application contract. */
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalDate:off */
 import { isJsonValue, isString, type JsonValue } from "@manifold/json";
 import {
   createPersonalApiClient,

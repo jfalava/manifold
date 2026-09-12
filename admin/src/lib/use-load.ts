@@ -1,3 +1,10 @@
+/** Admin server/route host (TanStack Start + React). */
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics newPromise:off */
+/** @effect-diagnostics globalTimers:off */
 import { useEffect, useState } from "react";
 
 export type LoadState<T> =

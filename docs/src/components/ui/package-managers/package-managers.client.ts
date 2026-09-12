@@ -1,3 +1,9 @@
+/** Docs site browser/Worker host (Astro + client scripts). */
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalTimers:off */
 /**
  * Sync key `ui-pm-tab` (sessionStorage) is shared with the
  * `<nb-pm-restore>` early-paint element to avoid flash across navigations.

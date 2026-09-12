@@ -1,5 +1,10 @@
+/** Paperback / device host callbacks are async by Application contract. */
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalDate:off */
 import { isJsonObject, manifoldUserAgent, type JsonObject } from "@manifold/json";
 import type { MalBackupIdentity } from "@manifold/canonical";
+import { Data } from "effect";
 import type { AniListReadingStatus } from "./anilist-types.js";
 import { bridgeErrorDetail } from "./errors.js";
 
@@ -18,10 +23,9 @@ interface GraphQLResponse<A> {
 }
 
 /** Thrown when AniList rejects the credentials (HTTP 401/403). */
-export class AniListUnauthorizedError extends Error {
-  constructor() {
-    super("AniList rejected this token");
-    this.name = "AniListUnauthorizedError";
+export class AniListUnauthorizedError extends Data.TaggedError("AniListUnauthorizedError")<{}> {
+  get message() {
+    return "AniList rejected this token";
   }
 }
 

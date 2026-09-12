@@ -18,20 +18,20 @@ export const ProviderLink = Schema.Struct({
   provider: RegistryProvider,
   externalId: Schema.NonEmptyString,
   title: Schema.optional(Schema.String),
-  updatedAt: Schema.Number,
+  updatedAt: Schema.Finite,
 });
 export type ProviderLink = Schema.Schema.Type<typeof ProviderLink>;
 
 export const ListState = Schema.Struct({
   entryId: Schema.NonEmptyString,
   status: Schema.optional(ListStatus),
-  score: Schema.optional(Schema.Number),
+  score: Schema.optional(Schema.Finite),
   notes: Schema.optional(Schema.String),
   startedAt: Schema.optional(Schema.String),
   completedAt: Schema.optional(Schema.String),
-  volumeProgress: Schema.optional(Schema.Number),
-  mediaListEntryId: Schema.optional(Schema.Number),
-  updatedAt: Schema.Number,
+  volumeProgress: Schema.optional(Schema.Finite),
+  mediaListEntryId: Schema.optional(Schema.Finite),
+  updatedAt: Schema.Finite,
 });
 export type ListState = Schema.Schema.Type<typeof ListState>;
 
@@ -41,8 +41,8 @@ export const RegistryEntry = Schema.Struct({
   provider: CanonicalProvider,
   providerId: Schema.NonEmptyString,
   title: Schema.NonEmptyString,
-  createdAt: Schema.Number,
-  updatedAt: Schema.Number,
+  createdAt: Schema.Finite,
+  updatedAt: Schema.Finite,
   providers: Schema.Array(ProviderLink),
 });
 export type RegistryEntry = Schema.Schema.Type<typeof RegistryEntry>;
@@ -50,12 +50,12 @@ export type RegistryEntry = Schema.Schema.Type<typeof RegistryEntry>;
 export const ReadingProgress = Schema.Struct({
   entryId: Schema.NonEmptyString,
   chapterKey: Schema.NonEmptyString,
-  chapterNumber: Schema.optional(Schema.Number),
-  volumeNumber: Schema.optional(Schema.Number),
+  chapterNumber: Schema.optional(Schema.Finite),
+  volumeNumber: Schema.optional(Schema.Finite),
   provider: Schema.optional(ContentProvider),
   sourceChapterId: Schema.optional(Schema.NonEmptyString),
-  readAt: Schema.Number,
-  version: Schema.Number,
+  readAt: Schema.Finite,
+  version: Schema.Finite,
 });
 export type ReadingProgress = Schema.Schema.Type<typeof ReadingProgress>;
 
@@ -65,8 +65,8 @@ export const RegistryListEntry = Schema.Struct({
   provider: CanonicalProvider,
   providerId: Schema.NonEmptyString,
   title: Schema.NonEmptyString,
-  createdAt: Schema.Number,
-  updatedAt: Schema.Number,
+  createdAt: Schema.Finite,
+  updatedAt: Schema.Finite,
   providers: Schema.Array(ProviderLink),
   state: Schema.optional(ListState),
   progress: Schema.optional(ReadingProgress),
@@ -75,27 +75,27 @@ export const RegistryListEntry = Schema.Struct({
 export type RegistryListEntry = Schema.Schema.Type<typeof RegistryListEntry>;
 
 export const ListEvent = Schema.Struct({
-  id: Schema.Number,
+  id: Schema.Finite,
   entryId: Schema.NonEmptyString,
   kind: Schema.String,
   origin: OpOrigin,
   detail: Schema.optional(Schema.JsonObject),
-  createdAt: Schema.Number,
+  createdAt: Schema.Finite,
 });
 export type ListEvent = Schema.Schema.Type<typeof ListEvent>;
 
 export const SyncOp = Schema.Struct({
-  id: Schema.Number,
+  id: Schema.Finite,
   opId: Schema.NonEmptyString,
   target: OpTarget,
   kind: OpKind,
   origin: OpOrigin,
   payload: Schema.JsonObject,
   state: OpState,
-  attempts: Schema.Number,
+  attempts: Schema.Finite,
   lastError: Schema.optional(Schema.String),
-  createdAt: Schema.Number,
-  updatedAt: Schema.Number,
+  createdAt: Schema.Finite,
+  updatedAt: Schema.Finite,
 });
 export type SyncOp = Schema.Schema.Type<typeof SyncOp>;
 
@@ -106,38 +106,38 @@ export const MangaDexLibraryItem = Schema.Struct({
   title: Schema.optional(Schema.String),
   coverUrl: Schema.optional(Schema.String),
   hasRating: Schema.optional(Schema.Boolean),
-  rating: Schema.optional(Schema.Number),
+  rating: Schema.optional(Schema.Finite),
   ratingCreatedAt: Schema.optional(Schema.String),
 });
 export type MangaDexLibraryItem = Schema.Schema.Type<typeof MangaDexLibraryItem>;
 
 export const MangaDexLibrarySummary = Schema.Struct({
-  total: Schema.Number,
-  statuses: Schema.Record(Schema.String, Schema.Number),
-  rated: Schema.Number,
-  meanRating: Schema.NullOr(Schema.Number),
-  linkedToRegistry: Schema.Number,
+  total: Schema.Finite,
+  statuses: Schema.Record(Schema.String, Schema.Finite),
+  rated: Schema.Finite,
+  meanRating: Schema.NullOr(Schema.Finite),
+  linkedToRegistry: Schema.Finite,
 });
 export type MangaDexLibrarySummary = Schema.Schema.Type<typeof MangaDexLibrarySummary>;
 
 export const RegistrySummary = Schema.Struct({
-  total: Schema.Number,
-  active: Schema.Number,
-  tombstoned: Schema.Number,
-  statuses: Schema.Record(Schema.String, Schema.Number),
-  providerCounts: Schema.Record(Schema.String, Schema.Number),
-  fullyLinked: Schema.Number,
-  unlinked: Schema.Number,
+  total: Schema.Finite,
+  active: Schema.Finite,
+  tombstoned: Schema.Finite,
+  statuses: Schema.Record(Schema.String, Schema.Finite),
+  providerCounts: Schema.Record(Schema.String, Schema.Finite),
+  fullyLinked: Schema.Finite,
+  unlinked: Schema.Finite,
 });
 export type RegistrySummary = Schema.Schema.Type<typeof RegistrySummary>;
 
 export const OpsSummary = Schema.Struct({
-  total: Schema.Number,
-  states: Schema.Record(Schema.String, Schema.Number),
-  oldestPendingAt: Schema.NullOr(Schema.Number),
+  total: Schema.Finite,
+  states: Schema.Record(Schema.String, Schema.Finite),
+  oldestPendingAt: Schema.NullOr(Schema.Finite),
   lastFailedError: Schema.NullOr(Schema.String),
-  shelfPending: Schema.Number,
-  shelfBlocked: Schema.Number,
+  shelfPending: Schema.Finite,
+  shelfBlocked: Schema.Finite,
   shelfLastBlockedError: Schema.NullOr(Schema.String),
 });
 export type OpsSummary = Schema.Schema.Type<typeof OpsSummary>;
@@ -145,8 +145,8 @@ export type OpsSummary = Schema.Schema.Type<typeof OpsSummary>;
 export const AuthConnection = Schema.Struct({
   provider: AuthProvider,
   connected: Schema.Boolean,
-  expiresAt: Schema.optional(Schema.Number),
-  updatedAt: Schema.optional(Schema.Number),
+  expiresAt: Schema.optional(Schema.Finite),
+  updatedAt: Schema.optional(Schema.Finite),
   returnPath: Schema.optional(Schema.String),
 });
 export type AuthConnection = Schema.Schema.Type<typeof AuthConnection>;
@@ -160,7 +160,7 @@ export type OAuthStart = Schema.Schema.Type<typeof OAuthStart>;
 export const MangaDexMatchCandidate = Schema.Struct({
   externalId: Schema.NonEmptyString,
   title: Schema.NonEmptyString,
-  score: Schema.Number,
+  score: Schema.Finite,
   anilistId: Schema.optional(Schema.String),
   myAnimeListId: Schema.optional(Schema.String),
 });
@@ -173,8 +173,8 @@ export const MangaDexMatchResult = Schema.Struct({
   externalId: Schema.optional(Schema.NonEmptyString),
   title: Schema.optional(Schema.String),
   method: Schema.optional(MangaDexMatchMethod),
-  score: Schema.optional(Schema.Number),
-  margin: Schema.optional(Schema.Number),
+  score: Schema.optional(Schema.Finite),
+  margin: Schema.optional(Schema.Finite),
 });
 export type MangaDexMatchResult = Schema.Schema.Type<typeof MangaDexMatchResult>;
 
@@ -188,8 +188,8 @@ export type CanonicalExternalIds = Schema.Schema.Type<typeof CanonicalExternalId
 export const CanonicalMetadata = Schema.Struct({
   description: Schema.optional(Schema.String),
   coverUrl: Schema.optional(Schema.String),
-  chapters: Schema.optional(Schema.Number),
-  volumes: Schema.optional(Schema.Number),
+  chapters: Schema.optional(Schema.Finite),
+  volumes: Schema.optional(Schema.Finite),
   startDate: Schema.optional(Schema.String),
   endDate: Schema.optional(Schema.String),
   status: Schema.optional(Schema.String),
@@ -205,7 +205,7 @@ export const CanonicalSearchHit = Schema.Struct({
   aliases: Schema.Array(Schema.String),
   externalIds: Schema.optional(CanonicalExternalIds),
   metadata: Schema.optional(CanonicalMetadata),
-  score: Schema.Number,
+  score: Schema.Finite,
 });
 export type CanonicalSearchHit = Schema.Schema.Type<typeof CanonicalSearchHit>;
 
@@ -215,7 +215,7 @@ export const CanonicalProviderSearch = Schema.Struct({
   error: Schema.optional(
     Schema.Struct({
       message: Schema.NonEmptyString,
-      status: Schema.optional(Schema.Number),
+      status: Schema.optional(Schema.Finite),
     }),
   ),
 });
@@ -243,30 +243,30 @@ export type CanonicalIdentity = Schema.Schema.Type<typeof CanonicalIdentity>;
 export const MangaDexChapter = Schema.Struct({
   id: Schema.NonEmptyString,
   mangaId: Schema.NonEmptyString,
-  chapterNumber: Schema.optional(Schema.Number),
-  volumeNumber: Schema.optional(Schema.Number),
+  chapterNumber: Schema.optional(Schema.Finite),
+  volumeNumber: Schema.optional(Schema.Finite),
   language: Schema.String,
   title: Schema.optional(Schema.String),
   externalUrl: Schema.optional(Schema.String),
-  pageCount: Schema.optional(Schema.Number),
-  publishedAt: Schema.optional(Schema.Number),
+  pageCount: Schema.optional(Schema.Finite),
+  publishedAt: Schema.optional(Schema.Finite),
 });
 export type MangaDexChapter = Schema.Schema.Type<typeof MangaDexChapter>;
 
 export const MangaDexFeedPage = Schema.Struct({
   items: Schema.Array(MangaDexChapter),
-  total: Schema.optional(Schema.Number),
-  limit: Schema.optional(Schema.Number),
-  offset: Schema.optional(Schema.Number),
+  total: Schema.optional(Schema.Finite),
+  limit: Schema.optional(Schema.Finite),
+  offset: Schema.optional(Schema.Finite),
 });
 export type MangaDexFeedPage = Schema.Schema.Type<typeof MangaDexFeedPage>;
 
 export const MangaDexEntryStat = Schema.Struct({
-  lastRead: Schema.NullOr(Schema.Number),
-  readChapters: Schema.NullOr(Schema.Number),
-  totalListed: Schema.NullOr(Schema.Number),
-  latestChapter: Schema.NullOr(Schema.Number),
+  lastRead: Schema.NullOr(Schema.Finite),
+  readChapters: Schema.NullOr(Schema.Finite),
+  totalListed: Schema.NullOr(Schema.Finite),
+  latestChapter: Schema.NullOr(Schema.Finite),
   latestDate: Schema.NullOr(Schema.String),
-  percent: Schema.NullOr(Schema.Number),
+  percent: Schema.NullOr(Schema.Finite),
 });
 export type MangaDexEntryStat = Schema.Schema.Type<typeof MangaDexEntryStat>;

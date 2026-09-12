@@ -35,7 +35,14 @@ export const groupOutboxForDrain = <R extends OutboxRowLike>(rows: readonly R[])
   const invalid: R[] = [];
 
   for (const row of rows) {
-    const result = Schema.decodeUnknownOption(SyncReadPayloadSchema)(JSON.parse(row.payload));
+    let raw: unknown;
+    try {
+      raw = JSON.parse(row.payload);
+    } catch {
+      invalid.push(row);
+      continue;
+    }
+    const result = Schema.decodeUnknownOption(SyncReadPayloadSchema)(raw);
     if (Option.isNone(result)) {
       invalid.push(row);
       continue;

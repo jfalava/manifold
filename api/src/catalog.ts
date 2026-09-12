@@ -1,3 +1,6 @@
+/** Cloudflare Worker / Hono entry: handlers are async by platform contract. */
+/** @effect-diagnostics asyncFunction:off */
+import { DateTime } from "effect";
 import { Hono } from "hono";
 import { catalog as trackerCatalog } from "@manifold/tracker/catalog";
 import type { Env } from "./types";
@@ -9,7 +12,7 @@ const extensions = [trackerCatalog] as const;
 const byId = (id: string) => extensions.find((entry) => entry.id === id);
 
 const versioningBody = () => ({
-  buildTime: new Date().toISOString(),
+  buildTime: DateTime.formatIso(DateTime.nowUnsafe()),
   builtWith: {
     toolchain: "1.0.0-alpha.91",
     types: "1.0.0-alpha.92",

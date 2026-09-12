@@ -1,3 +1,10 @@
+/** Admin server/route host (TanStack Start + React). */
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics newPromise:off */
+/** @effect-diagnostics globalTimers:off */
 import { Badge, Banner, Button, Dialog, Input, Surface, Table, Text } from "@cloudflare/kumo";
 import { XIcon } from "@phosphor-icons/react";
 import { createFileRoute, Link } from "@tanstack/react-router";

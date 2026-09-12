@@ -173,7 +173,7 @@ export interface MangaDexClient {
     mangaId: MangaDexMangaId,
     status: MangaDexReadingStatus | null,
   ) => Effect.Effect<void, MangaDexSourceError>;
-  readonly currentUser: () => Effect.Effect<
+  readonly currentUser: Effect.Effect<
     { readonly id: string; readonly name?: string },
     MangaDexSourceError
   >;
@@ -209,6 +209,8 @@ export interface MangaDexClientOptions {
   readonly userAgent?: string;
 }
 
+// Injected by createMangaDexClient; default uses platform fetch at the edge.
+// @effect-diagnostics-next-line globalFetch:off
 const defaultFetcher: MangaDexFetcher = (input, init) => fetch(input, init);
 
 const asObject = (value: JsonValue | undefined): JsonObject | undefined =>
@@ -359,12 +361,6 @@ const errorFrom = (cause: unknown, status?: number): MangaDexSourceError => ({
 const isSourceError = (value: unknown): value is MangaDexSourceError =>
   isJsonObject(value) && value._tag === "MangaDexSourceError" && isString(value.message);
 
-const withSourceError = <A>(action: () => Promise<A>): Effect.Effect<A, MangaDexSourceError> =>
-  Effect.tryPromise({
-    try: action,
-    catch: (cause) => (isSourceError(cause) ? cause : errorFrom(cause)),
-  });
-
 const normalizedLimit = (value: number | undefined, max = 100): number => {
   if (value === undefined || !Number.isFinite(value)) {
     return Math.min(100, max);
@@ -379,12 +375,7 @@ const queryPath = (path: string, params: readonly (readonly [string, string])[])
   return query ? `${path}?${query}` : path;
 };
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
-const parseChaptersPage = async (
-  jsonPromise: Promise<JsonObject>,
-): Promise<{ chapters: readonly MangaDexChapter[]; total: number | undefined }> => {
-  const body = await jsonPromise;
+const parseChaptersBody = (body: JsonObject) => {
   const data = isJsonArray(body.data) ? body.data : [];
   const chapters = data.flatMap((item) => {
     const chapter = chapterFromResource(item);
@@ -414,64 +405,81 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
     return retryDelayMs * 2 ** (attempt - 1);
   };
 
-  const request = async (
+  const request = (
     path: string,
     method = "GET",
     body?: JsonValue,
     attempt = 1,
-  ): Promise<Response> => {
-    // Accumulator: start empty so known literals are not widened into Record.
-    const headers: Record<string, string> = {};
-    headers.accept = "application/json";
-    headers["user-agent"] = options.userAgent ?? MANGADEX_USER_AGENT;
-    if (options.accessToken) {
-      headers.authorization = `Bearer ${options.accessToken}`;
-    }
-    if (body !== undefined) {
-      headers["content-type"] = "application/json";
-    }
-    let response: Response;
-    try {
-      response = await fetcher(`${endpoint}${path}`, {
-        method,
-        headers,
-        ...(!(body === undefined) && { body: JSON.stringify(body) }),
+  ): Effect.Effect<Response, MangaDexSourceError> =>
+    Effect.gen(function* () {
+      const headers: Record<string, string> = {};
+      headers.accept = "application/json";
+      headers["user-agent"] = options.userAgent ?? MANGADEX_USER_AGENT;
+      if (options.accessToken) {
+        headers.authorization = `Bearer ${options.accessToken}`;
+      }
+      if (body !== undefined) {
+        headers["content-type"] = "application/json";
+      }
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          fetcher(`${endpoint}${path}`, {
+            method,
+            headers,
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            ...(!(body === undefined) && { body: JSON.stringify(body) }),
+          }),
+        catch: (cause) => errorFrom(cause),
+      }).pipe(
+        Effect.catch((cause) => {
+          if (attempt < maxAttempts) {
+            return Effect.sleep(`${retryWaitMs(undefined, attempt)} millis`).pipe(
+              Effect.flatMap(() => request(path, method, body, attempt + 1)),
+            );
+          }
+          return Effect.fail(cause);
+        }),
+      );
+      if (!response.ok) {
+        if ((response.status === 429 || response.status >= 500) && attempt < maxAttempts) {
+          yield* Effect.sleep(`${retryWaitMs(response, attempt)} millis`);
+          return yield* request(path, method, body, attempt + 1);
+        }
+        const detail = yield* Effect.tryPromise({
+          try: () => response.text(),
+          catch: () => errorFrom("failed to read error body"),
+        }).pipe(Effect.orElseSucceed(() => ""));
+        return yield* Effect.fail({
+          _tag: "MangaDexSourceError",
+          message:
+            `MangaDex returned HTTP ${response.status}` +
+            (detail ? `: ${detail.slice(0, 300)}` : ""),
+          status: response.status,
+        } satisfies MangaDexSourceError);
+      }
+      return response;
+    });
+
+  const requestJson = (path: string): Effect.Effect<JsonObject, MangaDexSourceError> =>
+    Effect.gen(function* () {
+      const response = yield* request(path);
+      const body: unknown = yield* Effect.tryPromise({
+        try: () => response.json(),
+        catch: (cause) => errorFrom(cause),
       });
-    } catch (cause) {
-      if (attempt < maxAttempts) {
-        await sleep(retryWaitMs(undefined, attempt));
-        return request(path, method, body, attempt + 1);
+      if (!isJsonObject(body)) {
+        return yield* Effect.fail(errorFrom("MangaDex returned a non-object JSON body"));
       }
-      throw errorFrom(cause);
-    }
-    if (!response.ok) {
-      if ((response.status === 429 || response.status >= 500) && attempt < maxAttempts) {
-        await sleep(retryWaitMs(response, attempt));
-        return request(path, method, body, attempt + 1);
-      }
-      const detail = await response.text().catch(() => "");
-      throw {
-        _tag: "MangaDexSourceError",
-        message:
-          `MangaDex returned HTTP ${response.status}` + (detail ? `: ${detail.slice(0, 300)}` : ""),
-        status: response.status,
-      } satisfies MangaDexSourceError;
-    }
-    return response;
-  };
+      return body;
+    });
 
-  const requestJson = async (path: string): Promise<JsonObject> => {
-    const body: unknown = await (await request(path)).json();
-    if (!isJsonObject(body)) {
-      throw errorFrom("MangaDex returned a non-object JSON body");
-    }
-    return body;
-  };
-
-  const getChaptersPage = async (
+  const getChaptersPage = (
     mangaId: string,
     offset: number,
-  ): Promise<{ chapters: readonly MangaDexChapter[]; total: number | undefined }> => {
+  ): Effect.Effect<
+    { chapters: readonly MangaDexChapter[]; total: number | undefined },
+    MangaDexSourceError
+  > => {
     const params: Array<readonly [string, string]> = [
       ["limit", String(limit)],
       ["offset", String(offset)],
@@ -480,13 +488,13 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
       ["manga", mangaId],
       ...languages.map((language) => ["translatedLanguage[]", language] as const),
     ];
-    return parseChaptersPage(requestJson(queryPath("/chapter", params)));
+    return requestJson(queryPath("/chapter", params)).pipe(Effect.map(parseChaptersBody));
   };
 
-  const chapterFeedPage = async (
+  const chapterFeedPage = (
     path: string,
     feedOptions: MangaDexChapterFeedOptions,
-  ): Promise<MangaDexPaged<MangaDexChapter>> => {
+  ): Effect.Effect<MangaDexPaged<MangaDexChapter>, MangaDexSourceError> => {
     // The followed-manga feed allows up to 500 per page.
     const pageLimit = normalizedLimit(feedOptions.limit, 500);
     const params: Array<readonly [string, string]> = [
@@ -505,21 +513,25 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         (language) => ["translatedLanguage[]", language] as const,
       ),
     ];
-    const page = await parseChaptersPage(requestJson(queryPath(path, params)));
-    return { items: page.chapters, total: page.total };
+    return requestJson(queryPath(path, params)).pipe(
+      Effect.map((body) => {
+        const page = parseChaptersBody(body);
+        return { items: page.chapters, total: page.total };
+      }),
+    );
   };
 
   return {
     search: (query) =>
-      withSourceError(async () => {
+      Effect.gen(function* () {
         const normalized = query.trim();
         if (!normalized) {
-          throw errorFrom("MangaDex search query cannot be empty");
+          return yield* Effect.fail(errorFrom("MangaDex search query cannot be empty"));
         }
         // MangaDex defaults title search to safe+suggestive and silently
         // hides erotica/pornographic entries — which are exactly the ones
         // this private stack tracks. Ask for everything.
-        const body = await requestJson(
+        const body = yield* requestJson(
           queryPath("/manga", [
             ["title", normalized],
             ["limit", String(limit)],
@@ -534,7 +546,7 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         });
       }),
     listManga: (listOptions) =>
-      withSourceError(async () => {
+      Effect.gen(function* () {
         const pageLimit = normalizedLimit(listOptions.limit);
         const params: Array<readonly [string, string]> = [
           ["limit", String(pageLimit)],
@@ -550,15 +562,11 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
           ...(listOptions.createdAtSince
             ? ([["createdAtSince", listOptions.createdAtSince]] as const)
             : []),
-          // The API silently defaults to safe+suggestive and hides adult
-          // titles even for ids[] lookups — always ask explicitly. Default
-          // to the full rating set so callers never get invisible “untitled”
-          // rows (the admin library hit this for erotica/pornographic titles).
           ...(listOptions.contentRating ?? MANGADEX_CONTENT_RATINGS).map(
             (rating) => ["contentRating[]", rating] as const,
           ),
         ];
-        const body = await requestJson(queryPath("/manga", params));
+        const body = yield* requestJson(queryPath("/manga", params));
         const data = isJsonArray(body.data) ? body.data : [];
         const items = data.flatMap((item) => {
           const manga = mangaFromResource(item);
@@ -567,22 +575,22 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         return { items, total: numberValue(body.total) };
       }),
     getManga: (mangaId) =>
-      withSourceError(async () => {
+      Effect.gen(function* () {
         const path = queryPath(`/manga/${encodeURIComponent(mangaId)}`, [
           ["includes[]", "cover_art"],
         ]);
-        const body = await requestJson(path);
+        const body = yield* requestJson(path);
         const manga = mangaFromResource(body.data);
         if (!manga) {
-          throw errorFrom(`MangaDex manga not found: ${mangaId}`, 404);
+          return yield* Effect.fail(errorFrom(`MangaDex manga not found: ${mangaId}`, 404));
         }
         return manga;
       }),
     getChapters: (mangaId) =>
-      withSourceError(async () => {
+      Effect.gen(function* () {
         const all: MangaDexChapter[] = [];
         for (let offset = 0; ; offset += limit) {
-          const page = await getChaptersPage(mangaId, offset);
+          const page = yield* getChaptersPage(mangaId, offset);
           all.push(...page.chapters);
           if (
             page.chapters.length < limit ||
@@ -593,22 +601,18 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
           }
         }
       }),
-    latestChapters: (feedOptions) =>
-      withSourceError(() => chapterFeedPage("/chapter", feedOptions)),
-    followedFeed: (feedOptions) =>
-      withSourceError(() => chapterFeedPage("/user/follows/manga/feed", feedOptions)),
+    latestChapters: (feedOptions) => chapterFeedPage("/chapter", feedOptions),
+    followedFeed: (feedOptions) => chapterFeedPage("/user/follows/manga/feed", feedOptions),
     feedChapters: (mangaId, feedOptions = {}) =>
-      withSourceError(() =>
-        chapterFeedPage(`/manga/${encodeURIComponent(mangaId)}/feed`, feedOptions),
-      ),
+      chapterFeedPage(`/manga/${encodeURIComponent(mangaId)}/feed`, feedOptions),
     followedManga: (listOptions) =>
-      withSourceError(async () => {
+      Effect.gen(function* () {
         const pageLimit = normalizedLimit(listOptions?.limit);
         const params: Array<readonly [string, string]> = [
           ["limit", String(pageLimit)],
           ["offset", String(listOptions?.offset ?? 0)],
         ];
-        const body = await requestJson(queryPath("/user/follows/manga", params));
+        const body = yield* requestJson(queryPath("/user/follows/manga", params));
         const data = isJsonArray(body.data) ? body.data : [];
         const items = data.flatMap((item) => {
           const manga = mangaFromResource(item);
@@ -617,24 +621,24 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         return { items, total: numberValue(body.total) };
       }),
     latestChapterSince: (mangaId, publishedAtSince) =>
-      withSourceError(async () => {
+      Effect.gen(function* () {
         const path = queryPath(`/manga/${encodeURIComponent(mangaId)}/feed`, [
           ["limit", "1"],
           ["order[readableAt]", "desc"],
           ["publishAtSince", publishedAtSince],
           ...languages.map((language) => ["translatedLanguage[]", language] as const),
         ]);
-        const page = await parseChaptersPage(requestJson(path));
+        const page = parseChaptersBody(yield* requestJson(path));
         return page.chapters[0];
       }),
     getChapterDetails: (chapterId) =>
-      withSourceError(async () => {
-        const body = await requestJson(`/at-home/server/${encodeURIComponent(chapterId)}`);
+      Effect.gen(function* () {
+        const body = yield* requestJson(`/at-home/server/${encodeURIComponent(chapterId)}`);
         const chapter = asObject(body.chapter);
         const baseUrl = stringValue(body.baseUrl);
         const hash = stringValue(chapter?.hash);
         if (!baseUrl || !hash) {
-          throw errorFrom(`MangaDex page server returned no hash: ${chapterId}`);
+          return yield* Effect.fail(errorFrom(`MangaDex page server returned no hash: ${chapterId}`));
         }
         const filenames = chapter !== undefined && isJsonArray(chapter.data) ? chapter.data : [];
         const pages = filenames
@@ -644,21 +648,21 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         return { id: chapterId, mangaId, pages };
       }),
     markChaptersRead: (mangaId, chapterIds) =>
-      withSourceError(async () => {
+      Effect.gen(function* () {
         if (chapterIds.length === 0) {
           return;
         }
-        await request(`/manga/${encodeURIComponent(mangaId)}/read`, "POST", {
+        yield* request(`/manga/${encodeURIComponent(mangaId)}/read`, "POST", {
           chapterIdsRead: [...chapterIds],
         });
       }),
     readingStatuses: (statusOptions) =>
-      withSourceError(async () => {
+      Effect.gen(function* () {
         const path =
           statusOptions?.status === undefined
             ? "/manga/status"
             : queryPath("/manga/status", [["status", statusOptions.status]]);
-        const body = await requestJson(path);
+        const body = yield* requestJson(path);
         const statuses = asObject(body.statuses);
         const result: Record<string, MangaDexReadingStatus> = {};
         for (const [mangaId, status] of Object.entries(statuses ?? {})) {
@@ -676,28 +680,25 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         return result;
       }),
     updateReadingStatus: (mangaId, status) =>
-      withSourceError(async () => {
-        await request(`/manga/${encodeURIComponent(mangaId)}/status`, "POST", {
-          status: status ?? null,
-        });
-      }),
-    currentUser: () =>
-      withSourceError(async () => {
-        const body = await requestJson("/user/me");
-        const data = asObject(body.data);
-        const id = stringValue(data?.id);
-        if (!id) {
-          throw errorFrom("MangaDex returned no current user", 401);
-        }
-        const attributes = asObject(data?.attributes);
-        return {
-          id,
-          ...(stringValue(attributes?.username) && { name: stringValue(attributes?.username) }),
-        };
-      }),
+      request(`/manga/${encodeURIComponent(mangaId)}/status`, "POST", {
+        status: status ?? null,
+      }).pipe(Effect.asVoid),
+    currentUser: Effect.gen(function* () {
+      const body = yield* requestJson("/user/me");
+      const data = asObject(body.data);
+      const id = stringValue(data?.id);
+      if (!id) {
+        return yield* Effect.fail(errorFrom("MangaDex returned no current user", 401));
+      }
+      const attributes = asObject(data?.attributes);
+      return {
+        id,
+        ...(stringValue(attributes?.username) && { name: stringValue(attributes?.username) }),
+      };
+    }),
     readMarkers: (mangaId) =>
-      withSourceError(async () => {
-        const body = await requestJson(`/manga/${encodeURIComponent(mangaId)}/read`);
+      Effect.gen(function* () {
+        const body = yield* requestJson(`/manga/${encodeURIComponent(mangaId)}/read`);
         const chapters = body.data;
         return Array.isArray(chapters)
           ? chapters.flatMap((value) => {
@@ -707,18 +708,15 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
           : [];
       }),
     readMarkersBulk: (mangaIds) =>
-      withSourceError(async () => {
+      Effect.gen(function* () {
         const result: Record<string, string[]> = {};
-        // ids[] accepts at most 100 manga per request.
         for (let index = 0; index < mangaIds.length; index += 100) {
           const chunk = mangaIds.slice(index, index + 100);
           const path = queryPath("/manga/read", [
             ...chunk.map((id) => ["ids[]", id] as const),
             ["grouped", "true"],
           ]);
-          const body = await requestJson(path);
-          // grouped=true returns { [mangaId]: chapterIds }; an empty history
-          // degrades to the ungrouped array shape — treat as no markers.
+          const body = yield* requestJson(path);
           const grouped = asObject(body.data);
           for (const [mangaId, chapters] of Object.entries(grouped ?? {})) {
             result[mangaId] = Array.isArray(chapters)
@@ -732,12 +730,11 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         return result;
       }),
     getRatings: (mangaIds) =>
-      withSourceError(async () => {
+      Effect.gen(function* () {
         const result: Record<string, MangaDexRating> = {};
         if (mangaIds.length === 0) {
           return result;
         }
-        // MangaDex caps manga[] at 100 per request; response omits unrated keys.
         for (let index = 0; index < mangaIds.length; index += 100) {
           const chunk = mangaIds.slice(index, index + 100);
           if (chunk.length === 0) {
@@ -747,7 +744,7 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
             "/rating",
             chunk.map((id) => ["manga[]", id] as const),
           );
-          const body = await requestJson(path);
+          const body = yield* requestJson(path);
           const ratings = asObject(body.ratings);
           for (const [mangaId, value] of Object.entries(ratings ?? {})) {
             const entry = asObject(value);
@@ -756,7 +753,6 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
             if (rating === undefined || createdAt === undefined) {
               continue;
             }
-            // Clamp to valid range; upstream already validates 1..10.
             if (!Number.isFinite(rating) || rating < 1 || rating > 10) {
               continue;
             }
@@ -766,31 +762,22 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         return result;
       }),
     followManga: (mangaId) =>
-      withSourceError(async () => {
-        await request(`/manga/${encodeURIComponent(mangaId)}/follow`, "POST");
-      }),
+      request(`/manga/${encodeURIComponent(mangaId)}/follow`, "POST").pipe(Effect.asVoid),
     unfollowManga: (mangaId) =>
-      withSourceError(async () => {
-        try {
-          await request(`/manga/${encodeURIComponent(mangaId)}/follow`, "DELETE");
-        } catch (cause) {
-          if (isSourceError(cause) && cause.status === 404) {
-            return;
-          }
-          throw cause;
-        }
-      }),
+      request(`/manga/${encodeURIComponent(mangaId)}/follow`, "DELETE").pipe(
+        Effect.asVoid,
+        Effect.catchIf(
+          (cause): cause is MangaDexSourceError => isSourceError(cause) && cause.status === 404,
+          () => Effect.void,
+        ),
+      ),
     isFollowingManga: (mangaId) =>
-      withSourceError(async () => {
-        try {
-          await request(`/user/follows/manga/${encodeURIComponent(mangaId)}`);
-          return true;
-        } catch (cause) {
-          if (isSourceError(cause) && cause.status === 404) {
-            return false;
-          }
-          throw cause;
-        }
-      }),
+      request(`/user/follows/manga/${encodeURIComponent(mangaId)}`).pipe(
+        Effect.as(true),
+        Effect.catchIf(
+          (cause): cause is MangaDexSourceError => isSourceError(cause) && cause.status === 404,
+          () => Effect.succeed(false),
+        ),
+      ),
   };
 };

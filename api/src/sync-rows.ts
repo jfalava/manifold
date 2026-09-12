@@ -1,3 +1,4 @@
+import { epochMillisNow } from "./effect-host";
 import { isFiniteNumber, isJsonObject, type JsonObject } from "@manifold/json";
 import type {
   RegistryEntry,
@@ -207,7 +208,7 @@ export const toRegistryEntry = (
   row: EntryRow,
   providerRows: readonly ProviderRow[],
 ): RegistryEntry => {
-  const nowMs = Date.now();
+  const nowMs = epochMillisNow();
   const providers: ProviderLink[] = [];
   for (const link of providerRows) {
     if (!isRegistryProvider(link.provider)) {

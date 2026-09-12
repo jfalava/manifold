@@ -1,3 +1,8 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalTimers:off */
+/** @effect-diagnostics newPromise:off */
+/** @effect-diagnostics schemaSync:off */
 import { describe, expect, it } from "vitest";
 import { createPersonalApiClient, PersonalApiError, type PersonalApiResponse } from "../src/api";
 
@@ -103,10 +108,7 @@ describe("Paperback personal API client", () => {
       { token: "secret" },
     );
     await expect(client.searchCanonical("ab")).rejects.toEqual(
-      new PersonalApiError(
-        "AniList blocked; MyAnimeList search requires at least 3 characters",
-        502,
-      ),
+      new PersonalApiError({ message: "AniList blocked; MyAnimeList search requires at least 3 characters", status: 502 }),
     );
   });
 
@@ -122,7 +124,7 @@ describe("Paperback personal API client", () => {
 
     await expect(client.getEntry("anilist:1")).resolves.toBeUndefined();
     await expect(client.getEntry("anilist:1")).rejects.toEqual(
-      new PersonalApiError("upstream unavailable", 502),
+      new PersonalApiError({ message: "upstream unavailable", status: 502 }),
     );
   });
 
@@ -257,13 +259,10 @@ describe("Paperback personal API client", () => {
     );
 
     await expect(client.mangaDexLibrary()).rejects.toEqual(
-      new PersonalApiError("Personal API response failed schema decode (mangadex.library)", 502),
+      new PersonalApiError({ message: "Personal API response failed schema decode (mangadex.library)", status: 502 }),
     );
     await expect(client.resolveEntries([])).rejects.toEqual(
-      new PersonalApiError(
-        "Personal API response failed schema decode (canonical.resolveBatch)",
-        502,
-      ),
+      new PersonalApiError({ message: "Personal API response failed schema decode (canonical.resolveBatch)", status: 502 }),
     );
   });
 });

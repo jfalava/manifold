@@ -1,3 +1,8 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics processEnv:off */
+/** @effect-diagnostics schemaSync:off */
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 

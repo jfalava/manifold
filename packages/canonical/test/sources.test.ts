@@ -1,3 +1,6 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics schemaSync:off */
+/** @effect-diagnostics effectSucceedWithVoid:off */
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 import {

@@ -1,3 +1,7 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics schemaSync:off */
+/** @effect-diagnostics effectSucceedWithVoid:off */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AniListLibraryItem, PersonalApiClient } from "@manifold/paperback-runtime";

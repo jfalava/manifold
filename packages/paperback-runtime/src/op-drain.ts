@@ -1,3 +1,7 @@
+/** Paperback / device host callbacks are async by Application contract. */
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalDate:off */
 import { isFiniteNumber, isString } from "@manifold/json";
 import { ANILIST_SESSION_KEY, ANILIST_VIEWER_ID_KEY } from "./anilist-types.js";
 import { errorMessage } from "./errors.js";

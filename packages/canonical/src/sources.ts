@@ -1,3 +1,6 @@
+/** Provider HTTP sources; fetcher is injected (default platform fetch). */
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsole:off */
 import * as Effect from "effect/Effect";
 import {
   arrayField,
@@ -44,6 +47,7 @@ export interface MyAnimeListSourceOptions {
 /** Parsed JSON body from a canonical provider HTTP response. */
 export type CanonicalJson = JsonValue;
 
+// @effect-diagnostics-next-line globalFetch:off
 const defaultFetcher: CanonicalFetcher = (input, init) => fetch(input, init);
 
 const stringValue = (value: JsonValue | undefined): string | undefined =>
