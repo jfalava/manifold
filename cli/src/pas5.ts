@@ -1,6 +1,8 @@
 import { buildZip, readZipText } from "@/pas5-zip";
 import type { LibraryManga, MangaInfo, SourceManga } from "@/pas5-model";
 import { isJsonObject, isString, type JsonObject } from "@manifold/json";
+import { Effect } from "effect";
+import { runHost } from "@/effect-kit";
 
 export interface Pas5Entities {
   readonly __LIBRARY_MANGA_V5: Record<string, LibraryManga>;
@@ -86,13 +88,16 @@ export const filterPas5Providers = (
 };
 
 /** Parses a `.pas5` archive buffer into its entity records. */
-export const parsePas5 = async (buf: Buffer): Promise<Pas5Entities> => {
-  const files = readZipText(buf);
-  // SAFETY: value matches Pas5Entities at this call site
-  return Object.fromEntries(
-    Object.entries(files).map(([name, text]) => [name, JSON.parse(text)]),
-  ) as Pas5Entities;
-};
+const parsePas5Effect = (buf: Buffer): Effect.Effect<Pas5Entities> =>
+  Effect.sync(() => {
+    const files = readZipText(buf);
+    // SAFETY: value matches Pas5Entities at this call site
+    return Object.fromEntries(
+      Object.entries(files).map(([name, text]) => [name, JSON.parse(text)]),
+    ) as Pas5Entities;
+  });
+
+export const parsePas5 = (buf: Buffer): Promise<Pas5Entities> => runHost(parsePas5Effect(buf));
 
 /** Serializes entity-file name → JSON-text map into `.pas5` bytes. */
 export const buildPas5Zip = (files: Record<string, string>): Buffer => buildZip(files);

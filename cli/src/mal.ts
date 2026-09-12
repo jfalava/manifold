@@ -1,6 +1,15 @@
-import { Schema } from "effect";
+import { Schema, Effect } from "effect";
 import { manifoldUserAgent } from "@manifold/json";
-import { decodeJsonOrThrow, epochMillisNow, jsonFromResponse, newId, sleepPromise } from "@/effect-kit";
+import {
+  decodeJsonOrThrow,
+  epochMillisNow,
+  fromPromise,
+  jsonFromResponseEffect,
+  newId,
+  runHost,
+  sleep,
+  sleepPromise,
+} from "@/effect-kit";
 
 const API = "https://api.myanimelist.net/v2";
 const TOKEN_URL = "https://myanimelist.net/v1/oauth2/token";
@@ -48,8 +57,7 @@ export interface MalMangaUpdate {
 }
 
 export const createMalAuthorization = (clientId: string) => {
-  const verifier =
-    newId().replaceAll("-", "") + newId().replaceAll("-", "");
+  const verifier = newId().replaceAll("-", "") + newId().replaceAll("-", "");
   const state = newId();
   const url = new URL("https://myanimelist.net/v1/oauth2/authorize");
   url.search = new URLSearchParams({
@@ -63,44 +71,69 @@ export const createMalAuthorization = (clientId: string) => {
   return { url: url.href, verifier, state };
 };
 
-export const requestMalTokens = async (
+const requestMalTokensEffect = (
   clientId: string,
   clientSecret: string | undefined,
   grant: URLSearchParams,
   fetcher: typeof fetch = fetch,
-): Promise<MalSession> => {
-  grant.set("client_id", clientId);
-  if (clientSecret) {
-    grant.set("client_secret", clientSecret);
-  }
-  // Do not retry token exchange: a lost response may have rotated the refresh token.
-  const response = await fetcher(TOKEN_URL, {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      "user-agent": USER_AGENT,
-    },
-    body: grant,
-    signal: AbortSignal.timeout(30_000),
-    redirect: "error",
+): Effect.Effect<MalSession, Error> =>
+  Effect.gen(function* () {
+    grant.set("client_id", clientId);
+    if (clientSecret) {
+      grant.set("client_secret", clientSecret);
+    }
+    // Do not retry token exchange: a lost response may have rotated the refresh token.
+    const response = yield* fromPromise(() =>
+      fetcher(TOKEN_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          "user-agent": USER_AGENT,
+        },
+        body: grant,
+        signal: AbortSignal.timeout(30_000),
+        redirect: "error",
+      }),
+    ).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(`MAL token exchange failed: ${String(cause)}`),
+      ),
+    );
+    if (!response.ok) {
+      return yield* Effect.fail(
+        new Error(`MAL token exchange failed: HTTP ${response.status}. Run login mal again.`),
+      );
+    }
+    // Schema errors can include the received payload. Never expose token responses.
+    const bodyResult = yield* jsonFromResponseEffect(response, "mal.tokens").pipe(
+      Effect.map((body) => ({ ok: true as const, body })),
+      Effect.orElseSucceed(() => ({ ok: false as const, body: undefined })),
+    );
+    let tokens: Schema.Schema.Type<typeof Tokens>;
+    try {
+      if (!bodyResult.ok) {
+        throw new Error("invalid body");
+      }
+      tokens = decodeJsonOrThrow(Tokens, bodyResult.body, "mal.tokens");
+    } catch {
+      return yield* Effect.fail(
+        new Error("MAL returned an invalid token response. Run login mal again."),
+      );
+    }
+    return {
+      clientId,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: epochMillisNow() + tokens.expires_in * 1000,
+    };
   });
-  if (!response.ok) {
-    throw new Error(`MAL token exchange failed: HTTP ${response.status}. Run login mal again.`);
-  }
-  // Schema errors can include the received payload. Never expose token responses.
-  let tokens: Schema.Schema.Type<typeof Tokens>;
-  try {
-    tokens = decodeJsonOrThrow(Tokens, await jsonFromResponse(response, "mal.tokens"), "mal.tokens");
-  } catch {
-    throw new Error("MAL returned an invalid token response. Run login mal again.");
-  }
-  return {
-    clientId,
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token,
-    expiresAt: epochMillisNow() + tokens.expires_in * 1000,
-  };
-};
+
+export const requestMalTokens = (
+  clientId: string,
+  clientSecret: string | undefined,
+  grant: URLSearchParams,
+  fetcher: typeof fetch = fetch,
+): Promise<MalSession> => runHost(requestMalTokensEffect(clientId, clientSecret, grant, fetcher));
 
 /** One instance is used sequentially by each CLI operation. */
 export const createMalClient = (options: {
@@ -112,104 +145,148 @@ export const createMalClient = (options: {
   readonly sleep?: (ms: number) => Promise<void>;
 }) => {
   const fetcher = options.fetcher ?? fetch;
-  const sleep =
-    options.sleep ?? sleepPromise;
+  // Injected Promise sleep is for tests; default still uses Effect sleep via sleepPromise.
+  const sleepFn = options.sleep ?? sleepPromise;
   let session = options.session;
   let token = options.accessToken ?? session?.accessToken;
   let requested = false;
 
-  const refresh = async (): Promise<void> => {
-    if (options.accessToken || !session?.refreshToken) {
-      throw new Error("MAL token expired. Run login mal or replace MANIFOLD_MAL_TOKEN.");
-    }
-    const next = await requestMalTokens(
-      session.clientId,
-      options.clientSecret,
-      new URLSearchParams({ grant_type: "refresh_token", refresh_token: session.refreshToken }),
-      fetcher,
-    );
-    session = { ...next, refreshToken: next.refreshToken ?? session.refreshToken };
-    token = session.accessToken;
-    await options.saveSession?.(session);
-  };
+  const refreshEffect = (): Effect.Effect<void, Error> =>
+    Effect.gen(function* () {
+      if (options.accessToken || !session?.refreshToken) {
+        return yield* Effect.fail(
+          new Error("MAL token expired. Run login mal or replace MANIFOLD_MAL_TOKEN."),
+        );
+      }
+      const next = yield* requestMalTokensEffect(
+        session.clientId,
+        options.clientSecret,
+        new URLSearchParams({ grant_type: "refresh_token", refresh_token: session.refreshToken }),
+        fetcher,
+      );
+      session = { ...next, refreshToken: next.refreshToken ?? session.refreshToken };
+      token = session.accessToken;
+      if (options.saveSession) {
+        yield* fromPromise(() => options.saveSession!(session!)).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof Error ? cause : new Error(`MAL session save failed: ${String(cause)}`),
+          ),
+        );
+      }
+    });
 
-  const request = async (
+  const requestEffect = (
     path: string,
     method = "GET",
     body?: URLSearchParams,
-  ): Promise<Response> => {
-    if (!token) {
-      throw new Error("MAL token missing. Run login mal or set MANIFOLD_MAL_TOKEN.");
-    }
-    if (!options.accessToken && session && session.expiresAt <= epochMillisNow() + 60_000) {
-      await refresh();
-    }
-    let refreshed = false;
-    for (let attempt = 0; ; attempt += 1) {
-      if (requested) {
-        await sleep(1500);
-      }
-      requested = true;
-      const response = await fetcher(`${API}${path}`, {
-        method,
-        headers: {
-          authorization: `Bearer ${token}`,
-          accept: "application/json",
-          "user-agent": USER_AGENT,
-          ...(body && { "content-type": "application/x-www-form-urlencoded" }),
-        },
-        ...(body && { body }),
-        signal: AbortSignal.timeout(30_000),
-        redirect: "error",
-      });
-      if (response.status === 401 && !refreshed && !options.accessToken && session?.refreshToken) {
-        await response.body?.cancel();
-        await refresh();
-        refreshed = true;
-        continue;
-      }
-      if ((response.status === 429 || response.status >= 500) && attempt < 3) {
-        const retryAfter = response.headers.get("retry-after");
-        const seconds = retryAfter === null ? NaN : Number(retryAfter);
-        const wait =
-          retryAfter === null
-            ? NaN
-            : Number.isFinite(seconds)
-              ? seconds * 1000
-              : Date.parse(retryAfter) - epochMillisNow();
-        await response.body?.cancel();
-        if (wait > 300_000) {
-          throw new Error("MAL requested a long retry delay. Stop and resume later.");
-        }
-        await sleep(Number.isFinite(wait) ? Math.max(1500, wait) : 5000 * 2 ** attempt);
-        continue;
-      }
-      if (!response.ok && !(method === "DELETE" && response.status === 404)) {
-        await response.body?.cancel();
-        throw new Error(
-          `MAL ${method} ${path}: HTTP ${response.status}. Stopped; rerun to resume.`,
+  ): Effect.Effect<Response, Error> =>
+    Effect.gen(function* () {
+      if (!token) {
+        return yield* Effect.fail(
+          new Error("MAL token missing. Run login mal or set MANIFOLD_MAL_TOKEN."),
         );
       }
-      return response;
-    }
-  };
+      if (!options.accessToken && session && session.expiresAt <= epochMillisNow() + 60_000) {
+        yield* refreshEffect();
+      }
+      let refreshed = false;
+      for (let attempt = 0; ; attempt += 1) {
+        if (requested) {
+          // Prefer injected sleep (tests) when provided; else Effect sleep.
+          if (options.sleep) {
+            yield* fromPromise(() => sleepFn(1500)).pipe(Effect.orDie);
+          } else {
+            yield* sleep(1500);
+          }
+        }
+        requested = true;
+        const response = yield* fromPromise(() =>
+          fetcher(`${API}${path}`, {
+            method,
+            headers: {
+              authorization: `Bearer ${token}`,
+              accept: "application/json",
+              "user-agent": USER_AGENT,
+              ...(body && { "content-type": "application/x-www-form-urlencoded" }),
+            },
+            ...(body && { body }),
+            signal: AbortSignal.timeout(30_000),
+            redirect: "error",
+          }),
+        ).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof Error ? cause : new Error(`MAL request failed: ${String(cause)}`),
+          ),
+        );
+        if (
+          response.status === 401 &&
+          !refreshed &&
+          !options.accessToken &&
+          session?.refreshToken
+        ) {
+          yield* fromPromise(() => response.body?.cancel() ?? Promise.resolve()).pipe(Effect.orDie);
+          yield* refreshEffect();
+          refreshed = true;
+          continue;
+        }
+        if ((response.status === 429 || response.status >= 500) && attempt < 3) {
+          const retryAfter = response.headers.get("retry-after");
+          const seconds = retryAfter === null ? NaN : Number(retryAfter);
+          const wait =
+            retryAfter === null
+              ? NaN
+              : Number.isFinite(seconds)
+                ? seconds * 1000
+                : Date.parse(retryAfter) - epochMillisNow();
+          yield* fromPromise(() => response.body?.cancel() ?? Promise.resolve()).pipe(Effect.orDie);
+          if (wait > 300_000) {
+            return yield* Effect.fail(
+              new Error("MAL requested a long retry delay. Stop and resume later."),
+            );
+          }
+          const delayMs = Number.isFinite(wait) ? Math.max(1500, wait) : 5000 * 2 ** attempt;
+          if (options.sleep) {
+            yield* fromPromise(() => sleepFn(delayMs)).pipe(Effect.orDie);
+          } else {
+            yield* sleep(delayMs);
+          }
+          continue;
+        }
+        if (!response.ok && !(method === "DELETE" && response.status === 404)) {
+          yield* fromPromise(() => response.body?.cancel() ?? Promise.resolve()).pipe(Effect.orDie);
+          return yield* Effect.fail(
+            new Error(`MAL ${method} ${path}: HTTP ${response.status}. Stopped; rerun to resume.`),
+          );
+        }
+        return response;
+      }
+    });
 
-  return {
-    profile: async () =>
-      decodeJsonOrThrow(Profile, (await (await request("/users/@me")).json()), "mal.profile"),
-    manga: async (): Promise<MalManga[]> => {
+  const profileEffect = (): Effect.Effect<Schema.Schema.Type<typeof Profile>, Error> =>
+    Effect.gen(function* () {
+      const response = yield* requestEffect("/users/@me");
+      const body = yield* jsonFromResponseEffect(response, "mal.profile");
+      return decodeJsonOrThrow(Profile, body, "mal.profile");
+    });
+
+  const mangaEffect = (): Effect.Effect<MalManga[], Error> =>
+    Effect.gen(function* () {
       const entries = new Map<number, MalManga>();
       const visited = new Set<string>();
       let path: string | undefined = "/users/@me/mangalist?limit=1000&nsfw=true";
       while (path) {
         if (visited.has(path)) {
-          throw new Error("MAL pagination repeated a page; refusing an incomplete scan.");
+          return yield* Effect.fail(
+            new Error("MAL pagination repeated a page; refusing an incomplete scan."),
+          );
         }
         visited.add(path);
-        const page = decodeJsonOrThrow(MangaPage, (await (await request(path)).json()), "decode");
+        const response = yield* requestEffect(path);
+        const body = yield* jsonFromResponseEffect(response, "mal.manga");
+        const page = decodeJsonOrThrow(MangaPage, body, "decode");
         for (const { node } of page.data) {
           if (node.id <= 0) {
-            throw new Error("MAL returned an invalid manga ID.");
+            return yield* Effect.fail(new Error("MAL returned an invalid manga ID."));
           }
           entries.set(node.id, node);
         }
@@ -220,24 +297,30 @@ export const createMalClient = (options: {
             next.origin !== "https://api.myanimelist.net" ||
             next.pathname !== "/v2/users/@me/mangalist"
           ) {
-            throw new Error("Unexpected MAL pagination URL; refusing to forward credentials.");
+            return yield* Effect.fail(
+              new Error("Unexpected MAL pagination URL; refusing to forward credentials."),
+            );
           }
           next.searchParams.set("nsfw", "true");
           path = next.pathname.slice(3) + next.search;
         }
       }
       return [...entries.values()];
-    },
-    deleteManga: async (id: number): Promise<void> => {
+    });
+
+  const deleteMangaEffect = (id: number): Effect.Effect<void, Error> =>
+    Effect.gen(function* () {
       if (!Number.isSafeInteger(id) || id <= 0) {
-        throw new Error("Invalid MAL manga ID.");
+        return yield* Effect.fail(new Error("Invalid MAL manga ID."));
       }
-      const response = await request(`/manga/${id}/my_list_status`, "DELETE");
-      await response.body?.cancel();
-    },
-    updateManga: async (id: number, values: MalMangaUpdate): Promise<void> => {
+      const response = yield* requestEffect(`/manga/${id}/my_list_status`, "DELETE");
+      yield* fromPromise(() => response.body?.cancel() ?? Promise.resolve()).pipe(Effect.orDie);
+    });
+
+  const updateMangaEffect = (id: number, values: MalMangaUpdate): Effect.Effect<void, Error> =>
+    Effect.gen(function* () {
       if (!Number.isSafeInteger(id) || id <= 0) {
-        throw new Error("Invalid MAL manga ID.");
+        return yield* Effect.fail(new Error("Invalid MAL manga ID."));
       }
       const body = new URLSearchParams();
       for (const [key, value] of Object.entries(values)) {
@@ -246,50 +329,82 @@ export const createMalClient = (options: {
         }
       }
       if (body.size === 0) {
-        throw new Error("MAL manga update needs at least one field.");
+        return yield* Effect.fail(new Error("MAL manga update needs at least one field."));
       }
-      const response = await request(`/manga/${id}/my_list_status`, "PATCH", body);
-      await response.body?.cancel();
-    },
+      const response = yield* requestEffect(`/manga/${id}/my_list_status`, "PATCH", body);
+      yield* fromPromise(() => response.body?.cancel() ?? Promise.resolve()).pipe(Effect.orDie);
+    });
+
+  return {
+    profile: (): Promise<Schema.Schema.Type<typeof Profile>> => runHost(profileEffect()),
+    manga: (): Promise<MalManga[]> => runHost(mangaEffect()),
+    deleteManga: (id: number): Promise<void> => runHost(deleteMangaEffect(id)),
+    updateManga: (id: number, values: MalMangaUpdate): Promise<void> =>
+      runHost(updateMangaEffect(id, values)),
   };
 };
 
 export type MalClient = ReturnType<typeof createMalClient>;
 
 /** Scan first, then delete. Rerunning scans only survivors, so no checkpoint file is needed. */
-export const wipeMalManga = async (options: {
+const wipeMalMangaEffect = (options: {
   readonly client: MalClient;
   readonly apply: boolean;
   readonly scanned: (account: string, entries: readonly MalManga[]) => void;
   readonly progress: (deleted: number, total: number) => void;
-}) => {
-  const profile = await options.client.profile();
-  const entries = await options.client.manga();
-  const summary = {
-    account: profile.name,
-    accountId: profile.id,
-    scanned: entries.length,
-    deleted: 0,
-  };
-  options.scanned(profile.name, entries);
-  if (!options.apply || entries.length === 0) {
-    return summary;
-  }
-  options.progress(0, entries.length);
-  // A refresh must not silently switch the account between scan and deletion.
-  if ((await options.client.profile()).id !== profile.id) {
-    throw new Error("MAL account changed; refusing deletion.");
-  }
-  for (const entry of entries) {
-    await options.client.deleteManga(entry.id);
-    summary.deleted += 1;
-    options.progress(summary.deleted, entries.length);
-  }
-  const remaining = await options.client.manga();
-  if (remaining.length) {
-    throw new Error(
-      `MAL wipe incomplete: ${remaining.length} manga remain (${remaining.map((entry) => entry.id).join(", ")}). Check other writers and rerun.`,
+}): Effect.Effect<
+  { account: string; accountId: number; scanned: number; deleted: number },
+  Error
+> =>
+  Effect.gen(function* () {
+    const profile = yield* fromPromise(() => options.client.profile()).pipe(
+      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
     );
-  }
-  return summary;
-};
+    const entries = yield* fromPromise(() => options.client.manga()).pipe(
+      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
+    );
+    const summary = {
+      account: profile.name,
+      accountId: profile.id,
+      scanned: entries.length,
+      deleted: 0,
+    };
+    options.scanned(profile.name, entries);
+    if (!options.apply || entries.length === 0) {
+      return summary;
+    }
+    options.progress(0, entries.length);
+    // A refresh must not silently switch the account between scan and deletion.
+    const verify = yield* fromPromise(() => options.client.profile()).pipe(
+      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
+    );
+    if (verify.id !== profile.id) {
+      return yield* Effect.fail(new Error("MAL account changed; refusing deletion."));
+    }
+    for (const entry of entries) {
+      yield* fromPromise(() => options.client.deleteManga(entry.id)).pipe(
+        Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
+      );
+      summary.deleted += 1;
+      options.progress(summary.deleted, entries.length);
+    }
+    const remaining = yield* fromPromise(() => options.client.manga()).pipe(
+      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
+    );
+    if (remaining.length) {
+      return yield* Effect.fail(
+        new Error(
+          `MAL wipe incomplete: ${remaining.length} manga remain (${remaining.map((entry) => entry.id).join(", ")}). Check other writers and rerun.`,
+        ),
+      );
+    }
+    return summary;
+  });
+
+export const wipeMalManga = (options: {
+  readonly client: MalClient;
+  readonly apply: boolean;
+  readonly scanned: (account: string, entries: readonly MalManga[]) => void;
+  readonly progress: (deleted: number, total: number) => void;
+}): Promise<{ account: string; accountId: number; scanned: number; deleted: number }> =>
+  runHost(wipeMalMangaEffect(options));

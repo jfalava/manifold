@@ -3,6 +3,7 @@ import { fetchAniListTitles } from "./anilist";
 import { uniqueTitles } from "./comix-match";
 import { manifoldUserAgent } from "@manifold/json";
 import { createMangaDexClient } from "@manifold/mangadex";
+import { fromPromise, runHost } from "@/effect-kit";
 
 export const MAX_COMIX_SEARCH_TERMS = 3;
 
@@ -22,7 +23,7 @@ export const providerIdOf = (
  * row already has a mangadex link and AniList did not add a second name.
  * Used by both Comix (browse) and MangaDex (Worker resolve) prefills.
  */
-export const loadRegistrySearchTitles = async (
+const loadRegistrySearchTitlesEffect = (
   row: {
     readonly title: string;
     readonly providers: readonly { readonly provider: string; readonly externalId: string }[];
@@ -32,39 +33,59 @@ export const loadRegistrySearchTitles = async (
     readonly anilistTitles?: (token: string, mediaId: number) => Promise<readonly string[]>;
     readonly mangaDexTitles?: (id: string) => Promise<readonly string[]>;
   } = {},
-): Promise<readonly string[]> => {
-  const titles = [row.title];
-  const anilistId = providerIdOf(row, "anilist");
-  if (anilistId && options.anilistToken) {
-    const parsed = Number(anilistId);
-    if (Number.isInteger(parsed) && parsed > 0) {
-      try {
-        const loadAniList = options.anilistTitles ?? fetchAniListTitles;
-        titles.push(...(await loadAniList(options.anilistToken, parsed)));
-      } catch {
-        // keep the registry title if AniList is down
+): Effect.Effect<readonly string[]> =>
+  Effect.gen(function* () {
+    const titles = [row.title];
+    const anilistId = providerIdOf(row, "anilist");
+    if (anilistId && options.anilistToken) {
+      const parsed = Number(anilistId);
+      if (Number.isInteger(parsed) && parsed > 0) {
+        yield* fromPromise(() => {
+          const loadAniList = options.anilistTitles ?? fetchAniListTitles;
+          return loadAniList(options.anilistToken!, parsed);
+        }).pipe(
+          Effect.map((extra) => {
+            titles.push(...extra);
+          }),
+          Effect.catch(() => Effect.void),
+        );
       }
     }
-  }
-  const unique = uniqueTitles(titles);
-  if (unique.length >= 2) {
-    return unique;
-  }
-  const mangadexId = providerIdOf(row, "mangadex");
-  if (!mangadexId) {
-    return unique;
-  }
-  const loadMangaDex =
-    options.mangaDexTitles ??
-    (async (id: string) => {
-      const manga = await Effect.runPromise(
-        createMangaDexClient({ userAgent: manifoldUserAgent("cli") }).getManga(id),
-      );
-      return [manga.title, ...manga.altTitles];
-    });
-  try {
-    return uniqueTitles([...unique, ...(await loadMangaDex(mangadexId))]);
-  } catch {
-    return unique;
-  }
-};
+    const unique = uniqueTitles(titles);
+    if (unique.length >= 2) {
+      return unique;
+    }
+    const mangadexId = providerIdOf(row, "mangadex");
+    if (!mangadexId) {
+      return unique;
+    }
+    const loadMangaDex =
+      options.mangaDexTitles ??
+      ((id: string) =>
+        runHost(
+          Effect.gen(function* () {
+            const manga = yield* createMangaDexClient({
+              userAgent: manifoldUserAgent("cli"),
+            }).getManga(id);
+            return [manga.title, ...manga.altTitles] as const;
+          }).pipe(
+            Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
+          ),
+        ));
+    return yield* fromPromise(() => loadMangaDex(mangadexId)).pipe(
+      Effect.map((extra) => uniqueTitles([...unique, ...extra])),
+      Effect.catch(() => Effect.succeed(unique)),
+    );
+  });
+
+export const loadRegistrySearchTitles = (
+  row: {
+    readonly title: string;
+    readonly providers: readonly { readonly provider: string; readonly externalId: string }[];
+  },
+  options: {
+    readonly anilistToken?: string;
+    readonly anilistTitles?: (token: string, mediaId: number) => Promise<readonly string[]>;
+    readonly mangaDexTitles?: (id: string) => Promise<readonly string[]>;
+  } = {},
+): Promise<readonly string[]> => runHost(loadRegistrySearchTitlesEffect(row, options));

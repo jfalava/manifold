@@ -7,9 +7,10 @@ import {
   objectField,
   stringField,
 } from "@manifold/json";
+import { Effect } from "effect";
 
 import type { PhaseReporter } from "@/ui";
-import { platformFetch, sleepPromise } from "@/effect-kit";
+import { fromPromise, jsonFromResponseEffect, platformFetch, runHost, sleep } from "@/effect-kit";
 
 const USER_AGENT = manifoldUserAgent("cli");
 
@@ -22,8 +23,6 @@ const USER_AGENT = manifoldUserAgent("cli");
  */
 
 const API_URL = "https://graphql.anilist.co";
-
-const sleep = sleepPromise;
 
 // Bulk deletes hit AniList rate limits routinely: entries and activities share
 // one 429-aware POST path with a bounded retry loop (no unbounded recursion).
@@ -48,28 +47,35 @@ export interface GraphQLVariables {
   readonly [key: string]: string | number | boolean | null | undefined;
 }
 
-const postGraphQL = async (
+const postGraphQLEffect = (
   token: string,
   query: string,
   variables: GraphQLVariables,
-): Promise<Response> => {
-  for (let attempt = 0; ; attempt += 1) {
-    const response = await platformFetch(API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "user-agent": USER_AGENT,
-      },
-      body: JSON.stringify({ query, variables }),
-    });
-    if (response.status !== 429 || attempt >= DELETE_429_MAX_RETRIES) {
-      return response;
+): Effect.Effect<Response, Error> =>
+  Effect.gen(function* () {
+    for (let attempt = 0; ; attempt += 1) {
+      const response = yield* fromPromise(() =>
+        platformFetch(API_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            "user-agent": USER_AGENT,
+          },
+          body: JSON.stringify({ query, variables }),
+        }),
+      ).pipe(
+        Effect.mapError((cause) =>
+          cause instanceof Error ? cause : new Error(`AniList wipe POST failed: ${String(cause)}`),
+        ),
+      );
+      if (response.status !== 429 || attempt >= DELETE_429_MAX_RETRIES) {
+        return response;
+      }
+      yield* sleep(retryAfterMs(response));
     }
-    await sleep(retryAfterMs(response));
-  }
-};
+  });
 
 export interface WipeListEntry {
   /** MediaListEntry id — the deletion target. */
@@ -78,125 +84,152 @@ export interface WipeListEntry {
   title: string;
 }
 
-export const fetchViewer = async (token: string): Promise<{ id: number; name: string }> => {
-  const response = await platformFetch(API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      "user-agent": USER_AGENT,
-    },
-    body: JSON.stringify({ query: `query { Viewer { id name } }` }),
+const fetchViewerEffect = (token: string): Effect.Effect<{ id: number; name: string }, Error> =>
+  Effect.gen(function* () {
+    const response = yield* fromPromise(() =>
+      platformFetch(API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "user-agent": USER_AGENT,
+        },
+        body: JSON.stringify({ query: `query { Viewer { id name } }` }),
+      }),
+    ).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(`Viewer query failed: ${String(cause)}`),
+      ),
+    );
+    if (!response.ok) {
+      return yield* Effect.fail(new Error(`Viewer query failed: HTTP ${response.status}`));
+    }
+    const raw = yield* jsonFromResponseEffect(response, "anilist.viewer");
+    // SAFETY: boundary cast through unknown to expected Viewer envelope
+    const data = raw as {
+      data?: { Viewer?: { id: number; name: string } };
+      errors?: unknown[];
+    };
+    if (!data.data?.Viewer) {
+      return yield* Effect.fail(new Error("AniList returned no Viewer"));
+    }
+    return data.data.Viewer;
   });
-  if (!response.ok) {
-    throw new Error(`Viewer query failed: HTTP ${response.status}`);
-  }
-  // SAFETY: test/double or boundary cast through unknown to { data?: { Viewer?: { id: number; name: string } }; errors?: unknown[]; };
-  const data = (await response.json()) as {
-    data?: { Viewer?: { id: number; name: string } };
-    errors?: unknown[];
-  };
-  if (!data.data?.Viewer) {
-    throw new Error("AniList returned no Viewer");
-  }
-  return data.data.Viewer;
-};
 
-export const fetchMangaEntries = async (
+export const fetchViewer = (token: string): Promise<{ id: number; name: string }> =>
+  runHost(fetchViewerEffect(token));
+
+const fetchMangaEntriesEffect = (
   token: string,
   userId: number,
-): Promise<WipeListEntry[]> => {
-  const response = await platformFetch(API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      "user-agent": USER_AGENT,
-    },
-    body: JSON.stringify({
-      query: `query ($userId: Int) {
+): Effect.Effect<WipeListEntry[], Error> =>
+  Effect.gen(function* () {
+    const response = yield* fromPromise(() =>
+      platformFetch(API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "user-agent": USER_AGENT,
+        },
+        body: JSON.stringify({
+          query: `query ($userId: Int) {
         MediaListCollection(userId: $userId, type: MANGA) {
           lists { entries { id media { id title { romaji english } } } }
         }
       }`,
-      variables: { userId },
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`Manga list fetch failed: HTTP ${response.status}`);
-  }
-  // SAFETY: parsed JSON matches { data?: { MediaListCollection?: { lists?: Array<{ entries?: Array<{ id: number; for this trusted/test payload
-  const data = (await response.json()) as {
-    data?: {
-      MediaListCollection?: {
-        lists?: Array<{
-          entries?: Array<{
-            id: number;
-            media?: { id: number; title?: { romaji?: string | null; english?: string | null } };
+          variables: { userId },
+        }),
+      }),
+    ).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(`Manga list fetch failed: ${String(cause)}`),
+      ),
+    );
+    if (!response.ok) {
+      return yield* Effect.fail(new Error(`Manga list fetch failed: HTTP ${response.status}`));
+    }
+    const raw = yield* jsonFromResponseEffect(response, "anilist.manga-list");
+    // SAFETY: parsed JSON matches MediaListCollection envelope for this trusted/test payload
+    const data = raw as {
+      data?: {
+        MediaListCollection?: {
+          lists?: Array<{
+            entries?: Array<{
+              id: number;
+              media?: { id: number; title?: { romaji?: string | null; english?: string | null } };
+            }>;
           }>;
-        }>;
+        };
       };
     };
-  };
-  const lists = data.data?.MediaListCollection?.lists ?? [];
-  const seen = new Set<number>();
-  const entries: WipeListEntry[] = [];
-  for (const list of lists) {
-    for (const entry of list.entries ?? []) {
-      if (seen.has(entry.id)) {
-        continue;
+    const lists = data.data?.MediaListCollection?.lists ?? [];
+    const seen = new Set<number>();
+    const entries: WipeListEntry[] = [];
+    for (const list of lists) {
+      for (const entry of list.entries ?? []) {
+        if (seen.has(entry.id)) {
+          continue;
+        }
+        seen.add(entry.id);
+        entries.push({
+          id: entry.id,
+          mediaId: entry.media?.id ?? 0,
+          title: entry.media?.title?.english ?? entry.media?.title?.romaji ?? "Unknown",
+        });
       }
-      seen.add(entry.id);
-      entries.push({
-        id: entry.id,
-        mediaId: entry.media?.id ?? 0,
-        title: entry.media?.title?.english ?? entry.media?.title?.romaji ?? "Unknown",
-      });
     }
-  }
-  return entries;
-};
+    return entries;
+  });
 
-export const deleteEntry = async (token: string, entryId: number): Promise<boolean> => {
-  const response = await postGraphQL(
-    token,
-    `mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }`,
-    { id: entryId },
-  );
-  if (!response.ok) {
-    return false;
-  }
-  const deleted = await decodeDeletedEnvelope(response, "DeleteMediaListEntry");
-  return deleted === true;
-};
+export const fetchMangaEntries = (token: string, userId: number): Promise<WipeListEntry[]> =>
+  runHost(fetchMangaEntriesEffect(token, userId));
 
 /**
  * Decodes an AniList mutation envelope ({ data: { <field>: { deleted } } })
  * and returns the deleted flag, or undefined on GraphQL errors or a missing
  * flag. Callers treat anything but true as failure.
  */
-const decodeDeletedEnvelope = async (
+const decodeDeletedEnvelopeEffect = (
   response: Response,
   field: string,
-): Promise<boolean | undefined> => {
-  const payload: unknown = await response.json();
-  if (!isJsonObject(payload)) {
-    return undefined;
-  }
-  const errors = arrayField(payload, "errors");
-  if (errors !== undefined && errors.length > 0) {
-    return undefined;
-  }
-  const envelope = objectField(payload, "data");
-  const mutation = envelope === undefined ? undefined : objectField(envelope, field);
-  if (mutation === undefined) {
-    return undefined;
-  }
-  const deleted = mutation["deleted"];
-  return isBoolean(deleted) ? deleted : undefined;
-};
+): Effect.Effect<boolean | undefined, Error> =>
+  Effect.gen(function* () {
+    const payload = yield* jsonFromResponseEffect(response, "anilist.delete");
+    if (!isJsonObject(payload)) {
+      return undefined;
+    }
+    const errors = arrayField(payload, "errors");
+    if (errors !== undefined && errors.length > 0) {
+      return undefined;
+    }
+    const envelope = objectField(payload, "data");
+    const mutation = envelope === undefined ? undefined : objectField(envelope, field);
+    if (mutation === undefined) {
+      return undefined;
+    }
+    const deleted = mutation["deleted"];
+    return isBoolean(deleted) ? deleted : undefined;
+  });
+
+const deleteEntryEffect = (token: string, entryId: number): Effect.Effect<boolean, Error> =>
+  Effect.gen(function* () {
+    const response = yield* postGraphQLEffect(
+      token,
+      `mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }`,
+      { id: entryId },
+    );
+    if (!response.ok) {
+      return false;
+    }
+    const deleted = yield* decodeDeletedEnvelopeEffect(response, "DeleteMediaListEntry");
+    return deleted === true;
+  });
+
+export const deleteEntry = (token: string, entryId: number): Promise<boolean> =>
+  runHost(deleteEntryEffect(token, entryId));
 
 // ---------- activities ----------
 
@@ -215,21 +248,23 @@ interface ActivitiesPage {
   activities: Activity[];
 }
 
-const fetchActivitiesPage = async (
+const fetchActivitiesPageEffect = (
   token: string,
   userId: number,
   page: number,
-): Promise<ActivitiesPage> => {
-  const response = await platformFetch(API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      "user-agent": USER_AGENT,
-    },
-    body: JSON.stringify({
-      query: `query ($userId: Int, $page: Int) {
+): Effect.Effect<ActivitiesPage, Error> =>
+  Effect.gen(function* () {
+    const response = yield* fromPromise(() =>
+      platformFetch(API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "user-agent": USER_AGENT,
+        },
+        body: JSON.stringify({
+          query: `query ($userId: Int, $page: Int) {
         Page(page: $page, perPage: 50) {
           pageInfo { hasNextPage }
           activities(userId: $userId, type_in: [MANGA_LIST, TEXT]) {
@@ -238,47 +273,52 @@ const fetchActivitiesPage = async (
           }
         }
       }`,
-      variables: { userId, page },
-    }),
+          variables: { userId, page },
+        }),
+      }),
+    ).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(`Activity page fetch failed: ${String(cause)}`),
+      ),
+    );
+    if (!response.ok) {
+      return yield* Effect.fail(new Error(`Activity page fetch failed: HTTP ${response.status}`));
+    }
+    // SAFETY: AniList activity page JSON is decoded via isJsonObject / field helpers below
+    const data: unknown = yield* jsonFromResponseEffect(response, "anilist.activities");
+    const envelope = isJsonObject(data) ? objectField(data, "data") : undefined;
+    const pageRecord = envelope === undefined ? undefined : objectField(envelope, "Page");
+    const activityItems =
+      pageRecord === undefined
+        ? []
+        : (arrayField(pageRecord, "activities") ?? []).filter(isJsonObject);
+    const activities: Activity[] = [];
+    for (const item of activityItems) {
+      const id = numberField(item, "id");
+      if (id === undefined) {
+        continue;
+      }
+      const type = stringField(item, "type");
+      if (type === "MANGA_LIST") {
+        const media = objectField(item, "media");
+        const title = media === undefined ? undefined : objectField(media, "title");
+        activities.push({
+          type: "MANGA_LIST",
+          id,
+          status: stringField(item, "status") ?? "",
+          progress: stringField(item, "progress") ?? null,
+          mediaTitle:
+            title === undefined
+              ? "Unknown"
+              : (stringField(title, "english") ?? stringField(title, "romaji") ?? "Unknown"),
+        });
+      } else if (type === "TEXT") {
+        activities.push({ type: "TEXT", id, text: stringField(item, "text") ?? "" });
+      }
+    }
+    const pageInfo = pageRecord === undefined ? undefined : objectField(pageRecord, "pageInfo");
+    return { activities, hasNextPage: pageInfo !== undefined && pageInfo.hasNextPage === true };
   });
-  if (!response.ok) {
-    throw new Error(`Activity page fetch failed: HTTP ${response.status}`);
-  }
-  // SAFETY: AniList activity page JSON is decoded via isJsonObject / field helpers below
-  const data: unknown = await response.json();
-  const envelope = isJsonObject(data) ? objectField(data, "data") : undefined;
-  const pageRecord = envelope === undefined ? undefined : objectField(envelope, "Page");
-  const activityItems =
-    pageRecord === undefined
-      ? []
-      : (arrayField(pageRecord, "activities") ?? []).filter(isJsonObject);
-  const activities: Activity[] = [];
-  for (const item of activityItems) {
-    const id = numberField(item, "id");
-    if (id === undefined) {
-      continue;
-    }
-    const type = stringField(item, "type");
-    if (type === "MANGA_LIST") {
-      const media = objectField(item, "media");
-      const title = media === undefined ? undefined : objectField(media, "title");
-      activities.push({
-        type: "MANGA_LIST",
-        id,
-        status: stringField(item, "status") ?? "",
-        progress: stringField(item, "progress") ?? null,
-        mediaTitle:
-          title === undefined
-            ? "Unknown"
-            : (stringField(title, "english") ?? stringField(title, "romaji") ?? "Unknown"),
-      });
-    } else if (type === "TEXT") {
-      activities.push({ type: "TEXT", id, text: stringField(item, "text") ?? "" });
-    }
-  }
-  const pageInfo = pageRecord === undefined ? undefined : objectField(pageRecord, "pageInfo");
-  return { activities, hasNextPage: pageInfo !== undefined && pageInfo.hasNextPage === true };
-};
 
 export interface ActivitySelectionOptions {
   /**
@@ -310,115 +350,150 @@ export const selectWipeActivities = (
   });
 };
 
-export const fetchMangaActivities = async (
+const fetchMangaActivitiesEffect = (
   token: string,
   userId: number,
   report?: PhaseReporter,
   options: ActivitySelectionOptions = {},
-): Promise<Activity[]> => {
-  const includeTextActivities = options.includeTextActivities === true;
-  const all: Activity[] = [];
-  let page = 1;
-  let hasNextPage = true;
-  while (hasNextPage) {
-    const result = await fetchActivitiesPage(token, userId, page);
-    for (const activity of selectWipeActivities(result.activities, options)) {
-      all.push(activity);
+): Effect.Effect<Activity[], Error> =>
+  Effect.gen(function* () {
+    const includeTextActivities = options.includeTextActivities === true;
+    const all: Activity[] = [];
+    let page = 1;
+    let hasNextPage = true;
+    while (hasNextPage) {
+      const result = yield* fetchActivitiesPageEffect(token, userId, page);
+      for (const activity of selectWipeActivities(result.activities, options)) {
+        all.push(activity);
+      }
+      report?.detail(
+        `page ${page}: ${result.activities.length} activities (${all.length} ${
+          includeTextActivities ? "selected, text included" : "manga list"
+        } so far)`,
+      );
+      hasNextPage = result.hasNextPage;
+      page += 1;
+      yield* sleep(3000);
     }
-    report?.detail(
-      `page ${page}: ${result.activities.length} activities (${all.length} ${
-        includeTextActivities ? "selected, text included" : "manga list"
-      } so far)`,
-    );
-    hasNextPage = result.hasNextPage;
-    page += 1;
-    await sleep(3000);
-  }
-  return all;
-};
+    return all;
+  });
 
-export const deleteActivity = async (
+export const fetchMangaActivities = (
+  token: string,
+  userId: number,
+  report?: PhaseReporter,
+  options: ActivitySelectionOptions = {},
+): Promise<Activity[]> => runHost(fetchMangaActivitiesEffect(token, userId, report, options));
+
+const deleteActivityEffect = (
   token: string,
   activityId: number,
-): Promise<{ success: boolean; alreadyDeleted: boolean }> => {
-  const response = await postGraphQL(
-    token,
-    `mutation ($id: Int) { DeleteActivity(id: $id) { deleted } }`,
-    { id: activityId },
-  );
-  if (!response.ok) {
-    if (response.status === 400) {
-      const body = await response.text();
-      if (body.includes("The selected id is invalid")) {
-        return { success: true, alreadyDeleted: true };
+): Effect.Effect<{ success: boolean; alreadyDeleted: boolean }, Error> =>
+  Effect.gen(function* () {
+    const response = yield* postGraphQLEffect(
+      token,
+      `mutation ($id: Int) { DeleteActivity(id: $id) { deleted } }`,
+      { id: activityId },
+    );
+    if (!response.ok) {
+      if (response.status === 400) {
+        const body = yield* fromPromise(() => response.text()).pipe(
+          Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
+        );
+        if (body.includes("The selected id is invalid")) {
+          return { success: true, alreadyDeleted: true };
+        }
       }
+      return { success: false, alreadyDeleted: false };
     }
-    return { success: false, alreadyDeleted: false };
-  }
-  const deleted = await decodeDeletedEnvelope(response, "DeleteActivity");
-  if (deleted !== true) {
-    return { success: false, alreadyDeleted: false };
-  }
-  return { success: true, alreadyDeleted: false };
-};
+    const deleted = yield* decodeDeletedEnvelopeEffect(response, "DeleteActivity");
+    if (deleted !== true) {
+      return { success: false, alreadyDeleted: false };
+    }
+    return { success: true, alreadyDeleted: false };
+  });
 
-export const deleteEntriesWithProgress = async (
+export const deleteActivity = (
+  token: string,
+  activityId: number,
+): Promise<{ success: boolean; alreadyDeleted: boolean }> =>
+  runHost(deleteActivityEffect(token, activityId));
+
+const deleteEntriesWithProgressEffect = (
   token: string,
   entries: readonly WipeListEntry[],
   report?: PhaseReporter,
-): Promise<{ ok: number; failed: number }> => {
-  let ok = 0;
-  let failed = 0;
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (!entry) {
-      continue;
-    }
-    try {
-      if (await deleteEntry(token, entry.id)) {
+): Effect.Effect<{ ok: number; failed: number }, never> =>
+  Effect.gen(function* () {
+    let ok = 0;
+    let failed = 0;
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
+      if (!entry) {
+        continue;
+      }
+      const outcome = yield* deleteEntryEffect(token, entry.id).pipe(
+        Effect.map((deleted) => (deleted ? ("ok" as const) : ("fail" as const))),
+        Effect.orElseSucceed(() => "fail" as const),
+      );
+      if (outcome === "ok") {
         ok += 1;
       } else {
         failed += 1;
       }
-    } catch {
-      failed += 1;
+      report?.progress(index + 1, entries.length, [
+        ["ok", ok],
+        ["fail", failed],
+      ]);
+      yield* sleep(2500);
     }
-    report?.progress(index + 1, entries.length, [
-      ["ok", ok],
-      ["fail", failed],
-    ]);
-    await sleep(2500);
-  }
-  return { ok, failed };
-};
+    return { ok, failed };
+  });
 
-export const deleteActivitiesWithProgress = async (
+export const deleteEntriesWithProgress = (
+  token: string,
+  entries: readonly WipeListEntry[],
+  report?: PhaseReporter,
+): Promise<{ ok: number; failed: number }> =>
+  runHost(deleteEntriesWithProgressEffect(token, entries, report));
+
+const deleteActivitiesWithProgressEffect = (
   token: string,
   activities: readonly Activity[],
   report?: PhaseReporter,
-): Promise<{ ok: number; failed: number; skipped: number }> => {
-  let ok = 0;
-  let failed = 0;
-  let skipped = 0;
-  for (let index = 0; index < activities.length; index += 1) {
-    const activity = activities[index];
-    if (!activity) {
-      continue;
+): Effect.Effect<{ ok: number; failed: number; skipped: number }, never> =>
+  Effect.gen(function* () {
+    let ok = 0;
+    let failed = 0;
+    let skipped = 0;
+    for (let index = 0; index < activities.length; index += 1) {
+      const activity = activities[index];
+      if (!activity) {
+        continue;
+      }
+      const result = yield* deleteActivityEffect(token, activity.id).pipe(
+        Effect.orElseSucceed(() => ({ success: false, alreadyDeleted: false })),
+      );
+      if (result.alreadyDeleted) {
+        skipped += 1;
+      } else if (result.success) {
+        ok += 1;
+      } else {
+        failed += 1;
+      }
+      report?.progress(index + 1, activities.length, [
+        ["ok", ok],
+        ["fail", failed],
+        ["skip", skipped],
+      ]);
+      yield* sleep(3000);
     }
-    const result = await deleteActivity(token, activity.id);
-    if (result.alreadyDeleted) {
-      skipped += 1;
-    } else if (result.success) {
-      ok += 1;
-    } else {
-      failed += 1;
-    }
-    report?.progress(index + 1, activities.length, [
-      ["ok", ok],
-      ["fail", failed],
-      ["skip", skipped],
-    ]);
-    await sleep(3000);
-  }
-  return { ok, failed, skipped };
-};
+    return { ok, failed, skipped };
+  });
+
+export const deleteActivitiesWithProgress = (
+  token: string,
+  activities: readonly Activity[],
+  report?: PhaseReporter,
+): Promise<{ ok: number; failed: number; skipped: number }> =>
+  runHost(deleteActivitiesWithProgressEffect(token, activities, report));

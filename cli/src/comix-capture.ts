@@ -10,6 +10,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@manifold/json";
+import { Effect } from "effect";
 
 import {
   COMIX_ORIGIN,
@@ -26,7 +27,7 @@ import {
   type ComixSearchItem,
 } from "./comix-match";
 import { cookiesFromCdp, toCdpCookie, type ComixCookie } from "./comix-session";
-import { epochMillisNow, platformFetch, sleepPromise } from "@/effect-kit";
+import { epochMillisNow, fromPromise, platformFetch, runHost, sleep } from "@/effect-kit";
 
 export const CAPTURE_TIMEOUT_MS = 15_000;
 export const GOOGLE_POLL_INTERVAL_MS = 500;
@@ -170,38 +171,58 @@ export const launchComixChrome = (options: {
   ).unref();
 };
 
-export const probeChromeDevToolsUrl = async (
+const probeChromeDevToolsUrlEffect = (
   ports: readonly number[] = [CHROME_DEBUG_PORT],
-  fetchVersion: (url: string) => Promise<string | undefined> = async (url) => {
-    try {
-      const response = await platformFetch(url, { signal: AbortSignal.timeout(1_000) });
-      if (!response.ok) {
-        return undefined;
+  fetchVersion: (url: string) => Promise<string | undefined> = (url) =>
+    runHost(
+      Effect.gen(function* () {
+        const response = yield* fromPromise(() =>
+          platformFetch(url, { signal: AbortSignal.timeout(1_000) }),
+        );
+        if (!("ok" in response) || !response.ok) {
+          return undefined;
+        }
+        return yield* fromPromise(() => response.text());
+      }).pipe(Effect.catch(() => Effect.succeed(undefined))),
+    ),
+): Effect.Effect<string | undefined> =>
+  Effect.gen(function* () {
+    const fromFile = findChromeDevToolsUrl();
+    if (fromFile) {
+      return fromFile;
+    }
+    for (const port of ports) {
+      const body = yield* fromPromise(() =>
+        fetchVersion(`http://127.0.0.1:${port}/json/version`),
+      ).pipe(Effect.catch(() => Effect.succeed(undefined)));
+      if (!body) {
+        continue;
       }
-      return await response.text();
-    } catch {
-      return undefined;
+      const url = parseChromeVersionEndpoint(body);
+      if (url) {
+        return url;
+      }
     }
-  },
-): Promise<string | undefined> => {
-  const fromFile = findChromeDevToolsUrl();
-  if (fromFile) {
-    return fromFile;
-  }
-  for (const port of ports) {
-    const body = await fetchVersion(`http://127.0.0.1:${port}/json/version`);
-    if (!body) {
-      continue;
-    }
-    const url = parseChromeVersionEndpoint(body);
-    if (url) {
-      return url;
-    }
-  }
-  return undefined;
-};
+    return undefined;
+  });
 
-export const waitForChromeDevToolsUrl = async (
+export const probeChromeDevToolsUrl = (
+  ports: readonly number[] = [CHROME_DEBUG_PORT],
+  fetchVersion: (url: string) => Promise<string | undefined> = (url) =>
+    runHost(
+      Effect.gen(function* () {
+        const response = yield* fromPromise(() =>
+          platformFetch(url, { signal: AbortSignal.timeout(1_000) }),
+        );
+        if (!response.ok) {
+          return undefined;
+        }
+        return yield* fromPromise(() => response.text());
+      }).pipe(Effect.catch(() => Effect.succeed(undefined))),
+    ),
+): Promise<string | undefined> => runHost(probeChromeDevToolsUrlEffect(ports, fetchVersion));
+
+const waitForChromeDevToolsUrlEffect = (
   options: {
     readonly timeoutMs?: number;
     readonly intervalMs?: number;
@@ -209,25 +230,39 @@ export const waitForChromeDevToolsUrl = async (
     readonly now?: () => number;
     readonly sleep?: (ms: number) => Promise<void>;
   } = {},
-): Promise<string | undefined> => {
-  const timeoutMs = options.timeoutMs ?? 20_000;
-  const intervalMs = options.intervalMs ?? 400;
-  const probe = options.probe ?? probeChromeDevToolsUrl;
-  const now = options.now ?? epochMillisNow;
-  const sleep =
-    options.sleep ?? sleepPromise;
-  const deadline = now() + timeoutMs;
-  while (true) {
-    const url = await probe();
-    if (url) {
-      return url;
+): Effect.Effect<string | undefined> =>
+  Effect.gen(function* () {
+    const timeoutMs = options.timeoutMs ?? 20_000;
+    const intervalMs = options.intervalMs ?? 400;
+    const probe = options.probe ?? (() => probeChromeDevToolsUrl());
+    const now = options.now ?? epochMillisNow;
+    const sleepFn = options.sleep;
+    const deadline = now() + timeoutMs;
+    while (true) {
+      const url = yield* fromPromise(probe).pipe(Effect.catch(() => Effect.succeed(undefined)));
+      if (url) {
+        return url;
+      }
+      if (now() >= deadline) {
+        return undefined;
+      }
+      if (sleepFn) {
+        yield* fromPromise(() => sleepFn(intervalMs)).pipe(Effect.catch(() => Effect.void));
+      } else {
+        yield* sleep(intervalMs);
+      }
     }
-    if (now() >= deadline) {
-      return undefined;
-    }
-    await sleep(intervalMs);
-  }
-};
+  });
+
+export const waitForChromeDevToolsUrl = (
+  options: {
+    readonly timeoutMs?: number;
+    readonly intervalMs?: number;
+    readonly probe?: () => Promise<string | undefined>;
+    readonly now?: () => number;
+    readonly sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<string | undefined> => runHost(waitForChromeDevToolsUrlEffect(options));
 
 // Injected before every navigation so JSON.parse of the site's own signed
 // /api/v1 responses is captured even though the CLI never fetches them.
@@ -272,141 +307,168 @@ const GOOGLE_SNAPSHOT_SCRIPT =
   'links: Array.from(document.querySelectorAll(\'a[href*="comix.to"], a[href*="/goto?"]\'), ' +
   "function(anchor){ return { href: anchor.href, title: anchor.textContent || '' }; }) })";
 
-export const createComixBrowser = async (options: {
+const createComixBrowserEffect = (options: {
   readonly view: ComixView;
   readonly cookies?: readonly ComixCookie[];
   readonly now?: () => number;
   readonly sleep?: (ms: number) => Promise<void>;
-}): Promise<ComixBrowser> => {
-  const { view } = options;
-  const now = options.now ?? epochMillisNow;
-  const sleep =
-    options.sleep ?? sleepPromise;
-  await view.navigate("about:blank");
-  await view.cdp("Page.enable");
-  await view.cdp("Network.enable");
-  await view.cdp("Page.addScriptToEvaluateOnNewDocument", {
-    source: COMIX_CAPTURE_BOOTSTRAP,
+}): Effect.Effect<ComixBrowser, unknown> =>
+  Effect.gen(function* () {
+    const { view } = options;
+    const now = options.now ?? epochMillisNow;
+    const sleepFn = options.sleep;
+
+    const waitMs = (ms: number): Effect.Effect<void, unknown> =>
+      sleepFn ? fromPromise(() => sleepFn(ms)) : sleep(ms);
+
+    yield* fromPromise(() => view.navigate("about:blank"));
+    yield* fromPromise(() => view.cdp("Page.enable"));
+    yield* fromPromise(() => view.cdp("Network.enable"));
+    yield* fromPromise(() =>
+      view.cdp("Page.addScriptToEvaluateOnNewDocument", {
+        source: COMIX_CAPTURE_BOOTSTRAP,
+      }),
+    );
+    if (options.cookies && options.cookies.length > 0) {
+      yield* fromPromise(() =>
+        view.cdp("Network.setCookies", {
+          cookies: options.cookies!.map(toCdpCookie),
+        }),
+      );
+    }
+
+    const harvestEffect = (): Effect.Effect<
+      { cookies: ComixCookie[]; userAgent?: string },
+      unknown
+    > =>
+      Effect.gen(function* () {
+        const raw = yield* fromPromise(() =>
+          view.cdp("Network.getCookies", { urls: [`${COMIX_ORIGIN}/`] }),
+        );
+        const cookies = cookiesFromCdp(raw).filter((cookie) => {
+          const domain = (cookie.domain ?? "").replace(/^\./, "");
+          return domain.length === 0 || domain === "comix.to" || domain.endsWith(".comix.to");
+        });
+        let userAgent: string | undefined;
+        yield* fromPromise(() => view.evaluate("navigator.userAgent")).pipe(
+          Effect.map((ua) => {
+            if (isString(ua) && ua.length > 0) {
+              userAgent = ua;
+            }
+          }),
+          Effect.catch(() => Effect.void),
+        );
+        return { cookies, userAgent };
+      });
+
+    const searchEffect = (
+      keyword: string,
+    ): Effect.Effect<readonly ComixSearchItem[] | "challenge", unknown> =>
+      Effect.gen(function* () {
+        yield* fromPromise(() => view.navigate(comixBrowseUrl(keyword)));
+        const snapshot = yield* fromPromise(() => view.evaluate(SNAPSHOT_SCRIPT));
+        const record = isJsonObject(snapshot) ? snapshot : undefined;
+        const title =
+          record === undefined ? view.title : (stringField(record, "title") ?? view.title);
+        const html = record === undefined ? "" : (stringField(record, "html") ?? "");
+        if (classifyPage(title, html) === "challenge") {
+          return "challenge" as const;
+        }
+        const payload = yield* fromPromise(() => view.evaluate("window.__comixResult__"));
+        return itemsFromCapture(payload) ?? ("challenge" as const);
+      });
+
+    const followGotoLinksEffect = (
+      links: readonly { readonly href: string; readonly title: string }[],
+    ): Effect.Effect<readonly ComixSearchItem[] | "challenge", unknown> =>
+      Effect.gen(function* () {
+        for (const link of links.slice(0, GOTO_FOLLOW_LIMIT)) {
+          yield* fromPromise(() => view.navigate(link.href));
+          const deadline = now() + GOTO_REDIRECT_TIMEOUT_MS;
+          while (true) {
+            const href = yield* fromPromise(() => view.evaluate("location.href"));
+            const current = isString(href) ? href : view.url;
+            if (isGoogleBlockedPage(current, "")) {
+              return "challenge" as const;
+            }
+            const item = comixItemFromGoogleLink(current, link.title);
+            if (item !== undefined) {
+              return [item] as const;
+            }
+            // Landed on comix.to but not a /title/ page: try the next link.
+            if (isComixPageUrl(current)) {
+              break;
+            }
+            if (now() >= deadline) {
+              break;
+            }
+            yield* waitMs(GOOGLE_POLL_INTERVAL_MS);
+          }
+        }
+        return [] as const;
+      });
+
+    const searchGoogleEffect = (
+      keyword: string,
+    ): Effect.Effect<readonly ComixSearchItem[] | "challenge", unknown> =>
+      Effect.gen(function* () {
+        yield* fromPromise(() => view.navigate(googleComixSearchUrl(keyword)));
+        const deadline = now() + CAPTURE_TIMEOUT_MS;
+        let completedPolls = 0;
+        while (true) {
+          const snapshot = yield* fromPromise(() => view.evaluate(GOOGLE_SNAPSHOT_SCRIPT));
+          const record = isJsonObject(snapshot) ? snapshot : undefined;
+          const url = record === undefined ? view.url : (stringField(record, "url") ?? view.url);
+          const title =
+            record === undefined ? view.title : (stringField(record, "title") ?? view.title);
+          if (isGoogleBlockedPage(url, title)) {
+            return "challenge" as const;
+          }
+          // Page.navigate resolves when navigation starts, so early polls still see
+          // the previous document (often a comix.to page full of comix.to anchors).
+          // Only read anchors once the WebView is actually on Google results.
+          if (isGoogleResultsUrl(url) && record !== undefined) {
+            const items = itemsFromGoogleLinks(record.links ?? null);
+            if (items.length > 0) {
+              return items;
+            }
+            const ready = stringField(record, "ready") ?? "";
+            if (ready === "complete") {
+              completedPolls += 1;
+              // Google's udm=14 view wraps results in opaque /goto redirects; the
+              // only way to recover the comix.to URL is to follow one.
+              const gotoLinks = googleGotoLinks(record.links ?? null);
+              if (gotoLinks.length > 0) {
+                return yield* followGotoLinksEffect(gotoLinks);
+              }
+              // Results are server-rendered, so two empty polls on a complete
+              // page mean a real miss.
+              if (completedPolls >= 2) {
+                return [] as const;
+              }
+            }
+          }
+          if (now() >= deadline) {
+            return [] as const;
+          }
+          yield* waitMs(GOOGLE_POLL_INTERVAL_MS);
+        }
+      });
+
+    return {
+      search: (keyword: string) => runHost(searchEffect(keyword)),
+      searchGoogle: (keyword: string) => runHost(searchGoogleEffect(keyword)),
+      harvest: () => runHost(harvestEffect()),
+      close: () => view.close(),
+    };
   });
-  if (options.cookies && options.cookies.length > 0) {
-    await view.cdp("Network.setCookies", {
-      cookies: options.cookies.map(toCdpCookie),
-    });
-  }
 
-  const harvest = async (): Promise<{ cookies: ComixCookie[]; userAgent?: string }> => {
-    const raw = await view.cdp("Network.getCookies", { urls: [`${COMIX_ORIGIN}/`] });
-    const cookies = cookiesFromCdp(raw).filter((cookie) => {
-      const domain = (cookie.domain ?? "").replace(/^\./, "");
-      return domain.length === 0 || domain === "comix.to" || domain.endsWith(".comix.to");
-    });
-    let userAgent: string | undefined;
-    try {
-      const ua = await view.evaluate("navigator.userAgent");
-      if (isString(ua) && ua.length > 0) {
-        userAgent = ua;
-      }
-    } catch {
-      // harvest cookies even if the tab is mid-navigation
-    }
-    return { cookies, userAgent };
-  };
-
-  const search = async (keyword: string): Promise<readonly ComixSearchItem[] | "challenge"> => {
-    await view.navigate(comixBrowseUrl(keyword));
-    const snapshot = await view.evaluate(SNAPSHOT_SCRIPT);
-    const record = isJsonObject(snapshot) ? snapshot : undefined;
-    const title = record === undefined ? view.title : (stringField(record, "title") ?? view.title);
-    const html = record === undefined ? "" : (stringField(record, "html") ?? "");
-    if (classifyPage(title, html) === "challenge") {
-      return "challenge";
-    }
-    const payload = await view.evaluate("window.__comixResult__");
-    return itemsFromCapture(payload) ?? "challenge";
-  };
-
-  const searchGoogle = async (
-    keyword: string,
-  ): Promise<readonly ComixSearchItem[] | "challenge"> => {
-    await view.navigate(googleComixSearchUrl(keyword));
-    const deadline = now() + CAPTURE_TIMEOUT_MS;
-    let completedPolls = 0;
-    while (true) {
-      const snapshot = await view.evaluate(GOOGLE_SNAPSHOT_SCRIPT);
-      const record = isJsonObject(snapshot) ? snapshot : undefined;
-      const url = record === undefined ? view.url : (stringField(record, "url") ?? view.url);
-      const title =
-        record === undefined ? view.title : (stringField(record, "title") ?? view.title);
-      if (isGoogleBlockedPage(url, title)) {
-        return "challenge";
-      }
-      // Page.navigate resolves when navigation starts, so early polls still see
-      // the previous document (often a comix.to page full of comix.to anchors).
-      // Only read anchors once the WebView is actually on Google results.
-      if (isGoogleResultsUrl(url) && record !== undefined) {
-        const items = itemsFromGoogleLinks(record.links ?? null);
-        if (items.length > 0) {
-          return items;
-        }
-        const ready = stringField(record, "ready") ?? "";
-        if (ready === "complete") {
-          completedPolls += 1;
-          // Google's udm=14 view wraps results in opaque /goto redirects; the
-          // only way to recover the comix.to URL is to follow one.
-          const gotoLinks = googleGotoLinks(record.links ?? null);
-          if (gotoLinks.length > 0) {
-            return followGotoLinks(gotoLinks);
-          }
-          // Results are server-rendered, so two empty polls on a complete
-          // page mean a real miss.
-          if (completedPolls >= 2) {
-            return [];
-          }
-        }
-      }
-      if (now() >= deadline) {
-        return [];
-      }
-      await sleep(GOOGLE_POLL_INTERVAL_MS);
-    }
-  };
-
-  const followGotoLinks = async (
-    links: readonly { readonly href: string; readonly title: string }[],
-  ): Promise<readonly ComixSearchItem[] | "challenge"> => {
-    for (const link of links.slice(0, GOTO_FOLLOW_LIMIT)) {
-      await view.navigate(link.href);
-      const deadline = now() + GOTO_REDIRECT_TIMEOUT_MS;
-      while (true) {
-        const href = await view.evaluate("location.href");
-        const current = isString(href) ? href : view.url;
-        if (isGoogleBlockedPage(current, "")) {
-          return "challenge";
-        }
-        const item = comixItemFromGoogleLink(current, link.title);
-        if (item !== undefined) {
-          return [item];
-        }
-        // Landed on comix.to but not a /title/ page: try the next link.
-        if (isComixPageUrl(current)) {
-          break;
-        }
-        if (now() >= deadline) {
-          break;
-        }
-        await sleep(GOOGLE_POLL_INTERVAL_MS);
-      }
-    }
-    return [];
-  };
-
-  return {
-    search,
-    searchGoogle,
-    harvest,
-    close: () => view.close(),
-  };
-};
+export const createComixBrowser = (options: {
+  readonly view: ComixView;
+  readonly cookies?: readonly ComixCookie[];
+  readonly now?: () => number;
+  readonly sleep?: (ms: number) => Promise<void>;
+}): Promise<ComixBrowser> => runHost(createComixBrowserEffect(options));
 
 export const openBunComixView = (options: {
   readonly chromeUrl: string;

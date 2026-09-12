@@ -3,6 +3,13 @@ import { DateTime, Effect, Option, Schema } from "effect";
 
 const JsonBodyString = Schema.fromJsonString(Schema.Unknown);
 
+/** Promise boundary: rejections become typed failures (not defects). */
+export const fromPromise = <A>(action: () => Promise<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: action, catch: (cause) => cause });
+
+/** Run an Effect at a CLI host boundary (command handlers, scripts). */
+export const runHost = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect);
+
 /** Encode a JSON-serializable value to a request body string. */
 export const jsonBodyString = (value: JsonValue): string =>
   Effect.runSync(Schema.encodeEffect(JsonBodyString)(value));
@@ -68,10 +75,8 @@ export const parseJsonValue = (text: string, label = "json"): JsonValue => {
  * Fetch entry used by the CLI. Reads `globalThis.fetch` on each call so tests
  * can `vi.stubGlobal("fetch", …)` without rebinding a frozen reference.
  */
-export const platformFetch = (
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): Promise<Response> => globalThis.fetch(input, init);
+export const platformFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
+  globalThis.fetch(input, init);
 
 /** UUID for OAuth state / PKCE (sync host). */
 export const newId = (): string => {
@@ -85,10 +90,21 @@ export const newId = (): string => {
 };
 
 /** Coerce response.json() result to JsonValue. */
-export const jsonFromResponse = async (response: Response, label = "response"): Promise<JsonValue> => {
-  const raw: unknown = await response.json();
-  if (!isJsonValue(raw)) {
-    throw new Error(`${label}: not a JSON value`);
-  }
-  return raw;
-};
+export const jsonFromResponseEffect = (
+  response: Response,
+  label = "response",
+): Effect.Effect<JsonValue, Error> =>
+  Effect.gen(function* () {
+    const raw: unknown = yield* fromPromise(() => response.json()).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(`${label}: ${String(cause)}`),
+      ),
+    );
+    if (!isJsonValue(raw)) {
+      return yield* Effect.fail(new Error(`${label}: not a JSON value`));
+    }
+    return raw;
+  });
+
+export const jsonFromResponse = (response: Response, label = "response"): Promise<JsonValue> =>
+  Effect.runPromise(jsonFromResponseEffect(response, label));

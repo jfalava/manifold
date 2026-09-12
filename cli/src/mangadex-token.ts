@@ -8,7 +8,8 @@ import {
   MANGADEX_TOKEN_ENDPOINT,
   type MangaDexPersonalClientCredentials,
 } from "@manifold/mangadex";
-import { epochMillisNow } from "@/effect-kit";
+import { Effect } from "effect";
+import { epochMillisNow, fromPromise, jsonFromResponseEffect, runHost } from "@/effect-kit";
 
 interface TokenResponse {
   access_token?: string;
@@ -35,25 +36,28 @@ interface PersistedTokens {
   expiresAt?: number;
 }
 
-const loadPersistedTokens = async (cachePath: string | undefined): Promise<PersistedTokens> => {
-  if (!cachePath) {
-    return {};
-  }
-  try {
-    // SAFETY: token cache JSON is decoded via isJsonObject / field guards below
-    const raw: unknown = JSON.parse(await readFile(cachePath, "utf8"));
-    if (!isJsonObject(raw)) {
+const loadPersistedTokensEffect = (cachePath: string | undefined): Effect.Effect<PersistedTokens> =>
+  Effect.gen(function* () {
+    if (!cachePath) {
       return {};
     }
-    return {
-      accessToken: isString(raw.accessToken) ? raw.accessToken : undefined,
-      refreshToken: isString(raw.refreshToken) ? raw.refreshToken : undefined,
-      expiresAt: isFiniteNumber(raw.expiresAt) ? raw.expiresAt : undefined,
-    };
-  } catch {
-    return {};
-  }
-};
+    const outcome = yield* fromPromise(async () => {
+      // SAFETY: token cache JSON is decoded via isJsonObject / field guards below
+      const raw: unknown = JSON.parse(await readFile(cachePath, "utf8"));
+      if (!isJsonObject(raw)) {
+        return {} as PersistedTokens;
+      }
+      return {
+        accessToken: isString(raw.accessToken) ? raw.accessToken : undefined,
+        refreshToken: isString(raw.refreshToken) ? raw.refreshToken : undefined,
+        expiresAt: isFiniteNumber(raw.expiresAt) ? raw.expiresAt : undefined,
+      } satisfies PersistedTokens;
+    }).pipe(Effect.option);
+    if (outcome._tag === "None") {
+      return {};
+    }
+    return outcome.value;
+  });
 
 /**
  * Acquires and refreshes a MangaDex personal-client access token via the
@@ -62,57 +66,76 @@ const loadPersistedTokens = async (cachePath: string | undefined): Promise<Persi
  */
 export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions) => {
   const fetcher = options.fetcher ?? fetch;
-  const persisted = () => loadPersistedTokens(options.cachePath);
   let accessToken: string | undefined;
   let refreshToken: string | undefined;
   let expiresAt = 0;
 
-  const persistTokens = async (): Promise<void> => {
-    if (!options.cachePath) {
-      return;
-    }
-    const payload: PersistedTokens = { accessToken, refreshToken, expiresAt };
-    await mkdir(dirname(options.cachePath), { recursive: true });
-    await writeFile(options.cachePath, JSON.stringify(payload), { mode: 0o600 });
-  };
-
-  const requestToken = async (grant: URLSearchParams, label: string): Promise<void> => {
-    const response = await fetcher(MANGADEX_TOKEN_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "content-type": "application/x-www-form-urlencoded",
-        "user-agent": manifoldUserAgent("cli"),
-      },
-      body: grant.toString(),
-    });
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new Error(
-        `MangaDex ${label} failed with HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
+  const persistTokensEffect = (): Effect.Effect<void, Error> =>
+    Effect.gen(function* () {
+      if (!options.cachePath) {
+        return;
+      }
+      const payload: PersistedTokens = { accessToken, refreshToken, expiresAt };
+      yield* fromPromise(async () => {
+        await mkdir(dirname(options.cachePath!), { recursive: true });
+        await writeFile(options.cachePath!, JSON.stringify(payload), { mode: 0o600 });
+      }).pipe(
+        Effect.mapError((cause) =>
+          cause instanceof Error
+            ? cause
+            : new Error(`MangaDex token cache write failed: ${String(cause)}`),
+        ),
       );
-    }
-    // SAFETY: HTTP value is the expected TokenResponse after the preceding check
-    const body = (await response.json()) as TokenResponse;
-    if (!body.access_token) {
-      throw new Error(`MangaDex ${label} returned no access_token`);
-    }
-    accessToken = body.access_token;
-    refreshToken = body.refresh_token ?? refreshToken;
-    expiresAt =
-      epochMillisNow() +
-      (Number.isFinite(body.expires_in) ? Number(body.expires_in) : 900) * 1000 -
-      EXPIRY_MARGIN_MS;
-    await persistTokens();
-  };
+    });
 
-  return {
-    /** Returns a cached token, refreshing or re-authenticating when needed. */
-    current: async (): Promise<string> => {
+  const requestTokenEffect = (grant: URLSearchParams, label: string): Effect.Effect<void, Error> =>
+    Effect.gen(function* () {
+      const response = yield* fromPromise(() =>
+        fetcher(MANGADEX_TOKEN_ENDPOINT, {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            "user-agent": manifoldUserAgent("cli"),
+          },
+          body: grant.toString(),
+        }),
+      ).pipe(
+        Effect.mapError((cause) =>
+          cause instanceof Error ? cause : new Error(`MangaDex ${label} failed: ${String(cause)}`),
+        ),
+      );
+      if (!response.ok) {
+        const detail = yield* fromPromise(() => response.text()).pipe(
+          Effect.orElseSucceed(() => ""),
+        );
+        return yield* Effect.fail(
+          new Error(
+            `MangaDex ${label} failed with HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
+          ),
+        );
+      }
+      const raw = yield* jsonFromResponseEffect(response, `mangadex.${label}`);
+      // SAFETY: HTTP value is the expected TokenResponse after the preceding check
+      const body = raw as TokenResponse;
+      if (!body.access_token) {
+        return yield* Effect.fail(new Error(`MangaDex ${label} returned no access_token`));
+      }
+      accessToken = body.access_token;
+      refreshToken = body.refresh_token ?? refreshToken;
+      expiresAt =
+        epochMillisNow() +
+        (Number.isFinite(body.expires_in) ? Number(body.expires_in) : 900) * 1000 -
+        EXPIRY_MARGIN_MS;
+      yield* persistTokensEffect();
+    });
+
+  const currentEffect = (): Effect.Effect<string, Error> =>
+    Effect.gen(function* () {
       if (accessToken && epochMillisNow() < expiresAt) {
         return accessToken;
       }
       if (!refreshToken && options.cachePath) {
-        const stored = await persisted();
+        const stored = yield* loadPersistedTokensEffect(options.cachePath);
         accessToken = stored.accessToken;
         refreshToken = stored.refreshToken;
         expiresAt = stored.expiresAt ?? 0;
@@ -121,22 +144,28 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
         }
       }
       if (refreshToken) {
-        try {
-          await requestToken(
-            createMangaDexRefreshGrant(options.credentials, refreshToken),
-            "refresh grant",
-          );
-          // SAFETY: value is a string after the preceding runtime check
+        const refreshed = yield* requestTokenEffect(
+          createMangaDexRefreshGrant(options.credentials, refreshToken),
+          "refresh grant",
+        ).pipe(
+          Effect.map(() => true as const),
+          Effect.orElseSucceed(() => false as const),
+        );
+        if (refreshed) {
+          // SAFETY: value is a string after a successful requestTokenEffect
           return accessToken as string;
-        } catch {
-          // Fall through to a fresh password grant.
-          refreshToken = undefined;
         }
+        // Fall through to a fresh password grant.
+        refreshToken = undefined;
       }
-      await requestToken(createMangaDexPasswordGrant(options.credentials), "password grant");
+      yield* requestTokenEffect(createMangaDexPasswordGrant(options.credentials), "password grant");
       // SAFETY: value is a string after the preceding runtime check
       return accessToken as string;
-    },
+    });
+
+  return {
+    /** Returns a cached token, refreshing or re-authenticating when needed. */
+    current: (): Promise<string> => runHost(currentEffect()),
     /** Forces a fresh password grant on the next call. */
     invalidate: (): void => {
       accessToken = undefined;

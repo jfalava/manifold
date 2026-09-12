@@ -4,6 +4,7 @@ import { stdin, stdout } from "node:process";
 import pc from "picocolors";
 import cliProgress from "cli-progress";
 import { Listr, PRESET_TIMER, Spinner, type ListrTask } from "listr2";
+import { Effect } from "effect";
 import { epochMillisNow } from "@/effect-kit";
 
 /**
@@ -54,20 +55,26 @@ export const abortFrame = (): void => {
   process.stdout.write(`${muted("│")}\n${muted("│")}\n${pc.red("■")}  ${pc.bold("Failed")}\n`);
 };
 
-export const confirmInFrame = async (message: string): Promise<boolean> => {
-  stdout.write(`${muted("│")}\n${muted("│")}  ${message} (yes/no): `);
-  const reader = createInterface({ input: stdin, output: stdout });
-  const answer = (await reader.question("")).trim().toLowerCase();
-  reader.close();
-  return answer === "yes";
-};
+export const confirmInFrame = (message: string): Promise<boolean> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      stdout.write(`${muted("│")}\n${muted("│")}  ${message} (yes/no): `);
+      const reader = createInterface({ input: stdin, output: stdout });
+      const answer = yield* Effect.promise(() => reader.question(""));
+      reader.close();
+      return answer.trim().toLowerCase() === "yes";
+    }),
+  );
 
-export const waitForEnterInFrame = async (message: string): Promise<void> => {
-  stdout.write(`${muted("│")}\n${muted("│")}  ${message} `);
-  const reader = createInterface({ input: stdin, output: stdout });
-  await reader.question("");
-  reader.close();
-};
+export const waitForEnterInFrame = (message: string): Promise<void> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      stdout.write(`${muted("│")}\n${muted("│")}  ${message} `);
+      const reader = createInterface({ input: stdin, output: stdout });
+      yield* Effect.promise(() => reader.question(""));
+      reader.close();
+    }),
+  );
 
 // ---------- run factory ----------
 

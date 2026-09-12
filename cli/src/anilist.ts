@@ -1,10 +1,16 @@
 import { ANILIST_GRAPHQL_ENDPOINT } from "@manifold/canonical/sources";
 import { isFiniteNumber, isString, manifoldUserAgent, type JsonObject } from "@manifold/json";
-import { epochMillisNow, platformFetch, sleepPromise } from "@/effect-kit";
+import { Effect } from "effect";
+import {
+  epochMillisNow,
+  fromPromise,
+  jsonFromResponseEffect,
+  platformFetch,
+  runHost,
+  sleep,
+} from "@/effect-kit";
 
 const USER_AGENT = manifoldUserAgent("cli");
-
-const sleep = sleepPromise;
 
 /** AniList degraded limit is ~30 req/min; 1200ms spacing stays under it. */
 const REQUEST_INTERVAL_MS = 2_500; // 30/min ÷ 1.25 safety margin → ≤24 req/min
@@ -73,47 +79,56 @@ interface GraphQLResponse<A> {
 
 let lastRequestAt = 0;
 
-const throttle = async (): Promise<void> => {
-  const wait = REQUEST_INTERVAL_MS - (epochMillisNow() - lastRequestAt);
-  if (wait > 0) {
-    await sleep(wait);
-  }
-  lastRequestAt = epochMillisNow();
-};
+const throttleEffect = (): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const wait = REQUEST_INTERVAL_MS - (epochMillisNow() - lastRequestAt);
+    if (wait > 0) {
+      yield* sleep(wait);
+    }
+    lastRequestAt = epochMillisNow();
+  });
 
-const gql = async <A>(
+const gqlEffect = <A>(
   token: string,
   query: string,
   variables: JsonObject = {},
   attempt = 0,
-): Promise<A> => {
-  await throttle();
-  const response = await platformFetch(ANILIST_GRAPHQL_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-      authorization: `Bearer ${token}`,
-      "user-agent": USER_AGENT,
-    },
-    body: JSON.stringify({ query, variables }),
+): Effect.Effect<A, Error> =>
+  Effect.gen(function* () {
+    yield* throttleEffect();
+    const response = yield* fromPromise(() =>
+      platformFetch(ANILIST_GRAPHQL_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          authorization: `Bearer ${token}`,
+          "user-agent": USER_AGENT,
+        },
+        body: JSON.stringify({ query, variables }),
+      }),
+    ).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(`AniList fetch failed: ${String(cause)}`),
+      ),
+    );
+    if (response.status === 429 && attempt < 5) {
+      const retryAfter = Number(response.headers.get("retry-after") ?? "5");
+      yield* sleep(Math.max(retryAfter, 5) * 1000);
+      return yield* gqlEffect<A>(token, query, variables, attempt + 1);
+    }
+    const raw = yield* jsonFromResponseEffect(response, "anilist.gql");
+    // SAFETY: HTTP value is the expected GraphQLResponse<A> after JSON parse
+    const body = raw as GraphQLResponse<A>;
+    if (body.errors?.length) {
+      return yield* Effect.fail(new Error(body.errors.map((e) => e.message ?? "?").join("; ")));
+    }
+    if (!response.ok) {
+      return yield* Effect.fail(new Error(`AniList HTTP ${response.status}`));
+    }
+    // SAFETY: value matches A at this call site after error checks
+    return body.data as A;
   });
-  if (response.status === 429 && attempt < 5) {
-    const retryAfter = Number(response.headers.get("retry-after") ?? "5");
-    await sleep(Math.max(retryAfter, 5) * 1000);
-    return gql<A>(token, query, variables, attempt + 1);
-  }
-  // SAFETY: HTTP value is the expected GraphQLResponse<A>; i after the preceding check
-  const body = (await response.json()) as GraphQLResponse<A>;
-  if (body.errors?.length) {
-    throw new Error(body.errors.map((e) => e.message ?? "?").join("; "));
-  }
-  if (!response.ok) {
-    throw new Error(`AniList HTTP ${response.status}`);
-  }
-  // SAFETY: value matches A; }; at this call site
-  return body.data as A;
-};
 
 const MEDIA_TITLES_QUERY = `query ($id: Int) {
   Media(id: $id, type: MANGA) {
@@ -122,34 +137,42 @@ const MEDIA_TITLES_QUERY = `query ($id: Int) {
   }
 }`;
 
-export const fetchAniListTitles = async (
+const fetchAniListTitlesEffect = (
   token: string,
   mediaId: number,
-): Promise<readonly string[]> => {
-  const data = await gql<{
-    Media?: {
-      title?: { romaji?: string | null; english?: string | null; native?: string | null };
-      synonyms?: readonly string[] | null;
-    };
-  }>(token, MEDIA_TITLES_QUERY, { id: mediaId });
-  const media = data.Media;
-  return [
-    media?.title?.english,
-    media?.title?.romaji,
-    media?.title?.native,
-    ...(media?.synonyms ?? []),
-  ].filter((title): title is string => isString(title) && title.trim().length > 0);
-};
+): Effect.Effect<readonly string[], Error> =>
+  Effect.gen(function* () {
+    const data = yield* gqlEffect<{
+      Media?: {
+        title?: { romaji?: string | null; english?: string | null; native?: string | null };
+        synonyms?: readonly string[] | null;
+      };
+    }>(token, MEDIA_TITLES_QUERY, { id: mediaId });
+    const media = data.Media;
+    return [
+      media?.title?.english,
+      media?.title?.romaji,
+      media?.title?.native,
+      ...(media?.synonyms ?? []),
+    ].filter((title): title is string => isString(title) && title.trim().length > 0);
+  });
+
+export const fetchAniListTitles = (token: string, mediaId: number): Promise<readonly string[]> =>
+  runHost(fetchAniListTitlesEffect(token, mediaId));
 
 /** Resolves the token owner's AniList user id. */
-export const fetchAniListViewerId = async (token: string): Promise<number> => {
-  const data = await gql<{ Viewer?: { id?: number } }>(token, VIEWER_QUERY);
-  const id = data.Viewer?.id;
-  if (!isFiniteNumber(id)) {
-    throw new Error("AniList returned no Viewer id");
-  }
-  return id;
-};
+const fetchAniListViewerIdEffect = (token: string): Effect.Effect<number, Error> =>
+  Effect.gen(function* () {
+    const data = yield* gqlEffect<{ Viewer?: { id?: number } }>(token, VIEWER_QUERY);
+    const id = data.Viewer?.id;
+    if (!isFiniteNumber(id)) {
+      return yield* Effect.fail(new Error("AniList returned no Viewer id"));
+    }
+    return id;
+  });
+
+export const fetchAniListViewerId = (token: string): Promise<number> =>
+  runHost(fetchAniListViewerIdEffect(token));
 
 /** AniList list entry enriched for Paperback backup metadata generation. */
 export interface AniListRichEntry {
@@ -209,96 +232,107 @@ const MEDIA_LIST_RICH_QUERY = `query ($userId: Int) {
  * render `__MANGA_INFO_V5` entities. Entries are deduped by mediaId; unknown
  * list statuses are skipped.
  */
-export const fetchAniListRichEntries = async (
+const fetchAniListRichEntriesEffect = (
   token: string,
-): Promise<readonly AniListRichEntry[]> => {
-  const userId = await fetchAniListViewerId(token);
-  const data = await gql<ListCollection>(token, MEDIA_LIST_RICH_QUERY, { userId });
-  const lists = data.MediaListCollection?.lists ?? [];
-  const seen = new Set<number>();
-  const entries: AniListRichEntry[] = [];
-  for (const list of lists) {
-    // SAFETY: optional field is { entries?: RichMediaList[] }).entri when present at this call site
-    for (const entry of (list as { entries?: RichMediaList[] }).entries ?? []) {
-      if (!entry.mediaId || seen.has(entry.mediaId)) {
-        continue;
+): Effect.Effect<readonly AniListRichEntry[], Error> =>
+  Effect.gen(function* () {
+    const userId = yield* fetchAniListViewerIdEffect(token);
+    const data = yield* gqlEffect<ListCollection>(token, MEDIA_LIST_RICH_QUERY, { userId });
+    const lists = data.MediaListCollection?.lists ?? [];
+    const seen = new Set<number>();
+    const entries: AniListRichEntry[] = [];
+    for (const list of lists) {
+      // SAFETY: optional field is { entries?: RichMediaList[] } when present at this call site
+      for (const entry of (list as { entries?: RichMediaList[] }).entries ?? []) {
+        if (!entry.mediaId || seen.has(entry.mediaId)) {
+          continue;
+        }
+        const status = entry.status ?? "";
+        if (!ANILIST_STATUSES.has(status)) {
+          continue;
+        }
+        seen.add(entry.mediaId);
+        const media = entry.media;
+        const titles = [
+          media?.title?.english,
+          media?.title?.romaji,
+          ...(media?.synonyms ?? []),
+        ].filter((t): t is string => isString(t) && t.length > 0);
+        const primary =
+          media?.title?.english ?? media?.title?.romaji ?? `AniList #${entry.mediaId}`;
+        entries.push({
+          mediaId: entry.mediaId,
+          status,
+          title: primary,
+          ...(media?.title?.romaji && { romajiTitle: media.title.romaji }),
+          ...(media?.title?.native && { nativeTitle: media.title.native }),
+          synonyms: [...new Set(titles)].filter((t) => t !== primary),
+          ...(media?.description && { description: media.description }),
+          ...((media?.coverImage?.extraLarge || media?.coverImage?.large) && {
+            coverUrl: media.coverImage.extraLarge ?? media.coverImage.large,
+          }),
+          ...(media?.status && { mediaStatus: media.status }),
+          ...(isFiniteNumber(media?.averageScore) && {
+            averageScore: media.averageScore,
+          }),
+          ...(isFiniteNumber(entry.createdAt) &&
+            entry.createdAt > 0 && { createdAt: entry.createdAt }),
+        });
       }
-      const status = entry.status ?? "";
-      if (!ANILIST_STATUSES.has(status)) {
-        continue;
-      }
-      seen.add(entry.mediaId);
-      const media = entry.media;
-      const titles = [
-        media?.title?.english,
-        media?.title?.romaji,
-        ...(media?.synonyms ?? []),
-      ].filter((t): t is string => isString(t) && t.length > 0);
-      const primary = media?.title?.english ?? media?.title?.romaji ?? `AniList #${entry.mediaId}`;
-      entries.push({
-        mediaId: entry.mediaId,
-        status,
-        title: primary,
-        ...(media?.title?.romaji && { romajiTitle: media.title.romaji }),
-        ...(media?.title?.native && { nativeTitle: media.title.native }),
-        synonyms: [...new Set(titles)].filter((t) => t !== primary),
-        ...(media?.description && { description: media.description }),
-        ...((media?.coverImage?.extraLarge || media?.coverImage?.large) && {
-          coverUrl: media.coverImage.extraLarge ?? media.coverImage.large,
-        }),
-        ...(media?.status && { mediaStatus: media.status }),
-        ...(isFiniteNumber(media?.averageScore) && {
-          averageScore: media.averageScore,
-        }),
-        ...(isFiniteNumber(entry.createdAt) &&
-          entry.createdAt > 0 && { createdAt: entry.createdAt }),
-      });
     }
-  }
-  return entries;
-};
+    return entries;
+  });
+
+export const fetchAniListRichEntries = (token: string): Promise<readonly AniListRichEntry[]> =>
+  runHost(fetchAniListRichEntriesEffect(token));
 
 /**
  * Fetches the authenticated user's manga list as flat entries with status and
  * integer progress. Entries with an unrecognized status are skipped.
  */
-export const fetchAniListMangaEntries = async (token: string): Promise<readonly AniListEntry[]> => {
-  const userId = await fetchAniListViewerId(token);
-  const data = await gql<ListCollection>(token, MEDIA_LIST_QUERY, { userId });
-  const lists = data.MediaListCollection?.lists ?? [];
-  const seen = new Set<number>();
-  const entries: AniListEntry[] = [];
-  for (const list of lists) {
-    for (const entry of list.entries ?? []) {
-      if (!entry.mediaId || seen.has(entry.mediaId)) {
-        continue;
+const fetchAniListMangaEntriesEffect = (
+  token: string,
+): Effect.Effect<readonly AniListEntry[], Error> =>
+  Effect.gen(function* () {
+    const userId = yield* fetchAniListViewerIdEffect(token);
+    const data = yield* gqlEffect<ListCollection>(token, MEDIA_LIST_QUERY, { userId });
+    const lists = data.MediaListCollection?.lists ?? [];
+    const seen = new Set<number>();
+    const entries: AniListEntry[] = [];
+    for (const list of lists) {
+      for (const entry of list.entries ?? []) {
+        if (!entry.mediaId || seen.has(entry.mediaId)) {
+          continue;
+        }
+        const status = entry.status ?? "";
+        if (!ANILIST_STATUSES.has(status)) {
+          continue;
+        }
+        seen.add(entry.mediaId);
+        const title =
+          entry.media?.title?.english ?? entry.media?.title?.romaji ?? `AniList #${entry.mediaId}`;
+        const titleVariants = [
+          entry.media?.title?.english,
+          entry.media?.title?.romaji,
+          ...(entry.media?.synonyms ?? []),
+        ].filter((value): value is string => isString(value) && value.trim().length > 0);
+        const malId =
+          isFiniteNumber(entry.media?.idMal) && entry.media.idMal > 0
+            ? String(Math.floor(entry.media.idMal))
+            : undefined;
+        entries.push({
+          mediaId: entry.mediaId,
+          title,
+          status,
+          ...(isFiniteNumber(entry.progress) &&
+            entry.progress >= 1 && { progress: Math.floor(entry.progress) }),
+          ...(malId && { malId }),
+          ...(titleVariants.length > 0 && { titles: [...new Set(titleVariants)] }),
+        });
       }
-      const status = entry.status ?? "";
-      if (!ANILIST_STATUSES.has(status)) {
-        continue;
-      }
-      seen.add(entry.mediaId);
-      const title =
-        entry.media?.title?.english ?? entry.media?.title?.romaji ?? `AniList #${entry.mediaId}`;
-      const titleVariants = [
-        entry.media?.title?.english,
-        entry.media?.title?.romaji,
-        ...(entry.media?.synonyms ?? []),
-      ].filter((value): value is string => isString(value) && value.trim().length > 0);
-      const malId =
-        isFiniteNumber(entry.media?.idMal) && entry.media.idMal > 0
-          ? String(Math.floor(entry.media.idMal))
-          : undefined;
-      entries.push({
-        mediaId: entry.mediaId,
-        title,
-        status,
-        ...(isFiniteNumber(entry.progress) &&
-          entry.progress >= 1 && { progress: Math.floor(entry.progress) }),
-        ...(malId && { malId }),
-        ...(titleVariants.length > 0 && { titles: [...new Set(titleVariants)] }),
-      });
     }
-  }
-  return entries;
-};
+    return entries;
+  });
+
+export const fetchAniListMangaEntries = (token: string): Promise<readonly AniListEntry[]> =>
+  runHost(fetchAniListMangaEntriesEffect(token));

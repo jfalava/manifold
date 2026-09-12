@@ -27,7 +27,7 @@ import {
   MANGADEX_CONTENT_RATINGS,
   type MangaDexReadingStatus,
 } from "@manifold/mangadex";
-import { envString, epochMillisNow, sleepPromise } from "@/effect-kit";
+import { envString, epochMillisNow, fromPromise, sleepPromise } from "@/effect-kit";
 
 interface StaleCtx extends RunContext {
   statuses: Record<string, MangaDexReadingStatus>;
@@ -52,54 +52,67 @@ interface StaleCacheFile {
   entries: Record<string, { lastUploadAt: number }>;
 }
 
-const loadStaleCache = async (): Promise<{
+const loadStaleCache = (): Promise<{
   usable: boolean;
   savedAt: string | undefined;
   entries: Record<string, number>;
-}> => {
-  try {
-    // SAFETY: stale-cache JSON is decoded via isJsonObject / field helpers below
-    const raw: unknown = JSON.parse(await readFile(STALE_CACHE_PATH, "utf8"));
-    if (!isJsonObject(raw) || raw.version !== 1) {
-      return { usable: false, savedAt: undefined, entries: {} };
-    }
-    const savedAt = stringField(raw, "savedAt");
-    if (savedAt === undefined) {
-      return { usable: false, savedAt: undefined, entries: {} };
-    }
-    const age = epochMillisNow() - Date.parse(savedAt);
-    const entries: Record<string, number> = {};
-    const entriesRaw = objectField(raw, "entries") ?? {};
-    for (const [id, entry] of Object.entries(entriesRaw)) {
-      if (!isJsonObject(entry)) {
-        continue;
+}> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const text = yield* fromPromise(() => readFile(STALE_CACHE_PATH, "utf8")).pipe(
+        Effect.catch(() => Effect.succeed(undefined as string | undefined)),
+      );
+      if (text === undefined) {
+        return { usable: false, savedAt: undefined, entries: {} };
       }
-      const lastUploadAt = numberField(entry, "lastUploadAt");
-      if (lastUploadAt !== undefined) {
-        entries[id] = lastUploadAt;
+      let raw: unknown;
+      try {
+        // SAFETY: stale-cache JSON is decoded via isJsonObject / field helpers below
+        raw = JSON.parse(text);
+      } catch {
+        return { usable: false, savedAt: undefined, entries: {} };
       }
-    }
-    return {
-      usable: Number.isFinite(age) && age >= 0 && age < STALE_CACHE_TTL_MS,
-      savedAt,
-      entries,
-    };
-  } catch {
-    return { usable: false, savedAt: undefined, entries: {} };
-  }
-};
+      if (!isJsonObject(raw) || raw.version !== 1) {
+        return { usable: false, savedAt: undefined, entries: {} };
+      }
+      const savedAt = stringField(raw, "savedAt");
+      if (savedAt === undefined) {
+        return { usable: false, savedAt: undefined, entries: {} };
+      }
+      const age = epochMillisNow() - Date.parse(savedAt);
+      const entries: Record<string, number> = {};
+      const entriesRaw = objectField(raw, "entries") ?? {};
+      for (const [id, entry] of Object.entries(entriesRaw)) {
+        if (!isJsonObject(entry)) {
+          continue;
+        }
+        const lastUploadAt = numberField(entry, "lastUploadAt");
+        if (lastUploadAt !== undefined) {
+          entries[id] = lastUploadAt;
+        }
+      }
+      return {
+        usable: Number.isFinite(age) && age >= 0 && age < STALE_CACHE_TTL_MS,
+        savedAt,
+        entries,
+      };
+    }),
+  );
 
-const saveStaleCache = async (entries: Record<string, number>): Promise<void> => {
-  const file: StaleCacheFile = {
-    version: 1,
-    savedAt: new Date().toISOString(),
-    entries: Object.fromEntries(
-      Object.entries(entries).map(([id, lastUploadAt]) => [id, { lastUploadAt }]),
-    ),
-  };
-  await mkdir(".tmp", { recursive: true });
-  await writeFile(STALE_CACHE_PATH, JSON.stringify(file));
-};
+const saveStaleCache = (entries: Record<string, number>): Promise<void> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const file: StaleCacheFile = {
+        version: 1,
+        savedAt: new Date().toISOString(),
+        entries: Object.fromEntries(
+          Object.entries(entries).map(([id, lastUploadAt]) => [id, { lastUploadAt }]),
+        ),
+      };
+      yield* fromPromise(() => mkdir(".tmp", { recursive: true }));
+      yield* fromPromise(() => writeFile(STALE_CACHE_PATH, JSON.stringify(file)));
+    }),
+  );
 
 interface StalePlanFile {
   version: 1;
@@ -111,20 +124,32 @@ interface StalePlanFile {
   titles: Record<string, string>;
 }
 
-const saveStalePlan = async (plan: StalePlanFile): Promise<void> => {
-  await mkdir(".tmp", { recursive: true });
-  await writeFile(PLAN_PATH, JSON.stringify(plan));
-};
+const saveStalePlan = (plan: StalePlanFile): Promise<void> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      yield* fromPromise(() => mkdir(".tmp", { recursive: true }));
+      yield* fromPromise(() => writeFile(PLAN_PATH, JSON.stringify(plan)));
+    }),
+  );
 
-const loadStalePlan = async (): Promise<StalePlanFile | undefined> => {
-  try {
-    // SAFETY: parsed JSON matches StalePlanFile; for this trusted/test payload
-    const raw = JSON.parse(await readFile(PLAN_PATH, "utf8")) as StalePlanFile;
-    return raw.version === 1 && Array.isArray(raw.staleIds) ? raw : undefined;
-  } catch {
-    return undefined;
-  }
-};
+const loadStalePlan = (): Promise<StalePlanFile | undefined> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const text = yield* fromPromise(() => readFile(PLAN_PATH, "utf8")).pipe(
+        Effect.catch(() => Effect.succeed(undefined as string | undefined)),
+      );
+      if (text === undefined) {
+        return undefined;
+      }
+      try {
+        // SAFETY: parsed JSON matches StalePlanFile; for this trusted/test payload
+        const raw = JSON.parse(text) as StalePlanFile;
+        return raw.version === 1 && Array.isArray(raw.staleIds) ? raw : undefined;
+      } catch {
+        return undefined;
+      }
+    }),
+  );
 
 const VALID_STATUSES: readonly MangaDexReadingStatus[] = [
   "reading",

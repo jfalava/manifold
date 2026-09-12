@@ -9,11 +9,12 @@ import {
   stringField,
 } from "@manifold/json";
 import { MYANIMELIST_MANGA_ENDPOINT } from "@manifold/canonical/sources";
+import { Effect } from "effect";
 
 import type { AniListEntry } from "@/anilist";
 import type { MalClient, MalMangaUpdate } from "@/mal";
 import { normalizeTitle } from "@/migration";
-import { epochMillisNow, sleepPromise } from "@/effect-kit";
+import { epochMillisNow, fromPromise, runHost, sleepPromise } from "@/effect-kit";
 
 /** AniList MediaListStatus → MAL list_status fields (status + optional reread). */
 export const ANILIST_TO_MAL = {
@@ -127,89 +128,119 @@ export const MAL_SEARCH_INTERVAL_MS = 1_500;
 export const createMalTitleSearch = (
   clientId: string,
   fetcher: typeof fetch = fetch,
-  sleep: (ms: number) => Promise<void> = sleepPromise,
+  sleepFn: (ms: number) => Promise<void> = sleepPromise,
 ): Al2malSearch => {
   if (!clientId || clientId === "not-configured") {
-    return async () => {
-      throw new Error("MyAnimeList client id is not configured");
-    };
+    return () => runHost(Effect.fail(new Error("MyAnimeList client id is not configured")));
   }
   let requested = false;
-  return async (query) => {
-    const q = malSearchQuery(query);
-    if (!q) {
-      return [];
-    }
-    if (requested) {
-      await sleep(MAL_SEARCH_INTERVAL_MS);
-    }
-    requested = true;
-    const href =
-      `${MYANIMELIST_MANGA_ENDPOINT}?q=${encodeURIComponent(q)}` +
-      `&limit=10&fields=${encodeURIComponent("alternative_titles")}`;
-    for (let attempt = 0; ; attempt += 1) {
-      const response = await fetcher(href, {
-        headers: {
-          accept: "application/json",
-          "X-MAL-CLIENT-ID": clientId,
-          "user-agent": manifoldUserAgent("cli"),
-        },
-        signal: AbortSignal.timeout(15_000),
-      });
-      if ((response.status === 429 || response.status >= 500) && attempt < 3) {
-        const retryAfter = response.headers.get("retry-after");
-        const seconds = retryAfter === null ? NaN : Number(retryAfter);
-        const wait =
-          retryAfter === null
-            ? NaN
-            : Number.isFinite(seconds)
-              ? seconds * 1000
-              : Date.parse(retryAfter) - epochMillisNow();
-        await response.body?.cancel();
-        if (wait > 300_000) {
-          throw new Error("MAL title search requested a long retry delay. Stop and resume later.");
-        }
-        await sleep(
-          Number.isFinite(wait) ? Math.max(MAL_SEARCH_INTERVAL_MS, wait) : 5000 * 2 ** attempt,
-        );
-        continue;
-      }
-      if (!response.ok) {
-        const body = (await response.text().catch(() => ""))
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 200);
-        throw new Error(`MAL title search HTTP ${response.status}${body ? `: ${body}` : ""}`);
-      }
-      const json: unknown = await response.json();
-      if (!isJsonObject(json)) {
+  const searchEffect = (query: string): Effect.Effect<readonly Al2malSearchHit[], Error> =>
+    Effect.gen(function* () {
+      const q = malSearchQuery(query);
+      if (!q) {
         return [];
       }
-      const data = isJsonArray(json.data) ? json.data : [];
-      const hits: Al2malSearchHit[] = [];
-      for (const item of data) {
-        if (!isJsonObject(item)) {
-          continue;
-        }
-        const node = objectField(item, "node") ?? item;
-        const id = numberField(node, "id");
-        const title = stringField(node, "title");
-        if (id === undefined || id <= 0 || title === undefined) {
-          continue;
-        }
-        const alternative = objectField(node, "alternative_titles");
-        const aliases = [
-          alternative === undefined ? undefined : stringField(alternative, "en"),
-          alternative === undefined ? undefined : stringField(alternative, "ja"),
-          ...(alternative !== undefined && isJsonArray(alternative.synonyms)
-            ? alternative.synonyms.filter(isString)
-            : []),
-        ].filter((value): value is string => value !== undefined && value.trim().length > 0);
-        hits.push({ id, title, aliases });
+      if (requested) {
+        yield* fromPromise(() => sleepFn(MAL_SEARCH_INTERVAL_MS)).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof Error ? cause : new Error(errorMessage(cause)),
+          ),
+        );
       }
-      return hits;
-    }
-  };
+      requested = true;
+      const href =
+        `${MYANIMELIST_MANGA_ENDPOINT}?q=${encodeURIComponent(q)}` +
+        `&limit=10&fields=${encodeURIComponent("alternative_titles")}`;
+      for (let attempt = 0; ; attempt += 1) {
+        const response = yield* fromPromise(() =>
+          fetcher(href, {
+            headers: {
+              accept: "application/json",
+              "X-MAL-CLIENT-ID": clientId,
+              "user-agent": manifoldUserAgent("cli"),
+            },
+            signal: AbortSignal.timeout(15_000),
+          }),
+        ).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof Error ? cause : new Error(errorMessage(cause)),
+          ),
+        );
+        if ((response.status === 429 || response.status >= 500) && attempt < 3) {
+          const retryAfter = response.headers.get("retry-after");
+          const seconds = retryAfter === null ? NaN : Number(retryAfter);
+          const wait =
+            retryAfter === null
+              ? NaN
+              : Number.isFinite(seconds)
+                ? seconds * 1000
+                : Date.parse(retryAfter) - epochMillisNow();
+          yield* fromPromise(() => response.body?.cancel() ?? Promise.resolve()).pipe(
+            Effect.catch(() => Effect.void),
+          );
+          if (wait > 300_000) {
+            return yield* Effect.fail(
+              new Error("MAL title search requested a long retry delay. Stop and resume later."),
+            );
+          }
+          yield* fromPromise(() =>
+            sleepFn(
+              Number.isFinite(wait) ? Math.max(MAL_SEARCH_INTERVAL_MS, wait) : 5000 * 2 ** attempt,
+            ),
+          ).pipe(
+            Effect.mapError((cause) =>
+              cause instanceof Error ? cause : new Error(errorMessage(cause)),
+            ),
+          );
+          continue;
+        }
+        if (!response.ok) {
+          const body = (yield* fromPromise(() => response.text().catch(() => "")).pipe(
+            Effect.mapError((cause) =>
+              cause instanceof Error ? cause : new Error(errorMessage(cause)),
+            ),
+          ))
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 200);
+          return yield* Effect.fail(
+            new Error(`MAL title search HTTP ${response.status}${body ? `: ${body}` : ""}`),
+          );
+        }
+        const json: unknown = yield* fromPromise(() => response.json()).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof Error ? cause : new Error(errorMessage(cause)),
+          ),
+        );
+        if (!isJsonObject(json)) {
+          return [];
+        }
+        const data = isJsonArray(json.data) ? json.data : [];
+        const hits: Al2malSearchHit[] = [];
+        for (const item of data) {
+          if (!isJsonObject(item)) {
+            continue;
+          }
+          const node = objectField(item, "node") ?? item;
+          const id = numberField(node, "id");
+          const title = stringField(node, "title");
+          if (id === undefined || id <= 0 || title === undefined) {
+            continue;
+          }
+          const alternative = objectField(node, "alternative_titles");
+          const aliases = [
+            alternative === undefined ? undefined : stringField(alternative, "en"),
+            alternative === undefined ? undefined : stringField(alternative, "ja"),
+            ...(alternative !== undefined && isJsonArray(alternative.synonyms)
+              ? alternative.synonyms.filter(isString)
+              : []),
+          ].filter((value): value is string => value !== undefined && value.trim().length > 0);
+          hits.push({ id, title, aliases });
+        }
+        return hits;
+      }
+    });
+  return (query) => runHost(searchEffect(query));
 };
 
 const titlePool = (entry: AniListEntry): string[] => {
@@ -258,101 +289,115 @@ const chooseTitleMatch = (
   return undefined;
 };
 
-export const matchAniListToMal = async (
+const matchAniListToMalEffect = (
+  entry: AniListEntry,
+  search: Al2malSearch,
+  options: { readonly includeProgress: boolean },
+): Effect.Effect<
+  { kind: "matched"; value: Al2malMatched } | { kind: "unmatched"; value: Al2malUnmatched }
+> =>
+  Effect.gen(function* () {
+    const update = malUpdateForAniList(entry, options);
+    if (!update) {
+      return {
+        kind: "unmatched" as const,
+        value: {
+          mediaId: entry.mediaId,
+          title: entry.title,
+          anilistStatus: entry.status,
+          ...(entry.progress !== undefined && { progress: entry.progress }),
+          reason: `Unsupported AniList status: ${entry.status}`,
+        },
+      };
+    }
+
+    if (entry.malId && /^[1-9]\d*$/.test(entry.malId)) {
+      return {
+        kind: "matched" as const,
+        value: {
+          mediaId: entry.mediaId,
+          title: entry.title,
+          anilistStatus: entry.status,
+          malId: Number(entry.malId),
+          matchedTitle: entry.title,
+          method: "idMal" as const,
+          update,
+        },
+      };
+    }
+
+    const candidates = new Map<number, Al2malSearchHit>();
+    let searchError: string | undefined;
+    const queries = [
+      ...new Set(
+        titlePool(entry)
+          .map(malSearchQuery)
+          .filter((value): value is string => value !== undefined),
+      ),
+    ];
+    for (const title of queries) {
+      yield* fromPromise(() => search(title)).pipe(
+        Effect.map((hits) => {
+          for (const hit of hits) {
+            candidates.set(hit.id, hit);
+          }
+        }),
+        Effect.catch((cause) =>
+          Effect.sync(() => {
+            // One bad title must not abort the whole library import or spam stdout.
+            searchError = errorMessage(cause);
+          }),
+        ),
+      );
+    }
+    const chosen = chooseTitleMatch(entry, [...candidates.values()]);
+    if (!chosen) {
+      return {
+        kind: "unmatched" as const,
+        value: {
+          mediaId: entry.mediaId,
+          title: entry.title,
+          anilistStatus: entry.status,
+          ...(entry.progress !== undefined && { progress: entry.progress }),
+          reason: searchError
+            ? `MAL title search failed: ${searchError}`
+            : queries.length === 0
+              ? `No title usable for MAL search (q needs ${MAL_SEARCH_Q_MIN}–${MAL_SEARCH_Q_MAX} characters) and no idMal`
+              : candidates.size === 0
+                ? "No MAL candidates for title search"
+                : "Ambiguous or weak MAL title match",
+        },
+      };
+    }
+
+    return {
+      kind: "matched" as const,
+      value: {
+        mediaId: entry.mediaId,
+        title: entry.title,
+        anilistStatus: entry.status,
+        malId: chosen.hit.id,
+        matchedTitle: chosen.hit.title,
+        method: chosen.method,
+        update,
+      },
+    };
+  });
+
+export const matchAniListToMal = (
   entry: AniListEntry,
   search: Al2malSearch,
   options: { readonly includeProgress: boolean },
 ): Promise<
   { kind: "matched"; value: Al2malMatched } | { kind: "unmatched"; value: Al2malUnmatched }
-> => {
-  const update = malUpdateForAniList(entry, options);
-  if (!update) {
-    return {
-      kind: "unmatched",
-      value: {
-        mediaId: entry.mediaId,
-        title: entry.title,
-        anilistStatus: entry.status,
-        ...(entry.progress !== undefined && { progress: entry.progress }),
-        reason: `Unsupported AniList status: ${entry.status}`,
-      },
-    };
-  }
-
-  if (entry.malId && /^[1-9]\d*$/.test(entry.malId)) {
-    return {
-      kind: "matched",
-      value: {
-        mediaId: entry.mediaId,
-        title: entry.title,
-        anilistStatus: entry.status,
-        malId: Number(entry.malId),
-        matchedTitle: entry.title,
-        method: "idMal",
-        update,
-      },
-    };
-  }
-
-  const candidates = new Map<number, Al2malSearchHit>();
-  let searchError: string | undefined;
-  const queries = [
-    ...new Set(
-      titlePool(entry)
-        .map(malSearchQuery)
-        .filter((value): value is string => value !== undefined),
-    ),
-  ];
-  for (const title of queries) {
-    try {
-      for (const hit of await search(title)) {
-        candidates.set(hit.id, hit);
-      }
-    } catch (cause) {
-      // One bad title must not abort the whole library import or spam stdout.
-      searchError = errorMessage(cause);
-    }
-  }
-  const chosen = chooseTitleMatch(entry, [...candidates.values()]);
-  if (!chosen) {
-    return {
-      kind: "unmatched",
-      value: {
-        mediaId: entry.mediaId,
-        title: entry.title,
-        anilistStatus: entry.status,
-        ...(entry.progress !== undefined && { progress: entry.progress }),
-        reason: searchError
-          ? `MAL title search failed: ${searchError}`
-          : queries.length === 0
-            ? `No title usable for MAL search (q needs ${MAL_SEARCH_Q_MIN}–${MAL_SEARCH_Q_MAX} characters) and no idMal`
-            : candidates.size === 0
-              ? "No MAL candidates for title search"
-              : "Ambiguous or weak MAL title match",
-      },
-    };
-  }
-
-  return {
-    kind: "matched",
-    value: {
-      mediaId: entry.mediaId,
-      title: entry.title,
-      anilistStatus: entry.status,
-      malId: chosen.hit.id,
-      matchedTitle: chosen.hit.title,
-      method: chosen.method,
-      update,
-    },
-  };
-};
+> => runHost(matchAniListToMalEffect(entry, search, options));
 
 /**
  * Match every AniList manga entry to MAL, then optionally PATCH list status
  * (and chapter progress). Dry-run never writes. Failures are recorded per entry
  * so a rerun can resume after fixing tokens or rate limits.
  */
-export const runAl2mal = async (options: {
+const runAl2malEffect = (options: {
   readonly entries: readonly AniListEntry[];
   readonly search: Al2malSearch;
   readonly client: Pick<MalClient, "updateManga">;
@@ -361,44 +406,60 @@ export const runAl2mal = async (options: {
   readonly onMatched?: (entry: Al2malMatched, index: number, total: number) => void;
   readonly onUnmatched?: (entry: Al2malUnmatched, index: number, total: number) => void;
   readonly onWritten?: (done: number, total: number) => void;
-}): Promise<Al2malReport> => {
-  const matched: Al2malMatched[] = [];
-  const unmatched: Al2malUnmatched[] = [];
+}): Effect.Effect<Al2malReport> =>
+  Effect.gen(function* () {
+    const matched: Al2malMatched[] = [];
+    const unmatched: Al2malUnmatched[] = [];
 
-  for (const [index, entry] of options.entries.entries()) {
-    const result = await matchAniListToMal(entry, options.search, {
-      includeProgress: options.includeProgress,
-    });
-    if (result.kind === "matched") {
-      matched.push(result.value);
-      options.onMatched?.(result.value, index, options.entries.length);
-    } else {
-      unmatched.push(result.value);
-      options.onUnmatched?.(result.value, index, options.entries.length);
-    }
-  }
-
-  let written = 0;
-  let failed = 0;
-  if (!options.dryRun) {
-    for (const [index, entry] of matched.entries()) {
-      try {
-        await options.client.updateManga(entry.malId, entry.update);
-        written += 1;
-      } catch (cause) {
-        failed += 1;
-        entry.error = errorMessage(cause);
+    for (const [index, entry] of options.entries.entries()) {
+      const result = yield* matchAniListToMalEffect(entry, options.search, {
+        includeProgress: options.includeProgress,
+      });
+      if (result.kind === "matched") {
+        matched.push(result.value);
+        options.onMatched?.(result.value, index, options.entries.length);
+      } else {
+        unmatched.push(result.value);
+        options.onUnmatched?.(result.value, index, options.entries.length);
       }
-      options.onWritten?.(index + 1, matched.length);
     }
-  }
 
-  return {
-    scanned: options.entries.length,
-    matched,
-    unmatched,
-    dryRun: options.dryRun,
-    written,
-    failed,
-  };
-};
+    let written = 0;
+    let failed = 0;
+    if (!options.dryRun) {
+      for (const [index, entry] of matched.entries()) {
+        yield* fromPromise(() => options.client.updateManga(entry.malId, entry.update)).pipe(
+          Effect.map(() => {
+            written += 1;
+          }),
+          Effect.catch((cause) =>
+            Effect.sync(() => {
+              failed += 1;
+              entry.error = errorMessage(cause);
+            }),
+          ),
+        );
+        options.onWritten?.(index + 1, matched.length);
+      }
+    }
+
+    return {
+      scanned: options.entries.length,
+      matched,
+      unmatched,
+      dryRun: options.dryRun,
+      written,
+      failed,
+    };
+  });
+
+export const runAl2mal = (options: {
+  readonly entries: readonly AniListEntry[];
+  readonly search: Al2malSearch;
+  readonly client: Pick<MalClient, "updateManga">;
+  readonly dryRun: boolean;
+  readonly includeProgress: boolean;
+  readonly onMatched?: (entry: Al2malMatched, index: number, total: number) => void;
+  readonly onUnmatched?: (entry: Al2malUnmatched, index: number, total: number) => void;
+  readonly onWritten?: (done: number, total: number) => void;
+}): Promise<Al2malReport> => runHost(runAl2malEffect(options));

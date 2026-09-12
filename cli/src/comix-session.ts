@@ -9,7 +9,8 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@manifold/json";
-import { epochMillisNow } from "@/effect-kit";
+import { Effect } from "effect";
+import { epochMillisNow, fromPromise, runHost } from "@/effect-kit";
 
 export const SECRETS_SERVICE = "manifold";
 export const SECRETS_NAME = "comix-session";
@@ -203,32 +204,42 @@ export const isSessionFresh = (session: StoredComixSession, now = epochMillisNow
   return expiresAt > now + SESSION_SKEW_MS;
 };
 
-export const loadStoredSession = async (
+const loadStoredSessionEffect = (
   store: SecretStore,
   now = epochMillisNow(),
-): Promise<StoredComixSession | undefined> => {
-  const raw = await store.get(SECRETS_SERVICE, SECRETS_NAME);
-  if (!raw) {
-    return undefined;
-  }
-  const parsed = parseStoredSession(raw);
-  if (!parsed || !isSessionFresh(parsed, now)) {
-    await store.delete(SECRETS_SERVICE, SECRETS_NAME);
-    return undefined;
-  }
-  return parsed;
-};
+): Effect.Effect<StoredComixSession | undefined, unknown> =>
+  Effect.gen(function* () {
+    const raw = yield* fromPromise(() => store.get(SECRETS_SERVICE, SECRETS_NAME));
+    if (!raw) {
+      return undefined;
+    }
+    const parsed = parseStoredSession(raw);
+    if (!parsed || !isSessionFresh(parsed, now)) {
+      yield* fromPromise(() => store.delete(SECRETS_SERVICE, SECRETS_NAME));
+      return undefined;
+    }
+    return parsed;
+  });
 
-export const saveStoredSession = async (
+export const loadStoredSession = (
+  store: SecretStore,
+  now = epochMillisNow(),
+): Promise<StoredComixSession | undefined> => runHost(loadStoredSessionEffect(store, now));
+
+const saveStoredSessionEffect = (
   store: SecretStore,
   session: StoredComixSession,
-): Promise<void> => {
-  await store.set(SECRETS_SERVICE, SECRETS_NAME, JSON.stringify(session));
-};
+): Effect.Effect<void, unknown> =>
+  fromPromise(() => store.set(SECRETS_SERVICE, SECRETS_NAME, JSON.stringify(session)));
 
-export const clearStoredSession = async (store: SecretStore): Promise<void> => {
-  await store.delete(SECRETS_SERVICE, SECRETS_NAME);
-};
+export const saveStoredSession = (store: SecretStore, session: StoredComixSession): Promise<void> =>
+  runHost(saveStoredSessionEffect(store, session));
+
+const clearStoredSessionEffect = (store: SecretStore): Effect.Effect<void, unknown> =>
+  fromPromise(() => store.delete(SECRETS_SERVICE, SECRETS_NAME)).pipe(Effect.asVoid);
+
+export const clearStoredSession = (store: SecretStore): Promise<void> =>
+  runHost(clearStoredSessionEffect(store));
 
 export const sessionFromCookies = (
   cookies: readonly ComixCookie[],

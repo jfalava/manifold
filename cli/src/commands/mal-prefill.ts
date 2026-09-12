@@ -36,7 +36,8 @@ export const malPrefillCommand = Command.make("mal", {
         const config = apiConfig(apiOrigin, apiToken);
         const source = createAniListSource({
           userAgent: manifoldUserAgent("cli"),
-          fetcher: (input, init) => platformFetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
+          fetcher: (input, init) =>
+            platformFetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
         });
         openFrame(`MAL registry links (${apply ? "apply" : "dry run"})`);
         try {
