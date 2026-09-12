@@ -30,11 +30,8 @@ export const hostLogInfo = (message: string): void => {
 };
 
 /** Run an Effect at a CF/Hono host boundary. */
-export const runHost = <A, E>(effect: Effect.Effect<A, E>): Promise<A> =>
-  Effect.runPromise(effect);
+export const runHost = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect);
 
 /** Fetch that re-reads globalThis.fetch (tests can stub it). */
-export const platformFetch = (
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): Promise<Response> => globalThis.fetch(input, init);
+export const platformFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
+  globalThis.fetch(input, init);

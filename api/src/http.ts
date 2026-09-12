@@ -163,7 +163,6 @@ export const tryPromise = <A>(action: () => Promise<A>): Effect.Effect<A, HttpRe
     catch: (cause) => new HttpRequestError({ cause: toError(cause) }),
   });
 
-
 export const attempt = <A>(
   action: () => Promise<A>,
 ): Effect.Effect<{ ok: true; value: A } | { ok: false; error: Error }> =>

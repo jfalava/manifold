@@ -36,24 +36,22 @@ const searchSource = (
   source: CanonicalSearchSource,
   query: string,
   limit: number,
-): Promise<CanonicalProviderSearch> =>
-  Effect.runPromise(
-    source.search(query, { limit }).pipe(
-      Effect.match({
-        onSuccess: (results): CanonicalProviderSearch => ({
-          provider: source.provider,
-          results,
-        }),
-        onFailure: (failure): CanonicalProviderSearch => ({
-          provider: source.provider,
-          results: [],
-          error: {
-            message: failure.message,
-            ...(failure.status !== undefined && { status: failure.status }),
-          },
-        }),
+): Effect.Effect<CanonicalProviderSearch> =>
+  source.search(query, { limit }).pipe(
+    Effect.match({
+      onSuccess: (results): CanonicalProviderSearch => ({
+        provider: source.provider,
+        results,
       }),
-    ),
+      onFailure: (failure): CanonicalProviderSearch => ({
+        provider: source.provider,
+        results: [],
+        error: {
+          message: failure.message,
+          ...(failure.status !== undefined && { status: failure.status }),
+        },
+      }),
+    }),
   );
 
 const isUnavailable = (error: { readonly status?: number }): boolean =>
@@ -82,86 +80,92 @@ const selectedSources = (
   return sources;
 };
 
-export const searchCanonical = async (
+export const searchCanonical = (
   env: Env,
   query: string,
   provider: CanonicalProviderFilter,
   limit: number,
-): Promise<CanonicalSearchResponse> => {
-  const providers: CanonicalProviderSearch[] = [];
-  if (provider === "auto") {
-    for (const source of selectedSources(env, "all")) {
-      const result = await searchSource(source, query, limit);
-      providers.push(result);
-      if (!result.error || !isUnavailable(result.error)) {
-        break;
+): Promise<CanonicalSearchResponse> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const providers: CanonicalProviderSearch[] = [];
+      if (provider === "auto") {
+        for (const source of selectedSources(env, "all")) {
+          const result = yield* searchSource(source, query, limit);
+          providers.push(result);
+          if (!result.error || !isUnavailable(result.error)) {
+            break;
+          }
+        }
+      } else {
+        providers.push(
+          ...(yield* Effect.forEach(
+            selectedSources(env, provider),
+            (source) => searchSource(source, query, limit),
+            { concurrency: "unbounded" },
+          )),
+        );
       }
-    }
-  } else {
-    providers.push(
-      ...(await Promise.all(
-        selectedSources(env, provider).map((source) => searchSource(source, query, limit)),
-      )),
-    );
-  }
-  return {
-    query,
-    providers,
-    results: providers.flatMap((result) => result.results),
-  };
-};
+      return {
+        query,
+        providers,
+        results: providers.flatMap((result) => result.results),
+      };
+    }),
+  );
 
-export const getCanonical = async (
+export const getCanonical = (
   env: Env,
   provider: CanonicalSearchSource["provider"],
   providerId: string,
-): Promise<CanonicalEntry | undefined> => {
-  const source = selectedSources(env, provider)[0];
-  if (!source) {
-    return undefined;
-  }
-  return Effect.runPromise(source.getById(providerId));
-};
+): Promise<CanonicalEntry | undefined> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const source = selectedSources(env, provider)[0];
+      if (!source) {
+        return undefined;
+      }
+      return yield* source.getById(providerId);
+    }),
+  );
 
 /** Hydrate only recorded identities. An outage must never change a registry UUID. */
-export const getRegistryCanonical = async (
-  env: Env,
-  entry: RegistryEntry,
-): Promise<CanonicalEntry> => {
-  for (const source of selectedSources(env, "all")) {
-    const link = entry.providers.find((item) => item.provider === source.provider);
-    if (!link) {
-      continue;
-    }
-    const outcome = await Effect.runPromise(
-      source.getById(link.externalId).pipe(
-        Effect.match({
-          onSuccess: (value) => ({ value, error: undefined }),
-          onFailure: (error: CanonicalSourceError) => ({ value: undefined, error }),
-        }),
-      ),
-    );
-    if (outcome.value) {
-      return { ...outcome.value, id: entry.id };
-    }
-    if (outcome.error) {
-      hostLogWarn(
-        JSON.stringify({
-          event: "canonical.details.failed",
-          entryId: entry.id,
-          ...outcome.error,
-        }),
-      );
-      if (!isUnavailable(outcome.error) && outcome.error.status !== 404) {
-        break;
+export const getRegistryCanonical = (env: Env, entry: RegistryEntry): Promise<CanonicalEntry> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      for (const source of selectedSources(env, "all")) {
+        const link = entry.providers.find((item) => item.provider === source.provider);
+        if (!link) {
+          continue;
+        }
+        const outcome = yield* source.getById(link.externalId).pipe(
+          Effect.match({
+            onSuccess: (value) => ({ value, error: undefined }),
+            onFailure: (error: CanonicalSourceError) => ({ value: undefined, error }),
+          }),
+        );
+        if (outcome.value) {
+          return { ...outcome.value, id: entry.id };
+        }
+        if (outcome.error) {
+          hostLogWarn(
+            JSON.stringify({
+              event: "canonical.details.failed",
+              entryId: entry.id,
+              ...outcome.error,
+            }),
+          );
+          if (!isUnavailable(outcome.error) && outcome.error.status !== 404) {
+            break;
+          }
+        }
       }
-    }
-  }
-  return {
-    id: entry.id,
-    provider: entry.provider,
-    providerId: entry.providerId,
-    title: entry.title,
-    aliases: [],
-  };
-};
+      return {
+        id: entry.id,
+        provider: entry.provider,
+        providerId: entry.providerId,
+        title: entry.title,
+        aliases: [],
+      };
+    }),
+  );

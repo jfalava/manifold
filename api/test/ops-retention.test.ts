@@ -104,7 +104,12 @@ describe("sync outbox retention and summary", () => {
       body: JSON.stringify(body),
     });
 
-  const seedOp = async (nonce: string, opId: string, target: string, kind: string): Promise<void> => {
+  const seedOp = async (
+    nonce: string,
+    opId: string,
+    target: string,
+    kind: string,
+  ): Promise<void> => {
     const response = await dispatch({ op: "seed-op", nonce, opId, target, kind });
     expect(response.status).toBe(200);
   };

@@ -309,25 +309,34 @@ const uniqueManga = (values: readonly MangaDexManga[]): MangaDexManga[] => {
 // below a hundred titles, so candidate embeddings go out in small batches.
 const EMBED_BATCH_SIZE = 16;
 
-export const embedMangaTitles = async (
+const embedMangaTitlesEffect = (
   ai: Ai,
   texts: readonly string[],
-): Promise<readonly number[][]> => {
-  if (texts.length === 0) {
-    return [];
-  }
-  const vectors: number[][] = [];
-  for (let index = 0; index < texts.length; index += EMBED_BATCH_SIZE) {
-    const chunk = [...texts].slice(index, index + EMBED_BATCH_SIZE);
-    const result = await ai.run(MANGADEX_EMBEDDING_MODEL, { text: chunk });
-    const data = result.data ?? [];
-    if (data.length !== chunk.length || data.some((vector) => vector.length === 0)) {
-      throw new Error("Workers AI returned an invalid MangaDex embedding response");
+): Effect.Effect<readonly number[][], Error> =>
+  Effect.gen(function* () {
+    if (texts.length === 0) {
+      return [];
     }
-    vectors.push(...data);
-  }
-  return vectors;
-};
+    const vectors: number[][] = [];
+    for (let index = 0; index < texts.length; index += EMBED_BATCH_SIZE) {
+      const chunk = [...texts].slice(index, index + EMBED_BATCH_SIZE);
+      const result = yield* Effect.tryPromise({
+        try: () => ai.run(MANGADEX_EMBEDDING_MODEL, { text: chunk }),
+        catch: (cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause))),
+      });
+      const data = result.data ?? [];
+      if (data.length !== chunk.length || data.some((vector) => vector.length === 0)) {
+        return yield* Effect.fail(
+          new Error("Workers AI returned an invalid MangaDex embedding response"),
+        );
+      }
+      vectors.push(...data);
+    }
+    return vectors;
+  });
+
+export const embedMangaTitles = (ai: Ai, texts: readonly string[]): Promise<readonly number[][]> =>
+  Effect.runPromise(embedMangaTitlesEffect(ai, texts));
 
 const indexedCandidates = (
   matches: Awaited<ReturnType<VectorizeIndex["query"]>>["matches"],
@@ -338,64 +347,90 @@ const indexedCandidates = (
     return manga ? [{ manga, score: match.score }] : [];
   });
 
-const queryIndex = async (
+const queryIndex = (
   index: VectorizeIndex,
   vector: readonly number[],
   entry: MangaDexMatchInput,
-): Promise<readonly RankedMangaDexCandidate[]> => {
-  try {
-    const exact = await index.query([...vector], {
-      topK: 1,
-      filter:
-        entry.provider === "anilist"
-          ? { anilistId: entry.providerId }
-          : { malId: entry.providerId },
-      returnMetadata: "all",
-    });
-    const exactCandidates = indexedCandidates(exact.matches);
+): Effect.Effect<readonly RankedMangaDexCandidate[]> =>
+  Effect.gen(function* () {
+    const exactCandidates = yield* Effect.tryPromise({
+      try: () =>
+        index.query([...vector], {
+          topK: 1,
+          filter:
+            entry.provider === "anilist"
+              ? { anilistId: entry.providerId }
+              : { malId: entry.providerId },
+          returnMetadata: "all",
+        }),
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.map((exact) => indexedCandidates(exact.matches)),
+      Effect.tapError((error) =>
+        Effect.sync(() => {
+          hostLogWarn(`[MangaDexMatch] exact Vectorize lookup failed: ${errorMessage(error)}`);
+        }),
+      ),
+      Effect.orElseSucceed((): readonly RankedMangaDexCandidate[] => []),
+    );
     if (exactCandidates.length > 0) {
       return exactCandidates;
     }
-  } catch (error) {
-    hostLogWarn(`[MangaDexMatch] exact Vectorize lookup failed: ${errorMessage(error)}`);
-  }
 
-  try {
-    const matches = await index.query([...vector], {
-      topK: VECTOR_TOP_K,
-      returnMetadata: "all",
-    });
-    return indexedCandidates(matches.matches);
-  } catch (error) {
-    hostLogWarn(`[MangaDexMatch] Vectorize lookup failed: ${errorMessage(error)}`);
-    return [];
-  }
-};
-
-const searchMangaDex = async (entry: MangaDexMatchInput): Promise<readonly MangaDexManga[]> => {
-  const client = createMangaDexClient({
-    limit: MATCH_CANDIDATE_LIMIT,
-    userAgent: manifoldUserAgent("api"),
+    return yield* Effect.tryPromise({
+      try: () =>
+        index.query([...vector], {
+          topK: VECTOR_TOP_K,
+          returnMetadata: "all",
+        }),
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.map((matches) => indexedCandidates(matches.matches)),
+      Effect.tapError((error) =>
+        Effect.sync(() => {
+          hostLogWarn(`[MangaDexMatch] Vectorize lookup failed: ${errorMessage(error)}`);
+        }),
+      ),
+      Effect.orElseSucceed((): readonly RankedMangaDexCandidate[] => []),
+    );
   });
-  const terms = uniqueStrings([entry.title, ...entry.aliases]).slice(0, SEARCH_TERM_LIMIT);
-  // Sequential on purpose: parallel searches burst api.mangadex.org from
-  // shared Cloudflare egress IPs and trip its 403 anomaly blocking — the same
-  // reason AniList Worker egress is blocked. Slower per resolve, but every
-  // term actually gets answered.
-  const searched: MangaDexManga[] = [];
-  let lastError: unknown;
-  for (const term of terms) {
-    try {
-      searched.push(...(await Effect.runPromise(client.search(term))));
-    } catch (error) {
-      lastError = error;
+
+const searchMangaDex = (
+  entry: MangaDexMatchInput,
+): Effect.Effect<readonly MangaDexManga[], Error> =>
+  Effect.gen(function* () {
+    const client = createMangaDexClient({
+      limit: MATCH_CANDIDATE_LIMIT,
+      userAgent: manifoldUserAgent("api"),
+    });
+    const terms = uniqueStrings([entry.title, ...entry.aliases]).slice(0, SEARCH_TERM_LIMIT);
+    // Sequential on purpose: parallel searches burst api.mangadex.org from
+    // shared Cloudflare egress IPs and trip its 403 anomaly blocking — the same
+    // reason AniList Worker egress is blocked. Slower per resolve, but every
+    // term actually gets answered.
+    const searched: MangaDexManga[] = [];
+    let lastError: Error | undefined;
+    for (const term of terms) {
+      const outcome = yield* client.search(term).pipe(
+        Effect.match({
+          onSuccess: (results) => ({ ok: true as const, results }),
+          onFailure: (error) => ({
+            ok: false as const,
+            error: error instanceof Error ? error : new Error(errorMessage(error)),
+          }),
+        }),
+      );
+      if (outcome.ok) {
+        searched.push(...outcome.results);
+      } else {
+        lastError = outcome.error;
+      }
     }
-  }
-  if (searched.length === 0 && lastError !== undefined) {
-    throw lastError;
-  }
-  return uniqueManga(searched);
-};
+    if (searched.length === 0 && lastError !== undefined) {
+      return yield* Effect.fail(lastError);
+    }
+    return uniqueManga(searched);
+  });
 
 const cachedResult = (
   entry: MangaDexMatchInput,
@@ -412,64 +447,76 @@ const cachedResult = (
   margin: 1,
 });
 
-export const resolveMangaDex = async (
+export const resolveMangaDex = (
   env: Env,
   input: MangaDexMatchInput,
-): Promise<MangaDexMatchResult> => {
-  const entry = input;
-  const sync = env.MANIFOLD_SYNC.getByName("default");
-  const existing = await sync.getEntry(entry.id);
-  const cached = existing?.providers.find((provider) => provider.provider === "mangadex");
-  if (cached) {
-    return cachedResult(entry, cached.externalId, cached.title);
-  }
+): Promise<MangaDexMatchResult> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const entry = input;
+      const sync = env.MANIFOLD_SYNC.getByName("default");
+      const existing = yield* Effect.promise(() => sync.getEntry(entry.id));
+      const cached = existing?.providers.find((provider) => provider.provider === "mangadex");
+      if (cached) {
+        return cachedResult(entry, cached.externalId, cached.title);
+      }
 
-  if (entry.externalIds?.mangadex) {
-    return cachedResult(entry, entry.externalIds.mangadex, undefined);
-  }
+      if (entry.externalIds?.mangadex) {
+        return cachedResult(entry, entry.externalIds.mangadex, undefined);
+      }
 
-  const queryVector = (await embedMangaTitles(env.AI, [buildCanonicalEmbeddingText(entry)]))[0];
-  if (!queryVector) {
-    throw new Error("Workers AI returned no MangaDex query embedding");
-  }
+      const queryVector = (yield* embedMangaTitlesEffect(env.AI, [
+        buildCanonicalEmbeddingText(entry),
+      ]))[0];
+      if (!queryVector) {
+        return yield* Effect.fail(new Error("Workers AI returned no MangaDex query embedding"));
+      }
 
-  const indexed = await queryIndex(env.MANGADEX_INDEX, queryVector, entry);
-  const indexedDecision = chooseMangaDexMatch(entry, indexed);
-  if (indexedDecision.status === "matched") {
-    return indexedDecision;
-  }
+      const indexed = yield* queryIndex(env.MANGADEX_INDEX, queryVector, entry);
+      const indexedDecision = chooseMangaDexMatch(entry, indexed);
+      if (indexedDecision.status === "matched") {
+        return indexedDecision;
+      }
 
-  const searched = await searchMangaDex(entry);
-  const fresh = await embedMangaTitles(env.AI, searched.map(buildMangaDexEmbeddingText));
-  const freshRanked = rankEmbeddedCandidates(
-    queryVector,
-    searched.map((manga, index) => ({ manga, embedding: fresh[index] ?? [] })),
-  );
-
-  if (input.persistSearchResults !== false) {
-    try {
-      await env.MANGADEX_INDEX.upsert(
-        searched.flatMap((manga, index) => {
-          const values = fresh[index];
-          return values
-            ? [{ id: `mangadex:${manga.id}`, values, metadata: vectorMetadata(manga) }]
-            : [];
-        }),
+      const searched = yield* searchMangaDex(entry);
+      const fresh = yield* embedMangaTitlesEffect(env.AI, searched.map(buildMangaDexEmbeddingText));
+      const freshRanked = rankEmbeddedCandidates(
+        queryVector,
+        searched.map((manga, index) => ({ manga, embedding: fresh[index] ?? [] })),
       );
-    } catch (error) {
-      hostLogWarn(`[MangaDexMatch] Vectorize upsert failed: ${errorMessage(error)}`);
-    }
-  }
 
-  const byId = new Map<string, RankedMangaDexCandidate>();
-  for (const candidate of indexed) {
-    byId.set(candidate.manga.id, candidate);
-  }
-  for (const candidate of freshRanked) {
-    const existingCandidate = byId.get(candidate.manga.id);
-    if (!existingCandidate || candidate.score > existingCandidate.score) {
-      byId.set(candidate.manga.id, candidate);
-    }
-  }
-  return chooseMangaDexMatch(entry, [...byId.values()]);
-};
+      if (input.persistSearchResults !== false) {
+        yield* Effect.tryPromise({
+          try: () =>
+            env.MANGADEX_INDEX.upsert(
+              searched.flatMap((manga, index) => {
+                const values = fresh[index];
+                return values
+                  ? [{ id: `mangadex:${manga.id}`, values, metadata: vectorMetadata(manga) }]
+                  : [];
+              }),
+            ),
+          catch: (cause) => cause,
+        }).pipe(
+          Effect.tapError((error) =>
+            Effect.sync(() => {
+              hostLogWarn(`[MangaDexMatch] Vectorize upsert failed: ${errorMessage(error)}`);
+            }),
+          ),
+          Effect.ignore,
+        );
+      }
+
+      const byId = new Map<string, RankedMangaDexCandidate>();
+      for (const candidate of indexed) {
+        byId.set(candidate.manga.id, candidate);
+      }
+      for (const candidate of freshRanked) {
+        const existingCandidate = byId.get(candidate.manga.id);
+        if (!existingCandidate || candidate.score > existingCandidate.score) {
+          byId.set(candidate.manga.id, candidate);
+        }
+      }
+      return chooseMangaDexMatch(entry, [...byId.values()]);
+    }),
+  );

@@ -236,44 +236,50 @@ export const sha256 = (value: string): Promise<string> =>
 export const readBackupBody = (
   body: ReadableStream<Uint8Array>,
   expectedChecksum?: string,
-): Promise<RegistryBackup> => Effect.runPromise(Effect.gen(function* () {
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    for (;;) {
-      const next = yield* Effect.promise(() => reader.read());
-      if (next.done) {
-        break;
+): Promise<RegistryBackup> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const reader = body.getReader();
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      try {
+        for (;;) {
+          const next = yield* Effect.promise(() => reader.read());
+          if (next.done) {
+            break;
+          }
+          size += next.value.byteLength;
+          if (size > MAX_REGISTRY_BACKUP_BYTES) {
+            yield* Effect.promise(() => reader.cancel());
+            throw new Error("Registry backup exceeds the 16 MiB recovery limit");
+          }
+          chunks.push(next.value);
+        }
+      } finally {
+        reader.releaseLock();
       }
-      size += next.value.byteLength;
-      if (size > MAX_REGISTRY_BACKUP_BYTES) {
-        yield* Effect.promise(() => reader.cancel());
-        throw new Error("Registry backup exceeds the 16 MiB recovery limit");
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
       }
-      chunks.push(next.value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  const text = new TextDecoder().decode(bytes);
-  if (expectedChecksum !== undefined && (yield* Effect.promise(() => sha256(text))) !== expectedChecksum) {
-    throw new Error("Registry backup checksum mismatch");
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new Error("Registry backup is not valid JSON");
-  }
-  if (!isJsonValue(parsed)) {
-    throw new Error("Registry backup is not a JSON value");
-  }
-  return parseRegistryBackup(parsed);
-}));
+      const text = new TextDecoder().decode(bytes);
+      if (
+        expectedChecksum !== undefined &&
+        (yield* Effect.promise(() => sha256(text))) !== expectedChecksum
+      ) {
+        throw new Error("Registry backup checksum mismatch");
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new Error("Registry backup is not valid JSON");
+      }
+      if (!isJsonValue(parsed)) {
+        throw new Error("Registry backup is not a JSON value");
+      }
+      return parseRegistryBackup(parsed);
+    }),
+  );

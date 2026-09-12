@@ -1,4 +1,4 @@
-import { DateTime } from "effect";
+import { DateTime, Effect } from "effect";
 import {
   isFiniteNumber,
   isJsonObject,
@@ -41,21 +41,17 @@ export interface MangaDexEntryStat {
 }
 
 /** Run `worker` over `items` with at most `concurrency` in flight. */
-export async function mapWithConcurrency<T>(
+export const mapWithConcurrency = <T>(
   items: readonly T[],
   concurrency: number,
   worker: (item: T) => Promise<void>,
-): Promise<void> {
-  let cursor = 0;
-  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (cursor < items.length) {
-      const item = items[cursor];
-      cursor += 1;
-      await worker(item);
-    }
-  });
-  await Promise.all(runners);
-}
+): Promise<void> =>
+  Effect.runPromise(
+    Effect.forEach(items, (item) => Effect.promise(() => worker(item)), {
+      concurrency: Math.max(1, concurrency),
+      discard: true,
+    }),
+  );
 
 export const sampleFeedStats = (page: MdFeedPage): MdFeedStatsPayload => {
   const newest = page.items[0];

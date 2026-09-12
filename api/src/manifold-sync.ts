@@ -2274,7 +2274,9 @@ export class ManifoldSync extends DurableObject<Env> {
       entryId,
     );
     const outcome = attempts >= SYNC_MAX_ATTEMPTS ? "blocked" : "retry";
-    hostLogError(`[ManifoldSync] MangaDex shelf mirror ${outcome}:${entryId}:attempt=${attempts}:${message}`);
+    hostLogError(
+      `[ManifoldSync] MangaDex shelf mirror ${outcome}:${entryId}:attempt=${attempts}:${message}`,
+    );
   }
 
   private failOps(rows: readonly { id: number; attempts: number }[], cause: unknown): void {
@@ -2703,9 +2705,12 @@ export class ManifoldSync extends DurableObject<Env> {
         ),
         md_status_queue: toBackupRows(
           this.ctx.storage.sql
-            .exec<{ entry_id: string; created_at: number; attempts: number; last_error: string | null }>(
-              "SELECT entry_id, created_at, attempts, last_error FROM md_status_queue",
-            )
+            .exec<{
+              entry_id: string;
+              created_at: number;
+              attempts: number;
+              last_error: string | null;
+            }>("SELECT entry_id, created_at, attempts, last_error FROM md_status_queue")
             .toArray(),
           REGISTRY_BACKUP_TABLE_COLUMNS.md_status_queue,
         ),
