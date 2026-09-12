@@ -1,12 +1,18 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalDateInEffect:off */
+/** @effect-diagnostics globalErrorInEffectFailure:off */
 /** @effect-diagnostics globalFetch:off */
 /** @effect-diagnostics globalTimers:off */
 /** @effect-diagnostics newPromise:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
+/** @effect-diagnostics tryCatchInEffectGen:off */
+/** @effect-diagnostics unknownInEffectCatch:off */
 import { isJsonObject, manifoldUserAgent, type JsonObject } from "@manifold/json";
 import type { MalBackupIdentity } from "@manifold/canonical";
-import { Data } from "effect";
+import { Data, Effect } from "effect";
+import { fromPromise } from "./from-promise.js";
 import type { AniListReadingStatus } from "./anilist-types.js";
 import { bridgeErrorDetail } from "./errors.js";
 
@@ -57,13 +63,14 @@ const enqueue = <T>(task: () => Promise<T>): Promise<T> => {
   return run;
 };
 
-const gate = async (): Promise<void> => {
-  const waitMs = Math.max(nextSlotAt - Date.now(), cooldownUntil - Date.now(), 0);
-  if (waitMs > 0) {
-    await Application.sleep(Math.ceil(waitMs / 1000));
-  }
-  nextSlotAt = Math.max(Date.now(), nextSlotAt) + MIN_REQUEST_SPACING_MS;
-};
+const gate = (): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    const waitMs = Math.max(nextSlotAt - Date.now(), cooldownUntil - Date.now(), 0);
+    if (waitMs > 0) {
+      yield* fromPromise(() => Application.sleep(Math.ceil(waitMs / 1000)));
+    }
+    nextSlotAt = Math.max(Date.now(), nextSlotAt) + MIN_REQUEST_SPACING_MS;
+  });
 
 const headerValue = (headers: Record<string, string>, name: string): string | undefined => {
   const target = name.toLowerCase();
@@ -81,47 +88,50 @@ interface RawOutcome<A> {
   readonly body?: GraphQLResponse<A>;
 }
 
-const rawAniListRequest = async <A>(
+const rawAniListRequest = <A>(
   token: string,
   query: string,
   variables: JsonObject,
-): Promise<RawOutcome<A>> => {
-  let scheduled: Awaited<ReturnType<typeof Application.scheduleRequest>>;
-  try {
-    scheduled = await Application.scheduleRequest({
-      url: ANILIST_GRAPHQL_ENDPOINT,
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-        authorization: `Bearer ${token}`,
-        "user-agent": manifoldUserAgent("paperback-runtime"),
-      },
-      body: JSON.stringify({ query, variables }),
-    });
-  } catch (cause) {
-    // Offline and other transport failures reject with message-less bridge
-    // values; label the request so device logs stay actionable.
-    throw new Error(`AniList request failed: ${bridgeErrorDetail(cause)}`);
-  }
-  const [response, bodyBuffer] = scheduled;
-  try {
-    // SAFETY: I/O JSON.parse of the AniList GraphQL HTTP body at the scheduleRequest boundary.
-    const parsed: unknown = JSON.parse(Application.arrayBufferToUTF8String(bodyBuffer));
-    if (!isJsonObject(parsed)) {
+): Effect.Effect<RawOutcome<A>, unknown> =>
+  Effect.gen(function* () {
+    const scheduled = yield* fromPromise(() =>
+      Application.scheduleRequest({
+        url: ANILIST_GRAPHQL_ENDPOINT,
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          authorization: `Bearer ${token}`,
+          "user-agent": manifoldUserAgent("paperback-runtime"),
+        },
+        body: JSON.stringify({ query, variables }),
+      }),
+    ).pipe(
+      Effect.mapError(
+        (cause) =>
+          // Offline and other transport failures reject with message-less bridge
+          // values; label the request so device logs stay actionable.
+          new Error(`AniList request failed: ${bridgeErrorDetail(cause)}`),
+      ),
+    );
+    const [response, bodyBuffer] = scheduled;
+    try {
+      // SAFETY: I/O JSON.parse of the AniList GraphQL HTTP body at the scheduleRequest boundary.
+      const parsed: unknown = JSON.parse(Application.arrayBufferToUTF8String(bodyBuffer));
+      if (!isJsonObject(parsed)) {
+        return { status: response.status, headers: response.headers ?? {} };
+      }
+      // SAFETY: JSON object is the GraphQL envelope; interpretOutcome reads data/errors.
+      return {
+        status: response.status,
+        headers: response.headers ?? {},
+        body: parsed as GraphQLResponse<A>,
+      };
+    } catch {
+      // Non-JSON payload (e.g. an HTML error page); the HTTP status decides.
       return { status: response.status, headers: response.headers ?? {} };
     }
-    // SAFETY: JSON object is the GraphQL envelope; interpretOutcome reads data/errors.
-    return {
-      status: response.status,
-      headers: response.headers ?? {},
-      body: parsed as GraphQLResponse<A>,
-    };
-  } catch {
-    // Non-JSON payload (e.g. an HTML error page); the HTTP status decides.
-    return { status: response.status, headers: response.headers ?? {} };
-  }
-};
+  });
 
 const isThrottled = <A>(outcome: RawOutcome<A>): boolean => {
   if (outcome.status === 429) {
@@ -160,26 +170,35 @@ const interpretOutcome = <A>(outcome: RawOutcome<A>): A => {
   return outcome.body.data as A;
 };
 
+const aniListRequestEffect = <A>(
+  token: string,
+  query: string,
+  variables: JsonObject = {},
+): Effect.Effect<A, unknown> =>
+  Effect.gen(function* () {
+    for (let attempt = 1; ; attempt += 1) {
+      yield* gate();
+      const outcome = yield* rawAniListRequest<A>(token, query, variables);
+      if (!isThrottled(outcome)) {
+        return yield* Effect.try({
+          try: () => interpretOutcome(outcome),
+          catch: (c) => c,
+        });
+      }
+      if (attempt > MAX_THROTTLED_RETRIES) {
+        return yield* Effect.fail(new Error("AniList kept rate limiting after repeated backoff"));
+      }
+      scheduleCooldown(outcome.headers);
+    }
+  });
+
 // Paperback's JS runtime exposes no global fetch; requests must go through
 // Application.scheduleRequest.
 export const aniListRequest = async <A>(
   token: string,
   query: string,
   variables: JsonObject = {},
-): Promise<A> =>
-  enqueue(async () => {
-    for (let attempt = 1; ; attempt += 1) {
-      await gate();
-      const outcome = await rawAniListRequest<A>(token, query, variables);
-      if (!isThrottled(outcome)) {
-        return interpretOutcome(outcome);
-      }
-      if (attempt > MAX_THROTTLED_RETRIES) {
-        throw new Error("AniList kept rate limiting after repeated backoff");
-      }
-      scheduleCooldown(outcome.headers);
-    }
-  });
+): Promise<A> => enqueue(() => Effect.runPromise(aniListRequestEffect<A>(token, query, variables)));
 
 export interface AniListViewer {
   readonly Viewer: {
@@ -275,43 +294,52 @@ export const normalizeAniListStatus = (status: string): AniListReadingStatus | u
 const titleValue = (value: string | undefined): string | undefined =>
   value !== undefined && value.trim().length > 0 ? value.trim() : undefined;
 
-export const fetchAniListLibrary = async (
+const fetchAniListLibraryEffect = (
   token: string,
   userId: number,
-): Promise<readonly AniListLibraryItem[]> => {
-  const data = await aniListRequest<LibraryData>(token, LIBRARY_QUERY, { userId });
+): Effect.Effect<readonly AniListLibraryItem[], unknown> =>
+  Effect.gen(function* () {
+    const data = yield* fromPromise(() =>
+      aniListRequest<LibraryData>(token, LIBRARY_QUERY, { userId }),
+    );
 
-  const items = new Map<string, AniListLibraryItem>();
-  for (const list of data.MediaListCollection?.lists ?? []) {
-    for (const entry of list.entries ?? []) {
-      const mediaId = entry.media?.id;
-      const status = entry.status ? normalizeAniListStatus(entry.status) : undefined;
-      if (!mediaId || !status) {
-        continue;
+    const items = new Map<string, AniListLibraryItem>();
+    for (const list of data.MediaListCollection?.lists ?? []) {
+      for (const entry of list.entries ?? []) {
+        const mediaId = entry.media?.id;
+        const status = entry.status ? normalizeAniListStatus(entry.status) : undefined;
+        if (!mediaId || !status) {
+          continue;
+        }
+
+        const key = String(mediaId);
+        if (items.get(key)?.status === "re_reading") {
+          continue;
+        }
+
+        const titles = entry.media?.title;
+        items.set(key, {
+          anilistId: key,
+          status,
+          title:
+            titleValue(titles?.userPreferred) ??
+            titleValue(titles?.english) ??
+            titleValue(titles?.romaji) ??
+            `AniList ${mediaId}`,
+          ...(titleValue(entry.media?.coverImage?.large) && {
+            coverUrl: titleValue(entry.media?.coverImage?.large),
+          }),
+        });
       }
-
-      const key = String(mediaId);
-      if (items.get(key)?.status === "re_reading") {
-        continue;
-      }
-
-      const titles = entry.media?.title;
-      items.set(key, {
-        anilistId: key,
-        status,
-        title:
-          titleValue(titles?.userPreferred) ??
-          titleValue(titles?.english) ??
-          titleValue(titles?.romaji) ??
-          `AniList ${mediaId}`,
-        ...(titleValue(entry.media?.coverImage?.large) && {
-          coverUrl: titleValue(entry.media?.coverImage?.large),
-        }),
-      });
     }
-  }
-  return [...items.values()];
-};
+    return [...items.values()];
+  });
+
+export const fetchAniListLibrary = (
+  token: string,
+  userId: number,
+): Promise<readonly AniListLibraryItem[]> =>
+  Effect.runPromise(fetchAniListLibraryEffect(token, userId));
 
 const GRAPHQL_INT_MAX = 2_147_483_647;
 const ANILIST_ID = /^[1-9]\d*$/;
@@ -342,45 +370,55 @@ interface SavedStatusData {
   };
 }
 
-export const saveAniListStatus = async (
+const saveAniListStatusEffect = (
   token: string,
   anilistId: string,
   status: AniListReadingStatus | null,
-): Promise<{ mediaListEntryId?: number; backupIdentity?: MalBackupIdentity }> => {
-  const mediaId = mediaIdOf(anilistId);
-  // Privacy policy: everything this source touches stays private.
-  const data = await aniListRequest<SavedStatusData>(
-    token,
-    `mutation ($mediaId: Int!, $status: MediaListStatus) {
+): Effect.Effect<{ mediaListEntryId?: number; backupIdentity?: MalBackupIdentity }, unknown> =>
+  Effect.gen(function* () {
+    const mediaId = yield* Effect.try({ try: () => mediaIdOf(anilistId), catch: (c) => c });
+    // Privacy policy: everything this source touches stays private.
+    const data = yield* fromPromise(() =>
+      aniListRequest<SavedStatusData>(
+        token,
+        `mutation ($mediaId: Int!, $status: MediaListStatus) {
       SaveMediaListEntry(mediaId: $mediaId, status: $status, private: true) {
         id status private
         media { idMal title { english romaji native } synonyms }
       }
     }`,
-    { mediaId, status: status === null ? null : toAniListStatus(status) },
-  );
-  const entryId = data.SaveMediaListEntry?.id;
-  const media = data.SaveMediaListEntry?.media;
-  return {
-    ...(entryId !== undefined && { mediaListEntryId: entryId }),
-    ...(media && {
-      backupIdentity: {
-        anilistId,
-        ...(media.idMal != null && media.idMal > 0 && { malId: String(media.idMal) }),
-        titles: [
-          ...new Set(
-            [
-              media.title?.english,
-              media.title?.romaji,
-              media.title?.native,
-              ...(media.synonyms ?? []),
-            ].flatMap((title) => (title?.trim() ? [title.trim()] : [])),
-          ),
-        ],
-      },
-    }),
-  };
-};
+        { mediaId, status: status === null ? null : toAniListStatus(status) },
+      ),
+    );
+    const entryId = data.SaveMediaListEntry?.id;
+    const media = data.SaveMediaListEntry?.media;
+    return {
+      ...(entryId !== undefined && { mediaListEntryId: entryId }),
+      ...(media && {
+        backupIdentity: {
+          anilistId,
+          ...(media.idMal != null && media.idMal > 0 && { malId: String(media.idMal) }),
+          titles: [
+            ...new Set(
+              [
+                media.title?.english,
+                media.title?.romaji,
+                media.title?.native,
+                ...(media.synonyms ?? []),
+              ].flatMap((title) => (title?.trim() ? [title.trim()] : [])),
+            ),
+          ],
+        },
+      }),
+    };
+  });
+
+export const saveAniListStatus = (
+  token: string,
+  anilistId: string,
+  status: AniListReadingStatus | null,
+): Promise<{ mediaListEntryId?: number; backupIdentity?: MalBackupIdentity }> =>
+  Effect.runPromise(saveAniListStatusEffect(token, anilistId, status));
 
 // Score / notes / dates / volumes — the fields Paperback has no UI for.
 // Managed by the admin panel and drained to AniList by this device.
@@ -428,15 +466,31 @@ const fmiDate = (value: string | null): FuzzyDateInput | null => {
   return { year, month, day };
 };
 
-export const saveAniListFields = async (
+const saveAniListFieldsEffect = (
   token: string,
   anilistId: string,
   change: AniListFieldChange,
-): Promise<void> => {
-  const mediaId = mediaIdOf(anilistId);
-  await aniListRequest(
-    token,
-    `mutation (
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    const mediaId = yield* Effect.try({ try: () => mediaIdOf(anilistId), catch: (c) => c });
+    const variables = yield* Effect.try({
+      try: () => ({
+        mediaId,
+        ...(!(change.status === undefined) && {
+          status: change.status === null ? null : toAniListStatus(change.status),
+        }),
+        ...(!(change.score === undefined) && { score: change.score }),
+        ...(!(change.notes === undefined) && { notes: change.notes }),
+        ...(!(change.startedAt === undefined) && { startedAt: fmiDate(change.startedAt) }),
+        ...(!(change.completedAt === undefined) && { completedAt: fmiDate(change.completedAt) }),
+        ...(!(change.volumeProgress === undefined) && { progressVolumes: change.volumeProgress }),
+      }),
+      catch: (c) => c,
+    });
+    yield* fromPromise(() =>
+      aniListRequest(
+        token,
+        `mutation (
       $mediaId: Int!, $status: MediaListStatus, $score: Float, $notes: String,
       $startedAt: FuzzyDateInput, $completedAt: FuzzyDateInput, $progressVolumes: Int
     ) {
@@ -446,99 +500,120 @@ export const saveAniListFields = async (
         private: true
       ) { id status score notes private }
     }`,
-    {
-      mediaId,
-      ...(!(change.status === undefined) && {
-        status: change.status === null ? null : toAniListStatus(change.status),
-      }),
-      ...(!(change.score === undefined) && { score: change.score }),
-      ...(!(change.notes === undefined) && { notes: change.notes }),
-      ...(!(change.startedAt === undefined) && { startedAt: fmiDate(change.startedAt) }),
-      ...(!(change.completedAt === undefined) && { completedAt: fmiDate(change.completedAt) }),
-      ...(!(change.volumeProgress === undefined) && { progressVolumes: change.volumeProgress }),
-    },
-  );
-};
+        variables,
+      ),
+    );
+  });
+
+export const saveAniListFields = (
+  token: string,
+  anilistId: string,
+  change: AniListFieldChange,
+): Promise<void> => Effect.runPromise(saveAniListFieldsEffect(token, anilistId, change));
 
 /** Deletes the list entry outright. Requires its numeric mediaListEntry id. */
-export const deleteAniListEntry = async (
+const deleteAniListEntryEffect = (
   token: string,
   mediaListEntryId: number,
-): Promise<boolean> => {
-  if (
-    !Number.isSafeInteger(mediaListEntryId) ||
-    mediaListEntryId < 1 ||
-    mediaListEntryId > GRAPHQL_INT_MAX
-  ) {
-    throw new Error(`Invalid AniList list entry id: ${mediaListEntryId}`);
-  }
-  const data = await aniListRequest<{ DeleteMediaListEntry?: { deleted?: boolean } }>(
-    token,
-    `mutation ($id: Int) {
+): Effect.Effect<boolean, unknown> =>
+  Effect.gen(function* () {
+    if (
+      !Number.isSafeInteger(mediaListEntryId) ||
+      mediaListEntryId < 1 ||
+      mediaListEntryId > GRAPHQL_INT_MAX
+    ) {
+      return yield* Effect.fail(new Error(`Invalid AniList list entry id: ${mediaListEntryId}`));
+    }
+    const data = yield* fromPromise(() =>
+      aniListRequest<{ DeleteMediaListEntry?: { deleted?: boolean } }>(
+        token,
+        `mutation ($id: Int) {
       DeleteMediaListEntry(id: $id) { deleted }
     }`,
-    { id: mediaListEntryId },
-  );
-  return data.DeleteMediaListEntry?.deleted === true;
-};
+        { id: mediaListEntryId },
+      ),
+    );
+    return data.DeleteMediaListEntry?.deleted === true;
+  });
+
+export const deleteAniListEntry = (token: string, mediaListEntryId: number): Promise<boolean> =>
+  Effect.runPromise(deleteAniListEntryEffect(token, mediaListEntryId));
 
 /**
  * Batch-fetches numeric list entry ids for media ids. Deletion on AniList is
  * keyed by the list-entry row, not the media row, so nukes need these.
  */
-export const fetchAniListMediaListEntryIds = async (
+const fetchAniListMediaListEntryIdsEffect = (
   token: string,
   userId: number,
-): Promise<Readonly<Record<string, number>>> => {
-  const data = await aniListRequest<{
-    MediaListCollection?: {
-      lists?: readonly { entries?: readonly { id?: number; mediaId?: number }[] }[];
-    };
-  }>(
-    token,
-    `query ($userId: Int!) {
+): Effect.Effect<Readonly<Record<string, number>>, unknown> =>
+  Effect.gen(function* () {
+    const data = yield* fromPromise(() =>
+      aniListRequest<{
+        MediaListCollection?: {
+          lists?: readonly { entries?: readonly { id?: number; mediaId?: number }[] }[];
+        };
+      }>(
+        token,
+        `query ($userId: Int!) {
       MediaListCollection(userId: $userId, type: MANGA) {
         lists { entries { id mediaId } }
       }
     }`,
-    { userId },
-  );
-  const ids: Record<string, number> = {};
-  for (const list of data.MediaListCollection?.lists ?? []) {
-    for (const entry of list.entries ?? []) {
-      if (entry.id !== undefined && entry.mediaId !== undefined) {
-        ids[String(entry.mediaId)] = entry.id;
+        { userId },
+      ),
+    );
+    const ids: Record<string, number> = {};
+    for (const list of data.MediaListCollection?.lists ?? []) {
+      for (const entry of list.entries ?? []) {
+        if (entry.id !== undefined && entry.mediaId !== undefined) {
+          ids[String(entry.mediaId)] = entry.id;
+        }
       }
     }
-  }
-  return ids;
-};
+    return ids;
+  });
 
-export const saveAniListProgress = async (
+export const fetchAniListMediaListEntryIds = (
+  token: string,
+  userId: number,
+): Promise<Readonly<Record<string, number>>> =>
+  Effect.runPromise(fetchAniListMediaListEntryIdsEffect(token, userId));
+
+const saveAniListProgressEffect = (
   token: string,
   anilistId: string,
   progress: number,
-): Promise<boolean> => {
-  const mediaId = mediaIdOf(anilistId);
-  // AniList tracks whole chapters only; fractional releases (e.g. 38.5)
-  // normalize down to their integer part. Below 1 there is nothing to push.
-  const chapters = Math.floor(progress);
-  if (!Number.isSafeInteger(chapters) || chapters < 1) {
-    return false;
-  }
-  // Status is NEVER touched here — collections own status transitions.
-  // Reading a DROPPED title bumps its progress and stays DROPPED; omitting
-  // the field preserves whatever AniList already has (creating a private
-  // CURRENT entry only when the title is unlisted, mirroring AniList's own
-  // mark-as-read behaviour).
-  await aniListRequest(
-    token,
-    `mutation ($mediaId: Int!, $progress: Int) {
+): Effect.Effect<boolean, unknown> =>
+  Effect.gen(function* () {
+    const mediaId = yield* Effect.try({ try: () => mediaIdOf(anilistId), catch: (c) => c });
+    // AniList tracks whole chapters only; fractional releases (e.g. 38.5)
+    // normalize down to their integer part. Below 1 there is nothing to push.
+    const chapters = Math.floor(progress);
+    if (!Number.isSafeInteger(chapters) || chapters < 1) {
+      return false;
+    }
+    // Status is NEVER touched here — collections own status transitions.
+    // Reading a DROPPED title bumps its progress and stays DROPPED; omitting
+    // the field preserves whatever AniList already has (creating a private
+    // CURRENT entry only when the title is unlisted, mirroring AniList's own
+    // mark-as-read behaviour).
+    yield* fromPromise(() =>
+      aniListRequest(
+        token,
+        `mutation ($mediaId: Int!, $progress: Int) {
       SaveMediaListEntry(mediaId: $mediaId, progress: $progress, private: true) {
         id progress status private
       }
     }`,
-    { mediaId, progress: chapters },
-  );
-  return true;
-};
+        { mediaId, progress: chapters },
+      ),
+    );
+    return true;
+  });
+
+export const saveAniListProgress = (
+  token: string,
+  anilistId: string,
+  progress: number,
+): Promise<boolean> => Effect.runPromise(saveAniListProgressEffect(token, anilistId, progress));

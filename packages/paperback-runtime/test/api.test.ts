@@ -109,7 +109,10 @@ describe("Paperback personal API client", () => {
       { token: "secret" },
     );
     await expect(client.searchCanonical("ab")).rejects.toEqual(
-      new PersonalApiError({ message: "AniList blocked; MyAnimeList search requires at least 3 characters", status: 502 }),
+      new PersonalApiError({
+        message: "AniList blocked; MyAnimeList search requires at least 3 characters",
+        status: 502,
+      }),
     );
   });
 
@@ -260,10 +263,16 @@ describe("Paperback personal API client", () => {
     );
 
     await expect(client.mangaDexLibrary()).rejects.toEqual(
-      new PersonalApiError({ message: "Personal API response failed schema decode (mangadex.library)", status: 502 }),
+      new PersonalApiError({
+        message: "Personal API response failed schema decode (mangadex.library)",
+        status: 502,
+      }),
     );
     await expect(client.resolveEntries([])).rejects.toEqual(
-      new PersonalApiError({ message: "Personal API response failed schema decode (canonical.resolveBatch)", status: 502 }),
+      new PersonalApiError({
+        message: "Personal API response failed schema decode (canonical.resolveBatch)",
+        status: 502,
+      }),
     );
   });
 });

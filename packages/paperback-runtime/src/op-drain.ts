@@ -1,10 +1,15 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalConsoleInEffect:off */
 /** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalErrorInEffectFailure:off */
 /** @effect-diagnostics globalFetch:off */
 /** @effect-diagnostics globalTimers:off */
 /** @effect-diagnostics newPromise:off */
+/** @effect-diagnostics unknownInEffectCatch:off */
 import { isFiniteNumber, isString } from "@manifold/json";
+import { Effect } from "effect";
+import { fromPromise } from "./from-promise.js";
 import { ANILIST_SESSION_KEY, ANILIST_VIEWER_ID_KEY } from "./anilist-types.js";
 import { errorMessage } from "./errors.js";
 import {
@@ -47,99 +52,115 @@ const aniListUserId = (): number | undefined => {
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 };
 
-const executeOp = async (
+const executeOp = (
   token: string,
   op: PendingSyncOp,
   mediaListEntryIds: Record<string, number> | undefined,
-): Promise<number | undefined> => {
-  const parsed = parsePendingAniListOp(op);
+): Effect.Effect<number | undefined, unknown> =>
+  Effect.gen(function* () {
+    const parsed = yield* Effect.try({
+      try: () => parsePendingAniListOp(op),
+      catch: (c) => c,
+    });
 
-  switch (parsed.kind) {
-    case "anilist.status": {
-      const result = await saveAniListStatus(token, parsed.anilistId, parsed.status);
-      return result.mediaListEntryId;
-    }
-    case "anilist.progress": {
-      await saveAniListProgress(token, parsed.anilistId, parsed.progress);
-      return undefined;
-    }
-    case "anilist.fields": {
-      await saveAniListFields(token, parsed.anilistId, parsed.change);
-      return parsed.mediaListEntryId;
-    }
-    case "anilist.delete": {
-      let listEntryId = parsed.mediaListEntryId;
-      if (listEntryId === undefined && mediaListEntryIds) {
-        listEntryId = mediaListEntryIds[parsed.anilistId];
+    switch (parsed.kind) {
+      case "anilist.status": {
+        const result = yield* fromPromise(() =>
+          saveAniListStatus(token, parsed.anilistId, parsed.status),
+        );
+        return result.mediaListEntryId;
       }
-      if (listEntryId === undefined) {
-        throw new Error(`op ${parsed.opId}: no mediaListEntryId for ${parsed.anilistId}`);
+      case "anilist.progress": {
+        yield* fromPromise(() => saveAniListProgress(token, parsed.anilistId, parsed.progress));
+        return undefined;
       }
-      await deleteAniListEntry(token, listEntryId);
-      return listEntryId;
+      case "anilist.fields": {
+        yield* fromPromise(() => saveAniListFields(token, parsed.anilistId, parsed.change));
+        return parsed.mediaListEntryId;
+      }
+      case "anilist.delete": {
+        let listEntryId = parsed.mediaListEntryId;
+        if (listEntryId === undefined && mediaListEntryIds) {
+          listEntryId = mediaListEntryIds[parsed.anilistId];
+        }
+        if (listEntryId === undefined) {
+          return yield* Effect.fail(
+            new Error(`op ${parsed.opId}: no mediaListEntryId for ${parsed.anilistId}`),
+          );
+        }
+        yield* fromPromise(() => deleteAniListEntry(token, listEntryId));
+        return listEntryId;
+      }
     }
-  }
-};
+  });
+
+const drainAniListOpsEffect = () =>
+  Effect.gen(function* () {
+    const token = aniListToken();
+    if (!token) {
+      return;
+    }
+    const api = configuredPersonalApi();
+    const ops = yield* fromPromise(() => api.pendingAniListOps(DRAIN_BATCH_LIMIT));
+    if (ops.length === 0) {
+      return;
+    }
+
+    const needsListEntryIds = ops.some(
+      (op) => op.kind === "anilist.delete" && op.payload["mediaListEntryId"] === undefined,
+    );
+    const userId = aniListUserId();
+    const mediaListEntryIds =
+      needsListEntryIds && userId !== undefined
+        ? yield* fromPromise(() => fetchAniListMediaListEntryIds(token, userId))
+        : undefined;
+
+    const results: {
+      opId: string;
+      ok: boolean;
+      error?: string;
+      mediaListEntryId?: number;
+    }[] = [];
+    for (const op of ops) {
+      const outcome = yield* executeOp(token, op, mediaListEntryIds).pipe(
+        Effect.map((mediaListEntryId) => ({ ok: true as const, mediaListEntryId })),
+        Effect.catch((cause: unknown) =>
+          Effect.succeed({ ok: false as const, error: errorMessage(cause) }),
+        ),
+      );
+      if (!outcome.ok) {
+        console.error(`[manifold] drain failed:${op.kind}:${outcome.error}`);
+        results.push({ opId: op.opId, ok: false, error: outcome.error });
+        continue;
+      }
+      results.push({
+        opId: op.opId,
+        ok: true,
+        ...(outcome.mediaListEntryId !== undefined && {
+          mediaListEntryId: outcome.mediaListEntryId,
+        }),
+      });
+      const drainedAnilistId = op.payload["anilistId"];
+      console.log(
+        `[manifold] drained op:${op.kind}:${isString(drainedAnilistId) ? drainedAnilistId : ""}`,
+      );
+    }
+
+    yield* fromPromise(() => api.completeOps(results)).pipe(
+      Effect.catch((cause) => {
+        // Completion reporting is best-effort; failed ops simply retry later.
+        console.error(`[manifold] drain completion report failed:${errorMessage(cause)}`);
+        return Effect.void;
+      }),
+    );
+  });
 
 /**
  * Executes every pending anilist:* op, then reports per-op outcomes back to
  * the personal API. Returns silently when there is nothing to do or AniList
  * is not connected — draining is opportunistic, never a hard dependency.
  */
-export const drainAniListOps = async (): Promise<void> => {
-  const token = aniListToken();
-  if (!token) {
-    return;
-  }
-  const api = configuredPersonalApi();
-  const ops = await api.pendingAniListOps(DRAIN_BATCH_LIMIT);
-  if (ops.length === 0) {
-    return;
-  }
-
-  const needsListEntryIds = ops.some(
-    (op) => op.kind === "anilist.delete" && op.payload["mediaListEntryId"] === undefined,
-  );
-  const userId = aniListUserId();
-  const mediaListEntryIds =
-    needsListEntryIds && userId !== undefined
-      ? await fetchAniListMediaListEntryIds(token, userId)
-      : undefined;
-
-  const results: {
-    opId: string;
-    ok: boolean;
-    error?: string;
-    mediaListEntryId?: number;
-  }[] = [];
-  for (const op of ops) {
-    let mediaListEntryId: number | undefined;
-    try {
-      mediaListEntryId = await executeOp(token, op, mediaListEntryIds);
-    } catch (cause) {
-      const message = errorMessage(cause);
-      console.error(`[manifold] drain failed:${op.kind}:${message}`);
-      results.push({ opId: op.opId, ok: false, error: message });
-      continue;
-    }
-    results.push({
-      opId: op.opId,
-      ok: true,
-      ...(mediaListEntryId !== undefined && { mediaListEntryId }),
-    });
-    const drainedAnilistId = op.payload["anilistId"];
-    console.log(
-      `[manifold] drained op:${op.kind}:${isString(drainedAnilistId) ? drainedAnilistId : ""}`,
-    );
-  }
-
-  try {
-    await api.completeOps(results);
-  } catch (error) {
-    // Completion reporting is best-effort; failed ops simply retry later.
-    console.error(`[manifold] drain completion report failed:${errorMessage(error)}`);
-  }
-};
+export const drainAniListOps = (): Promise<void> => Effect.runPromise(drainAniListOpsEffect());
 
 /** Throttled, fire-and-forget drain suitable for piggybacking on any request. */
 export const maybeDrainAniListOps = (): void => {

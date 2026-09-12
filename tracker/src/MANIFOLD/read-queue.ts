@@ -9,6 +9,9 @@ import {
   type PersonalReadInput,
   type PersonalReadingProgress,
 } from "@manifold/paperback-runtime";
+import { Effect } from "effect";
+
+const fromPromise = <A>(a: () => Promise<A>) => Effect.tryPromise({ try: a, catch: (c) => c });
 
 export interface ReadQueueDeps {
   readonly recordRead: (
@@ -131,29 +134,35 @@ const acknowledgeProgress = (mangaId: string, chapterNum: number): void => {
   Application.setState(JSON.stringify(pending), PENDING_PROGRESS_KEY);
 };
 
-const flushPendingProgress = async (
+const flushPendingProgressEffect = (
   pushProgress: ReadQueueDeps["pushProgress"],
   skip?: ReadonlySet<string>,
-): Promise<number> => {
-  const pending = readPendingProgress();
-  let pushed = 0;
-  for (const [mangaId, entry] of Object.entries(pending)) {
-    if (skip?.has(mangaId)) {
-      continue;
-    }
-    try {
-      if (await pushProgress(entry.sourceManga, entry.chapterNum)) {
+): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    const pending = readPendingProgress();
+    let pushed = 0;
+    for (const [mangaId, entry] of Object.entries(pending)) {
+      if (skip?.has(mangaId)) {
+        continue;
+      }
+      const outcome = yield* Effect.result(
+        fromPromise(() => pushProgress(entry.sourceManga, entry.chapterNum)),
+      );
+      if (outcome._tag === "Failure") {
+        // Keep it queued; the next read-queue run retries.
+        console.error(
+          `[manifold] anilist progress retry failed:${mangaId}:${errorMessage(outcome.failure)}`,
+        );
+        continue;
+      }
+      if (outcome.success) {
         acknowledgeProgress(mangaId, entry.chapterNum);
         pushed += 1;
         console.log(`[manifold] anilist progress retry:${mangaId}:${entry.chapterNum}`);
       }
-    } catch (error) {
-      // Keep it queued; the next read-queue run retries.
-      console.error(`[manifold] anilist progress retry failed:${mangaId}:${errorMessage(error)}`);
     }
-  }
-  return pushed;
-};
+    return pushed;
+  });
 
 const chapterProvenance = (chapterSourceId: string, sourceChapterId: string): ChapterProvenance => {
   if (chapterSourceId === "MangaDex") {
@@ -165,87 +174,109 @@ const chapterProvenance = (chapterSourceId: string, sourceChapterId: string): Ch
   throw new Error(`Unsupported chapter source: ${chapterSourceId}`);
 };
 
-export const processReadActions = async (
+const processReadActionsEffect = (
   actions: readonly TrackedMangaChapterReadAction[],
   deps: ReadQueueDeps,
-): Promise<{ successfulItems: string[]; failedItems: string[] }> => {
-  console.log(`[manifold] read queue received:${actions.length}`);
+): Effect.Effect<{ successfulItems: string[]; failedItems: string[] }> =>
+  Effect.gen(function* () {
+    console.log(`[manifold] read queue received:${actions.length}`);
 
-  const successfulItems: string[] = [];
-  const failedItems: string[] = [];
-  const maxByManga = new Map<
-    string,
-    { readonly sourceManga: SourceManga; readonly chapterNum: number }
-  >();
+    const successfulItems: string[] = [];
+    const failedItems: string[] = [];
+    const maxByManga = new Map<
+      string,
+      { readonly sourceManga: SourceManga; readonly chapterNum: number }
+    >();
 
-  for (const action of actions) {
-    try {
-      console.log(
-        `[manifold] read action:${action.id}:${action.chapterSourceId}:${action.chapterMangaId}:${action.sourceManga.mangaId}`,
-      );
-      const sourceChapterId = action.readChapter?.chapterId ?? action.chapterId;
-      if (!sourceChapterId) {
-        throw new Error("Chapter read action has no source chapter ID");
-      }
-      if (!action.chapterMangaId) {
-        throw new Error("Chapter read action has no source manga ID");
-      }
+    for (const action of actions) {
+      const outcome = yield* Effect.result(
+        Effect.gen(function* () {
+          console.log(
+            `[manifold] read action:${action.id}:${action.chapterSourceId}:${action.chapterMangaId}:${action.sourceManga.mangaId}`,
+          );
+          const sourceChapterId = action.readChapter?.chapterId ?? action.chapterId;
+          if (!sourceChapterId) {
+            return yield* Effect.fail(new Error("Chapter read action has no source chapter ID"));
+          }
+          if (!action.chapterMangaId) {
+            return yield* Effect.fail(new Error("Chapter read action has no source manga ID"));
+          }
 
-      const provenance = chapterProvenance(action.chapterSourceId, sourceChapterId);
-      await deps.recordRead(action.sourceManga.mangaId, {
-        eventId: action.id,
-        chapterKey: provenance.chapterKey,
-        chapterNumber: action.chapterNum,
-        provider: provenance.provider,
-        sourceMangaId: action.chapterMangaId,
-        sourceChapterId,
-        readAt: action.creationDate.getTime(),
-        ...(!(action.chapterVolume === undefined) && { volumeNumber: action.chapterVolume }),
-      });
-      successfulItems.push(action.id);
-      console.log(`[manifold] read queued:${sourceChapterId}`);
-
-      const num = action.chapterNum;
-      if (isFiniteNumber(num) && num >= 0) {
-        const current = maxByManga.get(action.sourceManga.mangaId);
-        if (!current || num > current.chapterNum) {
-          maxByManga.set(action.sourceManga.mangaId, {
-            sourceManga: action.sourceManga,
-            chapterNum: num,
+          const provenance = yield* Effect.try({
+            try: () => chapterProvenance(action.chapterSourceId, sourceChapterId),
+            catch: (c) => c,
           });
+          yield* fromPromise(() =>
+            deps.recordRead(action.sourceManga.mangaId, {
+              eventId: action.id,
+              chapterKey: provenance.chapterKey,
+              chapterNumber: action.chapterNum,
+              provider: provenance.provider,
+              sourceMangaId: action.chapterMangaId,
+              sourceChapterId,
+              readAt: action.creationDate.getTime(),
+              ...(!(action.chapterVolume === undefined) && { volumeNumber: action.chapterVolume }),
+            }),
+          );
+          console.log(`[manifold] read queued:${sourceChapterId}`);
+
+          const num = action.chapterNum;
+          if (isFiniteNumber(num) && num >= 0) {
+            const current = maxByManga.get(action.sourceManga.mangaId);
+            if (!current || num > current.chapterNum) {
+              maxByManga.set(action.sourceManga.mangaId, {
+                sourceManga: action.sourceManga,
+                chapterNum: num,
+              });
+            }
+          }
+          return action.id;
+        }),
+      );
+      if (outcome._tag === "Success") {
+        successfulItems.push(outcome.success);
+      } else {
+        failedItems.push(action.id);
+        console.error(`[manifold] read queue failed:${action.id}:${errorMessage(outcome.failure)}`);
+      }
+    }
+
+    const attempted = new Set<string>();
+    for (const [mangaId, max] of maxByManga) {
+      attempted.add(mangaId);
+      const outcome = yield* Effect.result(
+        fromPromise(() => deps.pushProgress(max.sourceManga, max.chapterNum)),
+      );
+      if (outcome._tag === "Success") {
+        if (outcome.success) {
+          acknowledgeProgress(mangaId, max.chapterNum);
+          console.log(`[manifold] anilist progress:${mangaId}:${max.chapterNum}`);
         }
+        // A `false` return means there is nothing to push to (no token/link),
+        // not a transient failure — never queue it. The next read re-pushes.
+      } else {
+        queueProgress(mangaId, {
+          sourceManga: slimSourceManga(max.sourceManga),
+          chapterNum: max.chapterNum,
+          at: Date.now(),
+        });
+        console.error(
+          `[manifold] anilist progress failed:${mangaId}:${errorMessage(outcome.failure)}`,
+        );
       }
-    } catch (error) {
-      failedItems.push(action.id);
-      console.error(`[manifold] read queue failed:${action.id}:${errorMessage(error)}`);
     }
-  }
 
-  const attempted = new Set<string>();
-  for (const [mangaId, max] of maxByManga) {
-    attempted.add(mangaId);
-    try {
-      if (await deps.pushProgress(max.sourceManga, max.chapterNum)) {
-        acknowledgeProgress(mangaId, max.chapterNum);
-        console.log(`[manifold] anilist progress:${mangaId}:${max.chapterNum}`);
-      }
-      // A `false` return means there is nothing to push to (no token/link),
-      // not a transient failure — never queue it. The next read re-pushes.
-    } catch (error) {
-      queueProgress(mangaId, {
-        sourceManga: slimSourceManga(max.sourceManga),
-        chapterNum: max.chapterNum,
-        at: Date.now(),
-      });
-      console.error(`[manifold] anilist progress failed:${mangaId}:${errorMessage(error)}`);
-    }
-  }
+    // Retry queued AniList progress pushes (429s, offline) from earlier runs.
+    // Entries attempted above are skipped: they just failed or succeeded, so
+    // retrying them in the same tick only doubles upstream load during a
+    // rate-limit window. Fresh acknowledgements already cleared superseded ones.
+    yield* flushPendingProgressEffect(deps.pushProgress, attempted);
 
-  // Retry queued AniList progress pushes (429s, offline) from earlier runs.
-  // Entries attempted above are skipped: they just failed or succeeded, so
-  // retrying them in the same tick only doubles upstream load during a
-  // rate-limit window. Fresh acknowledgements already cleared superseded ones.
-  await flushPendingProgress(deps.pushProgress, attempted);
+    return { successfulItems, failedItems };
+  });
 
-  return { successfulItems, failedItems };
-};
+export const processReadActions = (
+  actions: readonly TrackedMangaChapterReadAction[],
+  deps: ReadQueueDeps,
+): Promise<{ successfulItems: string[]; failedItems: string[] }> =>
+  Effect.runPromise(processReadActionsEffect(actions, deps));

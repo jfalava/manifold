@@ -4,13 +4,19 @@
 /** @effect-diagnostics globalFetch:off */
 /** @effect-diagnostics globalTimers:off */
 /** @effect-diagnostics newPromise:off */
-import { defineConfig } from "oxlint";
+import {
+  agentIgnores,
+  antiSlopEffectRules,
+  antiSlopJsPlugins,
+  baseConfig,
+} from "../../oxlint.config.ts";
 
-import { agentIgnores, antiSlopJsPlugins, baseConfig } from "../../oxlint.config.ts";
-
-// No direct `effect` dependency — generic anti-slop only.
-export default defineConfig({
+export default {
   ...baseConfig,
-  jsPlugins: antiSlopJsPlugins("../.."),
+  jsPlugins: antiSlopJsPlugins("../..", { effect: true }),
   ignorePatterns: [...agentIgnores, "*.d.ts", "**/*.d.ts", "dist/**"],
-});
+  rules: {
+    ...baseConfig.rules,
+    ...antiSlopEffectRules,
+  },
+};

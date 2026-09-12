@@ -39,19 +39,13 @@ const makeHarness = () => {
       Application: {
         getState: () => undefined,
         getSecureState: () => "token",
-        arrayBufferToUTF8String: (buffer: ArrayBuffer): string =>
-          new TextDecoder().decode(buffer),
-        scheduleRequest: (
-          request: ScheduledRequestLike,
-        ): Promise<[ResponseLike, ArrayBuffer]> => {
+        arrayBufferToUTF8String: (buffer: ArrayBuffer): string => new TextDecoder().decode(buffer),
+        scheduleRequest: (request: ScheduledRequestLike): Promise<[ResponseLike, ArrayBuffer]> => {
           const callIndex = index++;
           urls.push(request.url);
           return Promise.resolve().then(() => {
             const outcome = respond(callIndex);
-            return [
-              { status: outcome.status, headers: {} },
-              jsonBuffer(outcome.body),
-            ];
+            return [{ status: outcome.status, headers: {} }, jsonBuffer(outcome.body)];
           });
         },
       },

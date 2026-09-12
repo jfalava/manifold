@@ -33,6 +33,10 @@ import {
   type SourceManga,
 } from "@paperback/types";
 import { isFiniteNumber, isJsonObject, isJsonValue, objectField } from "@manifold/json";
+import { Effect } from "effect";
+
+const fromPromise = <A>(action: () => Promise<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: action, catch: (cause) => cause });
 import {
   hashIdFromMangaId,
   paginationFromPayload,
@@ -99,51 +103,69 @@ const isChallenge = (body: string): boolean => {
   );
 };
 
-const requestJson = async (url: string): Promise<JsonRequest> => {
-  const request = requestFor(url);
-  const [response, bodyBuffer] = await Application.scheduleRequest(request);
-  const body = Application.arrayBufferToUTF8String(bodyBuffer);
+const requestJsonEffect = (url: string): Effect.Effect<JsonRequest, unknown> =>
+  Effect.gen(function* () {
+    const request = requestFor(url);
+    const [response, bodyBuffer] = yield* fromPromise(() => Application.scheduleRequest(request));
+    const body = Application.arrayBufferToUTF8String(bodyBuffer);
 
-  if (response.status === 403 || response.status === 503 || isChallenge(body)) {
-    throw new CloudflareError(request, `Comix blocked ${url} with a Cloudflare challenge`);
-  }
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error(`Comix request failed with HTTP ${response.status}: ${url}`);
-  }
+    if (response.status === 403 || response.status === 503 || isChallenge(body)) {
+      return yield* Effect.fail(
+        new CloudflareError(request, `Comix blocked ${url} with a Cloudflare challenge`),
+      );
+    }
+    if (response.status < 200 || response.status >= 300) {
+      return yield* Effect.fail(
+        new Error(`Comix request failed with HTTP ${response.status}: ${url}`),
+      );
+    }
 
-  let parsed: unknown;
-  try {
-    // SAFETY: I/O JSON.parse of the Comix HTTP body at the scheduleRequest boundary.
-    parsed = JSON.parse(body);
-  } catch {
-    throw new Error(`Comix returned a non-JSON response: ${url}`);
-  }
-  if (!isJsonValue(parsed)) {
-    throw new Error(`Comix returned a non-JSON response: ${url}`);
-  }
-  return { url, body: parsed };
-};
-
-const requestHtml = async (url: string): Promise<HtmlRequest> => {
-  const request = requestFor(url);
-  const [response, bodyBuffer] = await Application.scheduleRequest({
-    ...request,
-    headers: {
-      ...request.headers,
-      Accept: "text/html,application/xhtml+xml",
-    },
+    let parsed: unknown;
+    try {
+      // SAFETY: I/O JSON.parse of the Comix HTTP body at the scheduleRequest boundary.
+      parsed = JSON.parse(body);
+    } catch {
+      return yield* Effect.fail(new Error(`Comix returned a non-JSON response: ${url}`));
+    }
+    if (!isJsonValue(parsed)) {
+      return yield* Effect.fail(new Error(`Comix returned a non-JSON response: ${url}`));
+    }
+    return { url, body: parsed };
   });
-  const html = Application.arrayBufferToUTF8String(bodyBuffer);
 
-  if (response.status === 403 || response.status === 503 || isChallenge(html)) {
-    throw new CloudflareError(request, `Comix blocked ${url} with a Cloudflare challenge`);
-  }
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error(`Comix page request failed with HTTP ${response.status}: ${url}`);
-  }
+const requestJson = (url: string): Promise<JsonRequest> =>
+  Effect.runPromise(requestJsonEffect(url));
 
-  return { url, html };
-};
+const requestHtmlEffect = (url: string): Effect.Effect<HtmlRequest, unknown> =>
+  Effect.gen(function* () {
+    const request = requestFor(url);
+    const [response, bodyBuffer] = yield* fromPromise(() =>
+      Application.scheduleRequest({
+        ...request,
+        headers: {
+          ...request.headers,
+          Accept: "text/html,application/xhtml+xml",
+        },
+      }),
+    );
+    const html = Application.arrayBufferToUTF8String(bodyBuffer);
+
+    if (response.status === 403 || response.status === 503 || isChallenge(html)) {
+      return yield* Effect.fail(
+        new CloudflareError(request, `Comix blocked ${url} with a Cloudflare challenge`),
+      );
+    }
+    if (response.status < 200 || response.status >= 300) {
+      return yield* Effect.fail(
+        new Error(`Comix page request failed with HTTP ${response.status}: ${url}`),
+      );
+    }
+
+    return { url, html };
+  });
+
+const requestHtml = (url: string): Promise<HtmlRequest> =>
+  Effect.runPromise(requestHtmlEffect(url));
 
 const pageFromMetadata = (metadata: Metadata | undefined): number => {
   if (isFiniteNumber(metadata)) {

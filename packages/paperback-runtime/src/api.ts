@@ -44,7 +44,8 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@manifold/json";
-import { Data, Schema } from "effect";
+import { Data, Effect, Schema } from "effect";
+import { fromPromise } from "./from-promise.js";
 
 export const MANIFOLD_API_ORIGIN = "https://manifold.jfa.dev/api";
 export const MANIFOLD_API_TOKEN_KEY = "manifold.api-token";
@@ -252,16 +253,28 @@ const requireDecoded = <T>(
   schema: Schema.ConstraintDecoder<T>,
   body: JsonValue,
   label: string,
-): T => {
-  try {
-    return decodeResponse(schema, body, label);
-  } catch {
-    throw new PersonalApiError({
-      message: `Personal API response failed schema decode (${label})`,
-      status: 502,
-    });
-  }
-};
+): Effect.Effect<T, PersonalApiError> =>
+  Effect.try({
+    try: () => decodeResponse(schema, body, label),
+    catch: () =>
+      new PersonalApiError({
+        message: `Personal API response failed schema decode (${label})`,
+        status: 502,
+      }),
+  });
+
+const isPersonalApiError = (cause: unknown): cause is PersonalApiError =>
+  cause instanceof PersonalApiError;
+
+/** Map PersonalApiError 404 → succeed undefined; rethrow other failures. */
+const undefinedOn404 = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.catchIf(
+      (cause): cause is PersonalApiError & E => isPersonalApiError(cause) && cause.status === 404,
+      // SAFETY: 404 maps to absent resource; callers expect A | undefined
+      (): Effect.Effect<A | undefined, never, never> => Effect.succeed(undefined),
+    ),
+  );
 
 export const createPersonalApiClient = (
   requester: PersonalApiRequester,
@@ -269,284 +282,381 @@ export const createPersonalApiClient = (
 ): PersonalApiClient => {
   const origin = (options.origin ?? MANIFOLD_API_ORIGIN).replace(/\/$/, "");
 
-  const rawRequest = async (
+  const rawRequestEffect = (
     path: string,
     method = "GET",
     body?: PersonalApiPostBody,
-  ): Promise<PersonalApiResponse> => {
-    const response = await requester({
-      url: `${origin}${path}`,
-      method,
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${options.token}`,
-        ...(!(body === undefined) && { "content-type": "application/json" }),
-      },
-      ...(!(body === undefined) && { body: JSON.stringify(body) }),
+  ): Effect.Effect<PersonalApiResponse, PersonalApiError | unknown> =>
+    Effect.gen(function* () {
+      const response = yield* fromPromise(() =>
+        requester({
+          url: `${origin}${path}`,
+          method,
+          headers: {
+            accept: "application/json",
+            authorization: `Bearer ${options.token}`,
+            ...(!(body === undefined) && { "content-type": "application/json" }),
+          },
+          ...(!(body === undefined) && { body: JSON.stringify(body) }),
+        }),
+      );
+      if (response.status < 200 || response.status >= 300) {
+        return yield* new PersonalApiError({
+          message: asErrorMessage(response.body, response.status),
+          status: response.status,
+        });
+      }
+      return response;
     });
-    if (response.status < 200 || response.status >= 300) {
-      throw new PersonalApiError({
-        message: asErrorMessage(response.body, response.status),
-        status: response.status,
-      });
-    }
-    return response;
-  };
 
   return {
-    searchCanonical: async (query, limit, provider = "auto") => {
-      const params = [
-        `q=${encodeURIComponent(query.trim())}`,
-        `provider=${encodeURIComponent(provider)}`,
-        `limit=${encodeURIComponent(String(limitValue(limit)))}`,
-      ].join("&");
-      const response = await rawRequest(`/v1/canonical/search?${params}`);
-      const body = requireDecoded(CanonicalSearchResponse, response.body, "canonical.search");
-      for (const source of body.providers) {
-        if (source.error) {
-          console.warn(`[manifold] ${source.provider} search: ${source.error.message}`);
-        }
-      }
-      return {
-        query: body.query,
-        results: body.results.map((hit) => ({
-          id: hit.id,
-          provider: hit.provider,
-          providerId: hit.providerId,
-          title: hit.title,
-          aliases: hit.aliases,
-          score: hit.score,
-          ...(hit.externalIds !== undefined && { externalIds: hit.externalIds }),
-          ...(hit.metadata !== undefined && { metadata: hit.metadata }),
-        })),
-      };
-    },
-
-    getCanonical: async (provider, providerId) => {
-      try {
-        const response = await rawRequest(
-          `/v1/canonical/${encodeURIComponent(provider)}/${encodeURIComponent(providerId)}`,
-        );
-        const body = requireDecoded(CanonicalIdentity, response.body, "canonical.get");
-        return identityToCanonical(body);
-      } catch (error) {
-        if (error instanceof PersonalApiError && error.status === 404) {
-          return undefined;
-        }
-        throw error;
-      }
-    },
-
-    getRegistryCanonical: async (entryId) => {
-      const response = await rawRequest(`/v1/entries/${encodeURIComponent(entryId)}/canonical`);
-      return identityToCanonical(
-        requireDecoded(CanonicalIdentity, response.body, "entries.canonical"),
-      );
-    },
-
-    getEntry: async (entryId) => {
-      try {
-        const response = await rawRequest(`/v1/entries/${encodeURIComponent(entryId)}`);
-        return requireDecoded(RegistryEntry, response.body, "entries.get");
-      } catch (error) {
-        if (error instanceof PersonalApiError && error.status === 404) {
-          return undefined;
-        }
-        throw error;
-      }
-    },
-
-    searchRegistry: async (query, limit = 25) => {
-      const params = [
-        `q=${encodeURIComponent(query.trim())}`,
-        `limit=${encodeURIComponent(String(limitValue(limit)))}`,
-      ].join("&");
-      const response = await rawRequest(`/v1/registry/search?${params}`);
-      return requireDecoded(RegistryEntriesResponse, response.body, "registry.search").entries;
-    },
-
-    listRegistry: async (limit = 500, offset = 0) => {
-      const safeLimit = Math.min(5000, Math.max(1, Math.floor(limit)));
-      const safeOffset = Math.max(0, Math.floor(offset));
-      const response = await rawRequest(`/v1/registry?limit=${safeLimit}&offset=${safeOffset}`);
-      return requireDecoded(RegistryListResponse, response.body, "registry.list").entries;
-    },
-
-    ingestCandidate: async (input) => {
-      const response = await rawRequest("/v1/registry/ingest", "POST", input);
-      return requireDecoded(RegistryEntry, response.body, "registry.ingest");
-    },
-
-    upsertEntry: async (entry) => {
-      const response = await rawRequest("/v1/entries", "POST", {
-        id: entry.id,
-        provider: entry.provider,
-        providerId: entry.providerId,
-        title: entry.title,
-      });
-      return requireDecoded(RegistryEntry, response.body, "entries.upsert");
-    },
-
-    linkProvider: async (entryId, link) => {
-      const response = await rawRequest(
-        `/v1/entries/${encodeURIComponent(entryId)}/providers`,
-        "POST",
-        link,
-      );
-      return requireDecoded(RegistryEntry, response.body, "entries.linkProvider");
-    },
-
-    resolveMangaDex: async (entry) => {
-      const response = await rawRequest("/v1/canonical/mangadex/resolve", "POST", {
-        id: entry.id,
-        provider: entry.provider === "local" ? "anilist" : entry.provider,
-        providerId: entry.providerId,
-        title: entry.title,
-        aliases: entry.aliases,
-        ...(entry.externalIds !== undefined && { externalIds: entry.externalIds }),
-        ...(entry.metadata !== undefined && {
-          metadata: {
-            ...(entry.metadata.chapters !== undefined && { chapters: entry.metadata.chapters }),
-            ...(entry.metadata.volumes !== undefined && { volumes: entry.metadata.volumes }),
-            ...(entry.metadata.startDate !== undefined && { startDate: entry.metadata.startDate }),
-            ...(entry.metadata.endDate !== undefined && { endDate: entry.metadata.endDate }),
-            ...(entry.metadata.status !== undefined && { status: entry.metadata.status }),
-          },
+    searchCanonical: (query, limit, provider = "auto") =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const params = [
+            `q=${encodeURIComponent(query.trim())}`,
+            `provider=${encodeURIComponent(provider)}`,
+            `limit=${encodeURIComponent(String(limitValue(limit)))}`,
+          ].join("&");
+          const response = yield* rawRequestEffect(`/v1/canonical/search?${params}`);
+          const body = yield* requireDecoded(
+            CanonicalSearchResponse,
+            response.body,
+            "canonical.search",
+          );
+          for (const source of body.providers) {
+            if (source.error) {
+              console.warn(`[manifold] ${source.provider} search: ${source.error.message}`);
+            }
+          }
+          return {
+            query: body.query,
+            results: body.results.map((hit) => ({
+              id: hit.id,
+              provider: hit.provider,
+              providerId: hit.providerId,
+              title: hit.title,
+              aliases: hit.aliases,
+              score: hit.score,
+              ...(hit.externalIds !== undefined && { externalIds: hit.externalIds }),
+              ...(hit.metadata !== undefined && { metadata: hit.metadata }),
+            })),
+          };
         }),
-      });
-      return requireDecoded(MangaDexMatchResult, response.body, "canonical.mangadex.resolve");
-    },
+      ),
 
-    getProgress: async (entryId) => {
-      const response = await rawRequest(`/v1/entries/${encodeURIComponent(entryId)}/progress`);
-      const body = requireDecoded(ProgressResponse, response.body, "entries.progress");
-      if (body.progress === null) {
-        return undefined;
-      }
-      return body.progress;
-    },
+    getCanonical: (provider, providerId) =>
+      Effect.runPromise(
+        undefinedOn404(
+          Effect.gen(function* () {
+            const response = yield* rawRequestEffect(
+              `/v1/canonical/${encodeURIComponent(provider)}/${encodeURIComponent(providerId)}`,
+            );
+            const body = yield* requireDecoded(CanonicalIdentity, response.body, "canonical.get");
+            return identityToCanonical(body);
+          }),
+        ),
+      ),
 
-    recordRead: async (entryId, input) => {
-      const response = await rawRequest(
-        `/v1/entries/${encodeURIComponent(entryId)}/read`,
-        "POST",
-        input,
-      );
-      return requireDecoded(ReadingProgress, response.body, "entries.read");
-    },
+    getRegistryCanonical: (entryId) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect(
+            `/v1/entries/${encodeURIComponent(entryId)}/canonical`,
+          );
+          const body = yield* requireDecoded(CanonicalIdentity, response.body, "entries.canonical");
+          return identityToCanonical(body);
+        }),
+      ),
 
-    mangaDexLibrary: async () => {
-      const response = await rawRequest("/v1/mangadex/library");
-      const body = requireDecoded(MangaDexLibraryResponse, response.body, "mangadex.library");
-      return body.library.map((item) => ({
-        mangaDexId: item.mangaDexId,
-        status: item.status,
-        entryId: item.entryId,
-      }));
-    },
+    getEntry: (entryId) =>
+      Effect.runPromise(
+        undefinedOn404(
+          Effect.gen(function* () {
+            const response = yield* rawRequestEffect(`/v1/entries/${encodeURIComponent(entryId)}`);
+            return yield* requireDecoded(RegistryEntry, response.body, "entries.get");
+          }),
+        ),
+      ),
 
-    mangaDexFeed: async (limit, offset) => {
-      const response = await rawRequest(`/v1/mangadex/feed?limit=${limit}&offset=${offset}`);
-      const body = requireDecoded(MangaDexFeedPage, response.body, "mangadex.feed");
-      return {
-        items: body.items.map((item) => ({
-          id: item.id,
-          mangaId: item.mangaId,
-          language: item.language,
-          ...(item.chapterNumber !== undefined && { chapterNumber: item.chapterNumber }),
-          ...(item.volumeNumber !== undefined && { volumeNumber: item.volumeNumber }),
-          ...(item.title !== undefined && { title: item.title }),
-          ...(item.publishedAt !== undefined && { publishedAt: item.publishedAt }),
-        })),
-        ...(body.total !== undefined && { total: body.total }),
-      };
-    },
+    searchRegistry: (query, limit = 25) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const params = [
+            `q=${encodeURIComponent(query.trim())}`,
+            `limit=${encodeURIComponent(String(limitValue(limit)))}`,
+          ].join("&");
+          const response = yield* rawRequestEffect(`/v1/registry/search?${params}`);
+          return (yield* requireDecoded(RegistryEntriesResponse, response.body, "registry.search"))
+            .entries;
+        }),
+      ),
 
-    setMangaDexStatus: async (mangaDexId, status) => {
-      const response = await rawRequest(
-        `/v1/mangadex/status/${encodeURIComponent(mangaDexId)}`,
-        "POST",
-        { status },
-      );
-      requireDecoded(OkResponse, response.body, "mangadex.status");
-    },
+    listRegistry: (limit = 500, offset = 0) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const safeLimit = Math.min(5000, Math.max(1, Math.floor(limit)));
+          const safeOffset = Math.max(0, Math.floor(offset));
+          const response = yield* rawRequestEffect(
+            `/v1/registry?limit=${safeLimit}&offset=${safeOffset}`,
+          );
+          return (yield* requireDecoded(RegistryListResponse, response.body, "registry.list"))
+            .entries;
+        }),
+      ),
 
-    entryByMangaDex: async (mangaDexId) => {
-      const response = await rawRequest(
-        `/v1/canonical/by-provider/mangadex/${encodeURIComponent(mangaDexId)}`,
-      );
-      const body = requireDecoded(EntryByProviderResponse, response.body, "canonical.byProvider");
-      if (body.entry === null) {
-        return undefined;
-      }
-      return body.entry;
-    },
+    ingestCandidate: (input) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect("/v1/registry/ingest", "POST", input);
+          return yield* requireDecoded(RegistryEntry, response.body, "registry.ingest");
+        }),
+      ),
 
-    resolveEntry: async (input) => {
-      const response = await rawRequest("/v1/canonical/resolve", "POST", {
-        provider: input.provider,
-        providerId: input.providerId,
-        title: input.title,
-      });
-      return requireDecoded(RegistryEntry, response.body, "canonical.resolve");
-    },
+    upsertEntry: (entry) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect("/v1/entries", "POST", {
+            id: entry.id,
+            provider: entry.provider,
+            providerId: entry.providerId,
+            title: entry.title,
+          });
+          return yield* requireDecoded(RegistryEntry, response.body, "entries.upsert");
+        }),
+      ),
 
-    resolveEntries: async (inputs) => {
-      const response = await rawRequest(
-        "/v1/canonical/resolve-batch",
-        "POST",
-        inputs.map((input) => ({
-          provider: input.provider,
-          providerId: input.providerId,
-          title: input.title,
-        })),
-      );
-      const body = requireDecoded(RegistryEntriesResponse, response.body, "canonical.resolveBatch");
-      return body.entries;
-    },
+    linkProvider: (entryId, link) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect(
+            `/v1/entries/${encodeURIComponent(entryId)}/providers`,
+            "POST",
+            link,
+          );
+          return yield* requireDecoded(RegistryEntry, response.body, "entries.linkProvider");
+        }),
+      ),
 
-    getListState: async (entryId) => {
-      const response = await rawRequest(`/v1/entries/${encodeURIComponent(entryId)}/list-state`);
-      const body = requireDecoded(ListStateResponse, response.body, "entries.listState.get");
-      if (body.state === null) {
-        return undefined;
-      }
-      return listStateFromContract(body.state);
-    },
+    resolveMangaDex: (entry) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect("/v1/canonical/mangadex/resolve", "POST", {
+            id: entry.id,
+            provider: entry.provider === "local" ? "anilist" : entry.provider,
+            providerId: entry.providerId,
+            title: entry.title,
+            aliases: entry.aliases,
+            ...(entry.externalIds !== undefined && { externalIds: entry.externalIds }),
+            ...(entry.metadata !== undefined && {
+              metadata: {
+                ...(entry.metadata.chapters !== undefined && { chapters: entry.metadata.chapters }),
+                ...(entry.metadata.volumes !== undefined && { volumes: entry.metadata.volumes }),
+                ...(entry.metadata.startDate !== undefined && {
+                  startDate: entry.metadata.startDate,
+                }),
+                ...(entry.metadata.endDate !== undefined && { endDate: entry.metadata.endDate }),
+                ...(entry.metadata.status !== undefined && { status: entry.metadata.status }),
+              },
+            }),
+          });
+          return yield* requireDecoded(
+            MangaDexMatchResult,
+            response.body,
+            "canonical.mangadex.resolve",
+          );
+        }),
+      ),
 
-    setListState: async (entryId, change) => {
-      const response = await rawRequest(
-        `/v1/entries/${encodeURIComponent(entryId)}/list-state`,
-        "POST",
-        change,
-      );
-      const state = requireDecoded(ListState, response.body, "entries.listState.set");
-      return listStateFromContract(state);
-    },
+    getProgress: (entryId) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect(
+            `/v1/entries/${encodeURIComponent(entryId)}/progress`,
+          );
+          const body = yield* requireDecoded(ProgressResponse, response.body, "entries.progress");
+          if (body.progress === null) {
+            return undefined;
+          }
+          return body.progress;
+        }),
+      ),
 
-    nukeEntry: async (entryId) => {
-      await rawRequest(`/v1/entries/${encodeURIComponent(entryId)}/delete`, "POST", {
-        origin: "device",
-      });
-    },
+    recordRead: (entryId, input) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect(
+            `/v1/entries/${encodeURIComponent(entryId)}/read`,
+            "POST",
+            input,
+          );
+          return yield* requireDecoded(ReadingProgress, response.body, "entries.read");
+        }),
+      ),
 
-    pendingAniListOps: async (limit = 25) => {
-      const response = await rawRequest(
-        `/v1/ops/pending/anilist?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`,
-      );
-      const body = requireDecoded(OpsListResponse, response.body, "ops.pending.anilist");
-      return body.ops.map((op) => ({
-        opId: op.opId,
-        kind: op.kind,
-        origin: op.origin,
-        payload: op.payload,
-        attempts: op.attempts,
-      }));
-    },
+    mangaDexLibrary: () =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect("/v1/mangadex/library");
+          const body = yield* requireDecoded(
+            MangaDexLibraryResponse,
+            response.body,
+            "mangadex.library",
+          );
+          return body.library.map((item) => ({
+            mangaDexId: item.mangaDexId,
+            status: item.status,
+            entryId: item.entryId,
+          }));
+        }),
+      ),
 
-    completeOps: async (results) => {
-      const response = await rawRequest("/v1/ops/complete", "POST", { results });
-      return requireDecoded(UpdatedCountResponse, response.body, "ops.complete");
-    },
+    mangaDexFeed: (limit, offset) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect(
+            `/v1/mangadex/feed?limit=${limit}&offset=${offset}`,
+          );
+          const body = yield* requireDecoded(MangaDexFeedPage, response.body, "mangadex.feed");
+          return {
+            items: body.items.map((item) => ({
+              id: item.id,
+              mangaId: item.mangaId,
+              language: item.language,
+              ...(item.chapterNumber !== undefined && { chapterNumber: item.chapterNumber }),
+              ...(item.volumeNumber !== undefined && { volumeNumber: item.volumeNumber }),
+              ...(item.title !== undefined && { title: item.title }),
+              ...(item.publishedAt !== undefined && { publishedAt: item.publishedAt }),
+            })),
+            ...(body.total !== undefined && { total: body.total }),
+          };
+        }),
+      ),
+
+    setMangaDexStatus: (mangaDexId, status) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect(
+            `/v1/mangadex/status/${encodeURIComponent(mangaDexId)}`,
+            "POST",
+            { status },
+          );
+          yield* requireDecoded(OkResponse, response.body, "mangadex.status");
+        }),
+      ),
+
+    entryByMangaDex: (mangaDexId) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect(
+            `/v1/canonical/by-provider/mangadex/${encodeURIComponent(mangaDexId)}`,
+          );
+          const body = yield* requireDecoded(
+            EntryByProviderResponse,
+            response.body,
+            "canonical.byProvider",
+          );
+          if (body.entry === null) {
+            return undefined;
+          }
+          return body.entry;
+        }),
+      ),
+
+    resolveEntry: (input) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect("/v1/canonical/resolve", "POST", {
+            provider: input.provider,
+            providerId: input.providerId,
+            title: input.title,
+          });
+          return yield* requireDecoded(RegistryEntry, response.body, "canonical.resolve");
+        }),
+      ),
+
+    resolveEntries: (inputs) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect(
+            "/v1/canonical/resolve-batch",
+            "POST",
+            inputs.map((input) => ({
+              provider: input.provider,
+              providerId: input.providerId,
+              title: input.title,
+            })),
+          );
+          const body = yield* requireDecoded(
+            RegistryEntriesResponse,
+            response.body,
+            "canonical.resolveBatch",
+          );
+          return body.entries;
+        }),
+      ),
+
+    getListState: (entryId) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect(
+            `/v1/entries/${encodeURIComponent(entryId)}/list-state`,
+          );
+          const body = yield* requireDecoded(
+            ListStateResponse,
+            response.body,
+            "entries.listState.get",
+          );
+          if (body.state === null) {
+            return undefined;
+          }
+          return listStateFromContract(body.state);
+        }),
+      ),
+
+    setListState: (entryId, change) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect(
+            `/v1/entries/${encodeURIComponent(entryId)}/list-state`,
+            "POST",
+            change,
+          );
+          const state = yield* requireDecoded(ListState, response.body, "entries.listState.set");
+          return listStateFromContract(state);
+        }),
+      ),
+
+    nukeEntry: (entryId) =>
+      Effect.runPromise(
+        rawRequestEffect(`/v1/entries/${encodeURIComponent(entryId)}/delete`, "POST", {
+          origin: "device",
+        }).pipe(Effect.asVoid),
+      ),
+
+    pendingAniListOps: (limit = 25) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect(
+            `/v1/ops/pending/anilist?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`,
+          );
+          const body = yield* requireDecoded(OpsListResponse, response.body, "ops.pending.anilist");
+          return body.ops.map((op) => ({
+            opId: op.opId,
+            kind: op.kind,
+            origin: op.origin,
+            payload: op.payload,
+            attempts: op.attempts,
+          }));
+        }),
+      ),
+
+    completeOps: (results) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const response = yield* rawRequestEffect("/v1/ops/complete", "POST", { results });
+          return yield* requireDecoded(UpdatedCountResponse, response.body, "ops.complete");
+        }),
+      ),
   };
 };

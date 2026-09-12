@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@manifold/json": "workspace:*",
-    "@paperback/types": "catalog:paperback"
+    "@paperback/types": "catalog:paperback",
+    "effect": "catalog:effect"
   },
   "devDependencies": {
     "oxfmt": "catalog:build",
