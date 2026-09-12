@@ -10,11 +10,11 @@ const SyncReadPayloadSchema = Schema.Struct({
   entryId: Schema.NonEmptyString,
   eventId: Schema.NonEmptyString,
   chapterKey: Schema.NonEmptyString,
-  chapterNumber: Schema.optional(Schema.Number),
-  volumeNumber: Schema.optional(Schema.Number),
+  chapterNumber: Schema.optional(Schema.Finite),
+  volumeNumber: Schema.optional(Schema.Finite),
   provider: Schema.Literal("mangadex"),
   sourceChapterId: Schema.NonEmptyString,
-  readAt: Schema.Number,
+  readAt: Schema.Finite,
 });
 
 export type SyncReadPayload = Schema.Schema.Type<typeof SyncReadPayloadSchema>;

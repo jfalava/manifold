@@ -31,8 +31,8 @@ export default { async fetch(request, env) {
 } };`;
 
 const RetryResult = Schema.Struct({
-  before: Schema.NullOr(Schema.Number),
-  after: Schema.NullOr(Schema.Number),
+  before: Schema.NullOr(Schema.Finite),
+  after: Schema.NullOr(Schema.Finite),
   op: SyncOp,
 });
 

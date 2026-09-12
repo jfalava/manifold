@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Data, Effect, Schema } from "effect";
 import {
   encodeResponse,
   type AuthConnection,
@@ -92,10 +92,11 @@ export const json = (body: JsonResponseBody, status = 200): Response =>
  * Encode a domain value with an Effect Schema, then JSON-respond.
  * Encode failures throw Schema.SchemaError (caught in index → 500).
  */
-export class ResponseEncodeError extends Error {
-  readonly _tag = "ResponseEncodeError";
-  constructor(readonly details: string) {
-    super(`Response encode failed: ${details}`);
+export class ResponseEncodeError extends Data.TaggedError("ResponseEncodeError")<{
+  readonly details: string;
+}> {
+  get message() {
+    return `Response encode failed: ${this.details}`;
   }
 }
 
@@ -109,20 +110,34 @@ export const jsonEncoded = <S extends Schema.ConstraintEncoder<JsonResponseBody>
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     console.error(`[manifold/api] encode failed:${message}`);
-    throw new ResponseEncodeError(message);
+    throw new ResponseEncodeError({ details: message });
   }
 };
 
-export const parseJson = (request: Request): Effect.Effect<JsonValue, Error> =>
+/** Tagged error for unparseable or non-JSON request bodies. */
+export class ParseRequestError extends Data.TaggedError("ParseRequestError")<{
+  readonly message: string;
+}> {}
+
+/** Tagged error wrapping failures from host-boundary async calls via tryPromise. */
+export class HttpRequestError extends Data.TaggedError("HttpRequestError")<{
+  readonly cause: Error;
+}> {
+  get message() {
+    return this.cause.message;
+  }
+}
+
+export const parseJson = (request: Request): Effect.Effect<JsonValue, ParseRequestError> =>
   Effect.tryPromise({
     try: async () => {
       const raw: unknown = await request.json();
       if (!isJsonValue(raw)) {
-        throw new Error("Request body must be valid JSON");
+        throw new ParseRequestError({ message: "Request body must be valid JSON" });
       }
       return raw;
     },
-    catch: () => new Error("Request body must be valid JSON"),
+    catch: () => new ParseRequestError({ message: "Request body must be valid JSON" }),
   });
 
 export const toError = (cause: unknown): Error => {
@@ -135,11 +150,12 @@ export const toError = (cause: unknown): Error => {
   return new Error(errorMessage(cause));
 };
 
-export const tryPromise = <A>(action: () => Promise<A>): Effect.Effect<A, Error> =>
+export const tryPromise = <A>(action: () => Promise<A>): Effect.Effect<A, HttpRequestError> =>
   Effect.tryPromise({
     try: action,
-    catch: toError,
+    catch: (cause) => new HttpRequestError({ cause: toError(cause) }),
   });
+
 
 export const attempt = <A>(
   action: () => Promise<A>,

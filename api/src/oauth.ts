@@ -29,7 +29,7 @@ export const OAuthTokenResponse = Schema.Struct({
   access_token: Schema.NonEmptyString,
   refresh_token: Schema.optional(Schema.NonEmptyString),
   token_type: Schema.optional(Schema.NonEmptyString),
-  expires_in: Schema.optional(Schema.Number),
+  expires_in: Schema.optional(Schema.Finite),
   scope: Schema.optional(Schema.String),
 });
 export type OAuthTokenResponse = Schema.Schema.Type<typeof OAuthTokenResponse>;

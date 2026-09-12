@@ -51,12 +51,12 @@ export default { async fetch(request, env) {
 
 const ShelfRow = Schema.Struct({
   entry_id: Schema.String,
-  attempts: Schema.Number,
+  attempts: Schema.Finite,
   last_error: Schema.NullOr(Schema.String),
 });
 const ReadResponse = Schema.Struct({ rows: Schema.Array(ShelfRow) });
-const RetryResponse = Schema.Struct({ retried: Schema.Number });
-const ScheduleResponse = Schema.Struct({ alarm: Schema.NullOr(Schema.Number) });
+const RetryResponse = Schema.Struct({ retried: Schema.Finite });
+const ScheduleResponse = Schema.Struct({ alarm: Schema.NullOr(Schema.Finite) });
 
 type ShelfRowValue = Schema.Schema.Type<typeof ShelfRow>;
 

@@ -49,7 +49,7 @@ export default { async fetch(request, env) {
 } };`;
 
 const ReadResponse = Schema.Struct({ ops: Schema.Array(SyncOp) });
-const CompleteResponse = Schema.Struct({ updated: Schema.Number });
+const CompleteResponse = Schema.Struct({ updated: Schema.Finite });
 
 interface CompleteResult {
   readonly opId: string;
