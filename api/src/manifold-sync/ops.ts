@@ -48,7 +48,7 @@ export function pendingAniListOps(host: SyncHost, limit = 25): readonly SyncOp[]
   return readOps(host, "anilist", "pending", Math.min(100, Math.max(1, limit)));
 }
 
-export function completeOps(host: SyncHost, input: CompleteOpsInput): { updated: number } {
+export function completeOps(host: SyncHost, input: CompleteOpsInput) {
   let updated = 0;
   const timestamp = now();
   for (const result of input.results) {
@@ -93,7 +93,7 @@ export function completeOps(host: SyncHost, input: CompleteOpsInput): { updated:
     }
     updated += 1;
   }
-  return { updated } satisfies { updated: number };
+  return { updated };
 }
 
 const retryOpEffect = (host: SyncHost, opId: string): Effect.Effect<SyncOp | undefined, unknown> =>
