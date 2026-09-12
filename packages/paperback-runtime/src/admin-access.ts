@@ -1,7 +1,9 @@
-/** Paperback / device host callbacks are async by Application contract. */
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalTimers:off */
+/** @effect-diagnostics newPromise:off */
 import { isFiniteNumber, isJsonObject, isString, type JsonObject } from "@manifold/json";
 import type { Cookie, Request } from "@paperback/types";
 

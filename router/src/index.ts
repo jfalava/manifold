@@ -1,4 +1,3 @@
-/** Cloudflare Worker router entry. */
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalFetch:off */
 import { Hono, type Handler } from "hono";

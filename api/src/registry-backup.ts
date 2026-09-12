@@ -1,5 +1,9 @@
-/** R2 registry backup I/O at the Worker edge. */
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics cryptoRandomUUID:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
 import { newId } from "./effect-host";
 import {
   isFiniteNumber,

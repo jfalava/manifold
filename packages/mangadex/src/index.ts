@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect";
+import { Schema } from "effect";
 import {
   isFiniteNumber,
   isJsonArray,
@@ -210,8 +211,12 @@ export interface MangaDexClientOptions {
 }
 
 // Injected by createMangaDexClient; default uses platform fetch at the edge.
-// @effect-diagnostics-next-line globalFetch:off
-const defaultFetcher: MangaDexFetcher = (input, init) => fetch(input, init);
+const JsonBodyString = Schema.fromJsonString(Schema.Unknown);
+const jsonBodyString = (value: JsonValue): string =>
+  Effect.runSync(Schema.encodeEffect(JsonBodyString)(value));
+
+const platformFetch: typeof globalThis.fetch = globalThis.fetch.bind(globalThis);
+const defaultFetcher: MangaDexFetcher = (input, init) => platformFetch(input, init);
 
 const asObject = (value: JsonValue | undefined): JsonObject | undefined =>
   isJsonObject(value) ? value : undefined;
@@ -426,8 +431,7 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
           fetcher(`${endpoint}${path}`, {
             method,
             headers,
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
-            ...(!(body === undefined) && { body: JSON.stringify(body) }),
+            ...(!(body === undefined) && { body: jsonBodyString(body) }),
           }),
         catch: (cause) => errorFrom(cause),
       }).pipe(

@@ -1,5 +1,9 @@
-/** CF Web Crypto (subtle) host boundary — not Effect Crypto. */
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics cryptoRandomUUID:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
 import { readSecret } from "./read-secret";
 import type { Env } from "./types";
 

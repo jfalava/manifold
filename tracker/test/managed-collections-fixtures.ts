@@ -1,6 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics schemaSync:off */
 import { vi } from "vitest";
 
 import type { PersonalApiClient } from "@manifold/paperback-runtime";

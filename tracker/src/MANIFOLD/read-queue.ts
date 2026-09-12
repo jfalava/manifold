@@ -1,4 +1,3 @@
-/** Paperback / device host callbacks are async by Application contract. */
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalDate:off */

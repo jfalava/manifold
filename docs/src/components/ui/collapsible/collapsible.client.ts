@@ -1,3 +1,8 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalTimers:off */
 /** Wires Collapsible via the disclosure module. */
 
 import { mount, makeDisclosure } from "@cloudflare/nimbus-docs/client";

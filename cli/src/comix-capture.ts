@@ -1,4 +1,3 @@
-/** CLI host (Bun process, Effect.gen entry mixed with Node I/O). */
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalConsoleInEffect:off */

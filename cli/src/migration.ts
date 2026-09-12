@@ -1,4 +1,3 @@
-/** CLI host (Bun process, Effect.gen entry mixed with Node I/O). */
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalConsoleInEffect:off */
@@ -19,7 +18,6 @@
 /** @effect-diagnostics globalErrorInEffectCatch:off */
 /** @effect-diagnostics globalErrorInEffectFailure:off */
 /** @effect-diagnostics runEffectInsideEffect:off */
-/** @effect-diagnostics anyUnknownInErrorContext:off */
 import { Effect } from "effect";
 import {
   errorMessage,
@@ -234,8 +232,8 @@ const createClient = (tokenManager: MangaDexTokenManager): MangaDexAsyncClient =
     }
   };
 
-  const call = async <A>(
-    invoke: (client: MangaDexClient) => Effect.Effect<A, unknown>,
+  const call = async <A, E>(
+    invoke: (client: MangaDexClient) => Effect.Effect<A, E>,
   ): Promise<A> =>
     withAuthRetry(async () => {
       const token = await tokenManager.current();

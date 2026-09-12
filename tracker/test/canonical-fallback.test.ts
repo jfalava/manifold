@@ -1,6 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics effectSucceedWithVoid:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalDate:off */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Form, type Request as PaperbackRequest } from "@paperback/types";
 import { isJsonObject, isString, type JsonValue } from "@manifold/json";

@@ -1,5 +1,9 @@
-/** Vectorize + MangaDex match orchestration at the Worker edge. */
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics cryptoRandomUUID:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
 import { hostLogWarn } from "./effect-host";
 import { Effect } from "effect";
 import {

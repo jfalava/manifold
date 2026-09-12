@@ -1,4 +1,3 @@
-/** Alchemy/IAC host reads local .env via node fs at plan time. */
 /** @effect-diagnostics nodeBuiltinImport:off */
 import { adopt } from "alchemy/AdoptPolicy";
 import { retain } from "alchemy/RemovalPolicy";

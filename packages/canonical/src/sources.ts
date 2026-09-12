@@ -1,7 +1,5 @@
-/** Provider HTTP sources; fetcher is injected (default platform fetch). */
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
 import * as Effect from "effect/Effect";
+import { Schema } from "effect";
 import {
   arrayField,
   isJsonArray,
@@ -47,8 +45,12 @@ export interface MyAnimeListSourceOptions {
 /** Parsed JSON body from a canonical provider HTTP response. */
 export type CanonicalJson = JsonValue;
 
-// @effect-diagnostics-next-line globalFetch:off
-const defaultFetcher: CanonicalFetcher = (input, init) => fetch(input, init);
+const JsonBodyString = Schema.fromJsonString(Schema.Unknown);
+const jsonBodyString = (value: JsonValue): string =>
+  Effect.runSync(Schema.encodeEffect(JsonBodyString)(value));
+
+const platformFetch: typeof globalThis.fetch = globalThis.fetch.bind(globalThis);
+const defaultFetcher: CanonicalFetcher = (input, init) => platformFetch(input, init);
 
 const stringValue = (value: JsonValue | undefined): string | undefined =>
   isString(value) && value.trim().length > 0 ? value.trim() : undefined;
@@ -127,54 +129,57 @@ const isSourceError = (value: unknown): value is CanonicalSourceError =>
   (value.provider === "anilist" || value.provider === "mal") &&
   isString(value.message);
 
-const withSourceError = <A>(
-  provider: CanonicalSourceError["provider"],
-  action: () => Promise<A>,
-): Effect.Effect<A, CanonicalSourceError> =>
-  Effect.tryPromise({
-    try: action,
-    catch: (cause) => {
-      if (isSourceError(cause)) {
-        return cause;
-      }
-      return sourceError(
-        provider,
-        cause instanceof Error ? cause.message : "Canonical provider request failed",
-      );
-    },
-  });
-
-const requestJson = async (
+const requestJson = (
   provider: CanonicalSourceError["provider"],
   fetcher: CanonicalFetcher,
   input: RequestInfo | URL,
   init?: RequestInit,
-): Promise<JsonObject> => {
-  const response = await fetcher(input, init);
-  if (!response.ok) {
-    const responseBody = await response.text().catch(() => "");
-    const detail = responseBody.replace(/\s+/g, " ").trim().slice(0, 500);
-    const headers = [
-      response.headers.get("retry-after")
-        ? `retry-after=${response.headers.get("retry-after")}`
-        : undefined,
-      response.headers.get("x-ratelimit-remaining")
-        ? `x-ratelimit-remaining=${response.headers.get("x-ratelimit-remaining")}`
-        : undefined,
-    ].filter((value): value is string => value !== undefined);
-    const diagnostics = [...headers, detail ? `body=${detail}` : undefined]
-      .filter((value): value is string => value !== undefined)
-      .join("; ");
-    const message = `Canonical provider returned HTTP ${response.status}${diagnostics ? `: ${diagnostics}` : ""}`;
-    console.error(`[Canonical:${provider}] ${message}`);
-    throw sourceError(provider, message, response.status);
-  }
-  const body: unknown = await response.json();
-  if (!isJsonObject(body)) {
-    throw sourceError(provider, "Canonical provider returned a non-object JSON body");
-  }
-  return body;
-};
+): Effect.Effect<JsonObject, CanonicalSourceError> =>
+  Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => fetcher(input, init),
+      catch: (cause) =>
+        sourceError(
+          provider,
+          cause instanceof Error ? cause.message : "Canonical provider request failed",
+        ),
+    });
+    if (!response.ok) {
+      const responseBody = yield* Effect.tryPromise({
+        try: () => response.text(),
+        catch: () => sourceError(provider, "failed to read error body"),
+      }).pipe(Effect.orElseSucceed(() => ""));
+      const detail = responseBody.replace(/\s+/g, " ").trim().slice(0, 500);
+      const headers = [
+        response.headers.get("retry-after")
+          ? `retry-after=${response.headers.get("retry-after")}`
+          : undefined,
+        response.headers.get("x-ratelimit-remaining")
+          ? `x-ratelimit-remaining=${response.headers.get("x-ratelimit-remaining")}`
+          : undefined,
+      ].filter((value): value is string => value !== undefined);
+      const diagnostics = [...headers, detail ? `body=${detail}` : undefined]
+        .filter((value): value is string => value !== undefined)
+        .join("; ");
+      const message = `Canonical provider returned HTTP ${response.status}${diagnostics ? `: ${diagnostics}` : ""}`;
+      yield* Effect.logError(`[Canonical:${provider}] ${message}`);
+      return yield* Effect.fail(sourceError(provider, message, response.status));
+    }
+    const body: unknown = yield* Effect.tryPromise({
+      try: () => response.json(),
+      catch: (cause) =>
+        sourceError(
+          provider,
+          cause instanceof Error ? cause.message : "Canonical provider JSON parse failed",
+        ),
+    });
+    if (!isJsonObject(body)) {
+      return yield* Effect.fail(
+        sourceError(provider, "Canonical provider returned a non-object JSON body"),
+      );
+    }
+    return body;
+  });
 
 const dateFromParts = (value: JsonValue | undefined): string | undefined => {
   if (value === undefined || !isJsonObject(value)) {
@@ -368,27 +373,27 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
         "content-type": "application/json",
         "user-agent": options.userAgent ?? manifoldUserAgent("canonical"),
       },
-      body: JSON.stringify({ query, variables }),
+      body: jsonBodyString({ query, variables }),
     });
 
   return {
     provider: "anilist",
     search: (query, searchOptions) =>
-      withSourceError("anilist", async () => {
-        const body = await request(anilistSearchQuery, {
-          search: requireQuery(query, "anilist"),
+      Effect.gen(function* () {
+        const body = yield* request(anilistSearchQuery, {
+          search: yield* Effect.try({ try: () => requireQuery(query, "anilist"), catch: (e) => (isSourceError(e) ? e : sourceError("anilist", "bad query")) }),
           page: 1,
           perPage: limitFrom(searchOptions),
         });
         const graphQLError = anilistGraphQLError(body);
         if (graphQLError) {
-          throw graphQLError;
+          return yield* Effect.fail(graphQLError);
         }
         const data = objectField(body, "data");
         const page = data === undefined ? undefined : objectField(data, "Page");
         const media = page === undefined ? undefined : arrayField(page, "media");
         if (!media) {
-          throw sourceError("anilist", "AniList search returned no media array");
+          return yield* Effect.fail(sourceError("anilist", "AniList search returned no media array"));
         }
         return media.flatMap((item) => {
           const result = anilistMedia(item);
@@ -396,38 +401,39 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
         });
       }),
     getById: (providerId) =>
-      withSourceError("anilist", async () => {
+      Effect.gen(function* () {
         const id = Number.parseInt(providerId, 10);
         if (!Number.isSafeInteger(id)) {
-          throw sourceError("anilist", `Invalid AniList manga id: ${providerId}`);
+          return yield* Effect.fail(sourceError("anilist", `Invalid AniList manga id: ${providerId}`));
         }
-        const body = await request(anilistGetQuery, { id });
+        const body = yield* request(anilistGetQuery, { id });
         const graphQLError = anilistGraphQLError(body);
         if (graphQLError) {
-          throw graphQLError;
+          return yield* Effect.fail(graphQLError);
         }
         const data = objectField(body, "data");
         return anilistMedia(data === undefined ? undefined : objectField(data, "Media"));
       }),
     getByIdMal: (idMal) =>
-      withSourceError("anilist", async () => {
+      Effect.gen(function* () {
         const id = Number.parseInt(idMal, 10);
         if (!Number.isSafeInteger(id)) {
-          throw sourceError("anilist", `Invalid MyAnimeList manga id: ${idMal}`);
+          return yield* Effect.fail(sourceError("anilist", `Invalid MyAnimeList manga id: ${idMal}`));
         }
-        const body = await request(anilistGetByMalQuery, { idMal: id });
+        const body = yield* request(anilistGetByMalQuery, { idMal: id });
         const graphQLError = anilistGraphQLError(body);
         if (graphQLError) {
           if (graphQLError.message.includes("Not Found")) {
             return undefined;
           }
-          throw graphQLError;
+          return yield* Effect.fail(graphQLError);
         }
         const data = objectField(body, "data");
         return anilistMedia(data === undefined ? undefined : objectField(data, "Media"));
       }),
   };
 };
+
 
 const malFields = [
   "alternative_titles",
@@ -513,22 +519,24 @@ export const createMyAnimeListSource = (
   return {
     provider: "mal",
     search: (query, searchOptions) =>
-      withSourceError("mal", async () => {
+      Effect.gen(function* () {
         if (!options.clientId || options.clientId === "not-configured") {
-          throw sourceError("mal", "MyAnimeList client id is not configured");
+          return yield* Effect.fail(sourceError("mal", "MyAnimeList client id is not configured"));
         }
-        const normalized = requireQuery(query, "mal");
+        const normalized = yield* Effect.try({ try: () => requireQuery(query, "mal"), catch: (e) => (isSourceError(e) ? e : sourceError("mal", "bad query")) });
         if (Array.from(normalized).length < 3) {
-          throw sourceError("mal", "MyAnimeList search requires at least 3 characters", 400);
+          return yield* Effect.fail(
+            sourceError("mal", "MyAnimeList search requires at least 3 characters", 400),
+          );
         }
         const q = encodeURIComponent(normalized);
         const limit = encodeURIComponent(String(limitFrom(searchOptions)));
         const fields = encodeURIComponent(malFields);
         const href = `${endpoint}?q=${q}&limit=${limit}&fields=${fields}`;
-        const body = await request(href);
+        const body = yield* request(href);
         const data = arrayField(body, "data");
         if (!data) {
-          throw sourceError("mal", "MyAnimeList search returned no data array");
+          return yield* Effect.fail(sourceError("mal", "MyAnimeList search returned no data array"));
         }
         return data.flatMap((item) => {
           const result = malEntry(isJsonObject(item) ? objectField(item, "node") : undefined);
@@ -536,13 +544,14 @@ export const createMyAnimeListSource = (
         });
       }),
     getById: (providerId) =>
-      withSourceError("mal", async () => {
+      Effect.gen(function* () {
         if (!options.clientId || options.clientId === "not-configured") {
-          throw sourceError("mal", "MyAnimeList client id is not configured");
+          return yield* Effect.fail(sourceError("mal", "MyAnimeList client id is not configured"));
         }
         const href = `${endpoint}/${encodeURIComponent(providerId)}?fields=${encodeURIComponent(malFields)}`;
-        const body = await request(href);
+        const body = yield* request(href);
         return malEntry(body);
       }),
   };
 };
+

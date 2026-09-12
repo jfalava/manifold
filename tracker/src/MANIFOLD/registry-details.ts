@@ -1,3 +1,6 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalDate:off */
 import type { CanonicalEntry, CanonicalSearchResult } from "@manifold/canonical";
 import type { PersonalEntry } from "@manifold/paperback-runtime";
 

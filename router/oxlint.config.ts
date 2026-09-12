@@ -1,3 +1,5 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalFetch:off */
 import { defineConfig } from "oxlint";
 
 import { agentIgnores, antiSlopJsPlugins, baseConfig } from "../oxlint.config.ts";

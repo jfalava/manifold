@@ -1,3 +1,8 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalTimers:off */
 /**
  * Scroll-spy + animated rail indicator. Active heading tracked via a single
  * IntersectionObserver; the dash slides by arc-length so it weaves through the

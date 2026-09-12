@@ -1,6 +1,9 @@
-/** Canonical search fans out to provider fetchers at the Worker edge. */
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics cryptoRandomUUID:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
 import { hostLogWarn } from "./effect-host";
 import * as Effect from "effect/Effect";
 import { manifoldUserAgent } from "@manifold/json";

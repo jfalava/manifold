@@ -1,5 +1,3 @@
-/** MangaUpdates client uses injected fetcher; methods are Effect-wrapped async. */
-/** @effect-diagnostics asyncFunction:off */
 import {
   arrayField,
   isJsonArray,
@@ -73,7 +71,6 @@ export interface MangaUpdatesClientOptions {
   readonly userAgent?: string;
 }
 
-// @effect-diagnostics-next-line globalFetch:off
 const defaultFetcher: MangaUpdatesFetcher = (input, init) => fetch(input, init);
 
 const asObject = (value: JsonValue | undefined): JsonObject | undefined =>

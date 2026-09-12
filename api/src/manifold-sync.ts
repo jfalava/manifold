@@ -1,6 +1,9 @@
-/** CF Durable Object host: public methods are async by platform contract. */
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics cryptoRandomUUID:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
 import { DurableObject } from "cloudflare:workers";
 import { Effect, Option, Schema } from "effect";
 import { epochMillisNow, hostLogError, newId } from "./effect-host";

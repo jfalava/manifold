@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-/** CLI host (Bun process, Effect.gen entry mixed with Node I/O). */
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalConsoleInEffect:off */
@@ -20,7 +19,6 @@
 /** @effect-diagnostics globalErrorInEffectCatch:off */
 /** @effect-diagnostics globalErrorInEffectFailure:off */
 /** @effect-diagnostics runEffectInsideEffect:off */
-
 import { BunRuntime, BunServices } from "@effect/platform-bun";
 import { errorMessage } from "@manifold/json";
 import { Effect } from "effect";

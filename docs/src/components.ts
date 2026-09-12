@@ -1,3 +1,8 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalTimers:off */
 /**
  * MDX globals registry — components available inside MDX without `import`.
  * Wired via `<Content components={components} />` in `[...slug].astro`.

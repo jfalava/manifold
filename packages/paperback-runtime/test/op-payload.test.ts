@@ -1,8 +1,9 @@
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
 /** @effect-diagnostics globalTimers:off */
 /** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics schemaSync:off */
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "@manifold/json";
 import type { PendingSyncOp } from "../src/api.js";

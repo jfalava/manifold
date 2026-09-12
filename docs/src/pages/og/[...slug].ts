@@ -1,3 +1,8 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalTimers:off */
 import { getCollection } from "astro:content";
 import { OGImageRoute } from "astro-og-canvas";
 import { ogCardConfig } from "./_og-card-config";

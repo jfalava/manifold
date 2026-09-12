@@ -1,6 +1,15 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics schemaSync:off */
 /** @effect-diagnostics effectSucceedWithVoid:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalTimers:off */
+/** @effect-diagnostics newPromise:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics processEnv:off */
+/** @effect-diagnostics cryptoRandomUUID:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
 import { describe, expect, it } from "vitest";
 import { encodeResponse, RegistryEntry } from "@manifold/contract";
 import {

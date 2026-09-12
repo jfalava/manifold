@@ -1,5 +1,9 @@
-/** MangaDex stats sampling at the Worker edge. */
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics cryptoRandomUUID:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
 import { DateTime } from "effect";
 import {
   isFiniteNumber,

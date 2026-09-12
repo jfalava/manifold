@@ -1,3 +1,9 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics cryptoRandomUUID:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
 import { epochMillisNow } from "./effect-host";
 import { isFiniteNumber, isJsonObject, type JsonObject } from "@manifold/json";
 import type {

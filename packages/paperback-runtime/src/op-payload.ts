@@ -1,3 +1,9 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalTimers:off */
+/** @effect-diagnostics newPromise:off */
 import { isFiniteNumber, isString, type JsonObject, type JsonValue } from "@manifold/json";
 import { parseAniListReadingStatus, type AniListReadingStatus } from "./anilist-types.js";
 import type { AniListFieldChange } from "./anilist-graphql.js";

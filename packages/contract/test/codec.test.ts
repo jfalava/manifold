@@ -1,3 +1,10 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics schemaSync:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalTimers:off */
+/** @effect-diagnostics newPromise:off */
 import { describe, expect, it } from "vitest";
 import { Effect, Result } from "effect";
 import {

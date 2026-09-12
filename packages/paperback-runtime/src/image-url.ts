@@ -1,3 +1,9 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalTimers:off */
+/** @effect-diagnostics newPromise:off */
 /**
  * Paperback's native bridge converts image fields to URL values. An empty
  * string is not a valid URL, even though the TypeScript field is required and

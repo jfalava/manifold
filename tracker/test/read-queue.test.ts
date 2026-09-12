@@ -1,7 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics effectSucceedWithVoid:off */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceManga, TrackedMangaChapterReadAction } from "@paperback/types";
 import type { PersonalReadInput } from "@manifold/paperback-runtime";

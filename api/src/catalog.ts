@@ -1,5 +1,9 @@
-/** Cloudflare Worker / Hono entry: handlers are async by platform contract. */
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics cryptoRandomUUID:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
 import { DateTime } from "effect";
 import { Hono } from "hono";
 import { catalog as trackerCatalog } from "@manifold/tracker/catalog";

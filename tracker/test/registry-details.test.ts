@@ -1,6 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics effectSucceedWithVoid:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalDate:off */
 import { describe, expect, it } from "vitest";
 
 import { canonicalResultForRegistryEntry } from "../src/MANIFOLD/registry-details";

@@ -1,3 +1,6 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsole:off */
+/** @effect-diagnostics globalDate:off */
 import { ContentRating, SourceIntents, type ExtensionInfo } from "@paperback/types";
 import pkg from "../../package.json" with { type: "json" };
 

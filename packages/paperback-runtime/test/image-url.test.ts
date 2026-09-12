@@ -1,8 +1,9 @@
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalFetch:off */
 /** @effect-diagnostics globalTimers:off */
 /** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics schemaSync:off */
 import { describe, expect, it } from "vitest";
 
 import { PAPERBACK_FALLBACK_IMAGE_URL, safeImageUrl } from "../src/image-url";
