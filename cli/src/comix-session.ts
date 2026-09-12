@@ -1,23 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import {
   arrayField,
   isBoolean,
@@ -29,6 +9,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@manifold/json";
+import { epochMillisNow } from "@/effect-kit";
 
 export const SECRETS_SERVICE = "manifold";
 export const SECRETS_NAME = "comix-session";
@@ -208,7 +189,7 @@ export const clearanceExpiresAtMs = (cookies: readonly ComixCookie[]): number | 
   return Math.min(...expiries);
 };
 
-export const isSessionFresh = (session: StoredComixSession, now = Date.now()): boolean => {
+export const isSessionFresh = (session: StoredComixSession, now = epochMillisNow()): boolean => {
   const clearance = session.cookies.filter(
     (cookie) => cookie.name === "cf_clearance" && cookie.value.length > 0,
   );
@@ -224,7 +205,7 @@ export const isSessionFresh = (session: StoredComixSession, now = Date.now()): b
 
 export const loadStoredSession = async (
   store: SecretStore,
-  now = Date.now(),
+  now = epochMillisNow(),
 ): Promise<StoredComixSession | undefined> => {
   const raw = await store.get(SECRETS_SERVICE, SECRETS_NAME);
   if (!raw) {
@@ -252,7 +233,7 @@ export const clearStoredSession = async (store: SecretStore): Promise<void> => {
 export const sessionFromCookies = (
   cookies: readonly ComixCookie[],
   userAgent: string | undefined,
-  harvestedAt = Date.now(),
+  harvestedAt = epochMillisNow(),
 ): StoredComixSession => ({
   version: 1,
   cookies: [...cookies],

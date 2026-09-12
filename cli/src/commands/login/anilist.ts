@@ -1,23 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { Effect } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage } from "@manifold/json";
@@ -30,6 +10,7 @@ import {
 } from "@/login/anilist";
 import { resolveValue } from "@/env-resolve";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
+import { envString, sleepPromise } from "@/effect-kit";
 
 export const anilistLoginCommand = Command.make("anilist", {
   clientId: Flag.String("client-id").pipe(
@@ -44,7 +25,7 @@ export const anilistLoginCommand = Command.make("anilist", {
     Effect.tryPromise({
       try: async () => {
         const id = resolveValue(clientId, "MANIFOLD_ANILIST_CLIENT_ID");
-        const secret = process.env.MANIFOLD_ANILIST_CLIENT_SECRET;
+        const secret = envString("MANIFOLD_ANILIST_CLIENT_SECRET");
         if (!id || !secret) {
           throw new Error(
             "Set MANIFOLD_ANILIST_CLIENT_ID and MANIFOLD_ANILIST_CLIENT_SECRET for the CLI OAuth application.",
@@ -56,7 +37,7 @@ export const anilistLoginCommand = Command.make("anilist", {
         const server = Bun.serve({
           hostname: "127.0.0.1",
           port: 8767,
-          fetch(request) {
+          fetch(request: Request) {
             const url = new URL(request.url);
             const headers = { "content-type": "text/plain", "cache-control": "no-store" };
             if (request.method !== "GET" || url.pathname !== "/callback") {
@@ -79,10 +60,13 @@ export const anilistLoginCommand = Command.make("anilist", {
             });
           },
         });
-        const timer = setTimeout(
-          () => callback.reject(new Error("AniList login timed out after five minutes.")),
-          300_000,
-        );
+        let timedOut = false;
+        void sleepPromise(300_000).then(() => {
+          if (!timedOut) {
+            timedOut = true;
+            callback.reject(new Error("AniList login timed out after five minutes."));
+          }
+        });
         try {
           frameDetail(`Callback URL: ${ANILIST_REDIRECT_URI}`);
           frameDetail(`Open this URL in your browser:\n${auth.url}`);
@@ -90,13 +74,13 @@ export const anilistLoginCommand = Command.make("anilist", {
           const viewer = await validateAniListSession(session.accessToken);
           await Bun.secrets.set({ ...ANILIST_SECRET, value: JSON.stringify(session) });
           closeFrame(`Signed in as ${viewer.name} (${viewer.id}). Token saved in the OS keychain.`);
-          if (process.env.MANIFOLD_ANILIST_TOKEN) {
+          if (envString("MANIFOLD_ANILIST_TOKEN")) {
             frameDetail(
               "MANIFOLD_ANILIST_TOKEN is set and overrides this login. Unset it to use the keychain token.",
             );
           }
         } finally {
-          clearTimeout(timer);
+          timedOut = true;
           await server.stop(true);
         }
       },

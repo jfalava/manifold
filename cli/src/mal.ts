@@ -1,25 +1,6 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { Schema } from "effect";
 import { manifoldUserAgent } from "@manifold/json";
+import { decodeJsonOrThrow, epochMillisNow, jsonFromResponse, newId, sleepPromise } from "@/effect-kit";
 
 const API = "https://api.myanimelist.net/v2";
 const TOKEN_URL = "https://myanimelist.net/v1/oauth2/token";
@@ -29,13 +10,13 @@ const USER_AGENT = manifoldUserAgent("cli");
 const Tokens = Schema.Struct({
   access_token: Schema.NonEmptyString,
   refresh_token: Schema.optional(Schema.NonEmptyString),
-  expires_in: Schema.Number,
+  expires_in: Schema.Finite,
 });
 export const MalSession = Schema.Struct({
   clientId: Schema.NonEmptyString,
   accessToken: Schema.NonEmptyString,
   refreshToken: Schema.optional(Schema.NonEmptyString),
-  expiresAt: Schema.Number,
+  expiresAt: Schema.Finite,
 });
 export type MalSession = Schema.Schema.Type<typeof MalSession>;
 const Profile = Schema.Struct({ id: Schema.Int, name: Schema.NonEmptyString });
@@ -68,8 +49,8 @@ export interface MalMangaUpdate {
 
 export const createMalAuthorization = (clientId: string) => {
   const verifier =
-    crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
-  const state = crypto.randomUUID();
+    newId().replaceAll("-", "") + newId().replaceAll("-", "");
+  const state = newId();
   const url = new URL("https://myanimelist.net/v1/oauth2/authorize");
   url.search = new URLSearchParams({
     response_type: "code",
@@ -107,17 +88,17 @@ export const requestMalTokens = async (
     throw new Error(`MAL token exchange failed: HTTP ${response.status}. Run login mal again.`);
   }
   // Schema errors can include the received payload. Never expose token responses.
-  const tokens = await response
-    .json()
-    .then((body) => Schema.decodeUnknownSync(Tokens)(body))
-    .catch(() => {
-      throw new Error("MAL returned an invalid token response. Run login mal again.");
-    });
+  let tokens: Schema.Schema.Type<typeof Tokens>;
+  try {
+    tokens = decodeJsonOrThrow(Tokens, await jsonFromResponse(response, "mal.tokens"), "mal.tokens");
+  } catch {
+    throw new Error("MAL returned an invalid token response. Run login mal again.");
+  }
   return {
     clientId,
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token,
-    expiresAt: Date.now() + tokens.expires_in * 1000,
+    expiresAt: epochMillisNow() + tokens.expires_in * 1000,
   };
 };
 
@@ -132,7 +113,7 @@ export const createMalClient = (options: {
 }) => {
   const fetcher = options.fetcher ?? fetch;
   const sleep =
-    options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    options.sleep ?? sleepPromise;
   let session = options.session;
   let token = options.accessToken ?? session?.accessToken;
   let requested = false;
@@ -160,7 +141,7 @@ export const createMalClient = (options: {
     if (!token) {
       throw new Error("MAL token missing. Run login mal or set MANIFOLD_MAL_TOKEN.");
     }
-    if (!options.accessToken && session && session.expiresAt <= Date.now() + 60_000) {
+    if (!options.accessToken && session && session.expiresAt <= epochMillisNow() + 60_000) {
       await refresh();
     }
     let refreshed = false;
@@ -195,7 +176,7 @@ export const createMalClient = (options: {
             ? NaN
             : Number.isFinite(seconds)
               ? seconds * 1000
-              : Date.parse(retryAfter) - Date.now();
+              : Date.parse(retryAfter) - epochMillisNow();
         await response.body?.cancel();
         if (wait > 300_000) {
           throw new Error("MAL requested a long retry delay. Stop and resume later.");
@@ -215,7 +196,7 @@ export const createMalClient = (options: {
 
   return {
     profile: async () =>
-      Schema.decodeUnknownSync(Profile)(await (await request("/users/@me")).json()),
+      decodeJsonOrThrow(Profile, (await (await request("/users/@me")).json()), "mal.profile"),
     manga: async (): Promise<MalManga[]> => {
       const entries = new Map<number, MalManga>();
       const visited = new Set<string>();
@@ -225,7 +206,7 @@ export const createMalClient = (options: {
           throw new Error("MAL pagination repeated a page; refusing an incomplete scan.");
         }
         visited.add(path);
-        const page = Schema.decodeUnknownSync(MangaPage)(await (await request(path)).json());
+        const page = decodeJsonOrThrow(MangaPage, (await (await request(path)).json()), "decode");
         for (const { node } of page.data) {
           if (node.id <= 0) {
             throw new Error("MAL returned an invalid manga ID.");

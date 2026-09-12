@@ -1,23 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import {
   arrayField,
   isBoolean,
@@ -29,6 +9,7 @@ import {
 } from "@manifold/json";
 
 import type { PhaseReporter } from "@/ui";
+import { platformFetch, sleepPromise } from "@/effect-kit";
 
 const USER_AGENT = manifoldUserAgent("cli");
 
@@ -42,7 +23,7 @@ const USER_AGENT = manifoldUserAgent("cli");
 
 const API_URL = "https://graphql.anilist.co";
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = sleepPromise;
 
 // Bulk deletes hit AniList rate limits routinely: entries and activities share
 // one 429-aware POST path with a bounded retry loop (no unbounded recursion).
@@ -73,7 +54,7 @@ const postGraphQL = async (
   variables: GraphQLVariables,
 ): Promise<Response> => {
   for (let attempt = 0; ; attempt += 1) {
-    const response = await fetch(API_URL, {
+    const response = await platformFetch(API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -98,7 +79,7 @@ export interface WipeListEntry {
 }
 
 export const fetchViewer = async (token: string): Promise<{ id: number; name: string }> => {
-  const response = await fetch(API_URL, {
+  const response = await platformFetch(API_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -126,7 +107,7 @@ export const fetchMangaEntries = async (
   token: string,
   userId: number,
 ): Promise<WipeListEntry[]> => {
-  const response = await fetch(API_URL, {
+  const response = await platformFetch(API_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -239,7 +220,7 @@ const fetchActivitiesPage = async (
   userId: number,
   page: number,
 ): Promise<ActivitiesPage> => {
-  const response = await fetch(API_URL, {
+  const response = await platformFetch(API_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,

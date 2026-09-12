@@ -1,24 +1,4 @@
 #!/usr/bin/env bun
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { BunRuntime, BunServices } from "@effect/platform-bun";
 import { errorMessage } from "@manifold/json";
 import { Effect } from "effect";
@@ -36,19 +16,17 @@ const program = Command.runWith(makeRootCommand(), {
 })(Bun.argv.slice(2)).pipe(
   Effect.provide(BunServices.layer),
   Effect.catch((cause) =>
-    Effect.sync(() => {
+    Effect.gen(function* () {
       process.exitCode = 1;
       if (!CliError.isCliError(cause)) {
-        const message = errorMessage(cause);
-        console.error(`Error: ${message}`);
+        yield* Effect.logError(`Error: ${errorMessage(cause)}`);
       }
     }),
   ),
   Effect.catchDefect((cause) =>
-    Effect.sync(() => {
+    Effect.gen(function* () {
       process.exitCode = 1;
-      const message = errorMessage(cause);
-      console.error(`Error: ${message}`);
+      yield* Effect.logError(`Error: ${errorMessage(cause)}`);
     }),
   ),
 );

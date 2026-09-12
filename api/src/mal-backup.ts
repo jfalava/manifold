@@ -1,9 +1,4 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
+import { platformFetch } from "./effect-host";
 import { Effect, Schema } from "effect";
 import { MalBackupIdentity, type ListStatus, type RegistryEntry } from "@manifold/contract";
 import type { CanonicalSearchResult, CanonicalSearchSource } from "@manifold/canonical";
@@ -88,7 +83,7 @@ export const resolveMalBackup = async (
   source: CanonicalSearchSource = createMyAnimeListSource({
     clientId: env.MANIFOLD_MAL_CLIENT_ID,
     userAgent: manifoldUserAgent("api"),
-    fetcher: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
+    fetcher: (input, init) => platformFetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
   }),
 ): Promise<MalMatch> => {
   const binding = entry.providers.find((link) => link.provider === "mal");
@@ -156,7 +151,7 @@ export const writeMalBackupStatus = async (
   if (!/^[1-9]\d*$/.test(externalId)) {
     throw new Error("Invalid MAL manga id");
   }
-  const response = await fetch(
+  const response = await platformFetch(
     `https://api.myanimelist.net/v2/manga/${externalId}/my_list_status`,
     {
       method: "PATCH",

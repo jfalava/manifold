@@ -1,23 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import {
   errorMessage,
   isJsonArray,
@@ -33,6 +13,7 @@ import { MYANIMELIST_MANGA_ENDPOINT } from "@manifold/canonical/sources";
 import type { AniListEntry } from "@/anilist";
 import type { MalClient, MalMangaUpdate } from "@/mal";
 import { normalizeTitle } from "@/migration";
+import { epochMillisNow, sleepPromise } from "@/effect-kit";
 
 /** AniList MediaListStatus → MAL list_status fields (status + optional reread). */
 export const ANILIST_TO_MAL = {
@@ -146,7 +127,7 @@ export const MAL_SEARCH_INTERVAL_MS = 1_500;
 export const createMalTitleSearch = (
   clientId: string,
   fetcher: typeof fetch = fetch,
-  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  sleep: (ms: number) => Promise<void> = sleepPromise,
 ): Al2malSearch => {
   if (!clientId || clientId === "not-configured") {
     return async () => {
@@ -183,7 +164,7 @@ export const createMalTitleSearch = (
             ? NaN
             : Number.isFinite(seconds)
               ? seconds * 1000
-              : Date.parse(retryAfter) - Date.now();
+              : Date.parse(retryAfter) - epochMillisNow();
         await response.body?.cancel();
         if (wait > 300_000) {
           throw new Error("MAL title search requested a long retry delay. Stop and resume later.");

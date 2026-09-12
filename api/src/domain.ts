@@ -1,9 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
 /**
  * Personal API domain types and request schemas.
  * Source of truth: @manifold/contract.

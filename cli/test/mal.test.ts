@@ -1,23 +1,5 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
 /** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isString, requestHref } from "@manifold/json";
 import {
@@ -221,7 +203,7 @@ describe("MAL authentication and retries", () => {
     const params = new URL(auth.url).searchParams;
     expect(params.get("code_challenge_method")).toBe("plain");
     expect(params.get("code_challenge")).toBe(auth.verifier);
-    expect(auth.verifier.length).toBeGreaterThanOrEqual(43);
+    expect(String(auth.verifier).length).toBeGreaterThanOrEqual(43);
     expect(params.get("redirect_uri")).toBe(MAL_REDIRECT_URI);
     expect(params.get("state")).toBe(auth.state);
     expect(createMalAuthorization("client").state).not.toBe(auth.state);

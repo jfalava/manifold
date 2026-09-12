@@ -1,10 +1,4 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-import { hostLogWarn } from "./effect-host";
+import { hostLogWarn, platformFetch } from "./effect-host";
 import * as Effect from "effect/Effect";
 import { manifoldUserAgent } from "@manifold/json";
 import type { CanonicalSearchProviderFilter, RegistryEntry } from "@manifold/contract";
@@ -38,7 +32,7 @@ export interface CanonicalSearchResponse {
   readonly providers: readonly CanonicalProviderSearch[];
 }
 
-const searchSource = async (
+const searchSource = (
   source: CanonicalSearchSource,
   query: string,
   limit: number,
@@ -72,7 +66,7 @@ const selectedSources = (
   const sources: CanonicalSearchSource[] = [];
   const userAgent = manifoldUserAgent("api");
   const fetcher: CanonicalFetcher = (input, init) =>
-    fetch(input, { ...init, signal: AbortSignal.timeout(5_000) });
+    platformFetch(input, { ...init, signal: AbortSignal.timeout(5_000) });
   if (provider === "all" || provider === "anilist") {
     sources.push(createAniListSource({ userAgent, fetcher }));
   }

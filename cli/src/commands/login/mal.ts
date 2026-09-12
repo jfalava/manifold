@@ -1,23 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { Effect } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage } from "@manifold/json";
@@ -26,6 +6,7 @@ import { saveMalSession } from "@/login/mal-session";
 import { resolveValue } from "@/env-resolve";
 import { createMalAuthorization, createMalClient, MAL_REDIRECT_URI, requestMalTokens } from "@/mal";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
+import { envString, sleepPromise } from "@/effect-kit";
 
 export const malLoginCommand = Command.make("mal", {
   clientId: Flag.String("client-id").pipe(
@@ -49,7 +30,7 @@ export const malLoginCommand = Command.make("mal", {
         const server = Bun.serve({
           hostname: "127.0.0.1",
           port: 8766,
-          fetch(request) {
+          fetch(request: Request) {
             const url = new URL(request.url);
             const headers = { "content-type": "text/plain", "cache-control": "no-store" };
             if (request.method !== "GET" || url.pathname !== "/callback") {
@@ -72,16 +53,19 @@ export const malLoginCommand = Command.make("mal", {
             });
           },
         });
-        const timer = setTimeout(
-          () => callback.reject(new Error("MAL login timed out after five minutes.")),
-          300_000,
-        );
+        let timedOut = false;
+        void sleepPromise(300_000).then(() => {
+          if (!timedOut) {
+            timedOut = true;
+            callback.reject(new Error("MAL login timed out after five minutes."));
+          }
+        });
         try {
           frameDetail(`Open this URL in your browser:\n${auth.url}`);
           const code = await callback.promise;
           const session = await requestMalTokens(
             id,
-            process.env.MANIFOLD_MAL_CLIENT_SECRET,
+            envString("MANIFOLD_MAL_CLIENT_SECRET"),
             new URLSearchParams({
               grant_type: "authorization_code",
               code,
@@ -95,7 +79,7 @@ export const malLoginCommand = Command.make("mal", {
             `Signed in as ${profile.name} (${profile.id}). Tokens saved in the OS keychain.`,
           );
         } finally {
-          clearTimeout(timer);
+          timedOut = true;
           await server.stop(true);
         }
       },

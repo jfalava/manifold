@@ -1,12 +1,8 @@
+/** Cloudflare Durable Object — public methods must be async. */
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
 import { DurableObject } from "cloudflare:workers";
 import { Effect, Option, Schema } from "effect";
-import { epochMillisNow, hostLogError, newId } from "./effect-host";
+import { epochMillisNow, hostLogError, newId, platformFetch } from "./effect-host";
 import {
   errorMessage,
   isJsonObject,
@@ -200,7 +196,7 @@ export class ManifoldSync extends DurableObject<Env> {
       form.set("code_verifier", session.code_verifier);
     }
 
-    const response = await fetch(config.tokenEndpoint, {
+    const response = await platformFetch(config.tokenEndpoint, {
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
@@ -240,7 +236,7 @@ export class ManifoldSync extends DurableObject<Env> {
   }
 
   async loginMangaDex(): Promise<AuthConnection> {
-    const response = await fetch(MANGADEX_TOKEN_ENDPOINT, {
+    const response = await platformFetch(MANGADEX_TOKEN_ENDPOINT, {
       method: "POST",
       headers: {
         accept: "application/json",
@@ -375,7 +371,7 @@ export class ManifoldSync extends DurableObject<Env> {
       provider === "mangadex"
         ? MANGADEX_TOKEN_ENDPOINT
         : (await getOAuthClientConfig(provider, this.env)).tokenEndpoint;
-    const response = await fetch(tokenEndpoint, {
+    const response = await platformFetch(tokenEndpoint, {
       method: "POST",
       headers: {
         accept: "application/json",

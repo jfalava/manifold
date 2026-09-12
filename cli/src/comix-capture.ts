@@ -1,23 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -46,6 +26,7 @@ import {
   type ComixSearchItem,
 } from "./comix-match";
 import { cookiesFromCdp, toCdpCookie, type ComixCookie } from "./comix-session";
+import { epochMillisNow, platformFetch, sleepPromise } from "@/effect-kit";
 
 export const CAPTURE_TIMEOUT_MS = 15_000;
 export const GOOGLE_POLL_INTERVAL_MS = 500;
@@ -88,7 +69,7 @@ export const parseDevToolsActivePort = (
 
 export const chromeDevToolsPortCandidates = (
   home = homedir(),
-  env: NodeJS.Dict<string> = process.env,
+  env: NodeJS.Dict<string> = process.env /* bootstrap passthrough */,
 ): string[] => {
   const localAppData = env.LOCALAPPDATA;
   return [
@@ -193,7 +174,7 @@ export const probeChromeDevToolsUrl = async (
   ports: readonly number[] = [CHROME_DEBUG_PORT],
   fetchVersion: (url: string) => Promise<string | undefined> = async (url) => {
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
+      const response = await platformFetch(url, { signal: AbortSignal.timeout(1_000) });
       if (!response.ok) {
         return undefined;
       }
@@ -232,9 +213,9 @@ export const waitForChromeDevToolsUrl = async (
   const timeoutMs = options.timeoutMs ?? 20_000;
   const intervalMs = options.intervalMs ?? 400;
   const probe = options.probe ?? probeChromeDevToolsUrl;
-  const now = options.now ?? Date.now;
+  const now = options.now ?? epochMillisNow;
   const sleep =
-    options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+    options.sleep ?? sleepPromise;
   const deadline = now() + timeoutMs;
   while (true) {
     const url = await probe();
@@ -298,9 +279,9 @@ export const createComixBrowser = async (options: {
   readonly sleep?: (ms: number) => Promise<void>;
 }): Promise<ComixBrowser> => {
   const { view } = options;
-  const now = options.now ?? Date.now;
+  const now = options.now ?? epochMillisNow;
   const sleep =
-    options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    options.sleep ?? sleepPromise;
   await view.navigate("about:blank");
   await view.cdp("Page.enable");
   await view.cdp("Network.enable");

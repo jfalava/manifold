@@ -1,7 +1,7 @@
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
 /** @effect-diagnostics globalFetch:off */
 /** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseEnv } from "node:util";

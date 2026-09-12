@@ -1,7 +1,7 @@
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
 /** @effect-diagnostics globalFetch:off */
 /** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 

@@ -1,23 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 
 import {
@@ -31,6 +11,7 @@ import {
 } from "@manifold/json";
 
 import type { PhaseReporter } from "@/ui";
+import { platformFetch, sleepPromise } from "@/effect-kit";
 
 /**
  * MangaDex → AniList migration phases, ported from
@@ -45,7 +26,7 @@ const REQUEST_INTERVAL_MS = 2_500; // 30/min ÷ 1.25 safety margin → ≤24 req
 const MD_REQUEST_INTERVAL_MS = 250; // MangaDex global ~5 req/s
 const BATCH = 100;
 
-export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+export const sleep = sleepPromise;
 
 export type MdStatus =
   | "reading"
@@ -88,7 +69,7 @@ interface GraphQLResponse<A> {
 }
 
 const gql = async <A>(token: string, query: string, variables: JsonObject = {}): Promise<A> => {
-  const response = await fetch(ANILIST_ENDPOINT, {
+  const response = await platformFetch(ANILIST_ENDPOINT, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -122,7 +103,7 @@ const gql = async <A>(token: string, query: string, variables: JsonObject = {}):
 export type MdTokenProvider = () => Promise<string>;
 
 const mdFetch = async <A>(mdToken: string, path: string): Promise<A> => {
-  const response = await fetch(`${MD_API}${path}`, {
+  const response = await platformFetch(`${MD_API}${path}`, {
     headers: {
       authorization: `Bearer ${mdToken}`,
       accept: "application/json",
@@ -205,7 +186,7 @@ export const phaseExport = async (
   report?.detail("Fetching MangaDex statuses…");
   // NOTE: /manga/status is one of the few endpoints whose payload is NOT
   // wrapped in a `data` envelope.
-  const statusResponse = await fetch(`${MD_API}/manga/status`, {
+  const statusResponse = await platformFetch(`${MD_API}/manga/status`, {
     headers: {
       authorization: `Bearer ${mdToken}`,
       accept: "application/json",
@@ -510,7 +491,7 @@ export const collectProgress = async (
     } else {
       try {
         const mdToken = await getMdToken();
-        const markerResponse = await fetch(`${MD_API}/manga/${entry.mangaDexId}/read`, {
+        const markerResponse = await platformFetch(`${MD_API}/manga/${entry.mangaDexId}/read`, {
           headers: {
             authorization: `Bearer ${mdToken}`,
             accept: "application/json",

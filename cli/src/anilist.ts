@@ -1,29 +1,10 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { ANILIST_GRAPHQL_ENDPOINT } from "@manifold/canonical/sources";
 import { isFiniteNumber, isString, manifoldUserAgent, type JsonObject } from "@manifold/json";
+import { epochMillisNow, platformFetch, sleepPromise } from "@/effect-kit";
 
 const USER_AGENT = manifoldUserAgent("cli");
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const sleep = sleepPromise;
 
 /** AniList degraded limit is ~30 req/min; 1200ms spacing stays under it. */
 const REQUEST_INTERVAL_MS = 2_500; // 30/min ÷ 1.25 safety margin → ≤24 req/min
@@ -93,11 +74,11 @@ interface GraphQLResponse<A> {
 let lastRequestAt = 0;
 
 const throttle = async (): Promise<void> => {
-  const wait = REQUEST_INTERVAL_MS - (Date.now() - lastRequestAt);
+  const wait = REQUEST_INTERVAL_MS - (epochMillisNow() - lastRequestAt);
   if (wait > 0) {
     await sleep(wait);
   }
-  lastRequestAt = Date.now();
+  lastRequestAt = epochMillisNow();
 };
 
 const gql = async <A>(
@@ -107,7 +88,7 @@ const gql = async <A>(
   attempt = 0,
 ): Promise<A> => {
   await throttle();
-  const response = await fetch(ANILIST_GRAPHQL_ENDPOINT, {
+  const response = await platformFetch(ANILIST_GRAPHQL_ENDPOINT, {
     method: "POST",
     headers: {
       "content-type": "application/json",

@@ -1,33 +1,14 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { Schema } from "effect";
 import { manifoldUserAgent } from "@manifold/json";
+import { decodeJsonOrThrow, envString, epochMillisNow, newId, parseJsonValue, platformFetch } from "@/effect-kit";
 
 export const ANILIST_REDIRECT_URI = "http://127.0.0.1:8767/callback";
 export const ANILIST_SECRET = { service: "manifold", name: "anilist-session" };
-const Session = Schema.Struct({ accessToken: Schema.NonEmptyString, expiresAt: Schema.Number });
+const Session = Schema.Struct({ accessToken: Schema.NonEmptyString, expiresAt: Schema.Finite });
 export type AniListSession = Schema.Schema.Type<typeof Session>;
 const TokenResponse = Schema.Struct({
   access_token: Schema.NonEmptyString,
-  expires_in: Schema.Number,
+  expires_in: Schema.Finite,
 });
 const ViewerResponse = Schema.Struct({
   data: Schema.Struct({ Viewer: Schema.Struct({ id: Schema.Int, name: Schema.NonEmptyString }) }),
@@ -42,7 +23,7 @@ const defaultSecretStore = (): AniListSecretStore => ({
 });
 
 export const createAniListAuthorization = (clientId: string) => {
-  const state = crypto.randomUUID();
+  const state = newId();
   const url = new URL("https://anilist.co/api/v2/oauth/authorize");
   url.search = new URLSearchParams({
     client_id: clientId,
@@ -54,7 +35,7 @@ export const createAniListAuthorization = (clientId: string) => {
 };
 
 export const exchangeAniListCode = async (clientId: string, clientSecret: string, code: string) => {
-  const response = await fetch("https://anilist.co/api/v2/oauth/token", {
+  const response = await platformFetch("https://anilist.co/api/v2/oauth/token", {
     method: "POST",
     redirect: "error",
     signal: AbortSignal.timeout(30_000),
@@ -77,11 +58,11 @@ export const exchangeAniListCode = async (clientId: string, clientSecret: string
     );
   }
   try {
-    const tokens = Schema.decodeUnknownSync(TokenResponse)(await response.json());
+    const tokens = decodeJsonOrThrow(TokenResponse, (await response.json()), "decode");
     if (tokens.expires_in <= 0) {
       throw new Error("Expired token");
     }
-    return { accessToken: tokens.access_token, expiresAt: Date.now() + tokens.expires_in * 1000 };
+    return { accessToken: tokens.access_token, expiresAt: epochMillisNow() + tokens.expires_in * 1000 };
   } catch {
     // Schema errors can echo tokens. Do not propagate response payloads.
     throw new Error("AniList returned an invalid token response. Run login anilist again.");
@@ -89,7 +70,7 @@ export const exchangeAniListCode = async (clientId: string, clientSecret: string
 };
 
 export const validateAniListSession = async (accessToken: string) => {
-  const response = await fetch("https://graphql.anilist.co", {
+  const response = await platformFetch("https://graphql.anilist.co", {
     method: "POST",
     redirect: "error",
     signal: AbortSignal.timeout(30_000),
@@ -106,7 +87,7 @@ export const validateAniListSession = async (accessToken: string) => {
       `AniList profile lookup failed: HTTP ${response.status}. Login has not been saved.`,
     );
   }
-  return Schema.decodeUnknownSync(ViewerResponse)(await response.json()).data.Viewer;
+  return decodeJsonOrThrow(ViewerResponse, (await response.json()), "anilist.viewer").data.Viewer;
 };
 
 /** Explicit flag > environment > keychain. Missing login remains optional for alias searches. */
@@ -114,7 +95,7 @@ export const resolveAniListToken = async (
   explicit?: string,
   secrets: AniListSecretStore = defaultSecretStore(),
 ): Promise<string | undefined> => {
-  const override = explicit ?? process.env.MANIFOLD_ANILIST_TOKEN;
+  const override = explicit ?? envString("MANIFOLD_ANILIST_TOKEN");
   if (override) {
     return override;
   }
@@ -124,11 +105,11 @@ export const resolveAniListToken = async (
   }
   let session: AniListSession;
   try {
-    session = Schema.decodeUnknownSync(Session)(JSON.parse(stored));
+    session = decodeJsonOrThrow(Session, parseJsonValue(stored), "decode");
   } catch {
     throw new Error("Invalid AniList keychain session. Run login anilist again.");
   }
-  if (session.expiresAt <= Date.now() + 60_000) {
+  if (session.expiresAt <= epochMillisNow() + 60_000) {
     throw new Error(
       "AniList login expired. Run login anilist again; AniList does not support refresh tokens.",
     );

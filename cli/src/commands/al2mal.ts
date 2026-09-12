@@ -1,23 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { AuthConnection } from "@manifold/contract";
@@ -39,6 +19,7 @@ import {
   openFrame,
   type RunContext,
 } from "@/ui";
+import { envString } from "@/effect-kit";
 
 interface Al2malCtx extends RunContext {
   report?: Al2malReport;
@@ -144,7 +125,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
             );
           }
 
-          const malClientId = process.env.MANIFOLD_MAL_CLIENT_ID ?? session?.clientId;
+          const malClientId = envString("MANIFOLD_MAL_CLIENT_ID") ?? session?.clientId;
           if (!malClientId) {
             throw new Error(
               "Missing MANIFOLD_MAL_CLIENT_ID for MAL title search (public client id).",
@@ -154,7 +135,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
           const client = createMalClient({
             accessToken,
             session,
-            clientSecret: process.env.MANIFOLD_MAL_CLIENT_SECRET,
+            clientSecret: envString("MANIFOLD_MAL_CLIENT_SECRET"),
             saveSession: saveMalSession,
           });
           const search = createMalTitleSearch(malClientId);

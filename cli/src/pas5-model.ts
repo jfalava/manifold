@@ -1,30 +1,11 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
+import { epochMillisNow } from "@/effect-kit";
 /**
  * Paperback backup archive (`*.pas5`) entity model, derived from a real
  * device export (see `paperback-backup-example/` in the repo root).
  */
 
 /** Core Data reference date: seconds since 2001-01-01. */
-export const coreDataNow = (): number => Date.now() / 1000 - 978_307_200;
+export const coreDataNow = (): number => epochMillisNow() / 1000 - 978_307_200;
 
 export const coreDataFromUnix = (unixSeconds: number): number => unixSeconds - 978_307_200;
 

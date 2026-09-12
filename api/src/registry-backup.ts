@@ -1,9 +1,4 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
+import { Effect } from "effect";
 import { newId } from "./effect-host";
 import {
   isFiniteNumber,
@@ -228,27 +223,32 @@ export const parseRegistryBackup = (input: JsonValue): RegistryBackup => {
   };
 };
 
-export const sha256 = async (value: string): Promise<string> =>
-  [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+export const sha256 = (value: string): Promise<string> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const digest = yield* Effect.promise(() =>
+        crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
+      );
+      return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    }),
+  );
 
-export const readBackupBody = async (
+export const readBackupBody = (
   body: ReadableStream<Uint8Array>,
   expectedChecksum?: string,
-): Promise<RegistryBackup> => {
+): Promise<RegistryBackup> => Effect.runPromise(Effect.gen(function* () {
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
     for (;;) {
-      const next = await reader.read();
+      const next = yield* Effect.promise(() => reader.read());
       if (next.done) {
         break;
       }
       size += next.value.byteLength;
       if (size > MAX_REGISTRY_BACKUP_BYTES) {
-        await reader.cancel();
+        yield* Effect.promise(() => reader.cancel());
         throw new Error("Registry backup exceeds the 16 MiB recovery limit");
       }
       chunks.push(next.value);
@@ -263,7 +263,7 @@ export const readBackupBody = async (
     offset += chunk.byteLength;
   }
   const text = new TextDecoder().decode(bytes);
-  if (expectedChecksum !== undefined && (await sha256(text)) !== expectedChecksum) {
+  if (expectedChecksum !== undefined && (yield* Effect.promise(() => sha256(text))) !== expectedChecksum) {
     throw new Error("Registry backup checksum mismatch");
   }
   let parsed: unknown;
@@ -276,4 +276,4 @@ export const readBackupBody = async (
     throw new Error("Registry backup is not a JSON value");
   }
   return parseRegistryBackup(parsed);
-};
+}));

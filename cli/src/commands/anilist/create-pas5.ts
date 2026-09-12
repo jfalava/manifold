@@ -1,27 +1,7 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
+import { newId } from "@/effect-kit";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage, isFiniteNumber, type JsonObject } from "@manifold/json";
-import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
@@ -133,7 +113,7 @@ const makeSourceManga = (sourceId: string, mangaId: string, infoId: string): Sou
   // Uppercase, matching native device exports: the user-verified restore test
   // archive has uppercase source+library UUIDs, while lowercase generator
   // output was implicated in Paperback duplicate objects (memories 1202/1203).
-  id: randomUUID().toUpperCase(),
+  id: newId().toUpperCase(),
   sourceId,
   schemaVersion: 1,
   mangaId,
@@ -193,7 +173,7 @@ export const buildEntitiesForEntry = (
       : [];
 
   // Match the uppercase LibraryManga UUID representation in native device exports.
-  const libraryId = randomUUID().toUpperCase();
+  const libraryId = newId().toUpperCase();
   return {
     library: {
       schemaVersion: 1,

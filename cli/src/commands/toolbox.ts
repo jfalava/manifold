@@ -1,23 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { Effect, Option, Schema } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import {
@@ -42,6 +22,7 @@ import { fetchAniListMangaEntries, type AniListEntry } from "@/anilist";
 import { resolveAniListToken } from "@/login/anilist";
 import { resolveValue } from "@/env-resolve";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
+import { platformFetch } from "@/effect-kit";
 
 const DEFAULT_API_ORIGIN = "https://manifold.jfa.dev/api";
 
@@ -93,7 +74,7 @@ export const apiCall = async <A>(
   body?: JsonValue,
   schema?: Schema.ConstraintDecoder<A>,
 ): Promise<A> => {
-  const response = await fetch(`${config.origin}${path}`, {
+  const response = await platformFetch(`${config.origin}${path}`, {
     method,
     headers: {
       accept: "application/json",

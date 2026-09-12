@@ -1,29 +1,10 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 
 import pc from "picocolors";
 import cliProgress from "cli-progress";
 import { Listr, PRESET_TIMER, Spinner, type ListrTask } from "listr2";
+import { epochMillisNow } from "@/effect-kit";
 
 /**
  * Terminal UI kit: listr2 owns the task tree (◆/■/◇ icons via the default
@@ -177,11 +158,11 @@ export interface BarUpdate {
 /** Render one bar line via cli-progress; meant to be assigned to task.output. */
 export const barLine = ({ done, total, counts = [], startedAt }: BarUpdate): string => {
   const progress = total > 0 ? Math.min(1, done / total) : 1;
-  const rateMs = done > 0 ? (Date.now() - startedAt) / done : 0;
+  const rateMs = done > 0 ? (epochMillisNow() - startedAt) / done : 0;
   const remaining = Math.max(total - done, 0);
   const etaSec = remaining > 0 && done > 0 ? (rateMs * remaining) / 1000 : 0;
   const countText = counts.map(([label, value]) => ` ${label}=${value}`).join("");
-  const elapsedText = ` · elapsed=${fmtDuration(Date.now() - startedAt)}`;
+  const elapsedText = ` · elapsed=${fmtDuration(epochMillisNow() - startedAt)}`;
   const etaText = done < total && etaSec > 0 ? ` · eta=${fmtDuration(etaSec * 1000)}` : "";
   return cliProgress.Format.Formatter(
     {
@@ -236,7 +217,7 @@ export const makePhaseReporter = (task: OutputSink): PhaseReporter => {
       task.output = `${pc.red("■")} ${text}`;
     },
     progress(done, total, counts) {
-      startedAt ??= Date.now();
+      startedAt ??= epochMillisNow();
       task.output = barLine({ done, total, counts, startedAt });
     },
   };

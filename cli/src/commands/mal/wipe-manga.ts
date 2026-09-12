@@ -1,23 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { Effect } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage } from "@manifold/json";
@@ -29,6 +9,7 @@ import { loadMalSession, saveMalSession } from "@/login/mal-session";
 import { resolveValue } from "@/env-resolve";
 import { createMalClient, wipeMalManga } from "@/mal";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
+import { envString } from "@/effect-kit";
 
 export const wipeMalMangaCommand = Command.make("manga", {
   malToken: Flag.String("mal-token").pipe(
@@ -101,7 +82,7 @@ export const wipeMalMangaCommand = Command.make("manga", {
         const client = createMalClient({
           accessToken,
           session: accessToken ? undefined : await loadMalSession(),
-          clientSecret: process.env.MANIFOLD_MAL_CLIENT_SECRET,
+          clientSecret: envString("MANIFOLD_MAL_CLIENT_SECRET"),
           saveSession: saveMalSession,
         });
         const progress = new cliProgress.SingleBar({

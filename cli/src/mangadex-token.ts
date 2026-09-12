@@ -1,23 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -28,6 +8,7 @@ import {
   MANGADEX_TOKEN_ENDPOINT,
   type MangaDexPersonalClientCredentials,
 } from "@manifold/mangadex";
+import { epochMillisNow } from "@/effect-kit";
 
 interface TokenResponse {
   access_token?: string;
@@ -118,7 +99,7 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
     accessToken = body.access_token;
     refreshToken = body.refresh_token ?? refreshToken;
     expiresAt =
-      Date.now() +
+      epochMillisNow() +
       (Number.isFinite(body.expires_in) ? Number(body.expires_in) : 900) * 1000 -
       EXPIRY_MARGIN_MS;
     await persistTokens();
@@ -127,7 +108,7 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
   return {
     /** Returns a cached token, refreshing or re-authenticating when needed. */
     current: async (): Promise<string> => {
-      if (accessToken && Date.now() < expiresAt) {
+      if (accessToken && epochMillisNow() < expiresAt) {
         return accessToken;
       }
       if (!refreshToken && options.cachePath) {
@@ -135,7 +116,7 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
         accessToken = stored.accessToken;
         refreshToken = stored.refreshToken;
         expiresAt = stored.expiresAt ?? 0;
-        if (accessToken && Date.now() < expiresAt) {
+        if (accessToken && epochMillisNow() < expiresAt) {
           return accessToken;
         }
       }

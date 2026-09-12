@@ -1,23 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 import { Effect, Option } from "effect";
@@ -47,6 +27,7 @@ import {
   MANGADEX_CONTENT_RATINGS,
   type MangaDexReadingStatus,
 } from "@manifold/mangadex";
+import { envString, epochMillisNow, sleepPromise } from "@/effect-kit";
 
 interface StaleCtx extends RunContext {
   statuses: Record<string, MangaDexReadingStatus>;
@@ -86,7 +67,7 @@ const loadStaleCache = async (): Promise<{
     if (savedAt === undefined) {
       return { usable: false, savedAt: undefined, entries: {} };
     }
-    const age = Date.now() - Date.parse(savedAt);
+    const age = epochMillisNow() - Date.parse(savedAt);
     const entries: Record<string, number> = {};
     const entriesRaw = objectField(raw, "entries") ?? {};
     for (const [id, entry] of Object.entries(entriesRaw)) {
@@ -183,7 +164,7 @@ const parseList = (raw: string): string[] =>
     .map((item) => item.trim().toLowerCase())
     .filter((item) => item.length > 0);
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const sleep = sleepPromise;
 
 export const staleStatusCommand = Command.make(
   "stale-status",
@@ -241,7 +222,7 @@ export const staleStatusCommand = Command.make(
           return direct;
         }
         for (const name of names) {
-          const value = process.env[name];
+          const value = envString(name);
           if (value !== undefined && value !== "") {
             return value;
           }
@@ -290,7 +271,7 @@ export const staleStatusCommand = Command.make(
           ),
         );
       }
-      const cutoffIso = new Date(Date.now() - olderThanMs).toISOString();
+      const cutoffIso = new Date(epochMillisNow() - olderThanMs).toISOString();
       // SAFETY: value matches MangaDexReadingStatus; at this call site
       const targetStatus = to as MangaDexReadingStatus;
 
@@ -340,7 +321,7 @@ export const staleStatusCommand = Command.make(
               // MangaDex feed timestamps are second-precision UTC, no
               // timezone suffix allowed.
               const cutoff = cutoffIso.slice(0, 19);
-              const cutoffMs = Date.now() - olderThanMs;
+              const cutoffMs = epochMillisNow() - olderThanMs;
 
               const cached = await loadStaleCache();
               // Cache verdicts are only used when the live sweep cannot

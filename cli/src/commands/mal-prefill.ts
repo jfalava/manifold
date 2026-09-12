@@ -1,23 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalFetchInEffect:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics globalTimersInEffect:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics processEnv:off */
-/** @effect-diagnostics processEnvInEffect:off */
-/** @effect-diagnostics cryptoRandomUUID:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics schemaNumber:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics globalErrorInEffectCatch:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
-/** @effect-diagnostics runEffectInsideEffect:off */
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { createAniListSource } from "@manifold/canonical/sources";
@@ -25,6 +5,7 @@ import { RegistryEntry, RegistryListResponse, type RegistryListEntry } from "@ma
 import { errorMessage, manifoldUserAgent } from "@manifold/json";
 import { apiCall, apiConfig } from "@/commands/toolbox";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
+import { platformFetch, sleepPromise } from "@/effect-kit";
 
 export const malPrefillCommand = Command.make("mal", {
   apply: Flag.Boolean("apply").pipe(
@@ -55,7 +36,7 @@ export const malPrefillCommand = Command.make("mal", {
         const config = apiConfig(apiOrigin, apiToken);
         const source = createAniListSource({
           userAgent: manifoldUserAgent("cli"),
-          fetcher: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
+          fetcher: (input, init) => platformFetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
         });
         openFrame(`MAL registry links (${apply ? "apply" : "dry run"})`);
         try {
@@ -98,7 +79,7 @@ export const malPrefillCommand = Command.make("mal", {
           let errors = 0;
           for (const [index, row] of selected.entries()) {
             if (index > 0) {
-              await new Promise((resolve) => setTimeout(resolve, delay));
+              await sleepPromise(delay);
             }
             const anilistId = row.providers.find((link) => link.provider === "anilist")?.externalId;
             if (!anilistId) {
