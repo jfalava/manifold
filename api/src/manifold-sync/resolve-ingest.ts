@@ -10,25 +10,19 @@ import type {
 } from "../domain";
 import { type ProviderRow } from "../sync-rows";
 
-export async function resolveEntry(
-  host: SyncHost,
-  input: ResolveEntryInput,
-): Promise<RegistryEntry> {
+export function resolveEntry(host: SyncHost, input: ResolveEntryInput): RegistryEntry {
   return resolveEntrySync(host, input);
 }
 
-export async function resolveEntries(
+export function resolveEntries(
   host: SyncHost,
   input: readonly ResolveEntryInput[] | ResolveEntryInput,
-): Promise<readonly RegistryEntry[]> {
+): readonly RegistryEntry[] {
   const requests = Array.isArray(input) ? input : [input];
   return requests.map((request) => resolveEntrySync(host, request));
 }
 
-export async function ingestCandidate(
-  host: SyncHost,
-  input: IngestCandidateInput,
-): Promise<RegistryEntry> {
+export function ingestCandidate(host: SyncHost, input: IngestCandidateInput): RegistryEntry {
   const byProvider = new Map<string, LinkProviderInput>();
   for (const link of [
     {

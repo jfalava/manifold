@@ -16,12 +16,9 @@ import {
 } from "./constants";
 import type { SyncHost } from "./host";
 import { getEntry } from "./registry-crud";
+import { fromPromise } from "./from-promise";
 import { scheduleSync } from "./schedule";
 import { appendEvent, readEntry, readListState } from "./sql-helpers";
-
-/** Promise boundary: rejections become typed failures (not defects). */
-const fromPromise = <A>(action: () => Promise<A>): Effect.Effect<A, unknown> =>
-  Effect.tryPromise({ try: action, catch: (cause) => cause });
 
 export const failShelfEntry = (
   host: SyncHost,
@@ -195,7 +192,7 @@ const drainMangaDexOutboxEffect = (
 
     for (const group of groups) {
       yield* Effect.gen(function* () {
-        const entry = yield* fromPromise(() => getEntry(host, group.entryId));
+        const entry = getEntry(host, group.entryId);
         const mangaDexId = entry?.providers.find(
           (provider) => provider.provider === "mangadex",
         )?.externalId;

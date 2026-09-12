@@ -7,7 +7,6 @@ import {
 } from "./sql-helpers";
 import type { SyncHost } from "./host";
 import { now } from "./constants";
-import { Effect } from "effect";
 import type {
   RegistryEntry,
   RegistryListEntry,
@@ -19,7 +18,7 @@ import type {
 } from "../domain";
 import { type EntryRow, type ProgressRow, toProgress } from "../sync-rows";
 
-export async function upsertEntry(host: SyncHost, input: UpsertEntryInput): Promise<RegistryEntry> {
+export function upsertEntry(host: SyncHost, input: UpsertEntryInput): RegistryEntry {
   const timestamp = now();
   host.ctx.storage.sql.exec(
     `INSERT INTO canonical_entries
@@ -44,45 +43,31 @@ export async function upsertEntry(host: SyncHost, input: UpsertEntryInput): Prom
   return stored;
 }
 
-export async function listEntries(host: SyncHost): Promise<readonly RegistryEntry[]> {
-  return Effect.runSync(
-    Effect.sync(() => {
-      const rows = host.ctx.storage.sql
-        .exec<EntryRow>("SELECT * FROM canonical_entries ORDER BY updated_at DESC")
-        .toArray();
-      return rows
-        .map((row) => readEntry(host, row.id))
-        .filter((entry): entry is RegistryEntry => entry !== undefined);
-    }),
-  );
+export function listEntries(host: SyncHost): readonly RegistryEntry[] {
+  const rows = host.ctx.storage.sql
+    .exec<EntryRow>("SELECT * FROM canonical_entries ORDER BY updated_at DESC")
+    .toArray();
+  return rows
+    .map((row) => readEntry(host, row.id))
+    .filter((entry): entry is RegistryEntry => entry !== undefined);
 }
 
-export async function getEntry(
-  host: SyncHost,
-  entryId: string,
-): Promise<RegistryEntry | undefined> {
-  return Effect.runSync(Effect.sync(() => readEntry(host, entryId, false)));
+export function getEntry(host: SyncHost, entryId: string): RegistryEntry | undefined {
+  return readEntry(host, entryId, false);
 }
 
-export async function getProgress(
-  host: SyncHost,
-  entryId: string,
-): Promise<ReadingProgress | undefined> {
-  return Effect.runSync(
-    Effect.sync(() => {
-      const row = host.ctx.storage.sql
-        .exec<ProgressRow>("SELECT * FROM progress_state WHERE entry_id = ?", entryId)
-        .toArray()[0];
-      return row ? toProgress(row) : undefined;
-    }),
-  );
+export function getProgress(host: SyncHost, entryId: string): ReadingProgress | undefined {
+  const row = host.ctx.storage.sql
+    .exec<ProgressRow>("SELECT * FROM progress_state WHERE entry_id = ?", entryId)
+    .toArray()[0];
+  return row ? toProgress(row) : undefined;
 }
 
-export async function searchRegistry(
+export function searchRegistry(
   host: SyncHost,
   query: string,
   limit = 25,
-): Promise<readonly RegistryEntry[]> {
+): readonly RegistryEntry[] {
   const normalized = query.trim();
   if (!normalized) {
     return [];
@@ -111,93 +96,87 @@ export async function searchRegistry(
   });
 }
 
-export async function listRegistry(
+export function listRegistry(
   host: SyncHost,
   limit = 500,
   offset = 0,
-): Promise<readonly RegistryListEntry[]> {
+): readonly RegistryListEntry[] {
   const safeLimit = Math.min(5000, Math.max(1, Math.trunc(limit)));
   const safeOffset = Math.max(0, Math.trunc(offset));
-  return Effect.runSync(
-    Effect.sync(() => {
-      const results: (RegistryEntry & {
-        state?: ListState;
-        progress?: ReadingProgress;
-        tombstoned?: boolean;
-      })[] = [];
-      for (const row of host.ctx.storage.sql
-        .exec<EntryRow>(
-          "SELECT * FROM canonical_entries ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
-          safeLimit,
-          safeOffset,
-        )
-        .toArray()) {
-        const entry = readEntry(host, row.id, false);
-        if (!entry) {
-          continue;
-        }
-        const state = readListState(host, row.id);
-        const progress = getProgressSync(host, row.id);
-        results.push({
-          ...entry,
-          ...(state && { state }),
-          ...(progress && { progress }),
-          ...(row.tombstoned_at !== null && { tombstoned: true }),
-        });
-      }
-      return results;
-    }),
-  );
+  const results: (RegistryEntry & {
+    state?: ListState;
+    progress?: ReadingProgress;
+    tombstoned?: boolean;
+  })[] = [];
+  for (const row of host.ctx.storage.sql
+    .exec<EntryRow>(
+      "SELECT * FROM canonical_entries ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
+      safeLimit,
+      safeOffset,
+    )
+    .toArray()) {
+    const entry = readEntry(host, row.id, false);
+    if (!entry) {
+      continue;
+    }
+    const state = readListState(host, row.id);
+    const progress = getProgressSync(host, row.id);
+    results.push({
+      ...entry,
+      ...(state && { state }),
+      ...(progress && { progress }),
+      ...(row.tombstoned_at !== null && { tombstoned: true }),
+    });
+  }
+  return results;
 }
 
-export async function registrySummary(host: SyncHost): Promise<RegistrySummary> {
-  return Effect.runSync(
-    Effect.sync(() => {
-      const total =
-        host.ctx.storage.sql
-          .exec<{ count: number }>("SELECT COUNT(*) AS count FROM canonical_entries")
-          .toArray()[0]?.count ?? 0;
-      const tombstoned =
-        host.ctx.storage.sql
-          .exec<{ count: number }>(
-            "SELECT COUNT(*) AS count FROM canonical_entries WHERE tombstoned_at IS NOT NULL",
-          )
-          .toArray()[0]?.count ?? 0;
-      const active = total - tombstoned;
+export function registrySummary(host: SyncHost): RegistrySummary {
+  const total =
+    host.ctx.storage.sql
+      .exec<{ count: number }>("SELECT COUNT(*) AS count FROM canonical_entries")
+      .toArray()[0]?.count ?? 0;
+  const tombstoned =
+    host.ctx.storage.sql
+      .exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM canonical_entries WHERE tombstoned_at IS NOT NULL",
+      )
+      .toArray()[0]?.count ?? 0;
+  const active = total - tombstoned;
 
-      const statusRows = host.ctx.storage.sql
-        .exec<{ status: string | null; count: number }>(
-          `SELECT ls.status AS status, COUNT(*) AS count
+  const statusRows = host.ctx.storage.sql
+    .exec<{ status: string | null; count: number }>(
+      `SELECT ls.status AS status, COUNT(*) AS count
            FROM canonical_entries ce
            LEFT JOIN list_state ls ON ls.entry_id = ce.id
            WHERE ce.tombstoned_at IS NULL
            GROUP BY ls.status`,
-        )
-        .toArray();
-      const statuses: Record<string, number> = {};
-      for (const row of statusRows) {
-        const key = row.status && row.status.length > 0 ? row.status : "unset";
-        statuses[key] = (statuses[key] ?? 0) + row.count;
-      }
+    )
+    .toArray();
+  const statuses: Record<string, number> = {};
+  for (const row of statusRows) {
+    const key = row.status && row.status.length > 0 ? row.status : "unset";
+    statuses[key] = (statuses[key] ?? 0) + row.count;
+  }
 
-      const providerRows = host.ctx.storage.sql
-        .exec<{ provider: string; count: number }>(
-          `SELECT pl.provider AS provider, COUNT(DISTINCT pl.entry_id) AS count
+  const providerRows = host.ctx.storage.sql
+    .exec<{ provider: string; count: number }>(
+      `SELECT pl.provider AS provider, COUNT(DISTINCT pl.entry_id) AS count
            FROM provider_links pl
            JOIN canonical_entries ce ON ce.id = pl.entry_id
            WHERE ce.tombstoned_at IS NULL
            GROUP BY pl.provider`,
-        )
-        .toArray();
-      const providerCounts: Record<string, number> = {};
-      for (const row of providerRows) {
-        providerCounts[row.provider] = row.count;
-      }
+    )
+    .toArray();
+  const providerCounts: Record<string, number> = {};
+  for (const row of providerRows) {
+    providerCounts[row.provider] = row.count;
+  }
 
-      const fullyLinked =
-        host.ctx.storage.sql
-          .exec<{ count: number }>(
-            `SELECT COUNT(*) AS count FROM (
+  const fullyLinked =
+    host.ctx.storage.sql
+      .exec<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM (
                SELECT ce.id AS id
                FROM canonical_entries ce
                JOIN provider_links pl ON pl.entry_id = ce.id
@@ -206,37 +185,35 @@ export async function registrySummary(host: SyncHost): Promise<RegistrySummary> 
                GROUP BY ce.id
                HAVING COUNT(DISTINCT pl.provider) = 3
              ) AS fully_linked`,
-          )
-          .toArray()[0]?.count ?? 0;
+      )
+      .toArray()[0]?.count ?? 0;
 
-      const unlinked =
-        host.ctx.storage.sql
-          .exec<{ count: number }>(
-            `SELECT COUNT(*) AS count
+  const unlinked =
+    host.ctx.storage.sql
+      .exec<{ count: number }>(
+        `SELECT COUNT(*) AS count
              FROM canonical_entries ce
              LEFT JOIN provider_links pl ON pl.entry_id = ce.id
              WHERE ce.tombstoned_at IS NULL AND pl.entry_id IS NULL`,
-          )
-          .toArray()[0]?.count ?? 0;
+      )
+      .toArray()[0]?.count ?? 0;
 
-      return {
-        total,
-        active,
-        tombstoned,
-        statuses,
-        providerCounts,
-        fullyLinked,
-        unlinked,
-      };
-    }),
-  );
+  return {
+    total,
+    active,
+    tombstoned,
+    statuses,
+    providerCounts,
+    fullyLinked,
+    unlinked,
+  };
 }
 
-export async function linkProvider(
+export function linkProvider(
   host: SyncHost,
   entryId: string,
   input: LinkProviderInput,
-): Promise<RegistryEntry> {
+): RegistryEntry {
   const timestamp = now();
   requireEntry(host, entryId);
   const stolen = host.ctx.storage.sql
@@ -279,11 +256,7 @@ export async function linkProvider(
   return stored;
 }
 
-export async function unlinkProvider(
-  host: SyncHost,
-  entryId: string,
-  provider: string,
-): Promise<RegistryEntry> {
+export function unlinkProvider(host: SyncHost, entryId: string, provider: string): RegistryEntry {
   requireEntry(host, entryId);
   host.ctx.storage.sql.exec(
     "DELETE FROM provider_links WHERE entry_id = ? AND provider = ?",

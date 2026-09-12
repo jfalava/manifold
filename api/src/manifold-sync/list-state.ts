@@ -1,41 +1,44 @@
+import { Effect, Option, Schema } from "effect";
 import { scheduleSync } from "./schedule";
+import { fromPromise } from "./from-promise";
 import { anilistLinkOf, appendEvent, enqueueOp, readListState, requireEntry } from "./sql-helpers";
 import type { SyncHost } from "./host";
 import { now } from "./constants";
 import { newId } from "../effect-host";
-import { Effect, Option, Schema } from "effect";
 import { type JsonObject } from "@manifold/json";
 import type { ListEvent, ListState, NukeEntryInput, OpOrigin, SetListStateInput } from "../domain";
 import { createAniListListStateOpPayload } from "../list-state-op";
 import { MalBackupPayload } from "../mal-backup";
 import { type ListEventRow, type OpRow, toListEvent } from "../sync-rows";
 
-export async function setListState(
+const setListStateEffect = (
   host: SyncHost,
   entryId: string,
   input: SetListStateInput,
-): Promise<ListState> {
-  const changes = input;
-  requireEntry(host, entryId);
-  const timestamp = now();
-  const current = readListState(host, entryId);
-  const anilistId = anilistLinkOf(host, entryId);
+): Effect.Effect<ListState, unknown> =>
+  Effect.gen(function* () {
+    const changes = input;
+    requireEntry(host, entryId);
+    const timestamp = now();
+    const current = readListState(host, entryId);
+    const anilistId = anilistLinkOf(host, entryId);
 
-  const nextStatus = changes.status === undefined ? current?.status : (changes.status ?? undefined);
-  const nextScore = changes.score === undefined ? current?.score : (changes.score ?? undefined);
-  const nextNotes = changes.notes === undefined ? current?.notes : (changes.notes ?? undefined);
-  const nextStarted =
-    changes.startedAt === undefined ? current?.startedAt : (changes.startedAt ?? undefined);
-  const nextCompleted =
-    changes.completedAt === undefined ? current?.completedAt : (changes.completedAt ?? undefined);
-  const nextVolumes =
-    changes.volumeProgress === undefined
-      ? current?.volumeProgress
-      : (changes.volumeProgress ?? undefined);
-  const mediaListEntryId = current?.mediaListEntryId;
+    const nextStatus =
+      changes.status === undefined ? current?.status : (changes.status ?? undefined);
+    const nextScore = changes.score === undefined ? current?.score : (changes.score ?? undefined);
+    const nextNotes = changes.notes === undefined ? current?.notes : (changes.notes ?? undefined);
+    const nextStarted =
+      changes.startedAt === undefined ? current?.startedAt : (changes.startedAt ?? undefined);
+    const nextCompleted =
+      changes.completedAt === undefined ? current?.completedAt : (changes.completedAt ?? undefined);
+    const nextVolumes =
+      changes.volumeProgress === undefined
+        ? current?.volumeProgress
+        : (changes.volumeProgress ?? undefined);
+    const mediaListEntryId = current?.mediaListEntryId;
 
-  host.ctx.storage.sql.exec(
-    `INSERT INTO list_state
+    host.ctx.storage.sql.exec(
+      `INSERT INTO list_state
        (entry_id, status, score, notes, started_at, completed_at, volume_progress,
         media_list_entry_id, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -48,83 +51,86 @@ export async function setListState(
        volume_progress = excluded.volume_progress,
        media_list_entry_id = COALESCE(excluded.media_list_entry_id, list_state.media_list_entry_id),
        updated_at = excluded.updated_at`,
-    entryId,
-    nextStatus ?? null,
-    nextScore ?? null,
-    nextNotes ?? null,
-    nextStarted ?? null,
-    nextCompleted ?? null,
-    nextVolumes ?? null,
-    mediaListEntryId ?? null,
-    timestamp,
-  );
+      entryId,
+      nextStatus ?? null,
+      nextScore ?? null,
+      nextNotes ?? null,
+      nextStarted ?? null,
+      nextCompleted ?? null,
+      nextVolumes ?? null,
+      mediaListEntryId ?? null,
+      timestamp,
+    );
 
-  const origin: OpOrigin = changes.origin ?? "admin";
-  const eventDetail: JsonObject = {
-    ...(changes.status !== undefined && { status: changes.status }),
-    ...(changes.score !== undefined && { score: changes.score }),
-    ...(changes.notes !== undefined && { notes: changes.notes }),
-    ...(changes.startedAt !== undefined && { startedAt: changes.startedAt }),
-    ...(changes.completedAt !== undefined && { completedAt: changes.completedAt }),
-    ...(changes.volumeProgress !== undefined && { volumeProgress: changes.volumeProgress }),
-    ...(changes.origin !== undefined && { origin: changes.origin }),
-    ...(changes.appliedRemotely !== undefined && { appliedRemotely: changes.appliedRemotely }),
-  };
-  appendEvent(host, entryId, "list.state", origin, eventDetail);
+    const origin: OpOrigin = changes.origin ?? "admin";
+    const eventDetail: JsonObject = {
+      ...(changes.status !== undefined && { status: changes.status }),
+      ...(changes.score !== undefined && { score: changes.score }),
+      ...(changes.notes !== undefined && { notes: changes.notes }),
+      ...(changes.startedAt !== undefined && { startedAt: changes.startedAt }),
+      ...(changes.completedAt !== undefined && { completedAt: changes.completedAt }),
+      ...(changes.volumeProgress !== undefined && { volumeProgress: changes.volumeProgress }),
+      ...(changes.origin !== undefined && { origin: changes.origin }),
+      ...(changes.appliedRemotely !== undefined && { appliedRemotely: changes.appliedRemotely }),
+    };
+    appendEvent(host, entryId, "list.state", origin, eventDetail);
 
-  // Device-originated mutations were already applied to AniList on-device;
-  // everything else becomes an op the device will drain.
-  if (
-    !changes.appliedRemotely &&
-    anilistId &&
-    (changes.status !== undefined ||
-      changes.score !== undefined ||
-      changes.notes !== undefined ||
-      changes.startedAt !== undefined ||
-      changes.completedAt !== undefined ||
-      changes.volumeProgress !== undefined)
-  ) {
-    const onlyStatus =
-      changes.status !== undefined &&
-      changes.score === undefined &&
-      changes.notes === undefined &&
-      changes.startedAt === undefined &&
-      changes.completedAt === undefined &&
-      changes.volumeProgress === undefined;
-    enqueueOp(host, {
-      opId: newId(),
-      target: "anilist",
-      kind: onlyStatus ? "anilist.status" : "anilist.fields",
-      origin,
-      payload: createAniListListStateOpPayload(entryId, anilistId, mediaListEntryId, changes),
-    });
-  }
+    // Device-originated mutations were already applied to AniList on-device;
+    // everything else becomes an op the device will drain.
+    if (
+      !changes.appliedRemotely &&
+      anilistId &&
+      (changes.status !== undefined ||
+        changes.score !== undefined ||
+        changes.notes !== undefined ||
+        changes.startedAt !== undefined ||
+        changes.completedAt !== undefined ||
+        changes.volumeProgress !== undefined)
+    ) {
+      const onlyStatus =
+        changes.status !== undefined &&
+        changes.score === undefined &&
+        changes.notes === undefined &&
+        changes.startedAt === undefined &&
+        changes.completedAt === undefined &&
+        changes.volumeProgress === undefined;
+      enqueueOp(host, {
+        opId: newId(),
+        target: "anilist",
+        kind: onlyStatus ? "anilist.status" : "anilist.fields",
+        origin,
+        payload: createAniListListStateOpPayload(entryId, anilistId, mediaListEntryId, changes),
+      });
+    }
 
-  const stored = readListState(host, entryId);
-  if (!stored) {
-    throw new Error(`List state missing after write: ${entryId}`);
-  }
-  // MAL is only a backup sink. The original update commits before any
-  // upstream work, regardless of whether AniList was already updated.
-  if (origin === "device" && stored.status) {
-    enqueueMalBackup(host, entryId, changes);
-    await scheduleSync(host);
-  }
-  return stored;
-}
+    const stored = readListState(host, entryId);
+    if (!stored) {
+      throw new Error(`List state missing after write: ${entryId}`);
+    }
+    // MAL is only a backup sink. The original update commits before any
+    // upstream work, regardless of whether AniList was already updated.
+    if (origin === "device" && stored.status) {
+      enqueueMalBackup(host, entryId, changes);
+      yield* fromPromise(() => scheduleSync(host));
+    }
+    return stored;
+  });
 
-export async function getListState(
+export const setListState = (
   host: SyncHost,
   entryId: string,
-): Promise<ListState | undefined> {
-  return Effect.runSync(Effect.sync(() => readListState(host, entryId)));
+  input: SetListStateInput,
+): Promise<ListState> => Effect.runPromise(setListStateEffect(host, entryId, input));
+
+export function getListState(host: SyncHost, entryId: string): ListState | undefined {
+  return readListState(host, entryId);
 }
 
-export async function nukeEntry(
+export function nukeEntry(
   host: SyncHost,
   entryId: string,
   input: NukeEntryInput,
-): Promise<ListState | undefined> {
+): ListState | undefined {
   const origin: OpOrigin = input.origin ?? "admin";
   requireEntry(host, entryId);
   const anilistId = anilistLinkOf(host, entryId);
@@ -161,32 +167,28 @@ export async function nukeEntry(
   return readListState(host, entryId);
 }
 
-export async function listEvents(
+export function listEvents(
   host: SyncHost,
   entryId: string | undefined,
   limit = 100,
-): Promise<readonly ListEvent[]> {
-  return Effect.runSync(
-    Effect.sync(() => {
-      const rows = (
-        entryId
-          ? host.ctx.storage.sql
-              .exec<ListEventRow>(
-                `SELECT * FROM list_events WHERE entry_id = ? ORDER BY id DESC LIMIT ?`,
-                entryId,
-                Math.min(500, Math.max(1, limit)),
-              )
-              .toArray()
-          : host.ctx.storage.sql
-              .exec<ListEventRow>(
-                `SELECT * FROM list_events ORDER BY id DESC LIMIT ?`,
-                Math.min(500, Math.max(1, limit)),
-              )
-              .toArray()
-      ).map((row) => toListEvent(row));
-      return rows;
-    }),
-  );
+): readonly ListEvent[] {
+  const rows = (
+    entryId
+      ? host.ctx.storage.sql
+          .exec<ListEventRow>(
+            `SELECT * FROM list_events WHERE entry_id = ? ORDER BY id DESC LIMIT ?`,
+            entryId,
+            Math.min(500, Math.max(1, limit)),
+          )
+          .toArray()
+      : host.ctx.storage.sql
+          .exec<ListEventRow>(
+            `SELECT * FROM list_events ORDER BY id DESC LIMIT ?`,
+            Math.min(500, Math.max(1, limit)),
+          )
+          .toArray()
+  ).map((row) => toListEvent(row));
+  return rows;
 }
 
 export function enqueueMalBackup(
