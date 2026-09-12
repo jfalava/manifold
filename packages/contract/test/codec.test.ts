@@ -1,15 +1,15 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics effectSucceedWithVoid:off */
 import { describe, expect, it } from "vitest";
+import { Effect, Result } from "effect";
 import {
   EntryByProviderResponse,
   ListStateResponse,
   ProgressResponse,
   RegistryEntry,
   ResponseDecodeError,
-  encodeResponse,
   decodeResponse,
+  decodeResponseEffect,
+  encodeResponse,
+  encodeResponseEffect,
 } from "../src/index.ts";
 
 const sampleEntry = {
@@ -45,6 +45,11 @@ describe("encodeResponse", () => {
   it("encodes always-wrapped null entry-by-provider", () => {
     expect(encodeResponse(EntryByProviderResponse, { entry: null })).toEqual({ entry: null });
   });
+
+  it("encodeResponseEffect succeeds for a registry entry", () => {
+    const wire = Effect.runSync(encodeResponseEffect(RegistryEntry, sampleEntry));
+    expect(wire).toEqual(sampleEntry);
+  });
 });
 
 describe("decodeResponse", () => {
@@ -59,5 +64,16 @@ describe("decodeResponse", () => {
     expect(() => decodeResponse(RegistryEntry, { nope: true }, "entry")).toThrow(
       "Response decode failed (entry)",
     );
+  });
+
+  it("decodeResponseEffect fails with ResponseDecodeError on garbage", () => {
+    const result = Effect.runSync(
+      Effect.result(decodeResponseEffect(RegistryEntry, { nope: true }, "entry")),
+    );
+    expect(Result.isFailure(result)).toBe(true);
+    if (Result.isFailure(result)) {
+      expect(result.failure).toBeInstanceOf(ResponseDecodeError);
+      expect(result.failure.label).toBe("entry");
+    }
   });
 });
