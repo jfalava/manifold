@@ -80,7 +80,10 @@ export interface RouteContext {
   readonly path: readonly string[];
 }
 
-export type RouteEffect = Effect.Effect<Response | null, unknown>;
+/** Union of typed errors that can appear in the effect error channel of a route handler. */
+export type RouteError = HttpRequestError | ParseRequestError | Schema.SchemaError;
+
+export type RouteEffect = Effect.Effect<Response | null, RouteError>;
 
 export const json = (body: JsonResponseBody, status = 200): Response =>
   Response.json(body, {

@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
 
 export interface OutboxRowLike {
   readonly id: number;
@@ -35,17 +35,18 @@ export const groupOutboxForDrain = <R extends OutboxRowLike>(rows: readonly R[])
   const invalid: R[] = [];
 
   for (const row of rows) {
-    try {
-      const payload = Schema.decodeUnknownSync(SyncReadPayloadSchema)(JSON.parse(row.payload));
-      const group = byEntry.get(payload.entryId) ?? { chapters: [], rows: [] };
-      if (!group.chapters.includes(payload.sourceChapterId)) {
-        group.chapters.push(payload.sourceChapterId);
-      }
-      group.rows.push(row);
-      byEntry.set(payload.entryId, group);
-    } catch {
+    const result = Schema.decodeUnknownOption(SyncReadPayloadSchema)(JSON.parse(row.payload));
+    if (Option.isNone(result)) {
       invalid.push(row);
+      continue;
     }
+    const payload = result.value;
+    const group = byEntry.get(payload.entryId) ?? { chapters: [], rows: [] };
+    if (!group.chapters.includes(payload.sourceChapterId)) {
+      group.chapters.push(payload.sourceChapterId);
+    }
+    group.rows.push(row);
+    byEntry.set(payload.entryId, group);
   }
 
   const groups: DrainGroup<R>[] = [];

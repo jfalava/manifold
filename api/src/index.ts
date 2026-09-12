@@ -10,6 +10,7 @@ import {
   ResponseEncodeError,
   tryPromise,
   type RouteContext,
+  type RouteError,
 } from "./http";
 import { ManifoldSync } from "./manifold-sync";
 import { handleAuth, handleHealth } from "./routes/health-auth";
@@ -25,7 +26,7 @@ export type { Env };
 
 const PUBLIC_HOSTNAME = "manifold.jfa.dev";
 
-const handle = (request: Request, env: Env): Effect.Effect<Response, unknown> =>
+const handle = (request: Request, env: Env): Effect.Effect<Response, RouteError> =>
   Effect.gen(function* () {
     const url = new URL(request.url);
     const path = url.pathname.split("/").filter(Boolean);
