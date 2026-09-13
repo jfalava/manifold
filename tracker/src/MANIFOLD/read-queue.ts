@@ -1,9 +1,13 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalDate:off */
-import type { SourceManga, TrackedMangaChapterReadAction } from "@paperback/types";
+import {
+  ContentRating,
+  type SourceManga,
+  type TrackedMangaChapterReadAction,
+} from "@paperback/types";
 
-import { isFiniteNumber, isJsonObject, isString } from "@manifold/json";
+import { isFiniteNumber, isJsonObject, isString, type JsonValue } from "@manifold/json";
 import {
   errorMessage,
   type PersonalReadInput,
@@ -47,6 +51,55 @@ type PendingProgressMap = { [mangaId: string]: PendingProgressEntry };
 const PENDING_PROGRESS_KEY = "manifold.pending-progress";
 const PENDING_PROGRESS_MAX = 200;
 
+const decodePendingSourceManga = (value: JsonValue): SourceManga | undefined => {
+  if (!isJsonObject(value)) {
+    return undefined;
+  }
+  const mangaId = value["mangaId"];
+  const mangaInfo = value["mangaInfo"];
+  if (!isString(mangaId) || mangaId.length === 0 || !isJsonObject(mangaInfo)) {
+    return undefined;
+  }
+
+  const contentRating = mangaInfo["contentRating"];
+  if (
+    contentRating !== undefined &&
+    contentRating !== ContentRating.EVERYONE &&
+    contentRating !== ContentRating.MATURE &&
+    contentRating !== ContentRating.ADULT
+  ) {
+    return undefined;
+  }
+
+  const additionalInfoValue = mangaInfo["additionalInfo"];
+  let additionalInfo: Record<string, string> | undefined;
+  if (additionalInfoValue !== undefined && additionalInfoValue !== null) {
+    if (!isJsonObject(additionalInfoValue)) {
+      return undefined;
+    }
+    const decoded: Record<string, string> = {};
+    for (const [key, field] of Object.entries(additionalInfoValue)) {
+      if (!isString(field)) {
+        return undefined;
+      }
+      decoded[key] = field;
+    }
+    additionalInfo = decoded;
+  }
+
+  return {
+    mangaId,
+    mangaInfo: {
+      thumbnailUrl: "",
+      synopsis: "",
+      primaryTitle: "",
+      secondaryTitles: [],
+      contentRating: contentRating ?? ContentRating.EVERYONE,
+      ...(additionalInfo !== undefined && { additionalInfo }),
+    },
+  };
+};
+
 const readPendingProgress = (): PendingProgressMap => {
   const raw = Application.getState(PENDING_PROGRESS_KEY);
   if (!isString(raw)) {
@@ -55,17 +108,19 @@ const readPendingProgress = (): PendingProgressMap => {
   try {
     // SAFETY: state was written by queueProgress from a live SourceManga on
     // this device; malformed entries are skipped below.
-    const parsed = JSON.parse(raw) as PendingProgressMap;
+    const parsed: unknown = JSON.parse(raw);
     if (!isJsonObject(parsed)) {
       return {};
     }
     const entries: [string, PendingProgressEntry][] = [];
     for (const [mangaId, value] of Object.entries(parsed)) {
+      if (!isJsonObject(value)) {
+        continue;
+      }
+      const sourceManga = decodePendingSourceManga(value["sourceManga"]);
       if (
-        !isJsonObject(value) ||
-        !isJsonObject(value["sourceManga"]) ||
-        !isString(value["sourceManga"]["mangaId"]) ||
-        value["sourceManga"]["mangaId"].length === 0 ||
+        sourceManga === undefined ||
+        sourceManga.mangaId !== mangaId ||
         !isFiniteNumber(value["chapterNum"]) ||
         value["chapterNum"] < 0 ||
         !isFiniteNumber(value["at"]) ||
@@ -73,12 +128,10 @@ const readPendingProgress = (): PendingProgressMap => {
       ) {
         continue;
       }
-      // SAFETY: sourceManga is an opaque self-written payload; the progress
-      // push only reads mangaId and additionalInfo off it.
       entries.push([
         mangaId,
         {
-          sourceManga: value["sourceManga"] as SourceManga,
+          sourceManga,
           chapterNum: value["chapterNum"],
           at: value["at"],
         },

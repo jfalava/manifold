@@ -5,9 +5,17 @@
 /** @effect-diagnostics globalFetch:off */
 /** @effect-diagnostics globalTimers:off */
 /** @effect-diagnostics newPromise:off */
-import { isJsonObject, manifoldUserAgent, type JsonObject } from "@manifold/json";
+import {
+  isFiniteNumber,
+  isJsonArray,
+  isJsonObject,
+  isString,
+  manifoldUserAgent,
+  type JsonObject,
+  type JsonValue,
+} from "@manifold/json";
 import type { MalBackupIdentity } from "@manifold/canonical";
-import { Data, Effect, Schema } from "effect";
+import { Data, Effect, Option, Schema } from "effect";
 import { fromPromise } from "./from-promise.js";
 import type { AniListReadingStatus } from "./anilist-types.js";
 import {
@@ -27,10 +35,71 @@ export interface AniListLibraryItem {
   readonly coverUrl?: string;
 }
 
-interface GraphQLResponse<A> {
-  readonly data?: A;
-  readonly errors?: readonly { readonly message?: string; status?: number | string }[];
+interface GraphQLError {
+  readonly message?: string;
+  readonly status?: number | string;
 }
+
+interface GraphQLResponse {
+  readonly data?: JsonValue;
+  readonly errors?: readonly GraphQLError[];
+}
+
+type AniListDataDecoder<A> = (value: JsonValue) => A | undefined;
+
+const decodeWithSchema =
+  <A>(schema: Schema.ConstraintDecoder<A>): AniListDataDecoder<A> =>
+  (value) => {
+    const decoded = Schema.decodeOption(schema)(value);
+    return Option.isSome(decoded) ? decoded.value : undefined;
+  };
+
+const decodeJsonObject = (value: JsonValue): JsonObject | undefined =>
+  isJsonObject(value) ? value : undefined;
+
+const decodeGraphQLError = (value: JsonValue): GraphQLError | undefined => {
+  if (!isJsonObject(value)) {
+    return undefined;
+  }
+  const message = value.message;
+  const status = value.status;
+  if (
+    (message !== undefined && !isString(message)) ||
+    (status !== undefined && !isString(status) && !isFiniteNumber(status))
+  ) {
+    return undefined;
+  }
+  return {
+    ...(isString(message) && { message }),
+    ...((isString(status) || isFiniteNumber(status)) && { status }),
+  };
+};
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: raw response bytes enter here before GraphQL envelope validation
+const decodeGraphQLResponse = (value: unknown): GraphQLResponse | undefined => {
+  if (!isJsonObject(value)) {
+    return undefined;
+  }
+  const errorsValue = value.errors;
+  if (errorsValue === undefined) {
+    return { ...(value.data !== undefined && { data: value.data }) };
+  }
+  if (!isJsonArray(errorsValue)) {
+    return undefined;
+  }
+  const errors: GraphQLError[] = [];
+  for (const errorValue of errorsValue) {
+    const error = decodeGraphQLError(errorValue);
+    if (error === undefined) {
+      return undefined;
+    }
+    errors.push(error);
+  }
+  return {
+    ...(value.data !== undefined && { data: value.data }),
+    errors,
+  };
+};
 
 /** Thrown when AniList rejects the credentials (HTTP 401/403). */
 export class AniListUnauthorizedError extends Data.TaggedError("AniListUnauthorizedError")<{}> {
@@ -84,17 +153,17 @@ const headerValue = (headers: Record<string, string>, name: string): string | un
   return undefined;
 };
 
-interface RawOutcome<A> {
+interface RawOutcome {
   readonly status: number;
   readonly headers: Record<string, string>;
-  readonly body?: GraphQLResponse<A>;
+  readonly body?: GraphQLResponse;
 }
 
-const rawAniListRequest = <A>(
+const rawAniListRequest = (
   token: string,
   query: string,
   variables: JsonObject,
-): Effect.Effect<RawOutcome<A>, PaperbackRuntimeError> =>
+): Effect.Effect<RawOutcome, PaperbackRuntimeError> =>
   Effect.gen(function* () {
     const scheduled = yield* fromPromise(() =>
       Application.scheduleRequest({
@@ -119,18 +188,18 @@ const rawAniListRequest = <A>(
     const parsed = yield* Schema.decodeEffect(JsonBodyString)(
       Application.arrayBufferToUTF8String(bodyBuffer),
     ).pipe(Effect.orElseSucceed(() => undefined));
-    if (!isJsonObject(parsed)) {
+    const body = decodeGraphQLResponse(parsed);
+    if (body === undefined) {
       return { status: response.status, headers: response.headers ?? {} };
     }
-    // SAFETY: JSON object is the GraphQL envelope; interpretOutcome reads data/errors.
     return {
       status: response.status,
       headers: response.headers ?? {},
-      body: parsed as GraphQLResponse<A>,
+      body,
     };
   });
 
-const isThrottled = <A>(outcome: RawOutcome<A>): boolean => {
+const isThrottled = (outcome: RawOutcome): boolean => {
   if (outcome.status === 429) {
     return true;
   }
@@ -148,7 +217,7 @@ const scheduleCooldown = (headers: Record<string, string>): void => {
   cooldownUntil = Math.max(cooldownUntil, Date.now() + waitSeconds * 1000 + COOLDOWN_BUFFER_MS);
 };
 
-const interpretOutcome = <A>(outcome: RawOutcome<A>): A => {
+const interpretOutcome = <A>(outcome: RawOutcome, decode: AniListDataDecoder<A>): A => {
   if (outcome.status === 401 || outcome.status === 403) {
     throw new AniListUnauthorizedError();
   }
@@ -163,22 +232,30 @@ const interpretOutcome = <A>(outcome: RawOutcome<A>): A => {
   if (outcome.status < 200 || outcome.status >= 300) {
     throw paperbackError(`AniList request failed with HTTP ${outcome.status}`);
   }
-  // SAFETY: value matches A at this call site
-  return outcome.body.data as A;
+  const data = outcome.body.data;
+  if (data === undefined) {
+    throw paperbackError("AniList response missing data");
+  }
+  const decoded = decode(data);
+  if (decoded === undefined) {
+    throw paperbackError("AniList response data failed validation");
+  }
+  return decoded;
 };
 
 const aniListRequestEffect = <A>(
   token: string,
   query: string,
   variables: JsonObject = {},
+  decode: AniListDataDecoder<A>,
 ): Effect.Effect<A, PaperbackRuntimeError | AniListUnauthorizedError> =>
   Effect.gen(function* () {
     for (let attempt = 1; ; attempt += 1) {
       yield* gate();
-      const outcome = yield* rawAniListRequest<A>(token, query, variables);
+      const outcome = yield* rawAniListRequest(token, query, variables);
       if (!isThrottled(outcome)) {
         return yield* Effect.try({
-          try: () => interpretOutcome(outcome),
+          try: () => interpretOutcome(outcome, decode),
           catch: (cause) =>
             cause instanceof AniListUnauthorizedError ? cause : paperbackError(errorMessage(cause)),
         });
@@ -196,7 +273,9 @@ export const aniListRequest = async <A>(
   token: string,
   query: string,
   variables: JsonObject = {},
-): Promise<A> => enqueue(() => Effect.runPromise(aniListRequestEffect<A>(token, query, variables)));
+  decode: AniListDataDecoder<A>,
+): Promise<A> =>
+  enqueue(() => Effect.runPromise(aniListRequestEffect(token, query, variables, decode)));
 
 export interface AniListViewer {
   readonly Viewer: {
@@ -204,6 +283,15 @@ export interface AniListViewer {
     readonly name: string;
   };
 }
+
+const AniListViewerSchema = Schema.Struct({
+  Viewer: Schema.Struct({
+    id: Schema.Finite,
+    name: Schema.String,
+  }),
+});
+
+export const decodeAniListViewer = decodeWithSchema<AniListViewer>(AniListViewerSchema);
 
 export const viewerQuery = `
 query {
@@ -226,27 +314,58 @@ query ($userId: Int!) {
   }
 }`;
 
-interface LibraryData {
-  readonly MediaListCollection?: {
-    readonly lists?: readonly {
-      readonly entries?: readonly {
-        readonly status?: string;
-        readonly media?: {
-          readonly id?: number;
-          readonly title?: {
-            readonly userPreferred?: string;
-            readonly romaji?: string;
-            readonly english?: string;
-          };
-          readonly coverImage?: {
-            readonly large?: string;
-            readonly medium?: string;
-          };
-        };
-      }[];
-    }[];
-  };
-}
+const LibraryDataSchema = Schema.Struct({
+  MediaListCollection: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        lists: Schema.optional(
+          Schema.NullOr(
+            Schema.Array(
+              Schema.Struct({
+                entries: Schema.optional(
+                  Schema.NullOr(
+                    Schema.Array(
+                      Schema.Struct({
+                        status: Schema.optional(Schema.NullOr(Schema.String)),
+                        media: Schema.optional(
+                          Schema.NullOr(
+                            Schema.Struct({
+                              id: Schema.optional(Schema.Finite),
+                              title: Schema.optional(
+                                Schema.NullOr(
+                                  Schema.Struct({
+                                    userPreferred: Schema.optional(Schema.NullOr(Schema.String)),
+                                    romaji: Schema.optional(Schema.NullOr(Schema.String)),
+                                    english: Schema.optional(Schema.NullOr(Schema.String)),
+                                  }),
+                                ),
+                              ),
+                              coverImage: Schema.optional(
+                                Schema.NullOr(
+                                  Schema.Struct({
+                                    large: Schema.optional(Schema.NullOr(Schema.String)),
+                                    medium: Schema.optional(Schema.NullOr(Schema.String)),
+                                  }),
+                                ),
+                              ),
+                            }),
+                          ),
+                        ),
+                      }),
+                    ),
+                  ),
+                ),
+              }),
+            ),
+          ),
+        ),
+      }),
+    ),
+  ),
+});
+
+type LibraryData = Schema.Schema.Type<typeof LibraryDataSchema>;
+const decodeLibraryData = decodeWithSchema<LibraryData>(LibraryDataSchema);
 
 // Registry vocabulary -> AniList enum. toUpperCase is WRONG here: only
 // dropped/completed coincide; reading must become CURRENT, on_hold PAUSED,
@@ -289,8 +408,8 @@ export const normalizeAniListStatus = (status: string): AniListReadingStatus | u
   }
 };
 
-const titleValue = (value: string | undefined): string | undefined =>
-  value !== undefined && value.trim().length > 0 ? value.trim() : undefined;
+const titleValue = (value: string | null | undefined): string | undefined =>
+  value !== undefined && value !== null && value.trim().length > 0 ? value.trim() : undefined;
 
 const fetchAniListLibraryEffect = (
   token: string,
@@ -298,7 +417,7 @@ const fetchAniListLibraryEffect = (
 ): Effect.Effect<readonly AniListLibraryItem[], PaperbackRuntimeError> =>
   Effect.gen(function* () {
     const data = yield* fromPromise(() =>
-      aniListRequest<LibraryData>(token, LIBRARY_QUERY, { userId }),
+      aniListRequest(token, LIBRARY_QUERY, { userId }, decodeLibraryData),
     );
 
     const items = new Map<string, AniListLibraryItem>();
@@ -353,20 +472,35 @@ const mediaIdOf = (anilistId: string): number => {
   return mediaId;
 };
 
-interface SavedStatusData {
-  readonly SaveMediaListEntry?: {
-    readonly id?: number;
-    readonly media?: {
-      readonly idMal?: number | null;
-      readonly title?: {
-        readonly english?: string | null;
-        readonly romaji?: string | null;
-        readonly native?: string | null;
-      };
-      readonly synonyms?: readonly string[];
-    };
-  };
-}
+const SavedStatusDataSchema = Schema.Struct({
+  SaveMediaListEntry: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        id: Schema.optional(Schema.Finite),
+        media: Schema.optional(
+          Schema.NullOr(
+            Schema.Struct({
+              idMal: Schema.optional(Schema.NullOr(Schema.Finite)),
+              title: Schema.optional(
+                Schema.NullOr(
+                  Schema.Struct({
+                    english: Schema.optional(Schema.NullOr(Schema.String)),
+                    romaji: Schema.optional(Schema.NullOr(Schema.String)),
+                    native: Schema.optional(Schema.NullOr(Schema.String)),
+                  }),
+                ),
+              ),
+              synonyms: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
+            }),
+          ),
+        ),
+      }),
+    ),
+  ),
+});
+
+type SavedStatusData = Schema.Schema.Type<typeof SavedStatusDataSchema>;
+const decodeSavedStatusData = decodeWithSchema<SavedStatusData>(SavedStatusDataSchema);
 
 const saveAniListStatusEffect = (
   token: string,
@@ -383,7 +517,7 @@ const saveAniListStatusEffect = (
     });
     // Privacy policy: everything this source touches stays private.
     const data = yield* fromPromise(() =>
-      aniListRequest<SavedStatusData>(
+      aniListRequest(
         token,
         `mutation ($mediaId: Int!, $status: MediaListStatus) {
       SaveMediaListEntry(mediaId: $mediaId, status: $status, private: true) {
@@ -392,6 +526,7 @@ const saveAniListStatusEffect = (
       }
     }`,
         { mediaId, status: status === null ? null : toAniListStatus(status) },
+        decodeSavedStatusData,
       ),
     );
     const entryId = data.SaveMediaListEntry?.id;
@@ -508,6 +643,7 @@ const saveAniListFieldsEffect = (
       ) { id status score notes private }
     }`,
         variables,
+        decodeJsonObject,
       ),
     );
   });
@@ -519,6 +655,18 @@ export const saveAniListFields = (
 ): Promise<void> => Effect.runPromise(saveAniListFieldsEffect(token, anilistId, change));
 
 /** Deletes the list entry outright. Requires its numeric mediaListEntry id. */
+const DeleteMediaListEntryDataSchema = Schema.Struct({
+  DeleteMediaListEntry: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        deleted: Schema.optional(Schema.Boolean),
+      }),
+    ),
+  ),
+});
+
+const decodeDeleteMediaListEntryData = decodeWithSchema(DeleteMediaListEntryDataSchema);
+
 const deleteAniListEntryEffect = (
   token: string,
   mediaListEntryId: number,
@@ -532,12 +680,13 @@ const deleteAniListEntryEffect = (
       return yield* paperbackError(`Invalid AniList list entry id: ${mediaListEntryId}`);
     }
     const data = yield* fromPromise(() =>
-      aniListRequest<{ DeleteMediaListEntry?: { deleted?: boolean } }>(
+      aniListRequest(
         token,
         `mutation ($id: Int) {
       DeleteMediaListEntry(id: $id) { deleted }
     }`,
         { id: mediaListEntryId },
+        decodeDeleteMediaListEntryData,
       ),
     );
     return data.DeleteMediaListEntry?.deleted === true;
@@ -550,17 +699,45 @@ export const deleteAniListEntry = (token: string, mediaListEntryId: number): Pro
  * Batch-fetches numeric list entry ids for media ids. Deletion on AniList is
  * keyed by the list-entry row, not the media row, so nukes need these.
  */
+const MediaListEntryIdsDataSchema = Schema.Struct({
+  MediaListCollection: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        lists: Schema.optional(
+          Schema.NullOr(
+            Schema.Array(
+              Schema.Struct({
+                entries: Schema.optional(
+                  Schema.NullOr(
+                    Schema.Array(
+                      Schema.Struct({
+                        id: Schema.optional(Schema.Finite),
+                        mediaId: Schema.optional(Schema.Finite),
+                      }),
+                    ),
+                  ),
+                ),
+              }),
+            ),
+          ),
+        ),
+      }),
+    ),
+  ),
+});
+
+type MediaListEntryIdsData = Schema.Schema.Type<typeof MediaListEntryIdsDataSchema>;
+const decodeMediaListEntryIdsData = decodeWithSchema<MediaListEntryIdsData>(
+  MediaListEntryIdsDataSchema,
+);
+
 const fetchAniListMediaListEntryIdsEffect = (
   token: string,
   userId: number,
 ): Effect.Effect<Readonly<Record<string, number>>, PaperbackRuntimeError> =>
   Effect.gen(function* () {
     const data = yield* fromPromise(() =>
-      aniListRequest<{
-        MediaListCollection?: {
-          lists?: readonly { entries?: readonly { id?: number; mediaId?: number }[] }[];
-        };
-      }>(
+      aniListRequest(
         token,
         `query ($userId: Int!) {
       MediaListCollection(userId: $userId, type: MANGA) {
@@ -568,6 +745,7 @@ const fetchAniListMediaListEntryIdsEffect = (
       }
     }`,
         { userId },
+        decodeMediaListEntryIdsData,
       ),
     );
     const ids: Record<string, number> = {};
@@ -617,6 +795,7 @@ const saveAniListProgressEffect = (
       }
     }`,
         { mediaId, progress: chapters },
+        decodeJsonObject,
       ),
     );
     return true;

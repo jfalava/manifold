@@ -5,7 +5,20 @@
 /** @effect-diagnostics globalTimers:off */
 /** @effect-diagnostics newPromise:off */
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import type { JsonValue } from "@manifold/json";
+import { isFiniteNumber, isJsonObject, type JsonObject, type JsonValue } from "@manifold/json";
+
+const decodeObject = (value: JsonValue): JsonObject | undefined =>
+  isJsonObject(value) ? value : undefined;
+
+type ViewerData = { readonly Viewer: { readonly id: number } };
+
+const decodeViewer = (value: JsonValue): ViewerData | undefined => {
+  if (!isJsonObject(value) || !isJsonObject(value.Viewer)) {
+    return undefined;
+  }
+  const id = value.Viewer.id;
+  return isFiniteNumber(id) ? { Viewer: { id } } : undefined;
+};
 
 interface ResponseLike {
   status: number;
@@ -99,9 +112,9 @@ describe("aniListRequest throttling", () => {
     const { aniListRequest, viewerQuery } = await harness.loadModule();
 
     const results = await Promise.all([
-      aniListRequest("t", viewerQuery),
-      aniListRequest("t", viewerQuery),
-      aniListRequest("t", viewerQuery),
+      aniListRequest("t", viewerQuery, {}, decodeObject),
+      aniListRequest("t", viewerQuery, {}, decodeObject),
+      aniListRequest("t", viewerQuery, {}, decodeObject),
     ]);
 
     expect(results).toHaveLength(3);
@@ -124,7 +137,7 @@ describe("aniListRequest throttling", () => {
     });
     const { aniListRequest, viewerQuery } = await harness.loadModule();
 
-    const result = await aniListRequest<{ Viewer: { id: number } }>("t", viewerQuery);
+    const result = await aniListRequest("t", viewerQuery, {}, decodeViewer);
 
     expect(result.Viewer.id).toBe(7);
     expect(getCallCount()).toBe(2);
@@ -139,7 +152,7 @@ describe("aniListRequest throttling", () => {
     }));
     const { aniListRequest, viewerQuery } = await harness.loadModule();
 
-    await expect(aniListRequest("t", viewerQuery)).rejects.toThrow(/rate limit/i);
+    await expect(aniListRequest("t", viewerQuery, {}, decodeObject)).rejects.toThrow(/rate limit/i);
     // First attempt + three backoff retries.
     expect(getCallCount()).toBe(4);
   });
@@ -148,14 +161,30 @@ describe("aniListRequest throttling", () => {
     const { aniListRequest, viewerQuery, AniListUnauthorizedError } = await harness.loadModule();
 
     harness.install(() => ({ status, body: { errors: [{ message: "Invalid token" }] } }));
-    await expect(aniListRequest("t", viewerQuery)).rejects.toBeInstanceOf(AniListUnauthorizedError);
+    await expect(aniListRequest("t", viewerQuery, {}, decodeObject)).rejects.toBeInstanceOf(
+      AniListUnauthorizedError,
+    );
   });
 
   it("keeps mapping non-auth GraphQL errors as before", async () => {
     const { aniListRequest, viewerQuery } = await harness.loadModule();
 
     harness.install(() => ({ status: 200, body: { errors: [{ message: "Not Found" }] } }));
-    await expect(aniListRequest("t", viewerQuery)).rejects.toThrow("AniList error: Not Found");
+    await expect(aniListRequest("t", viewerQuery, {}, decodeObject)).rejects.toThrow(
+      "AniList error: Not Found",
+    );
+  });
+
+  it("rejects a successful response that fails the supplied data decoder", async () => {
+    harness.install(() => ({
+      status: 200,
+      body: { data: { Viewer: { id: "not-a-number" } } },
+    }));
+    const { aniListRequest, viewerQuery } = await harness.loadModule();
+
+    await expect(aniListRequest("t", viewerQuery, {}, decodeViewer)).rejects.toThrow(
+      "data failed validation",
+    );
   });
 });
 

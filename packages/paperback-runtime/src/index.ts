@@ -42,6 +42,7 @@ export {
 export {
   AniListUnauthorizedError,
   aniListRequest,
+  decodeAniListViewer,
   viewerQuery,
   toAniListStatus,
   normalizeAniListStatus,

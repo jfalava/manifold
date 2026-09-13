@@ -159,6 +159,31 @@ describe("processReadActions", () => {
     expect(pushProgress).not.toHaveBeenCalled();
   });
 
+  it("skips queued entries with malformed additional info instead of pushing them", async () => {
+    applicationState.set(
+      PENDING_PROGRESS_KEY_SAFE,
+      JSON.stringify({
+        "anilist:1": {
+          sourceManga: {
+            mangaId: "anilist:1",
+            mangaInfo: {
+              contentRating: "SAFE",
+              additionalInfo: { libraryEntryId: 42 },
+            },
+          },
+          chapterNum: 9,
+          at: 1,
+        },
+      }),
+    );
+    const recordRead = vi.fn().mockResolvedValue({});
+    const pushProgress = vi.fn().mockResolvedValue(true);
+
+    await processReadActions([], { recordRead, pushProgress });
+
+    expect(pushProgress).not.toHaveBeenCalled();
+  });
+
   it("skips actions without a source chapter ID and actions without chapter numbers still sync reads", async () => {
     const recordRead = vi.fn().mockResolvedValue({});
     const pushProgress = vi.fn().mockResolvedValue(true);

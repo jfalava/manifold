@@ -57,6 +57,7 @@ import {
   canonicalProviderCandidate,
   clearAdminAccessCookies,
   correlateProviderCandidates,
+  decodeAniListViewer,
   readAdminAccessStatus,
   MANIFOLD_API_STATUS_KEY,
   MANIFOLD_API_TOKEN_KEY,
@@ -75,7 +76,6 @@ import {
   safeImageUrl,
   toProviderCandidateSearchResult,
   viewerQuery,
-  type AniListViewer,
   type ProviderCandidate,
 } from "@manifold/paperback-runtime";
 import {
@@ -1108,7 +1108,7 @@ class TrackerSettingsForm extends Form {
           return;
         }
         const outcome = yield* Effect.result(
-          fromPromise(() => aniListRequest<AniListViewer>(aniListToken, viewerQuery)),
+          fromPromise(() => aniListRequest(aniListToken, viewerQuery, {}, decodeAniListViewer)),
         );
         if (outcome._tag === "Success") {
           Application.setSecureState(aniListToken, ANILIST_SESSION_KEY);
@@ -1142,7 +1142,7 @@ class TrackerSettingsForm extends Form {
         const aniListToken = this.pendingAniListToken?.trim();
         if (aniListToken) {
           const outcome = yield* Effect.result(
-            fromPromise(() => aniListRequest<AniListViewer>(aniListToken, viewerQuery)),
+            fromPromise(() => aniListRequest(aniListToken, viewerQuery, {}, decodeAniListViewer)),
           );
           if (outcome._tag === "Success") {
             Application.setSecureState(aniListToken, ANILIST_SESSION_KEY);
