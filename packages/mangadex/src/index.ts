@@ -1,3 +1,4 @@
+/** @effect-diagnostics globalFetch:off */
 import * as Effect from "effect/Effect";
 import { Schema } from "effect";
 import {
@@ -210,13 +211,13 @@ export interface MangaDexClientOptions {
   readonly userAgent?: string;
 }
 
-// Injected by createMangaDexClient; default uses platform fetch at the edge.
+// Injected by createMangaDexClient; resolve platform fetch only when the
+// default client is actually used so Paperback's JSCore can load this module.
 const JsonBodyString = Schema.fromJsonString(Schema.Unknown);
 const jsonBodyString = (value: JsonValue): string =>
   Effect.runSync(Schema.encodeEffect(JsonBodyString)(value));
 
-const platformFetch: typeof globalThis.fetch = globalThis.fetch.bind(globalThis);
-const defaultFetcher: MangaDexFetcher = (input, init) => platformFetch(input, init);
+const defaultFetcher: MangaDexFetcher = (input, init) => globalThis.fetch(input, init);
 
 const asObject = (value: JsonValue | undefined): JsonObject | undefined =>
   isJsonObject(value) ? value : undefined;

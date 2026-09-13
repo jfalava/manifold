@@ -1,3 +1,4 @@
+/** @effect-diagnostics globalFetch:off */
 import * as Effect from "effect/Effect";
 import { Schema } from "effect";
 import {
@@ -49,8 +50,7 @@ const JsonBodyString = Schema.fromJsonString(Schema.Unknown);
 const jsonBodyString = (value: JsonValue): string =>
   Effect.runSync(Schema.encodeEffect(JsonBodyString)(value));
 
-const platformFetch: typeof globalThis.fetch = globalThis.fetch.bind(globalThis);
-const defaultFetcher: CanonicalFetcher = (input, init) => platformFetch(input, init);
+const defaultFetcher: CanonicalFetcher = (input, init) => globalThis.fetch(input, init);
 
 const stringValue = (value: JsonValue | undefined): string | undefined =>
   isString(value) && value.trim().length > 0 ? value.trim() : undefined;
