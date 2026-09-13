@@ -42,9 +42,10 @@ import {
   requestHref,
   requestInitText,
 } from "@manifold/json";
+import { Clock, DateTime } from "effect";
 import * as Effect from "effect/Effect";
 import type { CanonicalFetcher } from "@manifold/canonical/sources";
-import { createMangaDexClient } from "@manifold/mangadex";
+import { createMangaDexClient, type MangaDexSourceError } from "@manifold/mangadex";
 import { ComixSource } from "@manifold/paperback-comix";
 import { hashIdFromMangaId } from "@manifold/paperback-comix/parser";
 import {
@@ -86,9 +87,8 @@ import {
 } from "./managed-collections.js";
 import { processReadActions } from "./read-queue.js";
 import { canonicalResultForRegistryEntry } from "./registry-details.js";
+import { fromPromise, trackerError, type TrackerEffectError } from "./effect-error.js";
 import { filterAndRankCanonicalResults, filterAndRankRegistryEntries } from "./search-relevance.js";
-
-const fromPromise = <A>(a: () => Promise<A>) => Effect.tryPromise({ try: a, catch: (c) => c });
 
 const piggybackDrain = (): void => {
   maybeDrainAniListOps();
@@ -300,21 +300,22 @@ export class ManifoldTrackerSource
     return Effect.runPromise(this.getMangaDetailsEffect(mangaId));
   }
 
-  private getMangaDetailsEffect(mangaId: string): Effect.Effect<SourceManga, unknown> {
-    const self = this;
-    return Effect.gen(function* () {
+  private getMangaDetailsEffect(
+    mangaId: string,
+  ): Effect.Effect<SourceManga, TrackerEffectError | MangaDexSourceError> {
+    return Effect.gen({ self: this }, function* () {
       const personalApi = configuredPersonalApi();
       const parsedCandidate = parseProviderCandidateId(mangaId);
       if (parsedCandidate) {
-        const candidate = self.providerCandidates.get(mangaId);
+        const candidate = this.providerCandidates.get(mangaId);
         if (parsedCandidate.provider === "anilist" || parsedCandidate.provider === "mal") {
           const provider = parsedCandidate.provider;
           const providerId = parsedCandidate.providerId;
           const canonical =
-            self.canonicalResults.get(mangaId) ??
+            this.canonicalResults.get(mangaId) ??
             (yield* fromPromise(() => personalApi.getCanonical(provider, providerId)));
           if (!canonical) {
-            throw new Error(`${provider} title not found: ${providerId}`);
+            return yield* trackerError(`${provider} title not found: ${providerId}`);
           }
           const stored = yield* fromPromise(() =>
             personalApi.ingestCandidate({
@@ -324,11 +325,11 @@ export class ManifoldTrackerSource
               links: [...(candidate?.links ?? canonicalProviderCandidate(canonical).links ?? [])],
             }),
           );
-          self.canonicalResults.set(stored.id, { ...canonical, id: stored.id, score: 0 });
-          return yield* self.getMangaDetailsEffect(stored.id);
+          this.canonicalResults.set(stored.id, { ...canonical, id: stored.id, score: 0 });
+          return yield* this.getMangaDetailsEffect(stored.id);
         }
         if (parsedCandidate.provider === "mangadex") {
-          const manga = yield* self.mangaDex.getManga(parsedCandidate.providerId);
+          const manga = yield* this.mangaDex.getManga(parsedCandidate.providerId);
           const stored = yield* fromPromise(() =>
             personalApi.ingestCandidate({
               provider: "mangadex",
@@ -344,7 +345,7 @@ export class ManifoldTrackerSource
               ],
             }),
           );
-          return self.trackerMangaFromCandidate(
+          return this.trackerMangaFromCandidate(
             stored.id,
             {
               provider: "mangadex",
@@ -359,7 +360,7 @@ export class ManifoldTrackerSource
         }
         if (parsedCandidate.provider === "comix") {
           const details = yield* fromPromise(() =>
-            self.comix.getMangaDetails(parsedCandidate.providerId),
+            this.comix.getMangaDetails(parsedCandidate.providerId),
           );
           const stored = yield* fromPromise(() =>
             personalApi.ingestCandidate({
@@ -382,22 +383,24 @@ export class ManifoldTrackerSource
             },
           };
         }
-        throw new Error(`Unsupported provider candidate: ${String(parsedCandidate.provider)}`);
+        return yield* trackerError(
+          `Unsupported provider candidate: ${String(parsedCandidate.provider)}`,
+        );
       }
       const stored = yield* fromPromise(() => personalApi.getEntry(mangaId)).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
+        Effect.orElseSucceed(() => undefined),
       );
-      let entry = self.canonicalResults.get(mangaId);
+      let entry = this.canonicalResults.get(mangaId);
       if (!entry) {
         if (!stored) {
-          throw new Error(`Registry entry not found: ${mangaId}`);
+          return yield* trackerError(`Registry entry not found: ${mangaId}`);
         }
         const hydrated = yield* fromPromise(() => personalApi.getRegistryCanonical(mangaId)).pipe(
-          Effect.catch(() => Effect.succeed(undefined)),
+          Effect.orElseSucceed(() => undefined),
         );
         entry = canonicalResultForRegistryEntry(stored, hydrated);
         if (hydrated?.metadata) {
-          self.canonicalResults.set(entry.id, entry);
+          this.canonicalResults.set(entry.id, entry);
         }
       }
 
@@ -486,14 +489,13 @@ export class ManifoldTrackerSource
         return {
           sourceManga,
           lastReadChapter,
-          lastReadTime: new Date(progress.readAt),
+          lastReadTime: DateTime.toDateUtc(DateTime.makeUnsafe(progress.readAt)),
         };
       }).pipe(
         Effect.catch((error) =>
-          Effect.sync(() => {
-            console.error(`[MANIFOLD] progress lookup failed: ${errorMessage(error)}`);
-            return undefined;
-          }),
+          Effect.logError(`[MANIFOLD] progress lookup failed: ${errorMessage(error)}`).pipe(
+            Effect.as(undefined),
+          ),
         ),
       ),
     );
@@ -535,7 +537,7 @@ const aniLinkOf = (
 const recordTrackerAniListProgressEffect = (
   sourceManga: SourceManga,
   chapterNumber: number | undefined,
-): Effect.Effect<boolean, unknown> =>
+): Effect.Effect<boolean, TrackerEffectError> =>
   Effect.gen(function* () {
     const token = aniListSessionToken();
     if (!token) {
@@ -548,7 +550,7 @@ const recordTrackerAniListProgressEffect = (
     if (!anilistId) {
       const entry = yield* fromPromise(() =>
         configuredPersonalApi().getEntry(sourceManga.mangaId),
-      ).pipe(Effect.catch(() => Effect.succeed(undefined)));
+      ).pipe(Effect.orElseSucceed(() => undefined));
       anilistId = aniLinkOf(entry);
     }
     if (!anilistId) {
@@ -601,40 +603,42 @@ class TrackerStatusForm extends Form {
   }
 
   private loadCurrentStatus(): Promise<void> {
-    const self = this;
     return Effect.runPromise(
-      Effect.gen(function* () {
+      Effect.gen({ self: this }, function* () {
         const api = configuredPersonalApi();
-        if (!self.anilistId) {
-          const stored = yield* fromPromise(() => api.getEntry(self.entryId)).pipe(
-            Effect.catch(() => Effect.succeed(undefined)),
+        if (!this.anilistId) {
+          const stored = yield* fromPromise(() => api.getEntry(this.entryId)).pipe(
+            Effect.orElseSucceed(() => undefined),
           );
-          self.anilistId = aniLinkOf(stored);
+          this.anilistId = aniLinkOf(stored);
         }
-        const state = yield* fromPromise(() => api.getListState(self.entryId));
+        const state = yield* fromPromise(() => api.getListState(this.entryId));
         if (state) {
-          self.baseline = state;
+          this.baseline = state;
           if (state.status) {
-            self.statusText = state.status;
-            self.selectedStatus = state.status;
-            self.statusStyle = "success";
+            this.statusText = state.status;
+            this.selectedStatus = state.status;
+            this.statusStyle = "success";
           } else {
-            self.statusText = "Not on your list";
-            self.statusStyle = "warning";
+            this.statusText = "Not on your list";
+            this.statusStyle = "warning";
           }
         } else {
-          self.statusText = "Not on your list";
-          self.statusStyle = "warning";
+          this.statusText = "Not on your list";
+          this.statusStyle = "warning";
         }
       }).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
-            self.statusText = "Unknown";
-            self.statusStyle = "warning";
-            console.error(`[MANIFOLD] status load failed:${errorMessage(error)}`);
-          }),
+            this.statusText = "Unknown";
+            this.statusStyle = "warning";
+          }).pipe(
+            Effect.tap(() =>
+              Effect.logError(`[MANIFOLD] status load failed:${errorMessage(error)}`),
+            ),
+          ),
         ),
-        Effect.ensuring(Effect.sync(() => self.reloadForm())),
+        Effect.ensuring(Effect.sync(() => this.reloadForm())),
       ),
     );
   }
@@ -835,13 +839,12 @@ class TrackerStatusForm extends Form {
   }
 
   override formDidSubmit(): Promise<void> {
-    const self = this;
     let changes: ListFieldDiff;
     try {
-      changes = self.fieldChanges();
+      changes = this.fieldChanges();
     } catch (error) {
-      self.lastError = errorMessage(error);
-      self.reloadForm();
+      this.lastError = errorMessage(error);
+      this.reloadForm();
       return Promise.resolve();
     }
 
@@ -853,16 +856,16 @@ class TrackerStatusForm extends Form {
     }
 
     return Effect.runPromise(
-      Effect.gen(function* () {
+      Effect.gen({ self: this }, function* () {
         const api = configuredPersonalApi();
-        if (!self.anilistId) {
-          const stored = yield* fromPromise(() => api.getEntry(self.entryId)).pipe(
-            Effect.catch(() => Effect.succeed(undefined)),
+        if (!this.anilistId) {
+          const stored = yield* fromPromise(() => api.getEntry(this.entryId)).pipe(
+            Effect.orElseSucceed(() => undefined),
           );
-          self.anilistId = aniLinkOf(stored);
+          this.anilistId = aniLinkOf(stored);
         }
         const token = aniListSessionToken();
-        const anilistId = self.anilistId;
+        const anilistId = this.anilistId;
         let appliedRemotely = false;
         if (token !== undefined && anilistId !== undefined) {
           const fieldsOutcome = yield* Effect.result(
@@ -881,15 +884,15 @@ class TrackerStatusForm extends Form {
           if (fieldsOutcome._tag === "Success") {
             appliedRemotely = true;
           } else {
-            console.warn(
+            yield* Effect.logWarning(
               `[MANIFOLD] AniList fields deferred: ${errorMessage(fieldsOutcome.failure)}`,
             );
             appliedRemotely = false;
           }
         }
-        self.lastError = undefined;
+        this.lastError = undefined;
         yield* fromPromise(() =>
-          api.setListState(self.entryId, {
+          api.setListState(this.entryId, {
             ...changes,
             origin: "device",
             appliedRemotely,
@@ -897,60 +900,62 @@ class TrackerStatusForm extends Form {
         );
         // Refresh baseline so a second submit treats the new values as saved.
         // Nulls in `changes` mean "cleared", which the registry stores as absent.
-        self.baseline = {
-          entryId: self.entryId,
-          updatedAt: Date.now(),
-          ...(self.baseline?.status !== undefined && { status: self.baseline.status }),
+        this.baseline = {
+          entryId: this.entryId,
+          updatedAt: yield* Clock.currentTimeMillis,
+          ...(this.baseline?.status !== undefined && { status: this.baseline.status }),
           ...(changes.score != null && { score: changes.score }),
           ...(changes.score === undefined &&
-            self.baseline?.score !== undefined && { score: self.baseline.score }),
+            this.baseline?.score !== undefined && { score: this.baseline.score }),
           ...(changes.volumeProgress != null && {
             volumeProgress: changes.volumeProgress,
           }),
           ...(changes.volumeProgress === undefined &&
-            self.baseline?.volumeProgress !== undefined && {
-              volumeProgress: self.baseline.volumeProgress,
+            this.baseline?.volumeProgress !== undefined && {
+              volumeProgress: this.baseline.volumeProgress,
             }),
           ...(changes.startedAt != null && { startedAt: changes.startedAt }),
           ...(changes.startedAt === undefined &&
-            self.baseline?.startedAt !== undefined && {
-              startedAt: self.baseline.startedAt,
+            this.baseline?.startedAt !== undefined && {
+              startedAt: this.baseline.startedAt,
             }),
           ...(changes.completedAt != null && { completedAt: changes.completedAt }),
           ...(changes.completedAt === undefined &&
-            self.baseline?.completedAt !== undefined && {
-              completedAt: self.baseline.completedAt,
+            this.baseline?.completedAt !== undefined && {
+              completedAt: this.baseline.completedAt,
             }),
           ...(changes.notes != null && { notes: changes.notes }),
           ...(changes.notes === undefined &&
-            self.baseline?.notes !== undefined && { notes: self.baseline.notes }),
+            this.baseline?.notes !== undefined && { notes: this.baseline.notes }),
         };
-        console.log(`[MANIFOLD] fields set:${self.anilistId ?? "local"}:${fieldKeys.join(",")}`);
+        yield* Effect.logInfo(
+          `[MANIFOLD] fields set:${this.anilistId ?? "local"}:${fieldKeys.join(",")}`,
+        );
       }).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
-            self.lastError = errorMessage(error);
-            console.error(`[MANIFOLD] fields set failed:${self.lastError}`);
-          }),
+            this.lastError = errorMessage(error);
+          }).pipe(
+            Effect.tap(() => Effect.logError(`[MANIFOLD] fields set failed:${this.lastError}`)),
+          ),
         ),
-        Effect.ensuring(Effect.sync(() => self.reloadForm())),
+        Effect.ensuring(Effect.sync(() => this.reloadForm())),
       ),
     );
   }
 
   private applyStatus(status: CanonicalListStatus): Promise<void> {
-    const self = this;
     return Effect.runPromise(
-      Effect.gen(function* () {
+      Effect.gen({ self: this }, function* () {
         const api = configuredPersonalApi();
-        if (!self.anilistId) {
-          const stored = yield* fromPromise(() => api.getEntry(self.entryId)).pipe(
-            Effect.catch(() => Effect.succeed(undefined)),
+        if (!this.anilistId) {
+          const stored = yield* fromPromise(() => api.getEntry(this.entryId)).pipe(
+            Effect.orElseSucceed(() => undefined),
           );
-          self.anilistId = aniLinkOf(stored);
+          this.anilistId = aniLinkOf(stored);
         }
         const token = aniListSessionToken();
-        const anilistId = self.anilistId;
+        const anilistId = this.anilistId;
         let result: Awaited<ReturnType<typeof saveAniListStatus>> | undefined;
         if (token !== undefined && anilistId !== undefined) {
           const statusOutcome = yield* Effect.result(
@@ -959,7 +964,7 @@ class TrackerStatusForm extends Form {
           if (statusOutcome._tag === "Success") {
             result = statusOutcome.success;
           } else {
-            console.warn(
+            yield* Effect.logWarning(
               `[MANIFOLD] AniList status deferred: ${errorMessage(statusOutcome.failure)}`,
             );
             result = undefined;
@@ -967,30 +972,31 @@ class TrackerStatusForm extends Form {
         } else {
           result = undefined;
         }
-        self.statusText = status;
-        self.selectedStatus = status;
-        self.statusStyle = "success";
-        self.lastError = undefined;
+        this.statusText = status;
+        this.selectedStatus = status;
+        this.statusStyle = "success";
+        this.lastError = undefined;
         yield* fromPromise(() =>
-          api.setListState(self.entryId, {
+          api.setListState(this.entryId, {
             origin: "device",
             appliedRemotely: result !== undefined,
             status,
             ...(result?.backupIdentity && { backupIdentity: result.backupIdentity }),
           }),
         );
-        console.log(
-          `[MANIFOLD] status set:${self.anilistId ?? "local"}:${status}:` +
+        yield* Effect.logInfo(
+          `[MANIFOLD] status set:${this.anilistId ?? "local"}:${status}:` +
             `entry=${result?.mediaListEntryId ?? "?"}`,
         );
       }).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
-            self.lastError = errorMessage(error);
-            console.error(`[MANIFOLD] status set failed:${self.lastError}`);
-          }),
+            this.lastError = errorMessage(error);
+          }).pipe(
+            Effect.tap(() => Effect.logError(`[MANIFOLD] status set failed:${this.lastError}`)),
+          ),
         ),
-        Effect.ensuring(Effect.sync(() => self.reloadForm())),
+        Effect.ensuring(Effect.sync(() => this.reloadForm())),
       ),
     );
   }
@@ -1095,9 +1101,8 @@ class TrackerSettingsForm extends Form {
   };
 
   readonly aniListOAuthSuccess = (_refreshToken: string, accessToken: string): Promise<void> => {
-    const self = this;
     return Effect.runPromise(
-      Effect.gen(function* () {
+      Effect.gen({ self: this }, function* () {
         const aniListToken = accessToken?.trim();
         if (!aniListToken) {
           return;
@@ -1110,7 +1115,7 @@ class TrackerSettingsForm extends Form {
           Application.setState(outcome.success.Viewer.id, ANILIST_VIEWER_ID_KEY);
           Application.setState("Connected", ANILIST_STATUS_KEY);
         } else {
-          console.error(
+          yield* Effect.logError(
             `[MANIFOLD] AniList OAuth connect failed: ${errorMessage(outcome.failure)}`,
           );
           const rejected = outcome.failure instanceof AniListUnauthorizedError;
@@ -1119,23 +1124,22 @@ class TrackerSettingsForm extends Form {
             ANILIST_STATUS_KEY,
           );
         }
-        self.pendingAniListToken = undefined;
-        self.reloadForm();
+        this.pendingAniListToken = undefined;
+        this.reloadForm();
       }),
     );
   };
 
   override formDidSubmit(): Promise<void> {
-    const self = this;
     return Effect.runPromise(
-      Effect.gen(function* () {
-        const personalToken = self.pendingPersonalApiToken?.trim();
+      Effect.gen({ self: this }, function* () {
+        const personalToken = this.pendingPersonalApiToken?.trim();
         if (personalToken) {
           Application.setSecureState(personalToken, MANIFOLD_API_TOKEN_KEY);
           Application.setState("Configured", MANIFOLD_API_STATUS_KEY);
         }
 
-        const aniListToken = self.pendingAniListToken?.trim();
+        const aniListToken = this.pendingAniListToken?.trim();
         if (aniListToken) {
           const outcome = yield* Effect.result(
             fromPromise(() => aniListRequest<AniListViewer>(aniListToken, viewerQuery)),
@@ -1145,22 +1149,24 @@ class TrackerSettingsForm extends Form {
             Application.setState(outcome.success.Viewer.id, ANILIST_VIEWER_ID_KEY);
             Application.setState("Connected", ANILIST_STATUS_KEY);
           } else {
-            console.error(`[MANIFOLD] AniList connect failed: ${errorMessage(outcome.failure)}`);
+            yield* Effect.logError(
+              `[MANIFOLD] AniList connect failed: ${errorMessage(outcome.failure)}`,
+            );
             Application.setState("Connect failed — try again", ANILIST_STATUS_KEY);
           }
         }
 
-        const adminCommand = self.pendingAdminCommand?.trim().toLowerCase();
-        self.pendingPersonalApiToken = undefined;
-        self.pendingAniListToken = undefined;
-        self.pendingAdminCommand = undefined;
+        const adminCommand = this.pendingAdminCommand?.trim().toLowerCase();
+        this.pendingPersonalApiToken = undefined;
+        this.pendingAniListToken = undefined;
+        this.pendingAdminCommand = undefined;
 
         if (adminCommand === "clear") {
           clearAdminAccessCookies();
-          console.log("[MANIFOLD] admin access:cleared");
+          yield* Effect.logInfo("[MANIFOLD] admin access:cleared");
         }
 
-        self.reloadForm();
+        this.reloadForm();
       }),
     );
   }
