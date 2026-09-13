@@ -46,6 +46,7 @@ import {
 } from "@manifold/json";
 import { Data, Effect, Schema } from "effect";
 import { fromPromise } from "./from-promise.js";
+import { PaperbackRuntimeError } from "./errors.js";
 
 export const MANIFOLD_API_ORIGIN = "https://manifold.jfa.dev/api";
 export const MANIFOLD_API_TOKEN_KEY = "manifold.api-token";
@@ -272,7 +273,7 @@ const undefinedOn404 = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     Effect.catchIf(
       (cause): cause is PersonalApiError & E => isPersonalApiError(cause) && cause.status === 404,
       // SAFETY: 404 maps to absent resource; callers expect A | undefined
-      (): Effect.Effect<A | undefined, never, never> => Effect.succeed(undefined),
+      (): Effect.Effect<A | undefined, never, never> => Effect.as(Effect.void, undefined),
     ),
   );
 
@@ -286,7 +287,7 @@ export const createPersonalApiClient = (
     path: string,
     method = "GET",
     body?: PersonalApiPostBody,
-  ): Effect.Effect<PersonalApiResponse, PersonalApiError | unknown> =>
+  ): Effect.Effect<PersonalApiResponse, PersonalApiError | PaperbackRuntimeError> =>
     Effect.gen(function* () {
       const response = yield* fromPromise(() =>
         requester({
@@ -326,7 +327,9 @@ export const createPersonalApiClient = (
           );
           for (const source of body.providers) {
             if (source.error) {
-              console.warn(`[manifold] ${source.provider} search: ${source.error.message}`);
+              yield* Effect.logWarning(
+                `[manifold] ${source.provider} search: ${source.error.message}`,
+              );
             }
           }
           return {

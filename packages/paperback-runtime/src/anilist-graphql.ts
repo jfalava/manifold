@@ -2,21 +2,23 @@
 /** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalDate:off */
 /** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
 /** @effect-diagnostics globalFetch:off */
 /** @effect-diagnostics globalTimers:off */
 /** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
-/** @effect-diagnostics tryCatchInEffectGen:off */
-/** @effect-diagnostics unknownInEffectCatch:off */
 import { isJsonObject, manifoldUserAgent, type JsonObject } from "@manifold/json";
 import type { MalBackupIdentity } from "@manifold/canonical";
-import { Data, Effect } from "effect";
+import { Data, Effect, Schema } from "effect";
 import { fromPromise } from "./from-promise.js";
 import type { AniListReadingStatus } from "./anilist-types.js";
-import { bridgeErrorDetail } from "./errors.js";
+import {
+  bridgeErrorDetail,
+  errorMessage,
+  PaperbackRuntimeError,
+  paperbackError,
+} from "./errors.js";
 
 const ANILIST_GRAPHQL_ENDPOINT = "https://graphql.anilist.co";
+const JsonBodyString = Schema.fromJsonString(Schema.Unknown);
 
 export interface AniListLibraryItem {
   readonly anilistId: string;
@@ -63,7 +65,7 @@ const enqueue = <T>(task: () => Promise<T>): Promise<T> => {
   return run;
 };
 
-const gate = (): Effect.Effect<void, unknown> =>
+const gate = (): Effect.Effect<void, PaperbackRuntimeError> =>
   Effect.gen(function* () {
     const waitMs = Math.max(nextSlotAt - Date.now(), cooldownUntil - Date.now(), 0);
     if (waitMs > 0) {
@@ -92,7 +94,7 @@ const rawAniListRequest = <A>(
   token: string,
   query: string,
   variables: JsonObject,
-): Effect.Effect<RawOutcome<A>, unknown> =>
+): Effect.Effect<RawOutcome<A>, PaperbackRuntimeError> =>
   Effect.gen(function* () {
     const scheduled = yield* fromPromise(() =>
       Application.scheduleRequest({
@@ -107,30 +109,25 @@ const rawAniListRequest = <A>(
         body: JSON.stringify({ query, variables }),
       }),
     ).pipe(
-      Effect.mapError(
-        (cause) =>
-          // Offline and other transport failures reject with message-less bridge
-          // values; label the request so device logs stay actionable.
-          new Error(`AniList request failed: ${bridgeErrorDetail(cause)}`),
+      Effect.mapError((cause) =>
+        // Offline and other transport failures reject with message-less bridge
+        // values; label the request so device logs stay actionable.
+        paperbackError(`AniList request failed: ${bridgeErrorDetail(cause)}`),
       ),
     );
     const [response, bodyBuffer] = scheduled;
-    try {
-      // SAFETY: I/O JSON.parse of the AniList GraphQL HTTP body at the scheduleRequest boundary.
-      const parsed: unknown = JSON.parse(Application.arrayBufferToUTF8String(bodyBuffer));
-      if (!isJsonObject(parsed)) {
-        return { status: response.status, headers: response.headers ?? {} };
-      }
-      // SAFETY: JSON object is the GraphQL envelope; interpretOutcome reads data/errors.
-      return {
-        status: response.status,
-        headers: response.headers ?? {},
-        body: parsed as GraphQLResponse<A>,
-      };
-    } catch {
-      // Non-JSON payload (e.g. an HTML error page); the HTTP status decides.
+    const parsed = yield* Schema.decodeEffect(JsonBodyString)(
+      Application.arrayBufferToUTF8String(bodyBuffer),
+    ).pipe(Effect.orElseSucceed(() => undefined));
+    if (!isJsonObject(parsed)) {
       return { status: response.status, headers: response.headers ?? {} };
     }
+    // SAFETY: JSON object is the GraphQL envelope; interpretOutcome reads data/errors.
+    return {
+      status: response.status,
+      headers: response.headers ?? {},
+      body: parsed as GraphQLResponse<A>,
+    };
   });
 
 const isThrottled = <A>(outcome: RawOutcome<A>): boolean => {
@@ -156,15 +153,15 @@ const interpretOutcome = <A>(outcome: RawOutcome<A>): A => {
     throw new AniListUnauthorizedError();
   }
   if (outcome.body === undefined) {
-    throw new Error(`AniList returned non-JSON response (HTTP ${outcome.status})`);
+    throw paperbackError(`AniList returned non-JSON response (HTTP ${outcome.status})`);
   }
   if (outcome.body.errors && outcome.body.errors.length > 0) {
-    throw new Error(
+    throw paperbackError(
       `AniList error: ${outcome.body.errors.map((e) => e.message ?? "?").join("; ")}`,
     );
   }
   if (outcome.status < 200 || outcome.status >= 300) {
-    throw new Error(`AniList request failed with HTTP ${outcome.status}`);
+    throw paperbackError(`AniList request failed with HTTP ${outcome.status}`);
   }
   // SAFETY: value matches A at this call site
   return outcome.body.data as A;
@@ -174,7 +171,7 @@ const aniListRequestEffect = <A>(
   token: string,
   query: string,
   variables: JsonObject = {},
-): Effect.Effect<A, unknown> =>
+): Effect.Effect<A, PaperbackRuntimeError | AniListUnauthorizedError> =>
   Effect.gen(function* () {
     for (let attempt = 1; ; attempt += 1) {
       yield* gate();
@@ -182,11 +179,12 @@ const aniListRequestEffect = <A>(
       if (!isThrottled(outcome)) {
         return yield* Effect.try({
           try: () => interpretOutcome(outcome),
-          catch: (c) => c,
+          catch: (cause) =>
+            cause instanceof AniListUnauthorizedError ? cause : paperbackError(errorMessage(cause)),
         });
       }
       if (attempt > MAX_THROTTLED_RETRIES) {
-        return yield* Effect.fail(new Error("AniList kept rate limiting after repeated backoff"));
+        return yield* paperbackError("AniList kept rate limiting after repeated backoff");
       }
       scheduleCooldown(outcome.headers);
     }
@@ -297,7 +295,7 @@ const titleValue = (value: string | undefined): string | undefined =>
 const fetchAniListLibraryEffect = (
   token: string,
   userId: number,
-): Effect.Effect<readonly AniListLibraryItem[], unknown> =>
+): Effect.Effect<readonly AniListLibraryItem[], PaperbackRuntimeError> =>
   Effect.gen(function* () {
     const data = yield* fromPromise(() =>
       aniListRequest<LibraryData>(token, LIBRARY_QUERY, { userId }),
@@ -346,11 +344,11 @@ const ANILIST_ID = /^[1-9]\d*$/;
 
 const mediaIdOf = (anilistId: string): number => {
   if (!ANILIST_ID.test(anilistId)) {
-    throw new Error(`Invalid AniList manga id: ${anilistId}`);
+    throw paperbackError(`Invalid AniList manga id: ${anilistId}`);
   }
   const mediaId = Number(anilistId);
   if (!Number.isSafeInteger(mediaId) || mediaId > GRAPHQL_INT_MAX) {
-    throw new Error(`Invalid AniList manga id: ${anilistId}`);
+    throw paperbackError(`Invalid AniList manga id: ${anilistId}`);
   }
   return mediaId;
 };
@@ -374,9 +372,15 @@ const saveAniListStatusEffect = (
   token: string,
   anilistId: string,
   status: AniListReadingStatus | null,
-): Effect.Effect<{ mediaListEntryId?: number; backupIdentity?: MalBackupIdentity }, unknown> =>
+): Effect.Effect<
+  { mediaListEntryId?: number; backupIdentity?: MalBackupIdentity },
+  PaperbackRuntimeError
+> =>
   Effect.gen(function* () {
-    const mediaId = yield* Effect.try({ try: () => mediaIdOf(anilistId), catch: (c) => c });
+    const mediaId = yield* Effect.try({
+      try: () => mediaIdOf(anilistId),
+      catch: (cause) => paperbackError(errorMessage(cause)),
+    });
     // Privacy policy: everything this source touches stays private.
     const data = yield* fromPromise(() =>
       aniListRequest<SavedStatusData>(
@@ -445,7 +449,7 @@ const fmiDate = (value: string | null): FuzzyDateInput | null => {
     return null;
   }
   if (!FMI_DATE.test(value)) {
-    throw new Error(`Invalid AniList date: ${value}; expected YYYY-MM-DD`);
+    throw paperbackError(`Invalid AniList date: ${value}; expected YYYY-MM-DD`);
   }
 
   const year = Number(value.slice(0, 4));
@@ -461,7 +465,7 @@ const fmiDate = (value: string | null): FuzzyDateInput | null => {
         ? 30
         : 31;
   if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth) {
-    throw new Error(`Invalid AniList date: ${value}; expected a real calendar date`);
+    throw paperbackError(`Invalid AniList date: ${value}; expected a real calendar date`);
   }
   return { year, month, day };
 };
@@ -470,9 +474,12 @@ const saveAniListFieldsEffect = (
   token: string,
   anilistId: string,
   change: AniListFieldChange,
-): Effect.Effect<void, unknown> =>
+): Effect.Effect<void, PaperbackRuntimeError> =>
   Effect.gen(function* () {
-    const mediaId = yield* Effect.try({ try: () => mediaIdOf(anilistId), catch: (c) => c });
+    const mediaId = yield* Effect.try({
+      try: () => mediaIdOf(anilistId),
+      catch: (cause) => paperbackError(errorMessage(cause)),
+    });
     const variables = yield* Effect.try({
       try: () => ({
         mediaId,
@@ -485,7 +492,7 @@ const saveAniListFieldsEffect = (
         ...(!(change.completedAt === undefined) && { completedAt: fmiDate(change.completedAt) }),
         ...(!(change.volumeProgress === undefined) && { progressVolumes: change.volumeProgress }),
       }),
-      catch: (c) => c,
+      catch: (cause) => paperbackError(errorMessage(cause)),
     });
     yield* fromPromise(() =>
       aniListRequest(
@@ -515,14 +522,14 @@ export const saveAniListFields = (
 const deleteAniListEntryEffect = (
   token: string,
   mediaListEntryId: number,
-): Effect.Effect<boolean, unknown> =>
+): Effect.Effect<boolean, PaperbackRuntimeError> =>
   Effect.gen(function* () {
     if (
       !Number.isSafeInteger(mediaListEntryId) ||
       mediaListEntryId < 1 ||
       mediaListEntryId > GRAPHQL_INT_MAX
     ) {
-      return yield* Effect.fail(new Error(`Invalid AniList list entry id: ${mediaListEntryId}`));
+      return yield* paperbackError(`Invalid AniList list entry id: ${mediaListEntryId}`);
     }
     const data = yield* fromPromise(() =>
       aniListRequest<{ DeleteMediaListEntry?: { deleted?: boolean } }>(
@@ -546,7 +553,7 @@ export const deleteAniListEntry = (token: string, mediaListEntryId: number): Pro
 const fetchAniListMediaListEntryIdsEffect = (
   token: string,
   userId: number,
-): Effect.Effect<Readonly<Record<string, number>>, unknown> =>
+): Effect.Effect<Readonly<Record<string, number>>, PaperbackRuntimeError> =>
   Effect.gen(function* () {
     const data = yield* fromPromise(() =>
       aniListRequest<{
@@ -584,9 +591,12 @@ const saveAniListProgressEffect = (
   token: string,
   anilistId: string,
   progress: number,
-): Effect.Effect<boolean, unknown> =>
+): Effect.Effect<boolean, PaperbackRuntimeError> =>
   Effect.gen(function* () {
-    const mediaId = yield* Effect.try({ try: () => mediaIdOf(anilistId), catch: (c) => c });
+    const mediaId = yield* Effect.try({
+      try: () => mediaIdOf(anilistId),
+      catch: (cause) => paperbackError(errorMessage(cause)),
+    });
     // AniList tracks whole chapters only; fractional releases (e.g. 38.5)
     // normalize down to their integer part. Below 1 there is nothing to push.
     const chapters = Math.floor(progress);

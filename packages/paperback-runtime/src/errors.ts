@@ -4,7 +4,15 @@
 /** @effect-diagnostics globalFetch:off */
 /** @effect-diagnostics globalTimers:off */
 /** @effect-diagnostics newPromise:off */
+import { Data } from "effect";
 import { errorMessage, isFiniteNumber, isJsonObject, isString } from "@manifold/json";
+
+export class PaperbackRuntimeError extends Data.TaggedError("PaperbackRuntimeError")<{
+  readonly message: string;
+}> {}
+
+export const paperbackError = (message: string): PaperbackRuntimeError =>
+  new PaperbackRuntimeError({ message });
 
 export { errorMessage };
 
@@ -15,17 +23,31 @@ export { errorMessage };
  * device logs instead of rendering as `{}`.
  */
 export const bridgeErrorDetail = (cause: unknown): string => {
-  if (cause instanceof Error && cause.message.length > 0) {
-    return cause.message;
+  const meaningful = (value: string): string | undefined => {
+    const trimmed = value.trim();
+    return trimmed.length > 0 && trimmed !== "{}" ? trimmed : undefined;
+  };
+
+  if (cause instanceof Error) {
+    const message = meaningful(cause.message);
+    if (message !== undefined) {
+      return message;
+    }
   }
-  if (isString(cause) && cause.length > 0) {
-    return cause;
+  if (isString(cause)) {
+    const message = meaningful(cause);
+    if (message !== undefined) {
+      return message;
+    }
   }
   if (isJsonObject(cause)) {
     for (const key of ["message", "error", "description", "localizedDescription", "reason"]) {
       const value = cause[key];
-      if (isString(value) && value.length > 0) {
-        return value;
+      if (isString(value)) {
+        const message = meaningful(value);
+        if (message !== undefined) {
+          return message;
+        }
       }
     }
     const code = cause["code"];

@@ -1,17 +1,14 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
 /** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalErrorInEffectFailure:off */
 /** @effect-diagnostics globalFetch:off */
 /** @effect-diagnostics globalTimers:off */
 /** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics unknownInEffectCatch:off */
 import { isFiniteNumber, isString } from "@manifold/json";
 import { Effect } from "effect";
 import { fromPromise } from "./from-promise.js";
 import { ANILIST_SESSION_KEY, ANILIST_VIEWER_ID_KEY } from "./anilist-types.js";
-import { errorMessage } from "./errors.js";
+import { errorMessage, PaperbackRuntimeError, paperbackError } from "./errors.js";
 import {
   deleteAniListEntry,
   fetchAniListMediaListEntryIds,
@@ -56,11 +53,11 @@ const executeOp = (
   token: string,
   op: PendingSyncOp,
   mediaListEntryIds: Record<string, number> | undefined,
-): Effect.Effect<number | undefined, unknown> =>
+): Effect.Effect<number | undefined, PaperbackRuntimeError> =>
   Effect.gen(function* () {
     const parsed = yield* Effect.try({
       try: () => parsePendingAniListOp(op),
-      catch: (c) => c,
+      catch: (cause) => paperbackError(errorMessage(cause)),
     });
 
     switch (parsed.kind) {
@@ -84,8 +81,8 @@ const executeOp = (
           listEntryId = mediaListEntryIds[parsed.anilistId];
         }
         if (listEntryId === undefined) {
-          return yield* Effect.fail(
-            new Error(`op ${parsed.opId}: no mediaListEntryId for ${parsed.anilistId}`),
+          return yield* paperbackError(
+            `op ${parsed.opId}: no mediaListEntryId for ${parsed.anilistId}`,
           );
         }
         yield* fromPromise(() => deleteAniListEntry(token, listEntryId));
@@ -124,12 +121,10 @@ const drainAniListOpsEffect = () =>
     for (const op of ops) {
       const outcome = yield* executeOp(token, op, mediaListEntryIds).pipe(
         Effect.map((mediaListEntryId) => ({ ok: true as const, mediaListEntryId })),
-        Effect.catch((cause: unknown) =>
-          Effect.succeed({ ok: false as const, error: errorMessage(cause) }),
-        ),
+        Effect.catch((cause) => Effect.succeed({ ok: false as const, error: errorMessage(cause) })),
       );
       if (!outcome.ok) {
-        console.error(`[manifold] drain failed:${op.kind}:${outcome.error}`);
+        yield* Effect.logError(`[manifold] drain failed:${op.kind}:${outcome.error}`);
         results.push({ opId: op.opId, ok: false, error: outcome.error });
         continue;
       }
@@ -141,17 +136,18 @@ const drainAniListOpsEffect = () =>
         }),
       });
       const drainedAnilistId = op.payload["anilistId"];
-      console.log(
+      yield* Effect.logInfo(
         `[manifold] drained op:${op.kind}:${isString(drainedAnilistId) ? drainedAnilistId : ""}`,
       );
     }
 
     yield* fromPromise(() => api.completeOps(results)).pipe(
-      Effect.catch((cause) => {
+      Effect.catch((cause) =>
         // Completion reporting is best-effort; failed ops simply retry later.
-        console.error(`[manifold] drain completion report failed:${errorMessage(cause)}`);
-        return Effect.void;
-      }),
+        Effect.logError(`[manifold] drain completion report failed:${errorMessage(cause)}`).pipe(
+          Effect.asVoid,
+        ),
+      ),
     );
   });
 

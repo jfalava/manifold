@@ -32,11 +32,27 @@ import {
   type SortingOption,
   type SourceManga,
 } from "@paperback/types";
-import { isFiniteNumber, isJsonObject, isJsonValue, objectField } from "@manifold/json";
-import { Effect } from "effect";
+import {
+  errorMessage,
+  isFiniteNumber,
+  isJsonObject,
+  isJsonValue,
+  objectField,
+} from "@manifold/json";
+import { Data, Effect, Schema } from "effect";
 
-const fromPromise = <A>(action: () => Promise<A>): Effect.Effect<A, unknown> =>
-  Effect.tryPromise({ try: action, catch: (cause) => cause });
+class ComixRequestError extends Data.TaggedError("ComixRequestError")<{
+  readonly message: string;
+}> {}
+
+const comixError = (message: string): ComixRequestError => new ComixRequestError({ message });
+
+type ComixEffectError = ComixRequestError | CloudflareError;
+
+const JsonBodyString = Schema.fromJsonString(Schema.Unknown);
+
+const fromPromise = <A>(action: () => Promise<A>): Effect.Effect<A, ComixRequestError> =>
+  Effect.tryPromise({ try: action, catch: (cause) => comixError(errorMessage(cause)) });
 import {
   hashIdFromMangaId,
   paginationFromPayload,
@@ -103,7 +119,7 @@ const isChallenge = (body: string): boolean => {
   );
 };
 
-const requestJsonEffect = (url: string): Effect.Effect<JsonRequest, unknown> =>
+const requestJsonEffect = (url: string): Effect.Effect<JsonRequest, ComixEffectError> =>
   Effect.gen(function* () {
     const request = requestFor(url);
     const [response, bodyBuffer] = yield* fromPromise(() => Application.scheduleRequest(request));
@@ -115,20 +131,14 @@ const requestJsonEffect = (url: string): Effect.Effect<JsonRequest, unknown> =>
       );
     }
     if (response.status < 200 || response.status >= 300) {
-      return yield* Effect.fail(
-        new Error(`Comix request failed with HTTP ${response.status}: ${url}`),
-      );
+      return yield* comixError(`Comix request failed with HTTP ${response.status}: ${url}`);
     }
 
-    let parsed: unknown;
-    try {
-      // SAFETY: I/O JSON.parse of the Comix HTTP body at the scheduleRequest boundary.
-      parsed = JSON.parse(body);
-    } catch {
-      return yield* Effect.fail(new Error(`Comix returned a non-JSON response: ${url}`));
-    }
+    const parsed = yield* Schema.decodeEffect(JsonBodyString)(body).pipe(
+      Effect.mapError(() => comixError(`Comix returned a non-JSON response: ${url}`)),
+    );
     if (!isJsonValue(parsed)) {
-      return yield* Effect.fail(new Error(`Comix returned a non-JSON response: ${url}`));
+      return yield* comixError(`Comix returned a non-JSON response: ${url}`);
     }
     return { url, body: parsed };
   });
@@ -136,7 +146,7 @@ const requestJsonEffect = (url: string): Effect.Effect<JsonRequest, unknown> =>
 const requestJson = (url: string): Promise<JsonRequest> =>
   Effect.runPromise(requestJsonEffect(url));
 
-const requestHtmlEffect = (url: string): Effect.Effect<HtmlRequest, unknown> =>
+const requestHtmlEffect = (url: string): Effect.Effect<HtmlRequest, ComixEffectError> =>
   Effect.gen(function* () {
     const request = requestFor(url);
     const [response, bodyBuffer] = yield* fromPromise(() =>
@@ -156,9 +166,7 @@ const requestHtmlEffect = (url: string): Effect.Effect<HtmlRequest, unknown> =>
       );
     }
     if (response.status < 200 || response.status >= 300) {
-      return yield* Effect.fail(
-        new Error(`Comix page request failed with HTTP ${response.status}: ${url}`),
-      );
+      return yield* comixError(`Comix page request failed with HTTP ${response.status}: ${url}`);
     }
 
     return { url, html };
