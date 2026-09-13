@@ -1,3 +1,4 @@
+/** @effect-diagnostics asyncFunction:off */
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import type { ListrTask } from "listr2";
@@ -21,7 +22,7 @@ import {
   RegistryListResponse,
 } from "@manifold/contract";
 import { apiCall, apiConfig, type ApiConfig, type RegistryRow } from "@/commands/toolbox";
-import { sleepPromise } from "@/effect-kit";
+import { cliError, sleepPromise } from "@/effect-kit";
 
 const sleep = sleepPromise;
 
@@ -283,7 +284,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
         }
         process.exit(0);
       },
-      catch: (cause) => new Error(errorMessage(cause)),
+      catch: (cause) => cliError(errorMessage(cause)),
     }),
   ),
 );

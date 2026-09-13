@@ -1,11 +1,19 @@
-import { isJsonValue, type JsonValue } from "@manifold/json";
-import { DateTime, Effect, Option, Schema } from "effect";
+/** @effect-diagnostics globalFetch:off */
+/** @effect-diagnostics processEnv:off */
+import { errorMessage, isJsonValue, type JsonValue } from "@manifold/json";
+import { Data, DateTime, Effect, Option, Schema } from "effect";
 
 const JsonBodyString = Schema.fromJsonString(Schema.Unknown);
 
+export class CliEffectError extends Data.TaggedError("CliEffectError")<{
+  readonly message: string;
+}> {}
+
+export const cliError = (message: string): CliEffectError => new CliEffectError({ message });
+
 /** Promise boundary: rejections become typed failures (not defects). */
-export const fromPromise = <A>(action: () => Promise<A>): Effect.Effect<A, unknown> =>
-  Effect.tryPromise({ try: action, catch: (cause) => cause });
+export const fromPromise = <A>(action: () => Promise<A>): Effect.Effect<A, CliEffectError> =>
+  Effect.tryPromise({ try: action, catch: (cause) => cliError(errorMessage(cause)) });
 
 /** Run an Effect at a CLI host boundary (command handlers, scripts). */
 export const runHost = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect);
@@ -44,7 +52,7 @@ export const decodeJsonOption = <A>(
   return Schema.decodeUnknownOption(schema)(untrusted);
 };
 
-/** Decode or fail with a labeled Error for host boundaries. */
+/** Decode or fail with a labeled error for host boundaries. */
 export const decodeJsonOrThrow = <A>(
   schema: Schema.ConstraintDecoder<A>,
   body: JsonValue,
@@ -52,7 +60,7 @@ export const decodeJsonOrThrow = <A>(
 ): A => {
   const decoded = decodeJsonOption(schema, body);
   if (Option.isNone(decoded)) {
-    throw new Error(`${label}: schema rejected body`);
+    throw cliError(`${label}: schema rejected body`);
   }
   return decoded.value;
 };
@@ -63,10 +71,10 @@ export const parseJsonValue = (text: string, label = "json"): JsonValue => {
   try {
     raw = JSON.parse(text);
   } catch {
-    throw new Error(`${label}: invalid JSON`);
+    throw cliError(`${label}: invalid JSON`);
   }
   if (!isJsonValue(raw)) {
-    throw new Error(`${label}: not a JSON value`);
+    throw cliError(`${label}: not a JSON value`);
   }
   return raw;
 };
@@ -93,15 +101,13 @@ export const newId = (): string => {
 export const jsonFromResponseEffect = (
   response: Response,
   label = "response",
-): Effect.Effect<JsonValue, Error> =>
+): Effect.Effect<JsonValue, CliEffectError> =>
   Effect.gen(function* () {
     const raw: unknown = yield* fromPromise(() => response.json()).pipe(
-      Effect.mapError((cause) =>
-        cause instanceof Error ? cause : new Error(`${label}: ${String(cause)}`),
-      ),
+      Effect.mapError((cause) => cliError(`${label}: ${errorMessage(cause)}`)),
     );
     if (!isJsonValue(raw)) {
-      return yield* Effect.fail(new Error(`${label}: not a JSON value`));
+      return yield* cliError(`${label}: not a JSON value`);
     }
     return raw;
   });

@@ -1,4 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics processEnv:off */
 /** @effect-diagnostics schemaSync:off */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { requestHref, requestInitText } from "@manifold/json";

@@ -22,7 +22,15 @@ import { fetchAniListMangaEntries, type AniListEntry } from "@/anilist";
 import { resolveAniListToken } from "@/login/anilist";
 import { resolveValue } from "@/env-resolve";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
-import { fromPromise, platformFetch, runHost } from "@/effect-kit";
+import {
+  cliError,
+  decodeJsonOption,
+  fromPromise,
+  jsonBodyString,
+  platformFetch,
+  runHost,
+  type CliEffectError,
+} from "@/effect-kit";
 
 const DEFAULT_API_ORIGIN = "https://manifold.jfa.dev/api";
 
@@ -61,7 +69,7 @@ export const apiConfig = (
 ): ApiConfig => {
   const token = resolveValue(tokenFlag, "MANIFOLD_TOKEN");
   if (!token) {
-    throw new Error("Personal API token missing (MANIFOLD_TOKEN)");
+    throw cliError("Personal API token missing (MANIFOLD_TOKEN)");
   }
   const origin = resolveValue(originFlag, "MANIFOLD_API_ORIGIN") ?? DEFAULT_API_ORIGIN;
   return { origin: origin.replace(/\/$/, ""), token };
@@ -73,7 +81,7 @@ const apiCallEffect = <A>(
   method = "GET",
   body?: JsonValue,
   schema?: Schema.ConstraintDecoder<A>,
-): Effect.Effect<A, Error> =>
+): Effect.Effect<A, CliEffectError> =>
   Effect.gen(function* () {
     const response = yield* fromPromise(() =>
       platformFetch(`${config.origin}${path}`, {
@@ -84,37 +92,31 @@ const apiCallEffect = <A>(
           "user-agent": manifoldUserAgent("cli"),
           ...(!(body === undefined) && { "content-type": "application/json" }),
         },
-        ...(!(body === undefined) && { body: JSON.stringify(body) }),
+        ...(!(body === undefined) && { body: jsonBodyString(body) }),
       }),
-    ).pipe(
-      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause)))),
     );
-    const text = yield* fromPromise(() => response.text()).pipe(
-      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause)))),
-    );
-    let raw: unknown = undefined;
-    if (text.length > 0) {
-      try {
-        raw = JSON.parse(text);
-      } catch {
-        raw = text;
-      }
-    }
+    const text = yield* fromPromise(() => response.text());
+    const parsed =
+      text.length > 0
+        ? Option.getOrUndefined(decodeJsonOption(Schema.fromJsonString(Schema.Unknown), text))
+        : undefined;
+    const raw: JsonValue | undefined =
+      parsed !== undefined && isJsonValue(parsed) ? parsed : text.length > 0 ? text : undefined;
     if (!response.ok) {
       const message =
         isJsonObject(raw) && raw.error !== undefined
           ? errorMessage(raw.error)
           : `HTTP ${response.status}`;
-      return yield* Effect.fail(new Error(message));
+      return yield* cliError(message);
     }
     if (schema !== undefined) {
       if (raw !== undefined && !isJsonValue(raw)) {
-        return yield* Effect.fail(new Error(`Personal API response is not JSON (${path})`));
+        return yield* cliError(`Personal API response is not JSON (${path})`);
       }
-      const parsed: JsonValue = raw === undefined ? null : raw;
+      const decoded: JsonValue = raw === undefined ? null : raw;
       return yield* Effect.try({
-        try: () => decodeResponse(schema, parsed, path),
-        catch: (cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause))),
+        try: () => decodeResponse(schema, decoded, path),
+        catch: (cause) => cliError(errorMessage(cause)),
       });
     }
     // SAFETY: untyped call sites trust wire until migrated
@@ -134,7 +136,7 @@ export type RegistryRow = RegistryListEntry;
 
 const registryByAnilistIdEffect = (
   config: ApiConfig,
-): Effect.Effect<Map<string, RegistryRow>, Error> =>
+): Effect.Effect<Map<string, RegistryRow>, CliEffectError> =>
   Effect.gen(function* () {
     const PAGE_SIZE = 5000;
     let offset = 0;
@@ -234,10 +236,7 @@ export const opsCommand = Command.make("ops").pipe(
             }
           }
           closeFrame(`Listed ${total} ops`);
-        }).pipe(
-          Effect.mapError((cause) => new Error(errorMessage(cause))),
-          Effect.onError(() => Effect.sync(abortFrame)),
-        ),
+        }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
       ),
     ),
     Command.make("retry", {
@@ -266,10 +265,7 @@ export const opsCommand = Command.make("ops").pipe(
             SyncOp,
           );
           closeFrame(`reset to pending: ${opId}`);
-        }).pipe(
-          Effect.mapError((cause) => new Error(errorMessage(cause))),
-          Effect.onError(() => Effect.sync(abortFrame)),
-        ),
+        }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
       ),
     ),
   ]),
@@ -292,26 +288,16 @@ export const reconcileCommand = Command.make("diff", {
       openFrame("reconcile diff");
       const token = yield* fromPromise(() =>
         resolveAniListToken(Option.getOrUndefined(anilistToken)),
-      ).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error ? cause : new Error(errorMessage(cause)),
-        ),
       );
       if (!token) {
-        return yield* Effect.fail(
-          new Error(
-            "AniList token missing: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN",
-          ),
+        return yield* cliError(
+          "AniList token missing: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN",
         );
       }
       const config = apiConfig(apiOrigin, apiToken);
 
       const live: readonly AniListEntry[] = yield* fromPromise(() =>
         fetchAniListMangaEntries(token),
-      ).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error ? cause : new Error(errorMessage(cause)),
-        ),
       );
       const registry = yield* registryByAnilistIdEffect(config);
 
@@ -336,10 +322,7 @@ export const reconcileCommand = Command.make("diff", {
       closeFrame(
         `compared ${live.length} AniList entries against ${registry.size} registry rows; ${drift} drifted, ${missing} unregistered`,
       );
-    }).pipe(
-      Effect.mapError((cause) => new Error(errorMessage(cause))),
-      Effect.onError(() => Effect.sync(abortFrame)),
-    ),
+    }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),
 );
 
@@ -364,24 +347,14 @@ export const importCommand = Command.make("import", {
       openFrame("registry import");
       const token = yield* fromPromise(() =>
         resolveAniListToken(Option.getOrUndefined(anilistToken)),
-      ).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error ? cause : new Error(errorMessage(cause)),
-        ),
       );
       if (!token) {
-        return yield* Effect.fail(
-          new Error(
-            "AniList token missing: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN",
-          ),
+        return yield* cliError(
+          "AniList token missing: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN",
         );
       }
 
-      const live = yield* fromPromise(() => fetchAniListMangaEntries(token)).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error ? cause : new Error(errorMessage(cause)),
-        ),
-      );
+      const live = yield* fromPromise(() => fetchAniListMangaEntries(token));
       frameDetail(`fetched ${live.length} AniList entries`);
       if (!apply) {
         const importable = live.filter((entry) => mappedRegistryStatus(entry.status) !== undefined);
@@ -423,9 +396,6 @@ export const importCommand = Command.make("import", {
         imported += 1;
       }
       closeFrame(`registry import complete: ${imported}/${live.length} rows updated`);
-    }).pipe(
-      Effect.mapError((cause) => new Error(errorMessage(cause))),
-      Effect.onError(() => Effect.sync(abortFrame)),
-    ),
+    }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),
 );

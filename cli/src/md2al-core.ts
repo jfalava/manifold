@@ -1,3 +1,5 @@
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 
 import {
@@ -13,11 +15,13 @@ import { Effect } from "effect";
 
 import type { PhaseReporter } from "@/ui";
 import {
+  cliError,
   fromPromise,
   platformFetch,
   runHost,
   sleep as sleepEffect,
   sleepPromise,
+  type CliEffectError,
 } from "@/effect-kit";
 
 /**
@@ -80,7 +84,7 @@ const gqlEffect = <A>(
   token: string,
   query: string,
   variables: JsonObject = {},
-): Effect.Effect<A, Error> =>
+): Effect.Effect<A, CliEffectError> =>
   Effect.gen(function* () {
     const response = yield* fromPromise(() =>
       platformFetch(ANILIST_ENDPOINT, {
@@ -93,9 +97,7 @@ const gqlEffect = <A>(
         },
         body: JSON.stringify({ query, variables }),
       }),
-    ).pipe(
-      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause)))),
-    );
+    ).pipe(Effect.mapError((cause) => cliError(errorMessage(cause))));
     if (response.status === 429) {
       const retryAfter = Number(response.headers.get("retry-after") ?? "5");
       yield* sleepEffect(Math.max(retryAfter, 5) * 1000);
@@ -103,13 +105,13 @@ const gqlEffect = <A>(
     }
     // SAFETY: HTTP value is the expected GraphQLResponse<A>
     const body = (yield* fromPromise(() => response.json()).pipe(
-      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause)))),
+      Effect.mapError((cause) => cliError(errorMessage(cause))),
     )) as GraphQLResponse<A>;
     if (body.errors?.length) {
-      return yield* Effect.fail(new Error(body.errors.map((e) => e.message ?? "?").join("; ")));
+      return yield* cliError(body.errors.map((e) => e.message ?? "?").join("; "));
     }
     if (!response.ok) {
-      return yield* Effect.fail(new Error(`AniList HTTP ${response.status}`));
+      return yield* cliError(`AniList HTTP ${response.status}`);
     }
     // SAFETY: value matches A at this call site
     return body.data as A;
@@ -121,7 +123,7 @@ const gqlEffect = <A>(
  */
 export type MdTokenProvider = () => Promise<string>;
 
-const mdFetchEffect = <A>(mdToken: string, path: string): Effect.Effect<A, Error> =>
+const mdFetchEffect = <A>(mdToken: string, path: string): Effect.Effect<A, CliEffectError> =>
   Effect.gen(function* () {
     const response = yield* fromPromise(() =>
       platformFetch(`${MD_API}${path}`, {
@@ -131,20 +133,18 @@ const mdFetchEffect = <A>(mdToken: string, path: string): Effect.Effect<A, Error
           "user-agent": USER_AGENT,
         },
       }),
-    ).pipe(
-      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause)))),
-    );
+    ).pipe(Effect.mapError((cause) => cliError(errorMessage(cause))));
     if (response.status === 429 || response.status === 403) {
       const retryAfter = Number(response.headers.get("retry-after") ?? "5");
       yield* sleepEffect(Math.max(retryAfter, 5) * 1000);
       return yield* mdFetchEffect<A>(mdToken, path);
     }
     if (!response.ok) {
-      return yield* Effect.fail(new Error(`MangaDex HTTP ${response.status} for ${path}`));
+      return yield* cliError(`MangaDex HTTP ${response.status} for ${path}`);
     }
     // SAFETY: parsed JSON matches { data: A }
     const body = (yield* fromPromise(() => response.json()).pipe(
-      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause)))),
+      Effect.mapError((cause) => cliError(errorMessage(cause))),
     )) as { data: A };
     return body.data;
   });
@@ -199,10 +199,10 @@ const phaseExportEffect = (
   getMdToken: MdTokenProvider,
   tmpDir: string,
   report?: PhaseReporter,
-): Effect.Effect<MdLibraryEntry[], Error> =>
+): Effect.Effect<MdLibraryEntry[], CliEffectError> =>
   Effect.gen(function* () {
     const mdToken = yield* fromPromise(getMdToken).pipe(
-      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause)))),
+      Effect.mapError((cause) => cliError(errorMessage(cause))),
     );
     const cached = loadSnapshot(tmpDir);
     if (cached) {
@@ -223,17 +223,13 @@ const phaseExportEffect = (
           "user-agent": USER_AGENT,
         },
       }),
-    ).pipe(
-      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause)))),
-    );
+    ).pipe(Effect.mapError((cause) => cliError(errorMessage(cause))));
     if (!statusResponse.ok) {
-      return yield* Effect.fail(
-        new Error(`MangaDex HTTP ${statusResponse.status} for /manga/status`),
-      );
+      return yield* cliError(`MangaDex HTTP ${statusResponse.status} for /manga/status`);
     }
     // SAFETY: MangaDex /manga/status JSON is decoded via isJsonObject / isMdStatus below
     const statusBody: unknown = yield* fromPromise(() => statusResponse.json()).pipe(
-      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause)))),
+      Effect.mapError((cause) => cliError(errorMessage(cause))),
     );
     const statuses = isJsonObject(statusBody) ? (objectField(statusBody, "statuses") ?? {}) : {};
 
@@ -353,7 +349,7 @@ interface AniListSearchMedia {
 const searchAniListByTitleEffect = (
   token: string,
   search: string,
-): Effect.Effect<readonly { id: number; titles: readonly string[] }[], Error> =>
+): Effect.Effect<readonly { id: number; titles: readonly string[] }[], CliEffectError> =>
   Effect.gen(function* () {
     const data = yield* gqlEffect<AniListSearchMedia>(
       token,
@@ -385,7 +381,7 @@ const phaseMatchEffect = (
   tmpDir: string,
   report?: PhaseReporter,
   options?: { useCache?: boolean },
-): Effect.Effect<MatchResult[], Error> =>
+): Effect.Effect<MatchResult[], CliEffectError> =>
   Effect.gen(function* () {
     const existing = loadMatches(tmpDir);
     const results: MatchResult[] = [];
@@ -440,7 +436,7 @@ const phaseMatchEffect = (
             }
             return result;
           }),
-          Effect.catch(() => Effect.succeed(result)),
+          Effect.orElseSucceed(() => result),
         );
         result = malResult;
         if (result.method === "mal-link") {
@@ -460,7 +456,7 @@ const phaseMatchEffect = (
             Effect.map((media) => {
               const normalizedCandidate = normalizeTitle(candidate);
               if (!normalizedCandidate) {
-                return { result, foundExact: false as boolean, slept: false as boolean };
+                return { result, foundExact: false, slept: false };
               }
               for (const item of media) {
                 for (const title of item.titles) {
@@ -479,9 +475,7 @@ const phaseMatchEffect = (
               }
               return { result, foundExact: false, slept: true };
             }),
-            Effect.catch(() =>
-              Effect.succeed({ result, foundExact: false as boolean, slept: false as boolean }),
-            ),
+            Effect.orElseSucceed(() => ({ result, foundExact: false, slept: false })),
           );
           result = titleResult.result;
           foundExact = titleResult.foundExact;
@@ -538,7 +532,7 @@ const collectProgressEffect = (
   entries: readonly MdLibraryEntry[],
   report?: PhaseReporter,
   options?: { tmpDir?: string; useCache?: boolean },
-): Effect.Effect<Map<string, number>, Error> =>
+): Effect.Effect<Map<string, number>, CliEffectError> =>
   Effect.gen(function* () {
     const progressByMdId = new Map<string, number>();
     const cachedProgress =
@@ -558,9 +552,7 @@ const collectProgressEffect = (
       } else {
         yield* Effect.gen(function* () {
           const mdToken = yield* fromPromise(getMdToken).pipe(
-            Effect.mapError((cause) =>
-              cause instanceof Error ? cause : new Error(errorMessage(cause)),
-            ),
+            Effect.mapError((cause) => cliError(errorMessage(cause))),
           );
           const markerResponse = yield* fromPromise(() =>
             platformFetch(`${MD_API}/manga/${entry.mangaDexId}/read`, {
@@ -570,19 +562,13 @@ const collectProgressEffect = (
                 "user-agent": USER_AGENT,
               },
             }),
-          ).pipe(
-            Effect.mapError((cause) =>
-              cause instanceof Error ? cause : new Error(errorMessage(cause)),
-            ),
-          );
+          ).pipe(Effect.mapError((cause) => cliError(errorMessage(cause))));
           if (!markerResponse.ok) {
-            return yield* Effect.fail(new Error(`HTTP ${markerResponse.status}`));
+            return yield* cliError(`HTTP ${markerResponse.status}`);
           }
           // SAFETY: parsed JSON matches { data?: string[] }
           const markerBody = (yield* fromPromise(() => markerResponse.json()).pipe(
-            Effect.mapError((cause) =>
-              cause instanceof Error ? cause : new Error(errorMessage(cause)),
-            ),
+            Effect.mapError((cause) => cliError(errorMessage(cause))),
           )) as {
             data?: string[];
           };
@@ -648,7 +634,7 @@ export const collectProgress = (
  * that is already ahead of what MangaDex markers claim. */
 const fetchExistingProgressEffect = (
   anilistToken: string,
-): Effect.Effect<Map<string, number>, Error> =>
+): Effect.Effect<Map<string, number>, CliEffectError> =>
   Effect.gen(function* () {
     const viewer = yield* gqlEffect<{ Viewer?: { id?: number } }>(
       anilistToken,
@@ -656,7 +642,7 @@ const fetchExistingProgressEffect = (
     );
     const viewerId = viewer.Viewer?.id;
     if (viewerId === undefined) {
-      return yield* Effect.fail(new Error("Could not resolve AniList viewer id."));
+      return yield* cliError("Could not resolve AniList viewer id.");
     }
     const data = yield* gqlEffect<{
       MediaListCollection?: { lists?: { entries?: { mediaId: number; progress?: number }[] }[] };
@@ -691,7 +677,7 @@ const saveMatchesEffect = (
   existingProgress: Map<string, number> | undefined,
   options: { dryRun: boolean; progress: boolean },
   report?: PhaseReporter,
-): Effect.Effect<{ done: number; failed: number; withProgress: number }, Error> =>
+): Effect.Effect<{ done: number; failed: number; withProgress: number }, CliEffectError> =>
   Effect.gen(function* () {
     const pushable = matches.filter((m) => m.anilistId !== undefined);
     report?.detail(`Entries to push: ${pushable.length}`);

@@ -14,7 +14,14 @@ import { Effect } from "effect";
 import type { AniListEntry } from "@/anilist";
 import type { MalClient, MalMangaUpdate } from "@/mal";
 import { normalizeTitle } from "@/migration";
-import { epochMillisNow, fromPromise, runHost, sleepPromise } from "@/effect-kit";
+import {
+  cliError,
+  epochMillisNow,
+  fromPromise,
+  runHost,
+  sleepPromise,
+  type CliEffectError,
+} from "@/effect-kit";
 
 /** AniList MediaListStatus → MAL list_status fields (status + optional reread). */
 export const ANILIST_TO_MAL = {
@@ -131,10 +138,10 @@ export const createMalTitleSearch = (
   sleepFn: (ms: number) => Promise<void> = sleepPromise,
 ): Al2malSearch => {
   if (!clientId || clientId === "not-configured") {
-    return () => runHost(Effect.fail(new Error("MyAnimeList client id is not configured")));
+    return () => runHost(Effect.fail(cliError("MyAnimeList client id is not configured")));
   }
   let requested = false;
-  const searchEffect = (query: string): Effect.Effect<readonly Al2malSearchHit[], Error> =>
+  const searchEffect = (query: string): Effect.Effect<readonly Al2malSearchHit[], CliEffectError> =>
     Effect.gen(function* () {
       const q = malSearchQuery(query);
       if (!q) {
@@ -142,9 +149,7 @@ export const createMalTitleSearch = (
       }
       if (requested) {
         yield* fromPromise(() => sleepFn(MAL_SEARCH_INTERVAL_MS)).pipe(
-          Effect.mapError((cause) =>
-            cause instanceof Error ? cause : new Error(errorMessage(cause)),
-          ),
+          Effect.mapError((cause) => cliError(errorMessage(cause))),
         );
       }
       requested = true;
@@ -161,11 +166,7 @@ export const createMalTitleSearch = (
             },
             signal: AbortSignal.timeout(15_000),
           }),
-        ).pipe(
-          Effect.mapError((cause) =>
-            cause instanceof Error ? cause : new Error(errorMessage(cause)),
-          ),
-        );
+        ).pipe(Effect.mapError((cause) => cliError(errorMessage(cause))));
         if ((response.status === 429 || response.status >= 500) && attempt < 3) {
           const retryAfter = response.headers.get("retry-after");
           const seconds = retryAfter === null ? NaN : Number(retryAfter);
@@ -176,41 +177,33 @@ export const createMalTitleSearch = (
                 ? seconds * 1000
                 : Date.parse(retryAfter) - epochMillisNow();
           yield* fromPromise(() => response.body?.cancel() ?? Promise.resolve()).pipe(
-            Effect.catch(() => Effect.void),
+            Effect.ignore,
           );
           if (wait > 300_000) {
-            return yield* Effect.fail(
-              new Error("MAL title search requested a long retry delay. Stop and resume later."),
+            return yield* cliError(
+              "MAL title search requested a long retry delay. Stop and resume later.",
             );
           }
           yield* fromPromise(() =>
             sleepFn(
               Number.isFinite(wait) ? Math.max(MAL_SEARCH_INTERVAL_MS, wait) : 5000 * 2 ** attempt,
             ),
-          ).pipe(
-            Effect.mapError((cause) =>
-              cause instanceof Error ? cause : new Error(errorMessage(cause)),
-            ),
-          );
+          ).pipe(Effect.mapError((cause) => cliError(errorMessage(cause))));
           continue;
         }
         if (!response.ok) {
           const body = (yield* fromPromise(() => response.text().catch(() => "")).pipe(
-            Effect.mapError((cause) =>
-              cause instanceof Error ? cause : new Error(errorMessage(cause)),
-            ),
+            Effect.mapError((cause) => cliError(errorMessage(cause))),
           ))
             .replace(/\s+/g, " ")
             .trim()
             .slice(0, 200);
-          return yield* Effect.fail(
-            new Error(`MAL title search HTTP ${response.status}${body ? `: ${body}` : ""}`),
+          return yield* cliError(
+            `MAL title search HTTP ${response.status}${body ? `: ${body}` : ""}`,
           );
         }
         const json: unknown = yield* fromPromise(() => response.json()).pipe(
-          Effect.mapError((cause) =>
-            cause instanceof Error ? cause : new Error(errorMessage(cause)),
-          ),
+          Effect.mapError((cause) => cliError(errorMessage(cause))),
         );
         if (!isJsonObject(json)) {
           return [];

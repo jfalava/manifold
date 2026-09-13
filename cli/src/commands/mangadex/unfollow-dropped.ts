@@ -1,4 +1,5 @@
-import { envString, sleepPromise } from "@/effect-kit";
+/** @effect-diagnostics asyncFunction:off */
+import { cliError, envString, runHost, sleepPromise } from "@/effect-kit";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import type { ListrTask } from "listr2";
@@ -102,10 +103,8 @@ export const unfollowDroppedCommand = Command.make(
         .filter(([, value]) => !value)
         .map(([key]) => key);
       if (missing.length > 0) {
-        return yield* Effect.fail(
-          new Error(
-            `Missing MangaDex credentials: ${missing.join(", ")}. Pass them as flags or set MANGADEX_*.`,
-          ),
+        return yield* cliError(
+          `Missing MangaDex credentials: ${missing.join(", ")}. Pass them as flags or set MANGADEX_*.`,
         );
       }
 
@@ -115,14 +114,12 @@ export const unfollowDroppedCommand = Command.make(
         (s) => !VALID_STATUSES.includes(s as MangaDexReadingStatus),
       );
       if (invalid.length > 0) {
-        return yield* Effect.fail(
-          new Error(
-            `Invalid --status values: ${invalid.join(", ")}. Choose from: ${VALID_STATUSES.join(", ")}.`,
-          ),
+        return yield* cliError(
+          `Invalid --status values: ${invalid.join(", ")}. Choose from: ${VALID_STATUSES.join(", ")}.`,
         );
       }
       if (targetStatuses.length === 0) {
-        return yield* Effect.fail(new Error("--status cannot be empty."));
+        return yield* cliError("--status cannot be empty.");
       }
 
       yield* Effect.tryPromise({
@@ -150,7 +147,7 @@ export const unfollowDroppedCommand = Command.make(
           const fetchStatusesTask: ListrTask<UnfollowCtx> = {
             title: "Fetch reading statuses",
             task: async (ctx, task) => {
-              const statuses = await Effect.runPromise(client.readingStatuses());
+              const statuses = await runHost(client.readingStatuses());
               const droppedIds = Object.entries(statuses)
                 .filter(([, s]) => targetStatuses.includes(s))
                 .map(([id]) => id);
@@ -179,7 +176,7 @@ export const unfollowDroppedCommand = Command.make(
               const followed = new Set<string>();
               let offset = 0;
               while (true) {
-                const page = await Effect.runPromise(client.followedManga({ limit: 100, offset }));
+                const page = await runHost(client.followedManga({ limit: 100, offset }));
                 for (const manga of page.items) {
                   followed.add(manga.id);
                 }
@@ -205,7 +202,7 @@ export const unfollowDroppedCommand = Command.make(
               const titles: Record<string, string> = {};
               for (let start = 0; start < followedDroppedIds.length; start += TITLE_BATCH_SIZE) {
                 const batch = followedDroppedIds.slice(start, start + TITLE_BATCH_SIZE);
-                const page = await Effect.runPromise(
+                const page = await runHost(
                   client.listManga({
                     ids: batch,
                     contentRating: [...MANGADEX_CONTENT_RATINGS],
@@ -240,7 +237,7 @@ export const unfollowDroppedCommand = Command.make(
                       let done = 0;
                       for (const mangaId of ctx.followedDroppedIds) {
                         try {
-                          await Effect.runPromise(client.unfollowManga(mangaId));
+                          await runHost(client.unfollowManga(mangaId));
                         } catch (cause) {
                           const msg = errorMessage(cause);
                           const isAuth =
@@ -248,7 +245,7 @@ export const unfollowDroppedCommand = Command.make(
                           if (isAuth) {
                             try {
                               await refreshClient();
-                              await Effect.runPromise(client.unfollowManga(mangaId));
+                              await runHost(client.unfollowManga(mangaId));
                               done += 1;
                               reporter.progress(done, ctx.followedDroppedIds.length, [
                                 ["failed", failures.length],
@@ -321,7 +318,7 @@ export const unfollowDroppedCommand = Command.make(
             throw error;
           }
         },
-        catch: (cause) => new Error(errorMessage(cause)),
+        catch: (cause) => cliError(errorMessage(cause)),
       }).pipe(Effect.onError(() => Effect.sync(abortFrame)));
     }),
 ).pipe(

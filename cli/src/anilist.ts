@@ -4,6 +4,8 @@ import { Effect } from "effect";
 import {
   epochMillisNow,
   fromPromise,
+  cliError,
+  type CliEffectError,
   jsonFromResponseEffect,
   platformFetch,
   runHost,
@@ -93,7 +95,7 @@ const gqlEffect = <A>(
   query: string,
   variables: JsonObject = {},
   attempt = 0,
-): Effect.Effect<A, Error> =>
+): Effect.Effect<A, CliEffectError> =>
   Effect.gen(function* () {
     yield* throttleEffect();
     const response = yield* fromPromise(() =>
@@ -107,11 +109,7 @@ const gqlEffect = <A>(
         },
         body: JSON.stringify({ query, variables }),
       }),
-    ).pipe(
-      Effect.mapError((cause) =>
-        cause instanceof Error ? cause : new Error(`AniList fetch failed: ${String(cause)}`),
-      ),
-    );
+    ).pipe(Effect.mapError((cause) => cliError(`AniList fetch failed: ${cause.message}`)));
     if (response.status === 429 && attempt < 5) {
       const retryAfter = Number(response.headers.get("retry-after") ?? "5");
       yield* sleep(Math.max(retryAfter, 5) * 1000);
@@ -121,10 +119,10 @@ const gqlEffect = <A>(
     // SAFETY: HTTP value is the expected GraphQLResponse<A> after JSON parse
     const body = raw as GraphQLResponse<A>;
     if (body.errors?.length) {
-      return yield* Effect.fail(new Error(body.errors.map((e) => e.message ?? "?").join("; ")));
+      return yield* cliError(body.errors.map((e) => e.message ?? "?").join("; "));
     }
     if (!response.ok) {
-      return yield* Effect.fail(new Error(`AniList HTTP ${response.status}`));
+      return yield* cliError(`AniList HTTP ${response.status}`);
     }
     // SAFETY: value matches A at this call site after error checks
     return body.data as A;
@@ -140,7 +138,7 @@ const MEDIA_TITLES_QUERY = `query ($id: Int) {
 const fetchAniListTitlesEffect = (
   token: string,
   mediaId: number,
-): Effect.Effect<readonly string[], Error> =>
+): Effect.Effect<readonly string[], CliEffectError> =>
   Effect.gen(function* () {
     const data = yield* gqlEffect<{
       Media?: {
@@ -161,12 +159,12 @@ export const fetchAniListTitles = (token: string, mediaId: number): Promise<read
   runHost(fetchAniListTitlesEffect(token, mediaId));
 
 /** Resolves the token owner's AniList user id. */
-const fetchAniListViewerIdEffect = (token: string): Effect.Effect<number, Error> =>
+const fetchAniListViewerIdEffect = (token: string): Effect.Effect<number, CliEffectError> =>
   Effect.gen(function* () {
     const data = yield* gqlEffect<{ Viewer?: { id?: number } }>(token, VIEWER_QUERY);
     const id = data.Viewer?.id;
     if (!isFiniteNumber(id)) {
-      return yield* Effect.fail(new Error("AniList returned no Viewer id"));
+      return yield* cliError("AniList returned no Viewer id");
     }
     return id;
   });
@@ -234,7 +232,7 @@ const MEDIA_LIST_RICH_QUERY = `query ($userId: Int) {
  */
 const fetchAniListRichEntriesEffect = (
   token: string,
-): Effect.Effect<readonly AniListRichEntry[], Error> =>
+): Effect.Effect<readonly AniListRichEntry[], CliEffectError> =>
   Effect.gen(function* () {
     const userId = yield* fetchAniListViewerIdEffect(token);
     const data = yield* gqlEffect<ListCollection>(token, MEDIA_LIST_RICH_QUERY, { userId });
@@ -292,7 +290,7 @@ export const fetchAniListRichEntries = (token: string): Promise<readonly AniList
  */
 const fetchAniListMangaEntriesEffect = (
   token: string,
-): Effect.Effect<readonly AniListEntry[], Error> =>
+): Effect.Effect<readonly AniListEntry[], CliEffectError> =>
   Effect.gen(function* () {
     const userId = yield* fetchAniListViewerIdEffect(token);
     const data = yield* gqlEffect<ListCollection>(token, MEDIA_LIST_QUERY, { userId });

@@ -6,7 +6,10 @@ import { saveMalSession } from "@/login/mal-session";
 import { resolveValue } from "@/env-resolve";
 import { createMalAuthorization, createMalClient, MAL_REDIRECT_URI, requestMalTokens } from "@/mal";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
-import { envString, sleepPromise } from "@/effect-kit";
+import { cliError, envString, sleepPromise } from "@/effect-kit";
+
+/** OAuth server and callback are Promise-based host APIs. */
+/** @effect-diagnostics asyncFunction:off */
 
 export const malLoginCommand = Command.make("mal", {
   clientId: Flag.String("client-id").pipe(
@@ -22,7 +25,7 @@ export const malLoginCommand = Command.make("mal", {
       try: async () => {
         const id = resolveValue(clientId, "MANIFOLD_MAL_CLIENT_ID");
         if (!id) {
-          throw new Error("Set MANIFOLD_MAL_CLIENT_ID or pass --client-id.");
+          throw cliError("Set MANIFOLD_MAL_CLIENT_ID or pass --client-id.");
         }
         openFrame("login mal");
         const auth = createMalAuthorization(id);
@@ -40,7 +43,7 @@ export const malLoginCommand = Command.make("mal", {
               return new Response("Invalid OAuth state", { status: 400, headers });
             }
             if (url.searchParams.has("error")) {
-              callback.reject(new Error("MAL authorization denied."));
+              callback.reject(cliError("MAL authorization denied."));
               return new Response("Authorization denied. Return to the CLI.", { headers });
             }
             const code = url.searchParams.get("code");
@@ -57,7 +60,7 @@ export const malLoginCommand = Command.make("mal", {
         void sleepPromise(300_000).then(() => {
           if (!timedOut) {
             timedOut = true;
-            callback.reject(new Error("MAL login timed out after five minutes."));
+            callback.reject(cliError("MAL login timed out after five minutes."));
           }
         });
         try {
@@ -83,7 +86,7 @@ export const malLoginCommand = Command.make("mal", {
           await server.stop(true);
         }
       },
-      catch: (cause) => new Error(errorMessage(cause)),
+      catch: (cause) => cliError(errorMessage(cause)),
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),
 );

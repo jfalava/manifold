@@ -1,3 +1,5 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -9,7 +11,14 @@ import {
   type MangaDexPersonalClientCredentials,
 } from "@manifold/mangadex";
 import { Effect } from "effect";
-import { epochMillisNow, fromPromise, jsonFromResponseEffect, runHost } from "@/effect-kit";
+import {
+  cliError,
+  epochMillisNow,
+  fromPromise,
+  jsonFromResponseEffect,
+  runHost,
+  type CliEffectError,
+} from "@/effect-kit";
 
 interface TokenResponse {
   access_token?: string;
@@ -45,7 +54,7 @@ const loadPersistedTokensEffect = (cachePath: string | undefined): Effect.Effect
       // SAFETY: token cache JSON is decoded via isJsonObject / field guards below
       const raw: unknown = JSON.parse(await readFile(cachePath, "utf8"));
       if (!isJsonObject(raw)) {
-        return {} as PersistedTokens;
+        return {};
       }
       return {
         accessToken: isString(raw.accessToken) ? raw.accessToken : undefined,
@@ -70,7 +79,7 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
   let refreshToken: string | undefined;
   let expiresAt = 0;
 
-  const persistTokensEffect = (): Effect.Effect<void, Error> =>
+  const persistTokensEffect = (): Effect.Effect<void, CliEffectError> =>
     Effect.gen(function* () {
       if (!options.cachePath) {
         return;
@@ -80,15 +89,14 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
         await mkdir(dirname(options.cachePath!), { recursive: true });
         await writeFile(options.cachePath!, JSON.stringify(payload), { mode: 0o600 });
       }).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error
-            ? cause
-            : new Error(`MangaDex token cache write failed: ${String(cause)}`),
-        ),
+        Effect.mapError((cause) => cliError(`MangaDex token cache write failed: ${cause.message}`)),
       );
     });
 
-  const requestTokenEffect = (grant: URLSearchParams, label: string): Effect.Effect<void, Error> =>
+  const requestTokenEffect = (
+    grant: URLSearchParams,
+    label: string,
+  ): Effect.Effect<void, CliEffectError> =>
     Effect.gen(function* () {
       const response = yield* fromPromise(() =>
         fetcher(MANGADEX_TOKEN_ENDPOINT, {
@@ -99,26 +107,20 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
           },
           body: grant.toString(),
         }),
-      ).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error ? cause : new Error(`MangaDex ${label} failed: ${String(cause)}`),
-        ),
-      );
+      ).pipe(Effect.mapError((cause) => cliError(`MangaDex ${label} failed: ${cause.message}`)));
       if (!response.ok) {
         const detail = yield* fromPromise(() => response.text()).pipe(
           Effect.orElseSucceed(() => ""),
         );
-        return yield* Effect.fail(
-          new Error(
-            `MangaDex ${label} failed with HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
-          ),
+        return yield* cliError(
+          `MangaDex ${label} failed with HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
         );
       }
       const raw = yield* jsonFromResponseEffect(response, `mangadex.${label}`);
       // SAFETY: HTTP value is the expected TokenResponse after the preceding check
       const body = raw as TokenResponse;
       if (!body.access_token) {
-        return yield* Effect.fail(new Error(`MangaDex ${label} returned no access_token`));
+        return yield* cliError(`MangaDex ${label} returned no access_token`);
       }
       accessToken = body.access_token;
       refreshToken = body.refresh_token ?? refreshToken;
@@ -129,7 +131,7 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
       yield* persistTokensEffect();
     });
 
-  const currentEffect = (): Effect.Effect<string, Error> =>
+  const currentEffect = (): Effect.Effect<string, CliEffectError> =>
     Effect.gen(function* () {
       if (accessToken && epochMillisNow() < expiresAt) {
         return accessToken;

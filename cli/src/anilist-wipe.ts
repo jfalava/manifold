@@ -10,7 +10,15 @@ import {
 import { Effect } from "effect";
 
 import type { PhaseReporter } from "@/ui";
-import { fromPromise, jsonFromResponseEffect, platformFetch, runHost, sleep } from "@/effect-kit";
+import {
+  cliError,
+  fromPromise,
+  jsonFromResponseEffect,
+  platformFetch,
+  runHost,
+  sleep,
+  type CliEffectError,
+} from "@/effect-kit";
 
 const USER_AGENT = manifoldUserAgent("cli");
 
@@ -51,7 +59,7 @@ const postGraphQLEffect = (
   token: string,
   query: string,
   variables: GraphQLVariables,
-): Effect.Effect<Response, Error> =>
+): Effect.Effect<Response, CliEffectError> =>
   Effect.gen(function* () {
     for (let attempt = 0; ; attempt += 1) {
       const response = yield* fromPromise(() =>
@@ -65,11 +73,7 @@ const postGraphQLEffect = (
           },
           body: JSON.stringify({ query, variables }),
         }),
-      ).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error ? cause : new Error(`AniList wipe POST failed: ${String(cause)}`),
-        ),
-      );
+      ).pipe(Effect.mapError((cause) => cliError(`AniList wipe POST failed: ${cause.message}`)));
       if (response.status !== 429 || attempt >= DELETE_429_MAX_RETRIES) {
         return response;
       }
@@ -84,7 +88,9 @@ export interface WipeListEntry {
   title: string;
 }
 
-const fetchViewerEffect = (token: string): Effect.Effect<{ id: number; name: string }, Error> =>
+const fetchViewerEffect = (
+  token: string,
+): Effect.Effect<{ id: number; name: string }, CliEffectError> =>
   Effect.gen(function* () {
     const response = yield* fromPromise(() =>
       platformFetch(API_URL, {
@@ -97,13 +103,9 @@ const fetchViewerEffect = (token: string): Effect.Effect<{ id: number; name: str
         },
         body: JSON.stringify({ query: `query { Viewer { id name } }` }),
       }),
-    ).pipe(
-      Effect.mapError((cause) =>
-        cause instanceof Error ? cause : new Error(`Viewer query failed: ${String(cause)}`),
-      ),
-    );
+    ).pipe(Effect.mapError((cause) => cliError(`Viewer query failed: ${cause.message}`)));
     if (!response.ok) {
-      return yield* Effect.fail(new Error(`Viewer query failed: HTTP ${response.status}`));
+      return yield* cliError(`Viewer query failed: HTTP ${response.status}`);
     }
     const raw = yield* jsonFromResponseEffect(response, "anilist.viewer");
     // SAFETY: boundary cast through unknown to expected Viewer envelope
@@ -112,7 +114,7 @@ const fetchViewerEffect = (token: string): Effect.Effect<{ id: number; name: str
       errors?: unknown[];
     };
     if (!data.data?.Viewer) {
-      return yield* Effect.fail(new Error("AniList returned no Viewer"));
+      return yield* cliError("AniList returned no Viewer");
     }
     return data.data.Viewer;
   });
@@ -123,7 +125,7 @@ export const fetchViewer = (token: string): Promise<{ id: number; name: string }
 const fetchMangaEntriesEffect = (
   token: string,
   userId: number,
-): Effect.Effect<WipeListEntry[], Error> =>
+): Effect.Effect<WipeListEntry[], CliEffectError> =>
   Effect.gen(function* () {
     const response = yield* fromPromise(() =>
       platformFetch(API_URL, {
@@ -143,13 +145,9 @@ const fetchMangaEntriesEffect = (
           variables: { userId },
         }),
       }),
-    ).pipe(
-      Effect.mapError((cause) =>
-        cause instanceof Error ? cause : new Error(`Manga list fetch failed: ${String(cause)}`),
-      ),
-    );
+    ).pipe(Effect.mapError((cause) => cliError(`Manga list fetch failed: ${cause.message}`)));
     if (!response.ok) {
-      return yield* Effect.fail(new Error(`Manga list fetch failed: HTTP ${response.status}`));
+      return yield* cliError(`Manga list fetch failed: HTTP ${response.status}`);
     }
     const raw = yield* jsonFromResponseEffect(response, "anilist.manga-list");
     // SAFETY: parsed JSON matches MediaListCollection envelope for this trusted/test payload
@@ -195,7 +193,7 @@ export const fetchMangaEntries = (token: string, userId: number): Promise<WipeLi
 const decodeDeletedEnvelopeEffect = (
   response: Response,
   field: string,
-): Effect.Effect<boolean | undefined, Error> =>
+): Effect.Effect<boolean | undefined, CliEffectError> =>
   Effect.gen(function* () {
     const payload = yield* jsonFromResponseEffect(response, "anilist.delete");
     if (!isJsonObject(payload)) {
@@ -214,7 +212,10 @@ const decodeDeletedEnvelopeEffect = (
     return isBoolean(deleted) ? deleted : undefined;
   });
 
-const deleteEntryEffect = (token: string, entryId: number): Effect.Effect<boolean, Error> =>
+const deleteEntryEffect = (
+  token: string,
+  entryId: number,
+): Effect.Effect<boolean, CliEffectError> =>
   Effect.gen(function* () {
     const response = yield* postGraphQLEffect(
       token,
@@ -252,7 +253,7 @@ const fetchActivitiesPageEffect = (
   token: string,
   userId: number,
   page: number,
-): Effect.Effect<ActivitiesPage, Error> =>
+): Effect.Effect<ActivitiesPage, CliEffectError> =>
   Effect.gen(function* () {
     const response = yield* fromPromise(() =>
       platformFetch(API_URL, {
@@ -276,13 +277,9 @@ const fetchActivitiesPageEffect = (
           variables: { userId, page },
         }),
       }),
-    ).pipe(
-      Effect.mapError((cause) =>
-        cause instanceof Error ? cause : new Error(`Activity page fetch failed: ${String(cause)}`),
-      ),
-    );
+    ).pipe(Effect.mapError((cause) => cliError(`Activity page fetch failed: ${cause.message}`)));
     if (!response.ok) {
-      return yield* Effect.fail(new Error(`Activity page fetch failed: HTTP ${response.status}`));
+      return yield* cliError(`Activity page fetch failed: HTTP ${response.status}`);
     }
     // SAFETY: AniList activity page JSON is decoded via isJsonObject / field helpers below
     const data: unknown = yield* jsonFromResponseEffect(response, "anilist.activities");
@@ -355,7 +352,7 @@ const fetchMangaActivitiesEffect = (
   userId: number,
   report?: PhaseReporter,
   options: ActivitySelectionOptions = {},
-): Effect.Effect<Activity[], Error> =>
+): Effect.Effect<Activity[], CliEffectError> =>
   Effect.gen(function* () {
     const includeTextActivities = options.includeTextActivities === true;
     const all: Activity[] = [];
@@ -388,7 +385,7 @@ export const fetchMangaActivities = (
 const deleteActivityEffect = (
   token: string,
   activityId: number,
-): Effect.Effect<{ success: boolean; alreadyDeleted: boolean }, Error> =>
+): Effect.Effect<{ success: boolean; alreadyDeleted: boolean }, CliEffectError> =>
   Effect.gen(function* () {
     const response = yield* postGraphQLEffect(
       token,
@@ -398,7 +395,7 @@ const deleteActivityEffect = (
     if (!response.ok) {
       if (response.status === 400) {
         const body = yield* fromPromise(() => response.text()).pipe(
-          Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
+          Effect.mapError((cause) => cliError(cause.message)),
         );
         if (body.includes("The selected id is invalid")) {
           return { success: true, alreadyDeleted: true };

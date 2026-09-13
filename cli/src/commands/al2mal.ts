@@ -1,3 +1,4 @@
+/** @effect-diagnostics asyncFunction:off */
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { AuthConnection } from "@manifold/contract";
@@ -19,7 +20,7 @@ import {
   openFrame,
   type RunContext,
 } from "@/ui";
-import { envString } from "@/effect-kit";
+import { cliError, envString } from "@/effect-kit";
 
 interface Al2malCtx extends RunContext {
   report?: Al2malReport;
@@ -79,7 +80,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
       Effect.tryPromise({
         try: async () => {
           if (apply && !backupPaused) {
-            throw new Error(
+            throw cliError(
               "Pause/disconnect other MAL writers, then pass --backup-paused with --apply.",
             );
           }
@@ -96,7 +97,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
             );
             if (connection.connected) {
               if (apply) {
-                throw new Error(
+                throw cliError(
                   "The Manifold API is still connected to MAL. Disconnect its MAL backup before importing; --backup-paused does not override this check.",
                 );
               }
@@ -112,7 +113,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
 
           const anilist = (await resolveAniListToken(Option.getOrUndefined(anilistToken))) ?? "";
           if (!anilist) {
-            throw new Error(
+            throw cliError(
               "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
             );
           }
@@ -120,14 +121,14 @@ export const al2malCommand = Command.make("anilist-to-mal", {
           const accessToken = resolveValue(malToken, "MANIFOLD_MAL_TOKEN");
           const session = accessToken ? undefined : await loadMalSession();
           if (!accessToken && !session) {
-            throw new Error(
+            throw cliError(
               "Missing MAL token: run login mal, pass --mal-token, or set MANIFOLD_MAL_TOKEN.",
             );
           }
 
           const malClientId = envString("MANIFOLD_MAL_CLIENT_ID") ?? session?.clientId;
           if (!malClientId) {
-            throw new Error(
+            throw cliError(
               "Missing MANIFOLD_MAL_CLIENT_ID for MAL title search (public client id).",
             );
           }
@@ -150,7 +151,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
                 const cap = Option.getOrUndefined(limit);
                 if (cap !== undefined) {
                   if (!Number.isSafeInteger(cap) || cap < 1) {
-                    throw new Error("--limit must be a positive integer.");
+                    throw cliError("--limit must be a positive integer.");
                   }
                   entries = entries.slice(0, cap);
                   reporter.note(`Limited to first ${entries.length} entries.`);
@@ -196,7 +197,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
               task: async (ctx, task) => {
                 const report = ctx.report;
                 if (!report) {
-                  throw new Error("Migration produced no report.");
+                  throw cliError("Migration produced no report.");
                 }
                 const reporter = makePhaseReporter(task);
                 const prefix = report.dryRun ? "[dry run] " : "";
@@ -250,7 +251,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
             throw error;
           }
         },
-        catch: (cause) => new Error(errorMessage(cause)),
+        catch: (cause) => cliError(errorMessage(cause)),
       }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),
 );

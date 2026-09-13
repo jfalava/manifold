@@ -16,7 +16,7 @@ import {
 
 import type { AniListEntry } from "./anilist";
 import type { MangaDexTokenManager } from "./mangadex-token";
-import { fromPromise, runHost, sleep } from "@/effect-kit";
+import { fromPromise, runHost, sleep, type CliEffectError } from "@/effect-kit";
 
 /** MangaDex global API limit is ~5 req/s; 250ms spacing stays under it. */
 const MD_REQUEST_INTERVAL_MS = 250;
@@ -105,9 +105,11 @@ const isAuthFailure = (cause: unknown): cause is MangaDexAuthErrorPayload => {
 const withMangaDexClient = <A>(
   tokenManager: MangaDexTokenManager,
   invoke: (client: MangaDexClient) => Effect.Effect<A, MangaDexSourceError>,
-): Effect.Effect<A, unknown> =>
+): Effect.Effect<A, MangaDexSourceError | CliEffectError> =>
   Effect.gen(function* () {
-    const attempt = (forceRefresh: boolean): Effect.Effect<A, unknown> =>
+    const attempt = (
+      forceRefresh: boolean,
+    ): Effect.Effect<A, MangaDexSourceError | CliEffectError> =>
       Effect.gen(function* () {
         if (forceRefresh) {
           tokenManager.invalidate();
@@ -120,14 +122,7 @@ const withMangaDexClient = <A>(
         return yield* invoke(client);
       });
 
-    return yield* attempt(false).pipe(
-      Effect.catch((error) => {
-        if (isAuthFailure(error)) {
-          return attempt(true);
-        }
-        return Effect.fail(error);
-      }),
-    );
+    return yield* attempt(false).pipe(Effect.catchIf(isAuthFailure, () => attempt(true)));
   });
 
 interface TitleMatch {
@@ -152,7 +147,7 @@ const toMatch = (
 const matchMangaDexEffect = (
   tokenManager: MangaDexTokenManager,
   entry: AniListEntry,
-): Effect.Effect<TitleMatch | undefined, unknown> =>
+): Effect.Effect<TitleMatch | undefined, MangaDexSourceError | CliEffectError> =>
   Effect.gen(function* () {
     const normalized = normalizeTitle(entry.title);
 
@@ -263,7 +258,7 @@ const runMigrationEffect = (
       }
       const mangadexStatus = mangaDexStatusFor(entry.status);
 
-      const outcome = yield* Effect.gen(function* () {
+      yield* Effect.gen(function* () {
         const match = yield* matchMangaDexEffect(tokenManager, entry);
         if (!match) {
           unmatched.push({
@@ -327,7 +322,6 @@ const runMigrationEffect = (
           }),
         ),
       );
-      void outcome;
     }
 
     return {

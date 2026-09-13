@@ -1,5 +1,12 @@
 import { Effect } from "effect";
-import { decodeJsonOrThrow, fromPromise, parseJsonValue, runHost } from "@/effect-kit";
+import {
+  cliError,
+  decodeJsonOrThrow,
+  fromPromise,
+  parseJsonValue,
+  runHost,
+  type CliEffectError,
+} from "@/effect-kit";
 
 import { MalSession } from "@/mal";
 
@@ -8,21 +15,18 @@ export const MAL_SECRET = { service: "manifold", name: "mal-session" };
 export const saveMalSession = (session: MalSession): Promise<void> =>
   Bun.secrets.set({ ...MAL_SECRET, value: JSON.stringify(session) });
 
-const loadMalSessionEffect = (): Effect.Effect<MalSession | undefined, Error> =>
+const loadMalSessionEffect = (): Effect.Effect<MalSession | undefined, CliEffectError> =>
   Effect.gen(function* () {
     const stored = yield* fromPromise(() => Bun.secrets.get(MAL_SECRET)).pipe(
-      Effect.mapError((cause) =>
-        cause instanceof Error ? cause : new Error(`MAL keychain read failed: ${String(cause)}`),
-      ),
+      Effect.mapError((cause) => cliError(`MAL keychain read failed: ${cause.message}`)),
     );
     if (!stored) {
       return undefined;
     }
-    try {
-      return decodeJsonOrThrow(MalSession, parseJsonValue(stored), "decode");
-    } catch {
-      return yield* Effect.fail(new Error("Invalid MAL keychain session. Run login mal again."));
-    }
+    return yield* Effect.try({
+      try: () => decodeJsonOrThrow(MalSession, parseJsonValue(stored), "decode"),
+      catch: () => cliError("Invalid MAL keychain session. Run login mal again."),
+    });
   });
 
 export const loadMalSession = (): Promise<MalSession | undefined> =>

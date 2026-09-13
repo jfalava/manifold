@@ -1,3 +1,4 @@
+/** @effect-diagnostics asyncFunction:off */
 import { Effect } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage } from "@manifold/json";
@@ -9,7 +10,7 @@ import { loadMalSession, saveMalSession } from "@/login/mal-session";
 import { resolveValue } from "@/env-resolve";
 import { createMalClient, wipeMalManga } from "@/mal";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
-import { envString } from "@/effect-kit";
+import { cliError, envString } from "@/effect-kit";
 
 export const wipeMalMangaCommand = Command.make("manga", {
   malToken: Flag.String("mal-token").pipe(
@@ -50,7 +51,7 @@ export const wipeMalMangaCommand = Command.make("manga", {
     Effect.tryPromise({
       try: async () => {
         if (apply && !backupPaused) {
-          throw new Error(
+          throw cliError(
             "Pause/disconnect other MAL writers, then pass --backup-paused with --apply.",
           );
         }
@@ -65,7 +66,7 @@ export const wipeMalMangaCommand = Command.make("manga", {
           );
           if (connection.connected) {
             if (apply) {
-              throw new Error(
+              throw cliError(
                 "The Manifold API is still connected to MAL. Disconnect its MAL backup before wiping; --backup-paused does not override this check.",
               );
             }
@@ -123,7 +124,7 @@ export const wipeMalMangaCommand = Command.make("manga", {
           );
         }
       },
-      catch: (cause) => new Error(errorMessage(cause)),
+      catch: (cause) => cliError(errorMessage(cause)),
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),
 );

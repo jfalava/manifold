@@ -1,9 +1,9 @@
 import { Effect } from "effect";
 import { fetchAniListTitles } from "./anilist";
 import { uniqueTitles } from "./comix-match";
-import { manifoldUserAgent } from "@manifold/json";
+import { errorMessage, manifoldUserAgent } from "@manifold/json";
 import { createMangaDexClient } from "@manifold/mangadex";
-import { fromPromise, runHost } from "@/effect-kit";
+import { cliError, fromPromise, runHost } from "@/effect-kit";
 
 export const MAX_COMIX_SEARCH_TERMS = 3;
 
@@ -47,7 +47,7 @@ const loadRegistrySearchTitlesEffect = (
           Effect.map((extra) => {
             titles.push(...extra);
           }),
-          Effect.catch(() => Effect.void),
+          Effect.ignore,
         );
       }
     }
@@ -68,13 +68,11 @@ const loadRegistrySearchTitlesEffect = (
               userAgent: manifoldUserAgent("cli"),
             }).getManga(id);
             return [manga.title, ...manga.altTitles] as const;
-          }).pipe(
-            Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
-          ),
+          }).pipe(Effect.mapError((cause) => cliError(errorMessage(cause)))),
         ));
     return yield* fromPromise(() => loadMangaDex(mangadexId)).pipe(
       Effect.map((extra) => uniqueTitles([...unique, ...extra])),
-      Effect.catch(() => Effect.succeed(unique)),
+      Effect.orElseSucceed(() => unique),
     );
   });
 

@@ -1,7 +1,8 @@
-import { Schema, Effect } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { manifoldUserAgent } from "@manifold/json";
 import {
-  decodeJsonOrThrow,
+  cliError,
+  decodeJsonOption,
   epochMillisNow,
   fromPromise,
   jsonFromResponseEffect,
@@ -9,6 +10,7 @@ import {
   runHost,
   sleep,
   sleepPromise,
+  type CliEffectError,
 } from "@/effect-kit";
 
 const API = "https://api.myanimelist.net/v2";
@@ -76,7 +78,7 @@ const requestMalTokensEffect = (
   clientSecret: string | undefined,
   grant: URLSearchParams,
   fetcher: typeof fetch = fetch,
-): Effect.Effect<MalSession, Error> =>
+): Effect.Effect<MalSession, CliEffectError> =>
   Effect.gen(function* () {
     grant.set("client_id", clientId);
     if (clientSecret) {
@@ -94,14 +96,10 @@ const requestMalTokensEffect = (
         signal: AbortSignal.timeout(30_000),
         redirect: "error",
       }),
-    ).pipe(
-      Effect.mapError((cause) =>
-        cause instanceof Error ? cause : new Error(`MAL token exchange failed: ${String(cause)}`),
-      ),
-    );
+    ).pipe(Effect.mapError((cause) => cliError(`MAL token exchange failed: ${cause.message}`)));
     if (!response.ok) {
-      return yield* Effect.fail(
-        new Error(`MAL token exchange failed: HTTP ${response.status}. Run login mal again.`),
+      return yield* cliError(
+        `MAL token exchange failed: HTTP ${response.status}. Run login mal again.`,
       );
     }
     // Schema errors can include the received payload. Never expose token responses.
@@ -109,16 +107,11 @@ const requestMalTokensEffect = (
       Effect.map((body) => ({ ok: true as const, body })),
       Effect.orElseSucceed(() => ({ ok: false as const, body: undefined })),
     );
-    let tokens: Schema.Schema.Type<typeof Tokens>;
-    try {
-      if (!bodyResult.ok) {
-        throw new Error("invalid body");
-      }
-      tokens = decodeJsonOrThrow(Tokens, bodyResult.body, "mal.tokens");
-    } catch {
-      return yield* Effect.fail(
-        new Error("MAL returned an invalid token response. Run login mal again."),
-      );
+    const tokens = bodyResult.ok
+      ? Option.getOrUndefined(decodeJsonOption(Tokens, bodyResult.body))
+      : undefined;
+    if (!tokens) {
+      return yield* cliError("MAL returned an invalid token response. Run login mal again.");
     }
     return {
       clientId,
@@ -151,12 +144,10 @@ export const createMalClient = (options: {
   let token = options.accessToken ?? session?.accessToken;
   let requested = false;
 
-  const refreshEffect = (): Effect.Effect<void, Error> =>
+  const refreshEffect = (): Effect.Effect<void, CliEffectError> =>
     Effect.gen(function* () {
       if (options.accessToken || !session?.refreshToken) {
-        return yield* Effect.fail(
-          new Error("MAL token expired. Run login mal or replace MANIFOLD_MAL_TOKEN."),
-        );
+        return yield* cliError("MAL token expired. Run login mal or replace MANIFOLD_MAL_TOKEN.");
       }
       const next = yield* requestMalTokensEffect(
         session.clientId,
@@ -168,9 +159,7 @@ export const createMalClient = (options: {
       token = session.accessToken;
       if (options.saveSession) {
         yield* fromPromise(() => options.saveSession!(session!)).pipe(
-          Effect.mapError((cause) =>
-            cause instanceof Error ? cause : new Error(`MAL session save failed: ${String(cause)}`),
-          ),
+          Effect.mapError((cause) => cliError(`MAL session save failed: ${cause.message}`)),
         );
       }
     });
@@ -179,12 +168,10 @@ export const createMalClient = (options: {
     path: string,
     method = "GET",
     body?: URLSearchParams,
-  ): Effect.Effect<Response, Error> =>
+  ): Effect.Effect<Response, CliEffectError> =>
     Effect.gen(function* () {
       if (!token) {
-        return yield* Effect.fail(
-          new Error("MAL token missing. Run login mal or set MANIFOLD_MAL_TOKEN."),
-        );
+        return yield* cliError("MAL token missing. Run login mal or set MANIFOLD_MAL_TOKEN.");
       }
       if (!options.accessToken && session && session.expiresAt <= epochMillisNow() + 60_000) {
         yield* refreshEffect();
@@ -213,11 +200,7 @@ export const createMalClient = (options: {
             signal: AbortSignal.timeout(30_000),
             redirect: "error",
           }),
-        ).pipe(
-          Effect.mapError((cause) =>
-            cause instanceof Error ? cause : new Error(`MAL request failed: ${String(cause)}`),
-          ),
-        );
+        ).pipe(Effect.mapError((cause) => cliError(`MAL request failed: ${cause.message}`)));
         if (
           response.status === 401 &&
           !refreshed &&
@@ -240,9 +223,7 @@ export const createMalClient = (options: {
                 : Date.parse(retryAfter) - epochMillisNow();
           yield* fromPromise(() => response.body?.cancel() ?? Promise.resolve()).pipe(Effect.orDie);
           if (wait > 300_000) {
-            return yield* Effect.fail(
-              new Error("MAL requested a long retry delay. Stop and resume later."),
-            );
+            return yield* cliError("MAL requested a long retry delay. Stop and resume later.");
           }
           const delayMs = Number.isFinite(wait) ? Math.max(1500, wait) : 5000 * 2 ** attempt;
           if (options.sleep) {
@@ -254,51 +235,56 @@ export const createMalClient = (options: {
         }
         if (!response.ok && !(method === "DELETE" && response.status === 404)) {
           yield* fromPromise(() => response.body?.cancel() ?? Promise.resolve()).pipe(Effect.orDie);
-          return yield* Effect.fail(
-            new Error(`MAL ${method} ${path}: HTTP ${response.status}. Stopped; rerun to resume.`),
+          return yield* cliError(
+            `MAL ${method} ${path}: HTTP ${response.status}. Stopped; rerun to resume.`,
           );
         }
         return response;
       }
     });
 
-  const profileEffect = (): Effect.Effect<Schema.Schema.Type<typeof Profile>, Error> =>
+  const profileEffect = (): Effect.Effect<Schema.Schema.Type<typeof Profile>, CliEffectError> =>
     Effect.gen(function* () {
       const response = yield* requestEffect("/users/@me");
       const body = yield* jsonFromResponseEffect(response, "mal.profile");
-      return decodeJsonOrThrow(Profile, body, "mal.profile");
+      const profile = decodeJsonOption(Profile, body);
+      if (Option.isNone(profile)) {
+        return yield* cliError("mal.profile: schema rejected body");
+      }
+      return profile.value;
     });
 
-  const mangaEffect = (): Effect.Effect<MalManga[], Error> =>
+  const mangaEffect = (): Effect.Effect<MalManga[], CliEffectError> =>
     Effect.gen(function* () {
       const entries = new Map<number, MalManga>();
       const visited = new Set<string>();
       let path: string | undefined = "/users/@me/mangalist?limit=1000&nsfw=true";
       while (path) {
         if (visited.has(path)) {
-          return yield* Effect.fail(
-            new Error("MAL pagination repeated a page; refusing an incomplete scan."),
-          );
+          return yield* cliError("MAL pagination repeated a page; refusing an incomplete scan.");
         }
         visited.add(path);
         const response = yield* requestEffect(path);
         const body = yield* jsonFromResponseEffect(response, "mal.manga");
-        const page = decodeJsonOrThrow(MangaPage, body, "decode");
-        for (const { node } of page.data) {
+        const page = decodeJsonOption(MangaPage, body);
+        if (Option.isNone(page)) {
+          return yield* cliError("mal.manga: schema rejected body");
+        }
+        for (const { node } of page.value.data) {
           if (node.id <= 0) {
-            return yield* Effect.fail(new Error("MAL returned an invalid manga ID."));
+            return yield* cliError("MAL returned an invalid manga ID.");
           }
           entries.set(node.id, node);
         }
         path = undefined;
-        if (page.paging.next) {
-          const next = new URL(page.paging.next);
+        if (page.value.paging.next) {
+          const next = new URL(page.value.paging.next);
           if (
             next.origin !== "https://api.myanimelist.net" ||
             next.pathname !== "/v2/users/@me/mangalist"
           ) {
-            return yield* Effect.fail(
-              new Error("Unexpected MAL pagination URL; refusing to forward credentials."),
+            return yield* cliError(
+              "Unexpected MAL pagination URL; refusing to forward credentials.",
             );
           }
           next.searchParams.set("nsfw", "true");
@@ -308,19 +294,22 @@ export const createMalClient = (options: {
       return [...entries.values()];
     });
 
-  const deleteMangaEffect = (id: number): Effect.Effect<void, Error> =>
+  const deleteMangaEffect = (id: number): Effect.Effect<void, CliEffectError> =>
     Effect.gen(function* () {
       if (!Number.isSafeInteger(id) || id <= 0) {
-        return yield* Effect.fail(new Error("Invalid MAL manga ID."));
+        return yield* cliError("Invalid MAL manga ID.");
       }
       const response = yield* requestEffect(`/manga/${id}/my_list_status`, "DELETE");
       yield* fromPromise(() => response.body?.cancel() ?? Promise.resolve()).pipe(Effect.orDie);
     });
 
-  const updateMangaEffect = (id: number, values: MalMangaUpdate): Effect.Effect<void, Error> =>
+  const updateMangaEffect = (
+    id: number,
+    values: MalMangaUpdate,
+  ): Effect.Effect<void, CliEffectError> =>
     Effect.gen(function* () {
       if (!Number.isSafeInteger(id) || id <= 0) {
-        return yield* Effect.fail(new Error("Invalid MAL manga ID."));
+        return yield* cliError("Invalid MAL manga ID.");
       }
       const body = new URLSearchParams();
       for (const [key, value] of Object.entries(values)) {
@@ -329,7 +318,7 @@ export const createMalClient = (options: {
         }
       }
       if (body.size === 0) {
-        return yield* Effect.fail(new Error("MAL manga update needs at least one field."));
+        return yield* cliError("MAL manga update needs at least one field.");
       }
       const response = yield* requestEffect(`/manga/${id}/my_list_status`, "PATCH", body);
       yield* fromPromise(() => response.body?.cancel() ?? Promise.resolve()).pipe(Effect.orDie);
@@ -354,15 +343,11 @@ const wipeMalMangaEffect = (options: {
   readonly progress: (deleted: number, total: number) => void;
 }): Effect.Effect<
   { account: string; accountId: number; scanned: number; deleted: number },
-  Error
+  CliEffectError
 > =>
   Effect.gen(function* () {
-    const profile = yield* fromPromise(() => options.client.profile()).pipe(
-      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
-    );
-    const entries = yield* fromPromise(() => options.client.manga()).pipe(
-      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
-    );
+    const profile = yield* fromPromise(() => options.client.profile());
+    const entries = yield* fromPromise(() => options.client.manga());
     const summary = {
       account: profile.name,
       accountId: profile.id,
@@ -375,27 +360,19 @@ const wipeMalMangaEffect = (options: {
     }
     options.progress(0, entries.length);
     // A refresh must not silently switch the account between scan and deletion.
-    const verify = yield* fromPromise(() => options.client.profile()).pipe(
-      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
-    );
+    const verify = yield* fromPromise(() => options.client.profile());
     if (verify.id !== profile.id) {
-      return yield* Effect.fail(new Error("MAL account changed; refusing deletion."));
+      return yield* cliError("MAL account changed; refusing deletion.");
     }
     for (const entry of entries) {
-      yield* fromPromise(() => options.client.deleteManga(entry.id)).pipe(
-        Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
-      );
+      yield* fromPromise(() => options.client.deleteManga(entry.id));
       summary.deleted += 1;
       options.progress(summary.deleted, entries.length);
     }
-    const remaining = yield* fromPromise(() => options.client.manga()).pipe(
-      Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
-    );
+    const remaining = yield* fromPromise(() => options.client.manga());
     if (remaining.length) {
-      return yield* Effect.fail(
-        new Error(
-          `MAL wipe incomplete: ${remaining.length} manga remain (${remaining.map((entry) => entry.id).join(", ")}). Check other writers and rerun.`,
-        ),
+      return yield* cliError(
+        `MAL wipe incomplete: ${remaining.length} manga remain (${remaining.map((entry) => entry.id).join(", ")}). Check other writers and rerun.`,
       );
     }
     return summary;

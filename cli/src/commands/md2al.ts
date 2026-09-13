@@ -1,4 +1,5 @@
-import { envString } from "@/effect-kit";
+/** @effect-diagnostics asyncFunction:off */
+import { cliError, envString } from "@/effect-kit";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage } from "@manifold/json";
@@ -114,10 +115,8 @@ export const md2alCommand = Command.make(
       };
 
       if (!anilist) {
-        return yield* Effect.fail(
-          new Error(
-            "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
-          ),
+        return yield* cliError(
+          "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
         );
       }
 
@@ -136,14 +135,12 @@ export const md2alCommand = Command.make(
         const manager = mdTokenManager;
         mdToken = yield* Effect.tryPromise({
           try: () => manager.current(),
-          catch: (cause) => new Error(`MangaDex token mint failed: ${errorMessage(cause)}`),
+          catch: (cause) => cliError(`MangaDex token mint failed: ${errorMessage(cause)}`),
         });
       }
       if (!mdToken) {
-        return yield* Effect.fail(
-          new Error(
-            "Missing MangaDex token: pass --mangadex-token, set MANIFOLD_MANGADEX_TOKEN, or provide the password-grant flags.",
-          ),
+        return yield* cliError(
+          "Missing MangaDex token: pass --mangadex-token, set MANIFOLD_MANGADEX_TOKEN, or provide the password-grant flags.",
         );
       }
       const getMdToken = async (): Promise<string> =>
@@ -165,7 +162,7 @@ export const md2alCommand = Command.make(
                 }
                 const snapshot = loadSnapshot(tmpDir);
                 if (!snapshot) {
-                  throw new Error("No snapshot found. Run with --phase export first.");
+                  throw cliError("No snapshot found. Run with --phase export first.");
                 }
                 const max = Option.getOrUndefined(limit);
                 const limited = max !== undefined && max > 0 ? snapshot.slice(0, max) : snapshot;
@@ -202,7 +199,7 @@ export const md2alCommand = Command.make(
               skip: () => !(phase === "all" || phase === "push"),
               task: async (ctx, task) => {
                 if ((phase === "match" || phase === "push") && ctx.matches.length === 0) {
-                  throw new Error("No match results found. Run with --phase match first.");
+                  throw cliError("No match results found. Run with --phase match first.");
                 }
                 return task.newListr(
                   [
@@ -261,7 +258,7 @@ export const md2alCommand = Command.make(
             throw error;
           }
         },
-        catch: (cause) => new Error(errorMessage(cause)),
+        catch: (cause) => cliError(errorMessage(cause)),
       });
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
 ).pipe(Command.withDescription("Push your MangaDex library into AniList (private entries)."));

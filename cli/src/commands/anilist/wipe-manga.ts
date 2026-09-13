@@ -1,3 +1,4 @@
+/** @effect-diagnostics asyncFunction:off */
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage } from "@manifold/json";
@@ -20,6 +21,7 @@ import {
   openFrame,
   type RunContext,
 } from "@/ui";
+import { cliError } from "@/effect-kit";
 
 interface WipeCtx extends RunContext {
   entries: WipeListEntry[];
@@ -58,10 +60,8 @@ export const wipeAlMangaCommand = Command.make("manga", {
           resolveAniListToken(Option.getOrUndefined(anilistToken)),
         )) ?? "";
       if (!token) {
-        return yield* Effect.fail(
-          new Error(
-            "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
-          ),
+        return yield* cliError(
+          "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
         );
       }
       // Scan phase runs to completion before the interactive confirm so the
@@ -85,7 +85,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
               title: "Fetch manga list entries",
               task: async (ctx, _task) => {
                 if (viewerId === undefined) {
-                  throw new Error("Viewer lookup failed after AniList login.");
+                  throw cliError("Viewer lookup failed after AniList login.");
                 }
                 ctx.entries = await fetchMangaEntries(token, viewerId);
               },
@@ -94,7 +94,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
               title: "Fetch manga-related activities",
               task: async (ctx, task) => {
                 if (viewerId === undefined) {
-                  throw new Error("Viewer lookup failed after AniList login.");
+                  throw cliError("Viewer lookup failed after AniList login.");
                 }
                 ctx.activities = await fetchMangaActivities(
                   token,
@@ -113,7 +113,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
             throw error;
           }
         },
-        catch: (cause) => new Error(errorMessage(cause)),
+        catch: (cause) => cliError(errorMessage(cause)),
       });
 
       if (scan.entries.length === 0 && scan.activities.length === 0) {
@@ -197,7 +197,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
             throw error;
           }
         },
-        catch: (cause) => new Error(errorMessage(cause)),
+        catch: (cause) => cliError(errorMessage(cause)),
       });
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),

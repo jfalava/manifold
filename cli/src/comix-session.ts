@@ -10,7 +10,7 @@ import {
   type JsonValue,
 } from "@manifold/json";
 import { Effect } from "effect";
-import { epochMillisNow, fromPromise, runHost } from "@/effect-kit";
+import { epochMillisNow, fromPromise, runHost, type CliEffectError } from "@/effect-kit";
 
 export const SECRETS_SERVICE = "manifold";
 export const SECRETS_NAME = "comix-session";
@@ -207,7 +207,7 @@ export const isSessionFresh = (session: StoredComixSession, now = epochMillisNow
 const loadStoredSessionEffect = (
   store: SecretStore,
   now = epochMillisNow(),
-): Effect.Effect<StoredComixSession | undefined, unknown> =>
+): Effect.Effect<StoredComixSession | undefined, CliEffectError> =>
   Effect.gen(function* () {
     const raw = yield* fromPromise(() => store.get(SECRETS_SERVICE, SECRETS_NAME));
     if (!raw) {
@@ -229,13 +229,13 @@ export const loadStoredSession = (
 const saveStoredSessionEffect = (
   store: SecretStore,
   session: StoredComixSession,
-): Effect.Effect<void, unknown> =>
+): Effect.Effect<void, CliEffectError> =>
   fromPromise(() => store.set(SECRETS_SERVICE, SECRETS_NAME, JSON.stringify(session)));
 
 export const saveStoredSession = (store: SecretStore, session: StoredComixSession): Promise<void> =>
   runHost(saveStoredSessionEffect(store, session));
 
-const clearStoredSessionEffect = (store: SecretStore): Effect.Effect<void, unknown> =>
+const clearStoredSessionEffect = (store: SecretStore): Effect.Effect<void, CliEffectError> =>
   fromPromise(() => store.delete(SECRETS_SERVICE, SECRETS_NAME)).pipe(Effect.asVoid);
 
 export const clearStoredSession = (store: SecretStore): Promise<void> =>

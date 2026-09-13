@@ -1,3 +1,4 @@
+/** @effect-diagnostics asyncFunction:off */
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { createAniListSource } from "@manifold/canonical/sources";
@@ -5,7 +6,7 @@ import { RegistryEntry, RegistryListResponse, type RegistryListEntry } from "@ma
 import { errorMessage, manifoldUserAgent } from "@manifold/json";
 import { apiCall, apiConfig } from "@/commands/toolbox";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
-import { platformFetch, sleepPromise } from "@/effect-kit";
+import { cliError, platformFetch, runHost, sleepPromise } from "@/effect-kit";
 
 export const malPrefillCommand = Command.make("mal", {
   apply: Flag.Boolean("apply").pipe(
@@ -31,7 +32,7 @@ export const malPrefillCommand = Command.make("mal", {
       try: async () => {
         const maximum = Option.getOrUndefined(limit);
         if (delay < 0 || (maximum !== undefined && maximum < 0)) {
-          throw new Error("--delay and --limit must be non-negative");
+          throw cliError("--delay and --limit must be non-negative");
         }
         const config = apiConfig(apiOrigin, apiToken);
         const source = createAniListSource({
@@ -87,7 +88,7 @@ export const malPrefillCommand = Command.make("mal", {
               continue;
             }
             try {
-              const canonical = await Effect.runPromise(source.getById(anilistId));
+              const canonical = await runHost(source.getById(anilistId));
               const malId = canonical?.externalIds?.mal;
               if (!malId) {
                 unmatched += 1;
@@ -95,11 +96,11 @@ export const malPrefillCommand = Command.make("mal", {
                 continue;
               }
               if (canonical?.providerId !== anilistId || !/^[1-9]\d*$/.test(malId)) {
-                throw new Error("Invalid AniList cross-link response");
+                throw cliError("Invalid AniList cross-link response");
               }
               const owner = owners.get(malId);
               if (owner && owner !== row.id) {
-                throw new Error(`mal:${malId} already belongs to ${owner}`);
+                throw cliError(`mal:${malId} already belongs to ${owner}`);
               }
               if (apply) {
                 // Ingestion rejects conflicting ownership; linkProvider would move the link.
@@ -130,14 +131,14 @@ export const malPrefillCommand = Command.make("mal", {
             `${matched} ${apply ? "linked" : "verified"}; ${unmatched} unmapped; ${errors} errors`,
           );
           if (errors > 0) {
-            throw new Error(`${errors} MAL link checks failed; inspect the report and rerun`);
+            throw cliError(`${errors} MAL link checks failed; inspect the report and rerun`);
           }
         } catch (error) {
           abortFrame();
           throw error;
         }
       },
-      catch: (cause) => new Error(errorMessage(cause)),
+      catch: (cause) => cliError(errorMessage(cause)),
     }),
   ),
 );

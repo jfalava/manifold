@@ -10,7 +10,11 @@ import {
 } from "@/login/anilist";
 import { resolveValue } from "@/env-resolve";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
-import { envString, sleepPromise } from "@/effect-kit";
+import { cliError, envString, sleepPromise } from "@/effect-kit";
+
+/** OAuth server and callback are Promise-based host APIs. */
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
 
 export const anilistLoginCommand = Command.make("anilist", {
   clientId: Flag.String("client-id").pipe(
@@ -27,7 +31,7 @@ export const anilistLoginCommand = Command.make("anilist", {
         const id = resolveValue(clientId, "MANIFOLD_ANILIST_CLIENT_ID");
         const secret = envString("MANIFOLD_ANILIST_CLIENT_SECRET");
         if (!id || !secret) {
-          throw new Error(
+          throw cliError(
             "Set MANIFOLD_ANILIST_CLIENT_ID and MANIFOLD_ANILIST_CLIENT_SECRET for the CLI OAuth application.",
           );
         }
@@ -47,7 +51,7 @@ export const anilistLoginCommand = Command.make("anilist", {
               return new Response("Invalid OAuth state", { status: 400, headers });
             }
             if (url.searchParams.has("error")) {
-              callback.reject(new Error("AniList authorization denied."));
+              callback.reject(cliError("AniList authorization denied."));
               return new Response("Authorization denied. Return to the CLI.", { headers });
             }
             const code = url.searchParams.get("code");
@@ -64,7 +68,7 @@ export const anilistLoginCommand = Command.make("anilist", {
         void sleepPromise(300_000).then(() => {
           if (!timedOut) {
             timedOut = true;
-            callback.reject(new Error("AniList login timed out after five minutes."));
+            callback.reject(cliError("AniList login timed out after five minutes."));
           }
         });
         try {
@@ -84,7 +88,7 @@ export const anilistLoginCommand = Command.make("anilist", {
           await server.stop(true);
         }
       },
-      catch: (cause) => new Error(errorMessage(cause)),
+      catch: (cause) => cliError(errorMessage(cause)),
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),
 );

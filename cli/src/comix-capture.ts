@@ -1,3 +1,4 @@
+/** @effect-diagnostics nodeBuiltinImport:off */
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -27,7 +28,14 @@ import {
   type ComixSearchItem,
 } from "./comix-match";
 import { cookiesFromCdp, toCdpCookie, type ComixCookie } from "./comix-session";
-import { epochMillisNow, fromPromise, platformFetch, runHost, sleep } from "@/effect-kit";
+import {
+  epochMillisNow,
+  fromPromise,
+  platformFetch,
+  runHost,
+  sleep,
+  type CliEffectError,
+} from "@/effect-kit";
 
 export const CAPTURE_TIMEOUT_MS = 15_000;
 export const GOOGLE_POLL_INTERVAL_MS = 500;
@@ -183,7 +191,7 @@ const probeChromeDevToolsUrlEffect = (
           return undefined;
         }
         return yield* fromPromise(() => response.text());
-      }).pipe(Effect.catch(() => Effect.succeed(undefined))),
+      }).pipe(Effect.orElseSucceed(() => undefined)),
     ),
 ): Effect.Effect<string | undefined> =>
   Effect.gen(function* () {
@@ -194,7 +202,7 @@ const probeChromeDevToolsUrlEffect = (
     for (const port of ports) {
       const body = yield* fromPromise(() =>
         fetchVersion(`http://127.0.0.1:${port}/json/version`),
-      ).pipe(Effect.catch(() => Effect.succeed(undefined)));
+      ).pipe(Effect.orElseSucceed(() => undefined));
       if (!body) {
         continue;
       }
@@ -218,7 +226,7 @@ export const probeChromeDevToolsUrl = (
           return undefined;
         }
         return yield* fromPromise(() => response.text());
-      }).pipe(Effect.catch(() => Effect.succeed(undefined))),
+      }).pipe(Effect.orElseSucceed(() => undefined)),
     ),
 ): Promise<string | undefined> => runHost(probeChromeDevToolsUrlEffect(ports, fetchVersion));
 
@@ -239,7 +247,7 @@ const waitForChromeDevToolsUrlEffect = (
     const sleepFn = options.sleep;
     const deadline = now() + timeoutMs;
     while (true) {
-      const url = yield* fromPromise(probe).pipe(Effect.catch(() => Effect.succeed(undefined)));
+      const url = yield* fromPromise(probe).pipe(Effect.orElseSucceed(() => undefined));
       if (url) {
         return url;
       }
@@ -247,7 +255,7 @@ const waitForChromeDevToolsUrlEffect = (
         return undefined;
       }
       if (sleepFn) {
-        yield* fromPromise(() => sleepFn(intervalMs)).pipe(Effect.catch(() => Effect.void));
+        yield* fromPromise(() => sleepFn(intervalMs)).pipe(Effect.ignore);
       } else {
         yield* sleep(intervalMs);
       }
@@ -312,13 +320,13 @@ const createComixBrowserEffect = (options: {
   readonly cookies?: readonly ComixCookie[];
   readonly now?: () => number;
   readonly sleep?: (ms: number) => Promise<void>;
-}): Effect.Effect<ComixBrowser, unknown> =>
+}): Effect.Effect<ComixBrowser, CliEffectError> =>
   Effect.gen(function* () {
     const { view } = options;
     const now = options.now ?? epochMillisNow;
     const sleepFn = options.sleep;
 
-    const waitMs = (ms: number): Effect.Effect<void, unknown> =>
+    const waitMs = (ms: number): Effect.Effect<void, CliEffectError> =>
       sleepFn ? fromPromise(() => sleepFn(ms)) : sleep(ms);
 
     yield* fromPromise(() => view.navigate("about:blank"));
@@ -339,7 +347,7 @@ const createComixBrowserEffect = (options: {
 
     const harvestEffect = (): Effect.Effect<
       { cookies: ComixCookie[]; userAgent?: string },
-      unknown
+      CliEffectError
     > =>
       Effect.gen(function* () {
         const raw = yield* fromPromise(() =>
@@ -356,14 +364,14 @@ const createComixBrowserEffect = (options: {
               userAgent = ua;
             }
           }),
-          Effect.catch(() => Effect.void),
+          Effect.ignore,
         );
         return { cookies, userAgent };
       });
 
     const searchEffect = (
       keyword: string,
-    ): Effect.Effect<readonly ComixSearchItem[] | "challenge", unknown> =>
+    ): Effect.Effect<readonly ComixSearchItem[] | "challenge", CliEffectError> =>
       Effect.gen(function* () {
         yield* fromPromise(() => view.navigate(comixBrowseUrl(keyword)));
         const snapshot = yield* fromPromise(() => view.evaluate(SNAPSHOT_SCRIPT));
@@ -380,7 +388,7 @@ const createComixBrowserEffect = (options: {
 
     const followGotoLinksEffect = (
       links: readonly { readonly href: string; readonly title: string }[],
-    ): Effect.Effect<readonly ComixSearchItem[] | "challenge", unknown> =>
+    ): Effect.Effect<readonly ComixSearchItem[] | "challenge", CliEffectError> =>
       Effect.gen(function* () {
         for (const link of links.slice(0, GOTO_FOLLOW_LIMIT)) {
           yield* fromPromise(() => view.navigate(link.href));
@@ -410,7 +418,7 @@ const createComixBrowserEffect = (options: {
 
     const searchGoogleEffect = (
       keyword: string,
-    ): Effect.Effect<readonly ComixSearchItem[] | "challenge", unknown> =>
+    ): Effect.Effect<readonly ComixSearchItem[] | "challenge", CliEffectError> =>
       Effect.gen(function* () {
         yield* fromPromise(() => view.navigate(googleComixSearchUrl(keyword)));
         const deadline = now() + CAPTURE_TIMEOUT_MS;

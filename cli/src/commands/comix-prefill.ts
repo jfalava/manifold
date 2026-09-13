@@ -1,3 +1,4 @@
+/** @effect-diagnostics asyncFunction:off */
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import type { ListrTask } from "listr2";
@@ -35,7 +36,7 @@ import {
 } from "@/ui";
 import { RegistryEntry, RegistryListResponse } from "@manifold/contract";
 import { apiCall, apiConfig, type ApiConfig, type RegistryRow } from "@/commands/toolbox";
-import { sleepPromise } from "@/effect-kit";
+import { cliError, sleepPromise } from "@/effect-kit";
 
 const SEARCH_DELAY_MS = 1_500;
 const CHALLENGE_CIRCUIT_BREAK = 3;
@@ -142,7 +143,7 @@ export const comixPrefillCommand = Command.make("comix", {
           if (!chromeUrl) {
             const executable = findChromeExecutable();
             if (!executable) {
-              throw new Error("Chrome/Chromium/Edge/Brave not found. Install one, then re-run.");
+              throw cliError("Chrome/Chromium/Edge/Brave not found. Install one, then re-run.");
             }
             frameDetail(`opening ${executable} with a dedicated manifold profile`);
             frameDetail(
@@ -153,7 +154,7 @@ export const comixPrefillCommand = Command.make("comix", {
             chromeUrl = await waitForChromeDevToolsUrl({ timeoutMs: 20_000 });
           }
           if (!chromeUrl) {
-            throw new Error(
+            throw cliError(
               "Chrome DevTools never came up. Quit every Chrome window, then re-run so manifold can open its own debug profile.",
             );
           }
@@ -388,7 +389,7 @@ export const comixPrefillCommand = Command.make("comix", {
           // left to do once the report is printed.
           process.exit(0);
         },
-        catch: (cause) => new Error(errorMessage(cause)),
+        catch: (cause) => cliError(errorMessage(cause)),
       }),
   ),
 );

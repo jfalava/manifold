@@ -1,3 +1,5 @@
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics processEnv:off */
 import { readFileSync } from "node:fs";
 
 /**

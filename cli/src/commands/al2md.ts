@@ -1,4 +1,5 @@
-import { envString } from "@/effect-kit";
+/** @effect-diagnostics asyncFunction:off */
+import { cliError, envString } from "@/effect-kit";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage } from "@manifold/json";
@@ -86,21 +87,17 @@ export const al2mdCommand = Command.make(
       };
 
       if (!token) {
-        return yield* Effect.fail(
-          new Error(
-            "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.\n" +
-              `Register ${ANILIST_REDIRECT_URI} on a separate authorization-code client, then run: bun index.ts login anilist`,
-          ),
+        return yield* cliError(
+          "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.\n" +
+            `Register ${ANILIST_REDIRECT_URI} on a separate authorization-code client, then run: bun index.ts login anilist`,
         );
       }
       const missing = Object.entries(credentials)
         .filter(([, value]) => !value)
         .map(([key]) => key);
       if (missing.length > 0) {
-        return yield* Effect.fail(
-          new Error(
-            `Missing MangaDex credentials: ${missing.join(", ")}. Pass them as flags or set MANGADEX_*.`,
-          ),
+        return yield* cliError(
+          `Missing MangaDex credentials: ${missing.join(", ")}. Pass them as flags or set MANGADEX_*.`,
         );
       }
 
@@ -177,7 +174,7 @@ export const al2mdCommand = Command.make(
             throw error;
           }
         },
-        catch: (cause) => new Error(errorMessage(cause)),
+        catch: (cause) => cliError(errorMessage(cause)),
       });
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
 ).pipe(

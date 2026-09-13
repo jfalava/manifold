@@ -1,4 +1,9 @@
-import { newId } from "@/effect-kit";
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalConsoleInEffect:off */
+/** @effect-diagnostics globalDateInEffect:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
+import { cliError, newId } from "@/effect-kit";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage, isFiniteNumber, type JsonObject } from "@manifold/json";
@@ -60,11 +65,11 @@ const parseTabsFlag = (value: string): readonly string[] | "none" | undefined =>
     .map((part) => part.trim().toLowerCase())
     .filter((part) => part.length > 0);
   if (names.length === 0) {
-    throw new Error(`--tabs: no valid tab names in "${value}"`);
+    throw cliError(`--tabs: no valid tab names in "${value}"`);
   }
   for (const name of names) {
     if (!allowed.has(name)) {
-      throw new Error(`--tabs: unknown tab "${name}" (allowed: ${[...allowed.keys()].join(", ")})`);
+      throw cliError(`--tabs: unknown tab "${name}" (allowed: ${[...allowed.keys()].join(", ")})`);
     }
   }
   // SAFETY: value matches string); at this call site
@@ -257,7 +262,7 @@ export const migrateLibrarySources = (
 ): ExistingUpstreamResult => {
   const library = base.__LIBRARY_MANGA_V5[libraryId];
   if (!library) {
-    throw new Error(`Missing base library entry ${libraryId}`);
+    throw cliError(`Missing base library entry ${libraryId}`);
   }
   const attached = library.attachedSources
     .map((reference) => base.__SOURCE_MANGA_V5[reference.id])
@@ -426,12 +431,12 @@ const filterPas5Command = Command.make("filter", {
           ...(excludeTracker ? ["MANIFOLD"] : []),
         ]);
         if (excluded.size === 0 || excluded.size === 3) {
-          throw new Error(
+          throw cliError(
             "Exclude one or two providers with --exclude-mangadex, --exclude-comix, or --exclude-tracker.",
           );
         }
         if (resolve(input) === resolve(out)) {
-          throw new Error("--out must differ from --input; keep the original backup.");
+          throw cliError("--out must differ from --input; keep the original backup.");
         }
         const original = await parsePas5(readFileSync(input));
         const filtered = filterPas5Providers(original, excluded);
@@ -454,7 +459,7 @@ const filterPas5Command = Command.make("filter", {
           "After restoring, run Paperback database repair and verify a title stays categorized after reopening.",
         );
       },
-      catch: (cause) => new Error(errorMessage(cause)),
+      catch: (cause) => cliError(errorMessage(cause)),
     }),
   ),
 );
@@ -509,15 +514,13 @@ export const createPas5Command = Command.make("pas5", {
           resolveAniListToken(Option.getOrUndefined(anilistToken)),
         )) ?? "";
       if (!token) {
-        return yield* Effect.fail(
-          new Error(
-            "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
-          ),
+        return yield* cliError(
+          "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
         );
       }
       const tabFilter = yield* Effect.try({
         try: () => parseTabsFlag(tabs),
-        catch: (cause) => new Error(errorMessage(cause)),
+        catch: (cause) => cliError(errorMessage(cause)),
       });
 
       interface ScanCtx extends RunContext {
@@ -593,7 +596,7 @@ export const createPas5Command = Command.make("pas5", {
             ...(baseEntities && { base: baseEntities }),
           };
         },
-        catch: (cause) => new Error(errorMessage(cause)),
+        catch: (cause) => cliError(errorMessage(cause)),
       });
 
       const allowedTabs = tabFilter === "none" ? [] : (tabFilter ?? TAB_ORDER);
@@ -778,7 +781,7 @@ export const createPas5Command = Command.make("pas5", {
           );
           closeFrame(`Wrote ${outPath}`);
         },
-        catch: (cause) => new Error(errorMessage(cause)),
+        catch: (cause) => cliError(errorMessage(cause)),
       });
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),

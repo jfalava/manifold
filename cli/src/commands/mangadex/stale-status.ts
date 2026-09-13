@@ -1,3 +1,9 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalDateInEffect:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics preferSchemaOverJson:off */
+/** @effect-diagnostics tryCatchInEffectGen:off */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 import { Effect, Option } from "effect";
@@ -27,7 +33,14 @@ import {
   MANGADEX_CONTENT_RATINGS,
   type MangaDexReadingStatus,
 } from "@manifold/mangadex";
-import { envString, epochMillisNow, fromPromise, sleepPromise } from "@/effect-kit";
+import {
+  cliError,
+  envString,
+  epochMillisNow,
+  fromPromise,
+  runHost,
+  sleepPromise,
+} from "@/effect-kit";
 
 interface StaleCtx extends RunContext {
   statuses: Record<string, MangaDexReadingStatus>;
@@ -57,10 +70,10 @@ const loadStaleCache = (): Promise<{
   savedAt: string | undefined;
   entries: Record<string, number>;
 }> =>
-  Effect.runPromise(
+  runHost(
     Effect.gen(function* () {
       const text = yield* fromPromise(() => readFile(STALE_CACHE_PATH, "utf8")).pipe(
-        Effect.catch(() => Effect.succeed(undefined as string | undefined)),
+        Effect.orElseSucceed(() => undefined),
       );
       if (text === undefined) {
         return { usable: false, savedAt: undefined, entries: {} };
@@ -100,7 +113,7 @@ const loadStaleCache = (): Promise<{
   );
 
 const saveStaleCache = (entries: Record<string, number>): Promise<void> =>
-  Effect.runPromise(
+  runHost(
     Effect.gen(function* () {
       const file: StaleCacheFile = {
         version: 1,
@@ -125,7 +138,7 @@ interface StalePlanFile {
 }
 
 const saveStalePlan = (plan: StalePlanFile): Promise<void> =>
-  Effect.runPromise(
+  runHost(
     Effect.gen(function* () {
       yield* fromPromise(() => mkdir(".tmp", { recursive: true }));
       yield* fromPromise(() => writeFile(PLAN_PATH, JSON.stringify(plan)));
@@ -133,10 +146,10 @@ const saveStalePlan = (plan: StalePlanFile): Promise<void> =>
   );
 
 const loadStalePlan = (): Promise<StalePlanFile | undefined> =>
-  Effect.runPromise(
+  runHost(
     Effect.gen(function* () {
       const text = yield* fromPromise(() => readFile(PLAN_PATH, "utf8")).pipe(
-        Effect.catch(() => Effect.succeed(undefined as string | undefined)),
+        Effect.orElseSucceed(() => undefined),
       );
       if (text === undefined) {
         return undefined;
@@ -265,23 +278,21 @@ export const staleStatusCommand = Command.make(
         .filter(([, value]) => !value)
         .map(([key]) => key);
       if (missing.length > 0) {
-        return yield* Effect.fail(
-          new Error(
-            `Missing MangaDex credentials: ${missing.join(", ")}. Pass them as flags or set MANGADEX_*.`,
-          ),
+        return yield* cliError(
+          `Missing MangaDex credentials: ${missing.join(", ")}. Pass them as flags or set MANGADEX_*.`,
         );
       }
 
       const olderThanMs = parseDurationMs(olderThan);
       if (olderThanMs === undefined || olderThanMs <= 0) {
-        return yield* Effect.fail(
-          new Error(`Invalid --older-than "${olderThan}". Use forms like 90, 90d, 12w, 6mo, 2y.`),
+        return yield* cliError(
+          `Invalid --older-than "${olderThan}". Use forms like 90, 90d, 12w, 6mo, 2y.`,
         );
       }
       // SAFETY: value matches MangaDexReadingStatus)) at this call site
       if (!VALID_STATUSES.includes(to as MangaDexReadingStatus)) {
-        return yield* Effect.fail(
-          new Error(`Invalid --to "${to}". Choose one of: ${VALID_STATUSES.join(", ")}.`),
+        return yield* cliError(
+          `Invalid --to "${to}". Choose one of: ${VALID_STATUSES.join(", ")}.`,
         );
       }
       const fromStatuses = parseList(from);
@@ -290,10 +301,8 @@ export const staleStatusCommand = Command.make(
         (status) => !VALID_STATUSES.includes(status as MangaDexReadingStatus),
       );
       if (invalidFrom.length > 0) {
-        return yield* Effect.fail(
-          new Error(
-            `Invalid --from values: ${invalidFrom.join(", ")}. Choose from: ${VALID_STATUSES.join(", ")}.`,
-          ),
+        return yield* cliError(
+          `Invalid --from values: ${invalidFrom.join(", ")}. Choose from: ${VALID_STATUSES.join(", ")}.`,
         );
       }
       const cutoffIso = new Date(epochMillisNow() - olderThanMs).toISOString();
@@ -324,7 +333,7 @@ export const staleStatusCommand = Command.make(
           const fetchStatusesTask: ListrTask<StaleCtx> = {
             title: "Fetch library statuses",
             task: async (ctx, task) => {
-              ctx.statuses = await Effect.runPromise(client.readingStatuses());
+              ctx.statuses = await runHost(client.readingStatuses());
               makePhaseReporter(task).note(
                 `❖ ${Object.keys(ctx.statuses).length} library entries with a status.`,
               );
@@ -367,7 +376,7 @@ export const staleStatusCommand = Command.make(
               let sweepComplete = false;
               try {
                 while (true) {
-                  const page = await Effect.runPromise(
+                  const page = await runHost(
                     client.followedFeed({ publishedAtSince: cutoff, limit: 500, offset }),
                   );
                   for (const chapter of page.items) {
@@ -407,9 +416,7 @@ export const staleStatusCommand = Command.make(
               if (sweepComplete) {
                 offset = 0;
                 while (true) {
-                  const page = await Effect.runPromise(
-                    client.followedManga({ limit: 100, offset }),
-                  );
+                  const page = await runHost(client.followedManga({ limit: 100, offset }));
                   for (const manga of page.items) {
                     followed.add(manga.id);
                   }
@@ -452,7 +459,7 @@ export const staleStatusCommand = Command.make(
               }
 
               for (const id of unverified) {
-                const chapter = await Effect.runPromise(client.latestChapterSince(id, cutoff));
+                const chapter = await runHost(client.latestChapterSince(id, cutoff));
                 requests += 1;
                 if (chapter?.publishedAt !== undefined) {
                   fresh.add(id);
@@ -477,7 +484,7 @@ export const staleStatusCommand = Command.make(
               const titles: Record<string, string> = {};
               for (let start = 0; start < staleIds.length; start += TITLE_BATCH_SIZE) {
                 const batch = staleIds.slice(start, start + TITLE_BATCH_SIZE);
-                const page = await Effect.runPromise(
+                const page = await runHost(
                   client.listManga({
                     ids: batch,
                     contentRating: [...MANGADEX_CONTENT_RATINGS],
@@ -509,14 +516,14 @@ export const staleStatusCommand = Command.make(
               const reporter = makePhaseReporter(task);
               const plan = await loadStalePlan();
               if (!plan) {
-                throw new Error(`No saved plan at ${PLAN_PATH}. Run a dry run first.`);
+                throw cliError(`No saved plan at ${PLAN_PATH}. Run a dry run first.`);
               }
               if (
                 plan.to !== targetStatus ||
                 plan.olderThan !== olderThan ||
                 plan.from.join(",") !== fromStatuses.join(",")
               ) {
-                throw new Error(
+                throw cliError(
                   `Saved plan (${plan.olderThan}, ${plan.from.join(",")} → ${plan.to}) does not match these flags. Re-run a dry run first.`,
                 );
               }
@@ -541,16 +548,14 @@ export const staleStatusCommand = Command.make(
                     let done = 0;
                     for (const mangaId of ctx.staleIds) {
                       try {
-                        await Effect.runPromise(client.updateReadingStatus(mangaId, targetStatus));
+                        await runHost(client.updateReadingStatus(mangaId, targetStatus));
                       } catch (cause) {
                         const msg = errorMessage(cause);
                         const isAuth = isJsonObject(cause) && numberField(cause, "status") === 401;
                         if (isAuth) {
                           try {
                             await refreshClient();
-                            await Effect.runPromise(
-                              client.updateReadingStatus(mangaId, targetStatus),
-                            );
+                            await runHost(client.updateReadingStatus(mangaId, targetStatus));
                             done += 1;
                             reporter.progress(done, ctx.staleIds.length, [
                               ["failed", failures.length],
@@ -615,7 +620,7 @@ export const staleStatusCommand = Command.make(
             throw error;
           }
         },
-        catch: (cause) => new Error(errorMessage(cause)),
+        catch: (cause) => cliError(errorMessage(cause)),
       }).pipe(Effect.onError(() => Effect.sync(abortFrame)));
     }),
 ).pipe(

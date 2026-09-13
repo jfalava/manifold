@@ -1,4 +1,5 @@
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
 /** @effect-diagnostics schemaSync:off */
 import { describe, expect, it } from "vitest";
 import {
