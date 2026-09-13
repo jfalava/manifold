@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect";
 import { MalBackupIdentity, type ListStatus, type RegistryEntry } from "@manifold/contract";
 import type { CanonicalSearchResult, CanonicalSearchSource } from "@manifold/canonical";
 import { createMyAnimeListSource } from "@manifold/canonical/sources";
-import { errorMessage, manifoldUserAgent } from "@manifold/json";
+import { manifoldUserAgent } from "@manifold/json";
 import {
   cosineSimilarity,
   embedMangaTitles,
@@ -12,6 +12,7 @@ import {
   VECTOR_ACCEPT_SCORE,
 } from "./mangadex-match";
 import type { Env } from "./types";
+import { apiError, fromPromise } from "./manifold-sync/from-promise";
 
 export const MalBackupPayload = Schema.Struct({
   entryId: Schema.NonEmptyString,
@@ -98,7 +99,7 @@ export const resolveMalBackup = (
       const observed = identity?.anilistId === anilistId ? identity : undefined;
       if (observed?.malId) {
         if (!/^[1-9]\d*$/.test(observed.malId)) {
-          return yield* Effect.fail(new Error("Invalid AniList MAL cross-link"));
+          return yield* apiError("Invalid AniList MAL cross-link");
         }
         return { externalId: observed.malId, method: "anilist-id" as const };
       }
@@ -125,16 +126,14 @@ export const resolveMalBackup = (
         return exact;
       }
       if (entries.length === 0) {
-        return yield* Effect.fail(new Error("MAL backup unmatched: no candidates"));
+        return yield* apiError("MAL backup unmatched: no candidates");
       }
-      const vectors = yield* Effect.tryPromise({
-        try: () =>
-          embedMangaTitles(env.AI, [
-            embeddingText(titles),
-            ...entries.map((candidate) => embeddingText([candidate.title, ...candidate.aliases])),
-          ]),
-        catch: (cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause))),
-      });
+      const vectors = yield* fromPromise(() =>
+        embedMangaTitles(env.AI, [
+          embeddingText(titles),
+          ...entries.map((candidate) => embeddingText([candidate.title, ...candidate.aliases])),
+        ]),
+      );
       const query = vectors[0] ?? [];
       const match = chooseMalMatch(
         titles,
@@ -144,7 +143,7 @@ export const resolveMalBackup = (
         })),
       );
       if (!match) {
-        return yield* Effect.fail(new Error("MAL backup ambiguous: no unique confident match"));
+        return yield* apiError("MAL backup ambiguous: no unique confident match");
       }
       return match;
     }),
@@ -159,27 +158,25 @@ export const writeMalBackupStatus = (
   Effect.runPromise(
     Effect.gen(function* () {
       if (!/^[1-9]\d*$/.test(externalId)) {
-        return yield* Effect.fail(new Error("Invalid MAL manga id"));
+        return yield* apiError("Invalid MAL manga id");
       }
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          platformFetch(`https://api.myanimelist.net/v2/manga/${externalId}/my_list_status`, {
-            method: "PATCH",
-            headers: {
-              authorization: `Bearer ${accessToken}`,
-              "content-type": "application/x-www-form-urlencoded",
-              "user-agent": manifoldUserAgent("api"),
-            },
-            body: new URLSearchParams({
-              status: status === "re_reading" ? "reading" : status,
-              is_rereading: String(status === "re_reading"),
-            }),
-            signal: AbortSignal.timeout(15_000),
+      const response = yield* fromPromise(() =>
+        platformFetch(`https://api.myanimelist.net/v2/manga/${externalId}/my_list_status`, {
+          method: "PATCH",
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            "content-type": "application/x-www-form-urlencoded",
+            "user-agent": manifoldUserAgent("api"),
+          },
+          body: new URLSearchParams({
+            status: status === "re_reading" ? "reading" : status,
+            is_rereading: String(status === "re_reading"),
           }),
-        catch: (cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause))),
-      });
+          signal: AbortSignal.timeout(15_000),
+        }),
+      );
       if (!response.ok) {
-        return yield* Effect.fail(new Error(`MAL backup status failed: HTTP ${response.status}`));
+        return yield* apiError(`MAL backup status failed: HTTP ${response.status}`);
       }
     }),
   );

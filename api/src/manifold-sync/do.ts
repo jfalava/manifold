@@ -98,15 +98,18 @@ export class ManifoldSync extends DurableObject<Env> {
 
   /** Host view for free-function modules (shares mdLibraryCache on this). */
   private host(): SyncHost {
-    const self = this;
+    const getLibraryCache = () => this.mdLibraryCache;
+    const setLibraryCache = (value: ManifoldSync["mdLibraryCache"]): void => {
+      this.mdLibraryCache = value;
+    };
     return {
       ctx: this.ctx,
       env: this.env,
       get mdLibraryCache() {
-        return self.mdLibraryCache;
+        return getLibraryCache();
       },
       set mdLibraryCache(value) {
-        self.mdLibraryCache = value;
+        setLibraryCache(value);
       },
     };
   }

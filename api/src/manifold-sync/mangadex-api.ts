@@ -3,7 +3,7 @@ import { getAuthAccessToken } from "./auth";
 import type { SyncHost } from "./host";
 import { now, MD_LIBRARY_TTL_MS } from "./constants";
 import { epochMillisNow } from "../effect-host";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { fromPromise } from "./from-promise";
 import { manifoldUserAgent } from "@manifold/json";
 import { createMangaDexClient, type MangaDexChapter, type MangaDexPaged } from "@manifold/mangadex";
@@ -24,10 +24,9 @@ import {
   type MdFeedStatsPayload,
 } from "../mangadex-stats";
 
-const mangaDexStatsEffect = (
-  host: SyncHost,
-  mangaDexIds: readonly string[],
-): Effect.Effect<Record<string, MangaDexEntryStat>, unknown> =>
+const JsonString = Schema.fromJsonString(Schema.Unknown);
+
+const mangaDexStatsEffect = (host: SyncHost, mangaDexIds: readonly string[]) =>
   Effect.gen(function* () {
     const wanted = [...new Set(mangaDexIds)].filter((id) => id.length > 0).slice(0, 200);
     if (wanted.length === 0) {
@@ -88,7 +87,7 @@ const mangaDexStatsEffect = (
        VALUES (?, ?, ?)
        ON CONFLICT(manga_id) DO UPDATE SET payload = excluded.payload, computed_at = excluded.computed_at`,
         mangaDexId,
-        JSON.stringify(payload),
+        yield* Schema.encodeEffect(JsonString)(payload),
         now(),
       );
       meta.set(mangaDexId, payload);
@@ -133,10 +132,7 @@ export const mangaDexStats = (
 ): Promise<Record<string, MangaDexEntryStat>> =>
   Effect.runPromise(mangaDexStatsEffect(host, mangaDexIds));
 
-const mangaDexLibraryEffect = (
-  host: SyncHost,
-  status?: string,
-): Effect.Effect<readonly MangaDexLibraryItem[], unknown> =>
+const mangaDexLibraryEffect = (host: SyncHost, status?: string) =>
   Effect.gen(function* () {
     const accessToken = yield* fromPromise(() => getAuthAccessToken(host, "mangadex"));
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
@@ -153,9 +149,7 @@ const mangaDexLibraryEffect = (
     // Helper to attach fresh ratings to a base library snapshot (statuses +
     // titles + covers). Ratings are always fetched live so the "has rating"
     // badge never goes stale inside the 24h library cache.
-    const attachRatings = (
-      base: readonly MangaDexLibraryItem[],
-    ): Effect.Effect<readonly MangaDexLibraryItem[], unknown> =>
+    const attachRatings = (base: readonly MangaDexLibraryItem[]) =>
       Effect.gen(function* () {
         if (base.length === 0) {
           return base;
@@ -183,7 +177,7 @@ const mangaDexLibraryEffect = (
     const hydrate = (
       statuses: Readonly<Record<string, string>>,
       options?: { readonly seed?: readonly MangaDexLibraryItem[] },
-    ): Effect.Effect<readonly MangaDexLibraryItem[], unknown> =>
+    ) =>
       Effect.gen(function* () {
         const mangaDexIds = Object.keys(statuses);
         const seedById = new Map((options?.seed ?? []).map((row) => [row.mangaDexId, row]));
@@ -296,9 +290,7 @@ export const mangaDexLibrary = (
 ): Promise<readonly MangaDexLibraryItem[]> =>
   Effect.runPromise(mangaDexLibraryEffect(host, status));
 
-const mangaDexLibrarySummaryEffect = (
-  host: SyncHost,
-): Effect.Effect<MangaDexLibrarySummary, unknown> =>
+const mangaDexLibrarySummaryEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     const accessToken = yield* fromPromise(() => getAuthAccessToken(host, "mangadex"));
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
@@ -404,11 +396,7 @@ const mangaDexLibrarySummaryEffect = (
 export const mangaDexLibrarySummary = (host: SyncHost): Promise<MangaDexLibrarySummary> =>
   Effect.runPromise(mangaDexLibrarySummaryEffect(host));
 
-const mangaDexFeedEffect = (
-  host: SyncHost,
-  limit: number,
-  offset: number,
-): Effect.Effect<MangaDexPaged<MangaDexChapter>, unknown> =>
+const mangaDexFeedEffect = (host: SyncHost, limit: number, offset: number) =>
   Effect.gen(function* () {
     const accessToken = yield* fromPromise(() => getAuthAccessToken(host, "mangadex"));
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
@@ -426,7 +414,7 @@ const setMangaDexStatusEffect = (
   host: SyncHost,
   mangaDexId: string,
   input: SetMangaDexStatusInput,
-): Effect.Effect<void, unknown> =>
+) =>
   Effect.gen(function* () {
     const accessToken = yield* fromPromise(() => getAuthAccessToken(host, "mangadex"));
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
@@ -460,9 +448,7 @@ export const entryByProvider = (
     }),
   );
 
-const mangaDexCurrentUserEffect = (
-  host: SyncHost,
-): Effect.Effect<{ id: string; name?: string }, unknown> =>
+const mangaDexCurrentUserEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     const accessToken = yield* fromPromise(() => getAuthAccessToken(host, "mangadex"));
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
@@ -472,10 +458,7 @@ const mangaDexCurrentUserEffect = (
 export const mangaDexCurrentUser = (host: SyncHost): Promise<{ id: string; name?: string }> =>
   Effect.runPromise(mangaDexCurrentUserEffect(host));
 
-const mangaDexReadMarkersEffect = (
-  host: SyncHost,
-  mangaDexId: string,
-): Effect.Effect<readonly string[], unknown> =>
+const mangaDexReadMarkersEffect = (host: SyncHost, mangaDexId: string) =>
   Effect.gen(function* () {
     const accessToken = yield* fromPromise(() => getAuthAccessToken(host, "mangadex"));
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });

@@ -3,7 +3,7 @@ import type { SyncHost } from "./host";
 import { now, SYNC_MAX_ATTEMPTS } from "./constants";
 import { fromPromise } from "./from-promise";
 
-const scheduleSyncEffect = (host: SyncHost, delayMs = 0): Effect.Effect<void, unknown> =>
+const scheduleSyncEffect = (host: SyncHost, delayMs = 0) =>
   Effect.gen(function* () {
     if (host.ctx.storage.kv.get("registry_sync_paused")) {
       return;

@@ -1,4 +1,5 @@
-import { Effect } from "effect";
+/** @effect-diagnostics asyncFunction:off */
+import { Effect, Schema } from "effect";
 import { scheduleSync } from "./schedule";
 import type { SyncHost } from "./host";
 import { now } from "./constants";
@@ -27,7 +28,9 @@ import {
   type RegistryBackup,
 } from "../registry-backup";
 
-const backupRegistryEffect = (host: SyncHost): Effect.Effect<RegistryBackupMetadata, unknown> =>
+const JsonString = Schema.fromJsonString(Schema.Unknown);
+
+const backupRegistryEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     const bucket = host.env.REGISTRY_BACKUPS;
     if (!bucket) {
@@ -36,7 +39,7 @@ const backupRegistryEffect = (host: SyncHost): Effect.Effect<RegistryBackupMetad
     const backup = yield* fromPromise(() => snapshotRegistry(host));
 
     const key = backupKey(backup.createdAt);
-    const body = JSON.stringify(backup);
+    const body = yield* Schema.encodeEffect(JsonString)(backup);
     const size = new TextEncoder().encode(body).byteLength;
     if (size > MAX_REGISTRY_BACKUP_BYTES) {
       throw new Error("Registry backup exceeds the 16 MiB recovery limit");
@@ -61,9 +64,7 @@ const backupRegistryEffect = (host: SyncHost): Effect.Effect<RegistryBackupMetad
 export const backupRegistry = (host: SyncHost): Promise<RegistryBackupMetadata> =>
   Effect.runPromise(backupRegistryEffect(host));
 
-const listBackupsEffect = (
-  host: SyncHost,
-): Effect.Effect<readonly RegistryBackupMetadata[], unknown> =>
+const listBackupsEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     const bucket = host.env.REGISTRY_BACKUPS;
     if (!bucket) {
@@ -115,10 +116,7 @@ const listBackupsEffect = (
 export const listBackups = (host: SyncHost): Promise<readonly RegistryBackupMetadata[]> =>
   Effect.runPromise(listBackupsEffect(host));
 
-const restoreBackupEffect = (
-  host: SyncHost,
-  key: string,
-): Effect.Effect<RegistryBackupMetadata, unknown> =>
+const restoreBackupEffect = (host: SyncHost, key: string) =>
   Effect.gen(function* () {
     if (!isRegistryBackupKey(key)) {
       throw new Error("Invalid registry backup key");
@@ -146,7 +144,7 @@ const restoreBackupEffect = (
 export const restoreBackup = (host: SyncHost, key: string): Promise<RegistryBackupMetadata> =>
   Effect.runPromise(restoreBackupEffect(host, key));
 
-const resumeRegistrySyncEffect = (host: SyncHost): Effect.Effect<void, unknown> =>
+const resumeRegistrySyncEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     host.ctx.storage.kv.delete("registry_sync_paused");
     yield* fromPromise(() => scheduleSync(host));
@@ -155,10 +153,7 @@ const resumeRegistrySyncEffect = (host: SyncHost): Effect.Effect<void, unknown> 
 export const resumeRegistrySync = (host: SyncHost): Promise<void> =>
   Effect.runPromise(resumeRegistrySyncEffect(host));
 
-const validateBackupKeyEffect = (
-  host: SyncHost,
-  backup: RegistryBackup,
-): Effect.Effect<void, unknown> =>
+const validateBackupKeyEffect = (host: SyncHost, backup: RegistryBackup) =>
   Effect.gen(function* () {
     const secret = yield* fromPromise(() =>
       readSecret(
@@ -180,7 +175,7 @@ export function applyRegistryBackup(host: SyncHost, backup: RegistryBackup): voi
   host.mdLibraryCache = undefined;
 }
 
-const snapshotRegistryEffect = (host: SyncHost): Effect.Effect<RegistryBackup, unknown> =>
+const snapshotRegistryEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     const secret = yield* fromPromise(() =>
       readSecret(

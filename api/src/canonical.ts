@@ -1,5 +1,6 @@
 import { hostLogWarn, platformFetch } from "./effect-host";
 import * as Effect from "effect/Effect";
+import { Schema } from "effect";
 import { manifoldUserAgent } from "@manifold/json";
 import type { CanonicalSearchProviderFilter, RegistryEntry } from "@manifold/contract";
 import {
@@ -14,6 +15,8 @@ import type {
   CanonicalSourceError,
 } from "@manifold/canonical";
 import type { Env } from "./types";
+
+const JsonString = Schema.fromJsonString(Schema.Unknown);
 
 export type CanonicalProviderFilter = CanonicalSearchProviderFilter;
 
@@ -148,13 +151,12 @@ export const getRegistryCanonical = (env: Env, entry: RegistryEntry): Promise<Ca
           return { ...outcome.value, id: entry.id };
         }
         if (outcome.error) {
-          hostLogWarn(
-            JSON.stringify({
-              event: "canonical.details.failed",
-              entryId: entry.id,
-              ...outcome.error,
-            }),
-          );
+          const details = yield* Schema.encodeEffect(JsonString)({
+            event: "canonical.details.failed",
+            entryId: entry.id,
+            ...outcome.error,
+          });
+          hostLogWarn(details);
           if (!isUnavailable(outcome.error) && outcome.error.status !== 404) {
             break;
           }

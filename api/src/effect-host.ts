@@ -1,3 +1,4 @@
+/** @effect-diagnostics globalFetch:off */
 import { DateTime, Effect } from "effect";
 
 /** Wall-clock millis for Durable Object / SQL rows (sync host boundary). */

@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { newId } from "./effect-host";
 import {
   isFiniteNumber,
@@ -13,6 +13,8 @@ export const REGISTRY_BACKUP_VERSION = 1 as const;
 // JSON is materialized for transactional restore. Reject larger inputs before
 // parsing rather than exhausting the Worker's memory during recovery.
 export const MAX_REGISTRY_BACKUP_BYTES = 16 * 1024 * 1024;
+
+const JsonString = Schema.fromJsonString(Schema.Unknown);
 
 export const REGISTRY_BACKUP_TABLE_COLUMNS = {
   canonical_entries: [
@@ -271,12 +273,7 @@ export const readBackupBody = (
       ) {
         throw new Error("Registry backup checksum mismatch");
       }
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        throw new Error("Registry backup is not valid JSON");
-      }
+      const parsed = yield* Schema.decodeEffect(JsonString)(text);
       if (!isJsonValue(parsed)) {
         throw new Error("Registry backup is not a JSON value");
       }

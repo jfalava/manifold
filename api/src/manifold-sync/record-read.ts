@@ -9,11 +9,7 @@ import { errorMessage, type JsonObject } from "@manifold/json";
 import type { ReadingProgress, RecordReadInput } from "../domain";
 import { type ProgressRow, shouldAdvanceProgress } from "../sync-rows";
 
-const recordReadEffect = (
-  host: SyncHost,
-  entryId: string,
-  input: RecordReadInput,
-): Effect.Effect<ReadingProgress, unknown> =>
+const recordReadEffect = (host: SyncHost, entryId: string, input: RecordReadInput) =>
   Effect.gen(function* () {
     // Validation can reject after recovery or link observation. Commit those
     // changes together with progress and queued work, or roll all of them back.

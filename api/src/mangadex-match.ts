@@ -10,6 +10,7 @@ import { errorMessage, isFiniteNumber, isString, manifoldUserAgent } from "@mani
 import { createMangaDexClient, type MangaDexManga } from "@manifold/mangadex";
 import type { Ai, VectorizeIndex } from "@cloudflare/workers-types";
 import type { Env } from "./types";
+import { apiError, fromPromise } from "./manifold-sync/from-promise";
 
 export type {
   MangaDexMatchInput,
@@ -309,10 +310,7 @@ const uniqueManga = (values: readonly MangaDexManga[]): MangaDexManga[] => {
 // below a hundred titles, so candidate embeddings go out in small batches.
 const EMBED_BATCH_SIZE = 16;
 
-const embedMangaTitlesEffect = (
-  ai: Ai,
-  texts: readonly string[],
-): Effect.Effect<readonly number[][], Error> =>
+const embedMangaTitlesEffect = (ai: Ai, texts: readonly string[]) =>
   Effect.gen(function* () {
     if (texts.length === 0) {
       return [];
@@ -320,15 +318,10 @@ const embedMangaTitlesEffect = (
     const vectors: number[][] = [];
     for (let index = 0; index < texts.length; index += EMBED_BATCH_SIZE) {
       const chunk = [...texts].slice(index, index + EMBED_BATCH_SIZE);
-      const result = yield* Effect.tryPromise({
-        try: () => ai.run(MANGADEX_EMBEDDING_MODEL, { text: chunk }),
-        catch: (cause) => (cause instanceof Error ? cause : new Error(errorMessage(cause))),
-      });
+      const result = yield* fromPromise(() => ai.run(MANGADEX_EMBEDDING_MODEL, { text: chunk }));
       const data = result.data ?? [];
       if (data.length !== chunk.length || data.some((vector) => vector.length === 0)) {
-        return yield* Effect.fail(
-          new Error("Workers AI returned an invalid MangaDex embedding response"),
-        );
+        return yield* apiError("Workers AI returned an invalid MangaDex embedding response");
       }
       vectors.push(...data);
     }
@@ -353,18 +346,16 @@ const queryIndex = (
   entry: MangaDexMatchInput,
 ): Effect.Effect<readonly RankedMangaDexCandidate[]> =>
   Effect.gen(function* () {
-    const exactCandidates = yield* Effect.tryPromise({
-      try: () =>
-        index.query([...vector], {
-          topK: 1,
-          filter:
-            entry.provider === "anilist"
-              ? { anilistId: entry.providerId }
-              : { malId: entry.providerId },
-          returnMetadata: "all",
-        }),
-      catch: (cause) => cause,
-    }).pipe(
+    const exactCandidates = yield* fromPromise(() =>
+      index.query([...vector], {
+        topK: 1,
+        filter:
+          entry.provider === "anilist"
+            ? { anilistId: entry.providerId }
+            : { malId: entry.providerId },
+        returnMetadata: "all",
+      }),
+    ).pipe(
       Effect.map((exact) => indexedCandidates(exact.matches)),
       Effect.tapError((error) =>
         Effect.sync(() => {
@@ -377,14 +368,12 @@ const queryIndex = (
       return exactCandidates;
     }
 
-    return yield* Effect.tryPromise({
-      try: () =>
-        index.query([...vector], {
-          topK: VECTOR_TOP_K,
-          returnMetadata: "all",
-        }),
-      catch: (cause) => cause,
-    }).pipe(
+    return yield* fromPromise(() =>
+      index.query([...vector], {
+        topK: VECTOR_TOP_K,
+        returnMetadata: "all",
+      }),
+    ).pipe(
       Effect.map((matches) => indexedCandidates(matches.matches)),
       Effect.tapError((error) =>
         Effect.sync(() => {
@@ -395,9 +384,7 @@ const queryIndex = (
     );
   });
 
-const searchMangaDex = (
-  entry: MangaDexMatchInput,
-): Effect.Effect<readonly MangaDexManga[], Error> =>
+const searchMangaDex = (entry: MangaDexMatchInput) =>
   Effect.gen(function* () {
     const client = createMangaDexClient({
       limit: MATCH_CANDIDATE_LIMIT,
@@ -409,14 +396,14 @@ const searchMangaDex = (
     // reason AniList Worker egress is blocked. Slower per resolve, but every
     // term actually gets answered.
     const searched: MangaDexManga[] = [];
-    let lastError: Error | undefined;
+    let lastError: string | undefined;
     for (const term of terms) {
       const outcome = yield* client.search(term).pipe(
         Effect.match({
           onSuccess: (results) => ({ ok: true as const, results }),
           onFailure: (error) => ({
             ok: false as const,
-            error: error instanceof Error ? error : new Error(errorMessage(error)),
+            error: errorMessage(error),
           }),
         }),
       );
@@ -427,7 +414,7 @@ const searchMangaDex = (
       }
     }
     if (searched.length === 0 && lastError !== undefined) {
-      return yield* Effect.fail(lastError);
+      return yield* apiError(lastError);
     }
     return uniqueManga(searched);
   });
@@ -455,7 +442,7 @@ export const resolveMangaDex = (
     Effect.gen(function* () {
       const entry = input;
       const sync = env.MANIFOLD_SYNC.getByName("default");
-      const existing = yield* Effect.promise(() => sync.getEntry(entry.id));
+      const existing = yield* fromPromise(() => sync.getEntry(entry.id));
       const cached = existing?.providers.find((provider) => provider.provider === "mangadex");
       if (cached) {
         return cachedResult(entry, cached.externalId, cached.title);
@@ -469,7 +456,7 @@ export const resolveMangaDex = (
         buildCanonicalEmbeddingText(entry),
       ]))[0];
       if (!queryVector) {
-        return yield* Effect.fail(new Error("Workers AI returned no MangaDex query embedding"));
+        return yield* apiError("Workers AI returned no MangaDex query embedding");
       }
 
       const indexed = yield* queryIndex(env.MANGADEX_INDEX, queryVector, entry);
@@ -486,18 +473,16 @@ export const resolveMangaDex = (
       );
 
       if (input.persistSearchResults !== false) {
-        yield* Effect.tryPromise({
-          try: () =>
-            env.MANGADEX_INDEX.upsert(
-              searched.flatMap((manga, index) => {
-                const values = fresh[index];
-                return values
-                  ? [{ id: `mangadex:${manga.id}`, values, metadata: vectorMetadata(manga) }]
-                  : [];
-              }),
-            ),
-          catch: (cause) => cause,
-        }).pipe(
+        yield* fromPromise(() =>
+          env.MANGADEX_INDEX.upsert(
+            searched.flatMap((manga, index) => {
+              const values = fresh[index];
+              return values
+                ? [{ id: `mangadex:${manga.id}`, values, metadata: vectorMetadata(manga) }]
+                : [];
+            }),
+          ),
+        ).pipe(
           Effect.tapError((error) =>
             Effect.sync(() => {
               hostLogWarn(`[MangaDexMatch] Vectorize upsert failed: ${errorMessage(error)}`);

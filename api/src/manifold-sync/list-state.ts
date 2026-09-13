@@ -11,11 +11,7 @@ import { createAniListListStateOpPayload } from "../list-state-op";
 import { MalBackupPayload } from "../mal-backup";
 import { type ListEventRow, type OpRow, toListEvent } from "../sync-rows";
 
-const setListStateEffect = (
-  host: SyncHost,
-  entryId: string,
-  input: SetListStateInput,
-): Effect.Effect<ListState, unknown> =>
+const setListStateEffect = (host: SyncHost, entryId: string, input: SetListStateInput) =>
   Effect.gen(function* () {
     const changes = input;
     requireEntry(host, entryId);

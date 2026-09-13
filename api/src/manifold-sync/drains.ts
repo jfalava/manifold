@@ -16,9 +16,11 @@ import {
 } from "./constants";
 import type { SyncHost } from "./host";
 import { getEntry } from "./registry-crud";
-import { fromPromise } from "./from-promise";
+import { apiError, fromPromise } from "./from-promise";
 import { scheduleSync } from "./schedule";
 import { appendEvent, readEntry, readListState } from "./sql-helpers";
+
+const JsonString = Schema.fromJsonString(Schema.Unknown);
 
 export const failShelfEntry = (
   host: SyncHost,
@@ -82,15 +84,10 @@ const drainMalBackupsEffect = (host: SyncHost): Effect.Effect<void> =>
       .toArray();
     for (const row of rows) {
       yield* Effect.gen(function* () {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(row.payload);
-        } catch {
-          return yield* Effect.fail(new Error("Invalid mal backup payload"));
-        }
+        const parsed = yield* Schema.decodeEffect(JsonString)(row.payload);
         const decodedPayload = Schema.decodeUnknownOption(MalBackupPayload)(parsed);
         if (Option.isNone(decodedPayload)) {
-          return yield* Effect.fail(new Error("Invalid mal backup payload"));
+          return yield* apiError("Invalid mal backup payload");
         }
         const payload = decodedPayload.value;
         const entry = readMalBackupEntry(host, payload.entryId);
@@ -112,18 +109,16 @@ const drainMalBackupsEffect = (host: SyncHost): Effect.Effect<void> =>
           if (current && status) {
             const existing = current.providers.find((link) => link.provider === "mal");
             if (match.method === "binding" && !existing) {
-              return yield* Effect.fail(new Error("MAL backup binding removed during resolution"));
+              return yield* apiError("MAL backup binding removed during resolution");
             }
             if (
               current.providers.find((link) => link.provider === "anilist")?.externalId !==
               entry.providers.find((link) => link.provider === "anilist")?.externalId
             ) {
-              return yield* Effect.fail(
-                new Error("AniList identity changed during MAL resolution"),
-              );
+              return yield* apiError("AniList identity changed during MAL resolution");
             }
             if (existing && existing.externalId !== match.externalId) {
-              return yield* Effect.fail(new Error("MAL backup binding changed during resolution"));
+              return yield* apiError("MAL backup binding changed during resolution");
             }
             const owner = host.ctx.storage.sql
               .exec<{ entry_id: string }>(
@@ -133,9 +128,7 @@ const drainMalBackupsEffect = (host: SyncHost): Effect.Effect<void> =>
               )
               .toArray()[0];
             if (owner) {
-              return yield* Effect.fail(
-                new Error("MAL backup match already belongs to another registry entry"),
-              );
+              return yield* apiError("MAL backup match already belongs to another registry entry");
             }
             if (!existing) {
               // Unlike manual linkProvider, automatic backups must never steal
@@ -172,10 +165,7 @@ const drainMalBackupsEffect = (host: SyncHost): Effect.Effect<void> =>
 export const drainMalBackups = (host: SyncHost): Promise<void> =>
   Effect.runPromise(drainMalBackupsEffect(host));
 
-const drainMangaDexOutboxEffect = (
-  host: SyncHost,
-  rows: readonly OpRow[],
-): Effect.Effect<void, unknown> =>
+const drainMangaDexOutboxEffect = (host: SyncHost, rows: readonly OpRow[]) =>
   Effect.gen(function* () {
     const accessToken = yield* fromPromise(() => getAuthAccessToken(host, "mangadex"));
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
@@ -197,9 +187,7 @@ const drainMangaDexOutboxEffect = (
           (provider) => provider.provider === "mangadex",
         )?.externalId;
         if (!mangaDexId) {
-          return yield* Effect.fail(
-            new Error(`No MangaDex provider link for entry ${group.entryId}`),
-          );
+          return yield* apiError(`No MangaDex provider link for entry ${group.entryId}`);
         }
         yield* client.markChaptersRead(mangaDexId, [...group.chapters]);
         for (const row of group.rows) {
@@ -287,7 +275,7 @@ const drainMangaDexStatusQueueEffect = (host: SyncHost): Effect.Effect<void> =>
 export const drainMangaDexStatusQueue = (host: SyncHost): Promise<void> =>
   Effect.runPromise(drainMangaDexStatusQueueEffect(host));
 
-const alarmEffect = (host: SyncHost): Effect.Effect<void, unknown> =>
+const alarmEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     if (host.ctx.storage.kv.get("registry_sync_paused")) {
       return;

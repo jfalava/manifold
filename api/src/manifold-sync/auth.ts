@@ -20,7 +20,7 @@ import { readSecret } from "../read-secret";
 import { type OAuthSessionRow, type OAuthTokenRow } from "../sync-rows";
 import { decryptToken, encryptToken } from "../token-crypto";
 import { now, SYNC_MAX_ATTEMPTS } from "./constants";
-import { fromPromise } from "./from-promise";
+import { apiError, fromPromise } from "./from-promise";
 import type { SyncHost } from "./host";
 import { scheduleSync } from "./schedule";
 
@@ -29,7 +29,7 @@ const createOAuthSessionEffect = (
   provider: OAuthProvider,
   redirectUri: string,
   returnPath?: string,
-): Effect.Effect<OAuthStart, unknown> =>
+) =>
   Effect.gen(function* () {
     const config = yield* fromPromise(() => getOAuthClientConfig(provider, host.env));
     const state = createRandomValue();
@@ -72,7 +72,7 @@ const completeOAuthSessionEffect = (
   provider: OAuthProvider,
   state: string,
   code: string,
-): Effect.Effect<AuthConnection & { readonly returnPath?: string }, unknown> =>
+) =>
   Effect.gen(function* () {
     const session = host.ctx.storage.sql
       .exec<OAuthSessionRow>(
@@ -85,7 +85,7 @@ const completeOAuthSessionEffect = (
       .toArray()[0];
 
     if (!session) {
-      return yield* Effect.fail(new Error("OAuth session is invalid or expired"));
+      return yield* apiError("OAuth session is invalid or expired");
     }
 
     const returnPath = session.return_path ?? undefined;
@@ -122,9 +122,7 @@ const completeOAuthSessionEffect = (
       }),
     );
     if (!response.ok) {
-      return yield* Effect.fail(
-        new Error(`OAuth token exchange failed for ${provider} (${response.status})`),
-      );
+      return yield* apiError(`OAuth token exchange failed for ${provider} (${response.status})`);
     }
 
     const body = yield* fromPromise(() => response.json());
@@ -170,7 +168,7 @@ export const cancelOAuthSession = (
 ): Promise<{ readonly returnPath?: string }> =>
   Effect.runPromise(cancelOAuthSessionEffect(host, provider, state));
 
-const loginMangaDexEffect = (host: SyncHost): Effect.Effect<AuthConnection, unknown> =>
+const loginMangaDexEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     const clientSecret = yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_MANGADEX_CLIENT_SECRET, "MANIFOLD_MANGADEX_CLIENT_SECRET"),
@@ -200,8 +198,8 @@ const loginMangaDexEffect = (host: SyncHost): Effect.Effect<AuthConnection, unkn
     );
     if (!response.ok) {
       const detail = (yield* fromPromise(() => response.text())).trim().slice(0, 500);
-      return yield* Effect.fail(
-        new Error(`MangaDex login failed (${response.status})` + (detail ? `: ${detail}` : "")),
+      return yield* apiError(
+        `MangaDex login failed (${response.status})` + (detail ? `: ${detail}` : ""),
       );
     }
 
@@ -237,14 +235,14 @@ const importAuthTokenEffect = (
   provider: AuthProvider,
   accessToken: string,
   expiresIn?: number,
-): Effect.Effect<AuthConnection, unknown> =>
+) =>
   Effect.gen(function* () {
     const token = accessToken.trim();
     if (!token) {
-      return yield* Effect.fail(new Error("Access token is empty"));
+      return yield* apiError("Access token is empty");
     }
     if (provider !== "anilist" && provider !== "mal") {
-      return yield* Effect.fail(new Error(`Token import is not supported for ${provider}`));
+      return yield* apiError(`Token import is not supported for ${provider}`);
     }
     const payload: {
       readonly access_token: string;
@@ -285,21 +283,18 @@ export const disconnectAuth = (host: SyncHost, provider: AuthProvider): Promise<
     }),
   );
 
-const getAuthAccessTokenEffect = (
-  host: SyncHost,
-  provider: AuthProvider,
-): Effect.Effect<string, unknown> =>
+const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
   Effect.gen(function* () {
     const row = readAuthToken(host, provider);
     if (!row) {
-      return yield* Effect.fail(new Error(`Auth provider is not connected: ${provider}`));
+      return yield* apiError(`Auth provider is not connected: ${provider}`);
     }
 
     if (row.expires_at === null || row.expires_at > now() + 30_000) {
       return yield* fromPromise(() => decryptToken(host.env, row.access_token));
     }
     if (!row.refresh_token) {
-      return yield* Effect.fail(new Error(`Auth provider requires reauthorization: ${provider}`));
+      return yield* apiError(`Auth provider requires reauthorization: ${provider}`);
     }
 
     const refreshToken = yield* fromPromise(() => decryptToken(host.env, row.refresh_token!));
@@ -347,11 +342,9 @@ const getAuthAccessTokenEffect = (
     );
     if (!response.ok) {
       const detail = (yield* fromPromise(() => response.text())).trim().slice(0, 500);
-      return yield* Effect.fail(
-        new Error(
-          `Auth token refresh failed for ${provider} (${response.status})` +
-            (detail ? `: ${detail}` : ""),
-        ),
+      return yield* apiError(
+        `Auth token refresh failed for ${provider} (${response.status})` +
+          (detail ? `: ${detail}` : ""),
       );
     }
 
@@ -361,9 +354,7 @@ const getAuthAccessTokenEffect = (
     const latest = readAuthToken(host, provider);
     if (!latest || latest.updated_at !== row.updated_at) {
       if (!latest) {
-        return yield* Effect.fail(
-          new Error(`Auth provider disconnected during refresh: ${provider}`),
-        );
+        return yield* apiError(`Auth provider disconnected during refresh: ${provider}`);
       }
       return yield* fromPromise(() => decryptToken(host.env, latest.access_token));
     }
@@ -397,11 +388,7 @@ const getAuthAccessTokenEffect = (
 export const getAuthAccessToken = (host: SyncHost, provider: AuthProvider): Promise<string> =>
   Effect.runPromise(getAuthAccessTokenEffect(host, provider));
 
-const persistTokenEffect = (
-  host: SyncHost,
-  provider: AuthProvider,
-  token: OAuthTokenResponse,
-): Effect.Effect<AuthConnection, unknown> =>
+const persistTokenEffect = (host: SyncHost, provider: AuthProvider, token: OAuthTokenResponse) =>
   Effect.gen(function* () {
     const timestamp = now();
     const encryptedAccessToken = yield* fromPromise(() =>

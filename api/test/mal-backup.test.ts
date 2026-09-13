@@ -106,7 +106,7 @@ describe("MAL backup matching", () => {
     const terms: string[] = [];
     const source: CanonicalSearchSource = {
       provider: "mal",
-      getById: () => Effect.succeed(undefined),
+      getById: () => Effect.as(Effect.void, undefined),
       search: (term) => {
         terms.push(term);
         return Effect.succeed([candidate("7", "Other display title", ["日本語"])]);
@@ -130,7 +130,7 @@ describe("MAL backup matching", () => {
     const terms: string[] = [];
     const source: CanonicalSearchSource = {
       provider: "mal",
-      getById: () => Effect.succeed(undefined),
+      getById: () => Effect.as(Effect.void, undefined),
       search: (term) => {
         terms.push(term);
         return Effect.succeed([]);
@@ -154,7 +154,7 @@ describe("MAL backup matching", () => {
   it("never accepts a partial search after an alias request fails", async () => {
     const source: CanonicalSearchSource = {
       provider: "mal",
-      getById: () => Effect.succeed(undefined),
+      getById: () => Effect.as(Effect.void, undefined),
       search: (term) =>
         term === "English title"
           ? Effect.succeed([candidate("7", "English title")])

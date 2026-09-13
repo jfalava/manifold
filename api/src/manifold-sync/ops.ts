@@ -12,7 +12,7 @@ export function listPendingSync(host: SyncHost): readonly SyncOp[] {
   return readOps(host, "mangadex", "pending");
 }
 
-const retryFailedSyncEffect = (host: SyncHost): Effect.Effect<{ retried: number }, unknown> =>
+const retryFailedSyncEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     const timestamp = now();
     host.ctx.storage.sql.exec(
@@ -96,7 +96,7 @@ export function completeOps(host: SyncHost, input: CompleteOpsInput) {
   return { updated };
 }
 
-const retryOpEffect = (host: SyncHost, opId: string): Effect.Effect<SyncOp | undefined, unknown> =>
+const retryOpEffect = (host: SyncHost, opId: string) =>
   Effect.gen(function* () {
     const timestamp = now();
     host.ctx.storage.sql.exec(
@@ -210,9 +210,7 @@ export function opsSummary(host: SyncHost, limit = 200): OpsSummary {
   };
 }
 
-const backfillMangaDexShelfEffect = (
-  host: SyncHost,
-): Effect.Effect<{ enqueued: number }, unknown> =>
+const backfillMangaDexShelfEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     const enqueued =
       host.ctx.storage.sql.exec<{ count: number }>(
