@@ -14,11 +14,21 @@ if [[ -d "$BUN_INSTALL/bin" ]]; then
   esac
 fi
 
-# Repair workspace dependencies only if node_modules is missing entirely
-# (setup normally guarantees it; a wiped workspace is the only expected gap).
+# Repair workspace dependencies when the install or its executable links are
+# missing. A warm snapshot may have node_modules but no root/workspace shims.
+workspace_tools_ready() {
+  [[ -x "$repo_root/node_modules/.bin/effect-tsgo" ]] &&
+    [[ -x "$repo_root/admin/node_modules/.bin/vp" ]] &&
+    [[ -x "$repo_root/admin/node_modules/.bin/tsc" ]]
+}
+
 if [[ ! -d "$repo_root/node_modules" ]]; then
   cd "$repo_root"
   bun install --frozen-lockfile
+elif ! workspace_tools_ready; then
+  cd "$repo_root"
+  bun install --frozen-lockfile --ignore-scripts
+  bun run prepare
 fi
 
 printf '[resume] manifold orb ready (bun %s)\n' "$(command -v bun >/dev/null 2>&1 && bun --version || echo missing)"
