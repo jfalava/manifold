@@ -6,7 +6,6 @@
 /** @effect-diagnostics globalTimers:off */
 import { isJsonObject, isNumberValue, isStringValue } from "./guards";
 import type { MangaDexLibraryItem, MangaDexReadingStatus } from "./mangadex";
-import { trusted } from "./trusted-cast";
 
 const DB_NAME = "manifold-admin-mangadex";
 const DB_VERSION = 1;
@@ -70,7 +69,7 @@ const isSnapshotMeta = (value: unknown): value is MangaDexLibrarySnapshotMeta =>
 
 const readAllEntries = async (store: IDBObjectStore): Promise<MangaDexLibraryItem[]> => {
   // SAFETY: IDBRequest.result is typed any; owned store writes MangaDexLibraryItem rows only.
-  const raw = trusted<unknown>(await requestToPromise(store.getAll()));
+  const raw: unknown = await requestToPromise(store.getAll());
   if (!Array.isArray(raw)) {
     return [];
   }
@@ -86,9 +85,7 @@ export async function readMangaDexLibraryCache(): Promise<{
     const tx = db.transaction([STORE_ENTRIES, STORE_META], "readonly");
     const items = await readAllEntries(tx.objectStore(STORE_ENTRIES));
     // SAFETY: IDBRequest.result is typed any; meta store only holds MangaDexLibrarySnapshotMeta.
-    const metaRaw = trusted<unknown>(
-      await requestToPromise(tx.objectStore(STORE_META).get(META_SNAPSHOT)),
-    );
+    const metaRaw: unknown = await requestToPromise(tx.objectStore(STORE_META).get(META_SNAPSHOT));
     const meta = isSnapshotMeta(metaRaw) ? metaRaw : undefined;
     await txDone(tx);
     return { items, meta };
@@ -181,7 +178,7 @@ export async function patchMangaDexLibraryEntry(
     const tx = db.transaction(STORE_ENTRIES, "readwrite");
     const store = tx.objectStore(STORE_ENTRIES);
     // SAFETY: IDBRequest.result is typed any; entries store only holds MangaDexLibraryItem rows.
-    const raw = trusted<unknown>(await requestToPromise(store.get(mangaDexId)));
+    const raw: unknown = await requestToPromise(store.get(mangaDexId));
     if (!isLibraryItem(raw)) {
       await txDone(tx);
       return;

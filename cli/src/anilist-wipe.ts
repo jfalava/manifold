@@ -1,11 +1,15 @@
 import {
   arrayField,
   isBoolean,
+  isFiniteNumber,
+  isJsonArray,
   isJsonObject,
+  isString,
   manifoldUserAgent,
   numberField,
   objectField,
   stringField,
+  type JsonValue,
 } from "@manifold/json";
 import { Effect } from "effect";
 
@@ -54,6 +58,84 @@ export const retryAfterMs = (response: Response): number => {
 export interface GraphQLVariables {
   readonly [key: string]: string | number | boolean | null | undefined;
 }
+
+const hasGraphQLErrors = (value: JsonValue): boolean => {
+  if (!isJsonObject(value)) {
+    return true;
+  }
+  const errors = value["errors"];
+  return errors !== undefined && (!isJsonArray(errors) || errors.length > 0);
+};
+
+const decodeViewer = (value: JsonValue): { id: number; name: string } | undefined => {
+  if (hasGraphQLErrors(value) || !isJsonObject(value)) {
+    return undefined;
+  }
+  const data = objectField(value, "data");
+  const viewer = data === undefined ? undefined : objectField(data, "Viewer");
+  if (viewer === undefined) {
+    return undefined;
+  }
+  const id = viewer["id"];
+  const name = viewer["name"];
+  return isFiniteNumber(id) && isString(name) ? { id, name } : undefined;
+};
+
+const decodeMangaEntries = (value: JsonValue): WipeListEntry[] | undefined => {
+  if (hasGraphQLErrors(value) || !isJsonObject(value)) {
+    return undefined;
+  }
+  const data = objectField(value, "data");
+  const collection = data === undefined ? undefined : objectField(data, "MediaListCollection");
+  if (collection === undefined) {
+    return undefined;
+  }
+  const listsValue = collection["lists"];
+  if (listsValue === null) {
+    return [];
+  }
+  if (listsValue === undefined) {
+    return undefined;
+  }
+  if (!isJsonArray(listsValue)) {
+    return undefined;
+  }
+
+  const entries: WipeListEntry[] = [];
+  for (const listValue of listsValue) {
+    if (!isJsonObject(listValue)) {
+      return undefined;
+    }
+    const entriesValue = listValue["entries"];
+    if (entriesValue === undefined || entriesValue === null) {
+      continue;
+    }
+    if (!isJsonArray(entriesValue)) {
+      return undefined;
+    }
+    for (const entryValue of entriesValue) {
+      if (!isJsonObject(entryValue) || !isFiniteNumber(entryValue["id"])) {
+        return undefined;
+      }
+      const mediaValue = entryValue["media"];
+      if (mediaValue !== undefined && mediaValue !== null && !isJsonObject(mediaValue)) {
+        return undefined;
+      }
+      const media = isJsonObject(mediaValue) ? mediaValue : undefined;
+      const mediaId = media !== undefined && isFiniteNumber(media["id"]) ? media["id"] : 0;
+      const title = media === undefined ? undefined : objectField(media, "title");
+      entries.push({
+        id: entryValue["id"],
+        mediaId,
+        title:
+          title === undefined
+            ? "Unknown"
+            : (stringField(title, "english") ?? stringField(title, "romaji") ?? "Unknown"),
+      });
+    }
+  }
+  return entries;
+};
 
 const postGraphQLEffect = (
   token: string,
@@ -108,15 +190,11 @@ const fetchViewerEffect = (
       return yield* cliError(`Viewer query failed: HTTP ${response.status}`);
     }
     const raw = yield* jsonFromResponseEffect(response, "anilist.viewer");
-    // SAFETY: boundary cast through unknown to expected Viewer envelope
-    const data = raw as {
-      data?: { Viewer?: { id: number; name: string } };
-      errors?: unknown[];
-    };
-    if (!data.data?.Viewer) {
-      return yield* cliError("AniList returned no Viewer");
+    const viewer = decodeViewer(raw);
+    if (viewer === undefined) {
+      return yield* cliError("AniList returned an invalid Viewer response");
     }
-    return data.data.Viewer;
+    return viewer;
   });
 
 export const fetchViewer = (token: string): Promise<{ id: number; name: string }> =>
@@ -150,34 +228,18 @@ const fetchMangaEntriesEffect = (
       return yield* cliError(`Manga list fetch failed: HTTP ${response.status}`);
     }
     const raw = yield* jsonFromResponseEffect(response, "anilist.manga-list");
-    // SAFETY: parsed JSON matches MediaListCollection envelope for this trusted/test payload
-    const data = raw as {
-      data?: {
-        MediaListCollection?: {
-          lists?: Array<{
-            entries?: Array<{
-              id: number;
-              media?: { id: number; title?: { romaji?: string | null; english?: string | null } };
-            }>;
-          }>;
-        };
-      };
-    };
-    const lists = data.data?.MediaListCollection?.lists ?? [];
+    const decoded = decodeMangaEntries(raw);
+    if (decoded === undefined) {
+      return yield* cliError("AniList returned an invalid manga-list response");
+    }
     const seen = new Set<number>();
     const entries: WipeListEntry[] = [];
-    for (const list of lists) {
-      for (const entry of list.entries ?? []) {
-        if (seen.has(entry.id)) {
-          continue;
-        }
-        seen.add(entry.id);
-        entries.push({
-          id: entry.id,
-          mediaId: entry.media?.id ?? 0,
-          title: entry.media?.title?.english ?? entry.media?.title?.romaji ?? "Unknown",
-        });
+    for (const entry of decoded) {
+      if (seen.has(entry.id)) {
+        continue;
       }
+      seen.add(entry.id);
+      entries.push(entry);
     }
     return entries;
   });

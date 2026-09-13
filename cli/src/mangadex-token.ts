@@ -3,7 +3,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { isFiniteNumber, isJsonObject, isString, manifoldUserAgent } from "@manifold/json";
+import {
+  isFiniteNumber,
+  isJsonObject,
+  isString,
+  manifoldUserAgent,
+  type JsonValue,
+} from "@manifold/json";
 import {
   createMangaDexPasswordGrant,
   createMangaDexRefreshGrant,
@@ -21,10 +27,29 @@ import {
 } from "@/effect-kit";
 
 interface TokenResponse {
-  access_token?: string;
+  access_token: string;
   refresh_token?: string;
   expires_in?: number;
 }
+
+const decodeTokenResponse = (value: JsonValue): TokenResponse | undefined => {
+  if (!isJsonObject(value) || !isString(value.access_token) || value.access_token.length === 0) {
+    return undefined;
+  }
+  const refreshToken = value.refresh_token;
+  const expiresIn = value.expires_in;
+  if (
+    (refreshToken !== undefined && refreshToken !== null && !isString(refreshToken)) ||
+    (expiresIn !== undefined && !isFiniteNumber(expiresIn))
+  ) {
+    return undefined;
+  }
+  return {
+    access_token: value.access_token,
+    ...(isString(refreshToken) && { refresh_token: refreshToken }),
+    ...(isFiniteNumber(expiresIn) && { expires_in: expiresIn }),
+  };
+};
 
 export interface MangaDexTokenManagerOptions {
   readonly credentials: MangaDexPersonalClientCredentials;
@@ -117,9 +142,8 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
         );
       }
       const raw = yield* jsonFromResponseEffect(response, `mangadex.${label}`);
-      // SAFETY: HTTP value is the expected TokenResponse after the preceding check
-      const body = raw as TokenResponse;
-      if (!body.access_token) {
+      const body = decodeTokenResponse(raw);
+      if (!body) {
         return yield* cliError(`MangaDex ${label} returned no access_token`);
       }
       accessToken = body.access_token;
@@ -154,15 +178,19 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
           Effect.orElseSucceed(() => false as const),
         );
         if (refreshed) {
-          // SAFETY: value is a string after a successful requestTokenEffect
-          return accessToken as string;
+          if (accessToken) {
+            return accessToken;
+          }
+          return yield* cliError("MangaDex refresh grant returned no access token");
         }
         // Fall through to a fresh password grant.
         refreshToken = undefined;
       }
       yield* requestTokenEffect(createMangaDexPasswordGrant(options.credentials), "password grant");
-      // SAFETY: value is a string after the preceding runtime check
-      return accessToken as string;
+      if (!accessToken) {
+        return yield* cliError("MangaDex password grant returned no access token");
+      }
+      return accessToken;
     });
 
   return {

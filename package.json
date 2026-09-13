@@ -77,18 +77,22 @@
     "migrate:md2al": "bun run --cwd cli md2al",
     "plan": "bun run build:catalog && bun run --cwd iac plan",
     "plan:api": "bun run plan",
-    "test": "bun run test:canonical && bun run test:mangadex && bun run --cwd api test && bun run --cwd cli test && bun run test:paperback",
+    "prepare": "effect-tsgo patch --typescript --oxlint",
+    "test": "bun run test:contract && bun run test:json && bun run test:router && bun run test:canonical && bun run test:mangadex && bun run --cwd api test && bun run --cwd cli test && bun run test:paperback",
     "test:canonical": "bun run --cwd packages/canonical test",
+    "test:contract": "bun run --cwd packages/contract test",
+    "test:json": "bun run --cwd packages/json test",
     "test:mangadex": "bun run --cwd packages/mangadex test",
     "test:oauth": "bun run --cwd api test:oauth",
     "test:paperback": "bun run --cwd packages/paperback-comix test && bun run --cwd packages/paperback-runtime test && bun run --cwd tracker test",
+    "test:router": "bun run --cwd router test",
     "toolbox:import-al": "bun run --cwd cli registry:import",
     "toolbox:ops": "bun run --cwd cli ops",
     "toolbox:reconcile": "bun run --cwd cli reconcile:diff",
-    "typecheck:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac typecheck",
-    "prepare": "effect-tsgo patch --typescript --oxlint"
+    "typecheck:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac typecheck"
   },
   "devDependencies": {
+    "@effect/tsgo": "0.45.0",
     "@oxlint/plugins": "catalog:build",
     "@types/node": "catalog:types",
     "mime": "4.1.0",
@@ -96,8 +100,7 @@
     "oxlint": "1.82.0",
     "oxlint-tsgolint": "7.0.2001",
     "realm": "catalog:paperback",
-    "typescript": "7.0.2",
-    "@effect/tsgo": "0.45.0"
+    "typescript": "7.0.2"
   },
   "patchedDependencies": {
     "alchemy@2.0.0-beta.77": "patches/alchemy@2.0.0-beta.77.patch",

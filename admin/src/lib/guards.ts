@@ -44,6 +44,17 @@ export function isJsonValue(value: unknown): value is JsonValue {
   return false;
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: boundary helper for JSON arrays
+export function isJsonArray(value: unknown): value is readonly JsonValue[] {
+  return Array.isArray(value);
+}
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: boundary helper for JSON booleans
+export function isBooleanValue(value: unknown): value is boolean {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: central boolean guard
+  return typeof value === "boolean";
+}
+
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: boundary helper for string at I/O edge
 export function isStringValue(value: unknown): value is string {
   // oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: central string guard

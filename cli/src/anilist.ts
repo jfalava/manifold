@@ -1,5 +1,14 @@
 import { ANILIST_GRAPHQL_ENDPOINT } from "@manifold/canonical/sources";
-import { isFiniteNumber, isString, manifoldUserAgent, type JsonObject } from "@manifold/json";
+import {
+  isFiniteNumber,
+  isJsonArray,
+  isJsonObject,
+  isString,
+  manifoldUserAgent,
+  objectField,
+  stringField,
+  type JsonObject,
+} from "@manifold/json";
 import { Effect } from "effect";
 import {
   epochMillisNow,
@@ -27,23 +36,6 @@ export interface AniListEntry {
   readonly malId?: string;
   /** English / romaji / synonyms for title matching on other providers. */
   readonly titles?: readonly string[];
-}
-
-interface MediaList {
-  mediaId?: number;
-  status?: string;
-  progress?: number;
-  media?: {
-    idMal?: number | null;
-    title?: { romaji?: string; english?: string };
-    synonyms?: string[] | null;
-  };
-}
-
-interface ListCollection {
-  MediaListCollection?: {
-    lists?: Array<{ entries?: MediaList[] }>;
-  };
 }
 
 const ANILIST_STATUSES = new Set([
@@ -74,11 +66,6 @@ const MEDIA_LIST_QUERY = `query ($userId: Int) {
   }
 }`;
 
-interface GraphQLResponse<A> {
-  data?: A;
-  errors?: { message?: string }[];
-}
-
 let lastRequestAt = 0;
 
 const throttleEffect = (): Effect.Effect<void> =>
@@ -90,12 +77,12 @@ const throttleEffect = (): Effect.Effect<void> =>
     lastRequestAt = epochMillisNow();
   });
 
-const gqlEffect = <A>(
+const gqlEffect = (
   token: string,
   query: string,
   variables: JsonObject = {},
   attempt = 0,
-): Effect.Effect<A, CliEffectError> =>
+): Effect.Effect<JsonObject, CliEffectError> =>
   Effect.gen(function* () {
     yield* throttleEffect();
     const response = yield* fromPromise(() =>
@@ -113,19 +100,30 @@ const gqlEffect = <A>(
     if (response.status === 429 && attempt < 5) {
       const retryAfter = Number(response.headers.get("retry-after") ?? "5");
       yield* sleep(Math.max(retryAfter, 5) * 1000);
-      return yield* gqlEffect<A>(token, query, variables, attempt + 1);
+      return yield* gqlEffect(token, query, variables, attempt + 1);
     }
     const raw = yield* jsonFromResponseEffect(response, "anilist.gql");
-    // SAFETY: HTTP value is the expected GraphQLResponse<A> after JSON parse
-    const body = raw as GraphQLResponse<A>;
-    if (body.errors?.length) {
-      return yield* cliError(body.errors.map((e) => e.message ?? "?").join("; "));
+    if (!isJsonObject(raw)) {
+      return yield* cliError("AniList returned an invalid GraphQL response");
+    }
+    const errors = raw.errors;
+    if (errors !== undefined && !isJsonArray(errors)) {
+      return yield* cliError("AniList returned an invalid GraphQL errors envelope");
+    }
+    if (isJsonArray(errors) && errors.length > 0) {
+      const messages = errors.map((error) =>
+        isJsonObject(error) ? (stringField(error, "message") ?? "?") : "?",
+      );
+      return yield* cliError(messages.join("; "));
     }
     if (!response.ok) {
       return yield* cliError(`AniList HTTP ${response.status}`);
     }
-    // SAFETY: value matches A at this call site after error checks
-    return body.data as A;
+    const data = objectField(raw, "data");
+    if (!data) {
+      return yield* cliError("AniList response missing data");
+    }
+    return data;
   });
 
 const MEDIA_TITLES_QUERY = `query ($id: Int) {
@@ -140,19 +138,16 @@ const fetchAniListTitlesEffect = (
   mediaId: number,
 ): Effect.Effect<readonly string[], CliEffectError> =>
   Effect.gen(function* () {
-    const data = yield* gqlEffect<{
-      Media?: {
-        title?: { romaji?: string | null; english?: string | null; native?: string | null };
-        synonyms?: readonly string[] | null;
-      };
-    }>(token, MEDIA_TITLES_QUERY, { id: mediaId });
-    const media = data.Media;
+    const data = yield* gqlEffect(token, MEDIA_TITLES_QUERY, { id: mediaId });
+    const media = objectField(data, "Media");
+    const title = media ? objectField(media, "title") : undefined;
+    const synonyms = media?.synonyms;
     return [
-      media?.title?.english,
-      media?.title?.romaji,
-      media?.title?.native,
-      ...(media?.synonyms ?? []),
-    ].filter((title): title is string => isString(title) && title.trim().length > 0);
+      title && stringField(title, "english"),
+      title && stringField(title, "romaji"),
+      title && stringField(title, "native"),
+      ...(isJsonArray(synonyms) ? synonyms.filter(isString) : []),
+    ].filter((value): value is string => isString(value) && value.trim().length > 0);
   });
 
 export const fetchAniListTitles = (token: string, mediaId: number): Promise<readonly string[]> =>
@@ -161,8 +156,9 @@ export const fetchAniListTitles = (token: string, mediaId: number): Promise<read
 /** Resolves the token owner's AniList user id. */
 const fetchAniListViewerIdEffect = (token: string): Effect.Effect<number, CliEffectError> =>
   Effect.gen(function* () {
-    const data = yield* gqlEffect<{ Viewer?: { id?: number } }>(token, VIEWER_QUERY);
-    const id = data.Viewer?.id;
+    const data = yield* gqlEffect(token, VIEWER_QUERY);
+    const viewer = objectField(data, "Viewer");
+    const id = viewer?.id;
     if (!isFiniteNumber(id)) {
       return yield* cliError("AniList returned no Viewer id");
     }
@@ -187,21 +183,6 @@ export interface AniListRichEntry {
   readonly averageScore?: number;
   /** Unix seconds when the list entry was created (bookmarked date). */
   readonly createdAt?: number;
-}
-
-interface RichMediaList {
-  mediaId?: number;
-  status?: string;
-  progress?: number;
-  createdAt?: number;
-  media?: {
-    title?: { romaji?: string; english?: string; native?: string };
-    synonyms?: string[];
-    description?: string;
-    coverImage?: { extraLarge?: string; large?: string };
-    status?: string;
-    averageScore?: number;
-  };
 }
 
 const MEDIA_LIST_RICH_QUERY = `query ($userId: Int) {
@@ -235,54 +216,98 @@ const fetchAniListRichEntriesEffect = (
 ): Effect.Effect<readonly AniListRichEntry[], CliEffectError> =>
   Effect.gen(function* () {
     const userId = yield* fetchAniListViewerIdEffect(token);
-    const data = yield* gqlEffect<ListCollection>(token, MEDIA_LIST_RICH_QUERY, { userId });
-    const lists = data.MediaListCollection?.lists ?? [];
+    const data = yield* gqlEffect(token, MEDIA_LIST_RICH_QUERY, { userId });
+    const rawEntries = listEntries(data);
+    if (!rawEntries) {
+      return yield* cliError("AniList returned an invalid manga list envelope");
+    }
     const seen = new Set<number>();
     const entries: AniListRichEntry[] = [];
-    for (const list of lists) {
-      // SAFETY: optional field is { entries?: RichMediaList[] } when present at this call site
-      for (const entry of (list as { entries?: RichMediaList[] }).entries ?? []) {
-        if (!entry.mediaId || seen.has(entry.mediaId)) {
-          continue;
-        }
-        const status = entry.status ?? "";
-        if (!ANILIST_STATUSES.has(status)) {
-          continue;
-        }
-        seen.add(entry.mediaId);
-        const media = entry.media;
-        const titles = [
-          media?.title?.english,
-          media?.title?.romaji,
-          ...(media?.synonyms ?? []),
-        ].filter((t): t is string => isString(t) && t.length > 0);
-        const primary =
-          media?.title?.english ?? media?.title?.romaji ?? `AniList #${entry.mediaId}`;
-        entries.push({
-          mediaId: entry.mediaId,
-          status,
-          title: primary,
-          ...(media?.title?.romaji && { romajiTitle: media.title.romaji }),
-          ...(media?.title?.native && { nativeTitle: media.title.native }),
-          synonyms: [...new Set(titles)].filter((t) => t !== primary),
-          ...(media?.description && { description: media.description }),
-          ...((media?.coverImage?.extraLarge || media?.coverImage?.large) && {
-            coverUrl: media.coverImage.extraLarge ?? media.coverImage.large,
-          }),
-          ...(media?.status && { mediaStatus: media.status }),
-          ...(isFiniteNumber(media?.averageScore) && {
-            averageScore: media.averageScore,
-          }),
-          ...(isFiniteNumber(entry.createdAt) &&
-            entry.createdAt > 0 && { createdAt: entry.createdAt }),
-        });
+    for (const entry of rawEntries) {
+      const mediaId = entry.mediaId;
+      if (!isFiniteNumber(mediaId) || mediaId <= 0 || seen.has(mediaId)) {
+        continue;
       }
+      const status = stringField(entry, "status");
+      if (!status || !ANILIST_STATUSES.has(status)) {
+        continue;
+      }
+      seen.add(mediaId);
+      const media = objectField(entry, "media");
+      const titleObject = media ? objectField(media, "title") : undefined;
+      const english = titleObject ? stringField(titleObject, "english") : undefined;
+      const romaji = titleObject ? stringField(titleObject, "romaji") : undefined;
+      const native = titleObject ? stringField(titleObject, "native") : undefined;
+      const synonyms = media?.synonyms;
+      const titles = [
+        english,
+        romaji,
+        ...(isJsonArray(synonyms) ? synonyms.filter(isString) : []),
+      ].filter((t): t is string => isString(t) && t.length > 0);
+      const primary = english ?? romaji ?? `AniList #${mediaId}`;
+      const coverImage = media ? objectField(media, "coverImage") : undefined;
+      const extraLarge = coverImage ? stringField(coverImage, "extraLarge") : undefined;
+      const large = coverImage ? stringField(coverImage, "large") : undefined;
+      const description = media ? stringField(media, "description") : undefined;
+      const mediaStatus = media ? stringField(media, "status") : undefined;
+      const averageScore = media?.averageScore;
+      const createdAt = entry.createdAt;
+      entries.push({
+        mediaId,
+        status,
+        title: primary,
+        ...(romaji && { romajiTitle: romaji }),
+        ...(native && { nativeTitle: native }),
+        synonyms: [...new Set(titles)].filter((t) => t !== primary),
+        ...(description && { description }),
+        ...((extraLarge || large) && { coverUrl: extraLarge ?? large }),
+        ...(mediaStatus && { mediaStatus }),
+        ...(isFiniteNumber(averageScore) && { averageScore }),
+        ...(isFiniteNumber(createdAt) && createdAt > 0 && { createdAt }),
+      });
     }
     return entries;
   });
 
 export const fetchAniListRichEntries = (token: string): Promise<readonly AniListRichEntry[]> =>
   runHost(fetchAniListRichEntriesEffect(token));
+
+const listEntries = (data: JsonObject): readonly JsonObject[] | undefined => {
+  const collection = data.MediaListCollection;
+  if (collection === null) {
+    return [];
+  }
+  if (!isJsonObject(collection)) {
+    return undefined;
+  }
+  const lists = collection.lists;
+  if (lists === null) {
+    return [];
+  }
+  if (!isJsonArray(lists)) {
+    return undefined;
+  }
+  const entries: JsonObject[] = [];
+  for (const list of lists) {
+    if (!isJsonObject(list)) {
+      return undefined;
+    }
+    const entryValues = list.entries;
+    if (entryValues === undefined || entryValues === null) {
+      continue;
+    }
+    if (!isJsonArray(entryValues)) {
+      return undefined;
+    }
+    for (const entry of entryValues) {
+      if (!isJsonObject(entry)) {
+        return undefined;
+      }
+      entries.push(entry);
+    }
+  }
+  return entries;
+};
 
 /**
  * Fetches the authenticated user's manga list as flat entries with status and
@@ -293,41 +318,46 @@ const fetchAniListMangaEntriesEffect = (
 ): Effect.Effect<readonly AniListEntry[], CliEffectError> =>
   Effect.gen(function* () {
     const userId = yield* fetchAniListViewerIdEffect(token);
-    const data = yield* gqlEffect<ListCollection>(token, MEDIA_LIST_QUERY, { userId });
-    const lists = data.MediaListCollection?.lists ?? [];
+    const data = yield* gqlEffect(token, MEDIA_LIST_QUERY, { userId });
+    const rawEntries = listEntries(data);
+    if (!rawEntries) {
+      return yield* cliError("AniList returned an invalid manga list envelope");
+    }
     const seen = new Set<number>();
     const entries: AniListEntry[] = [];
-    for (const list of lists) {
-      for (const entry of list.entries ?? []) {
-        if (!entry.mediaId || seen.has(entry.mediaId)) {
-          continue;
-        }
-        const status = entry.status ?? "";
-        if (!ANILIST_STATUSES.has(status)) {
-          continue;
-        }
-        seen.add(entry.mediaId);
-        const title =
-          entry.media?.title?.english ?? entry.media?.title?.romaji ?? `AniList #${entry.mediaId}`;
-        const titleVariants = [
-          entry.media?.title?.english,
-          entry.media?.title?.romaji,
-          ...(entry.media?.synonyms ?? []),
-        ].filter((value): value is string => isString(value) && value.trim().length > 0);
-        const malId =
-          isFiniteNumber(entry.media?.idMal) && entry.media.idMal > 0
-            ? String(Math.floor(entry.media.idMal))
-            : undefined;
-        entries.push({
-          mediaId: entry.mediaId,
-          title,
-          status,
-          ...(isFiniteNumber(entry.progress) &&
-            entry.progress >= 1 && { progress: Math.floor(entry.progress) }),
-          ...(malId && { malId }),
-          ...(titleVariants.length > 0 && { titles: [...new Set(titleVariants)] }),
-        });
+    for (const entry of rawEntries) {
+      const mediaId = entry.mediaId;
+      if (!isFiniteNumber(mediaId) || mediaId <= 0 || seen.has(mediaId)) {
+        continue;
       }
+      const status = stringField(entry, "status");
+      if (!status || !ANILIST_STATUSES.has(status)) {
+        continue;
+      }
+      seen.add(mediaId);
+      const media = objectField(entry, "media");
+      const titleObject = media ? objectField(media, "title") : undefined;
+      const english = titleObject ? stringField(titleObject, "english") : undefined;
+      const romaji = titleObject ? stringField(titleObject, "romaji") : undefined;
+      const title = english ?? romaji ?? `AniList #${mediaId}`;
+      const synonyms = media?.synonyms;
+      const titleVariants = [
+        english,
+        romaji,
+        ...(isJsonArray(synonyms) ? synonyms.filter(isString) : []),
+      ].filter((value): value is string => isString(value) && value.trim().length > 0);
+      const malIdValue = media?.idMal;
+      const malId =
+        isFiniteNumber(malIdValue) && malIdValue > 0 ? String(Math.floor(malIdValue)) : undefined;
+      const progress = entry.progress;
+      entries.push({
+        mediaId,
+        title,
+        status,
+        ...(isFiniteNumber(progress) && progress >= 1 && { progress: Math.floor(progress) }),
+        ...(malId && { malId }),
+        ...(titleVariants.length > 0 && { titles: [...new Set(titleVariants)] }),
+      });
     }
     return entries;
   });

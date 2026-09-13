@@ -6,7 +6,7 @@
     "check": "oxlint --fix",
     "format": "oxfmt",
     "lint": "oxlint",
-    "test": "bun test",
+    "test": "bun test test/router.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

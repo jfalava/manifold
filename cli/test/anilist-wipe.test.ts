@@ -4,6 +4,8 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   deleteActivity,
   deleteEntry,
+  fetchMangaEntries,
+  fetchViewer,
   retryAfterMs,
   selectWipeActivities,
   type Activity,
@@ -91,6 +93,23 @@ describe("anilist wipe deletion envelopes", () => {
     vi.stubGlobal("fetch", fetcher);
     return fetcher;
   };
+
+  describe("GraphQL response decoders", () => {
+    it("accepts the expected viewer envelope", async () => {
+      stubFetch(jsonResponse(200, JSON.stringify({ data: { Viewer: { id: 7, name: "reader" } } })));
+      await expect(fetchViewer("token")).resolves.toEqual({ id: 7, name: "reader" });
+    });
+
+    it("rejects a malformed viewer envelope", async () => {
+      stubFetch(jsonResponse(200, JSON.stringify({ data: { Viewer: { id: "7" } } })));
+      await expect(fetchViewer("token")).rejects.toThrow("invalid Viewer response");
+    });
+
+    it("rejects a malformed manga-list envelope instead of treating it as empty", async () => {
+      stubFetch(jsonResponse(200, JSON.stringify({ data: { MediaListCollection: {} } })));
+      await expect(fetchMangaEntries("token", 7)).rejects.toThrow("invalid manga-list response");
+    });
+  });
 
   const rateLimited = (): Response =>
     new Response("rate limited", {

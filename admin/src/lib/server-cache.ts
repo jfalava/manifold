@@ -31,6 +31,9 @@ interface Envelope<T> {
   readonly value: T;
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: every cache decoder validates persisted JSON before returning its domain type
+export type CacheDecoder<T> = (value: unknown) => T | undefined;
+
 // Indirect the specifier so bundlers (rolldown) don't try to resolve
 // "cloudflare:workers" at build time — workerd provides it at runtime.
 const WORKERS_MODULE = "cloudflare:workers";
@@ -64,7 +67,11 @@ async function workersRuntime(): Promise<WorkersRuntime> {
 const l1 = new Map<string, Envelope<unknown>>();
 const inflight = new Map<string, Promise<unknown>>();
 
-async function readKv<T>(kv: KVNamespace, key: string): Promise<Envelope<T> | null> {
+async function readKv<T>(
+  kv: KVNamespace,
+  key: string,
+  decode: CacheDecoder<T>,
+): Promise<Envelope<T> | null> {
   try {
     const text = await kv.get(key, "text");
     if (text === null) {
@@ -74,7 +81,8 @@ async function readKv<T>(kv: KVNamespace, key: string): Promise<Envelope<T> | nu
     if (!isJsonObject(parsed) || !isNumberValue(parsed.storedAt) || !("value" in parsed)) {
       return null;
     }
-    return { storedAt: parsed.storedAt, value: trusted<T>(parsed.value) };
+    const value = decode(parsed.value);
+    return value === undefined ? null : { storedAt: parsed.storedAt, value };
   } catch {
     return null;
   }
@@ -97,11 +105,16 @@ export interface ComputedSnapshot<T> {
 const computeAndStore = async <T>(
   key: string,
   kv: KVNamespace | null,
+  decode: CacheDecoder<T>,
   compute: () => Promise<ComputedSnapshot<T>>,
 ): Promise<T> => {
   const running = inflight.get(key);
   if (running !== undefined) {
-    return trusted<T>(await running);
+    const value = decode(await running);
+    if (value === undefined) {
+      throw new Error(`Cache computation for ${key} returned an invalid value`);
+    }
+    return value;
   }
   const task = (async () => {
     const { value, cacheable } = await compute();
@@ -128,18 +141,23 @@ const computeAndStore = async <T>(
  */
 export async function cachedJson<T>(
   key: string,
+  decode: CacheDecoder<T>,
   compute: () => Promise<ComputedSnapshot<T>>,
 ): Promise<T> {
   const now = Date.now();
 
   const local = l1.get(key);
   if (local !== undefined && now - local.storedAt < SOFT_TTL_MS) {
-    return trusted<T>(local.value);
+    const value = decode(local.value);
+    if (value !== undefined) {
+      return value;
+    }
+    l1.delete(key);
   }
 
   const { kv, waitUntil } = await workersRuntime();
 
-  const stored = kv === null ? null : await readKv<T>(kv, key);
+  const stored = kv === null ? null : await readKv<T>(kv, key, decode);
   if (stored !== null) {
     l1.set(key, stored);
     if (now - stored.storedAt < SOFT_TTL_MS) {
@@ -148,7 +166,7 @@ export async function cachedJson<T>(
     // Stale: serve it now, refresh out of band. Without waitUntil the
     // refresh promise may be cancelled after the response — acceptable,
     // the next request retries.
-    const refresh = computeAndStore(key, kv, compute).catch(() => undefined);
+    const refresh = computeAndStore(key, kv, decode, compute).catch(() => undefined);
     if (waitUntil !== null) {
       waitUntil(refresh);
     }
@@ -157,14 +175,19 @@ export async function cachedJson<T>(
 
   // Serve a stale L1 value the same way when KV is unavailable.
   if (local !== undefined) {
-    const refresh = computeAndStore(key, kv, compute).catch(() => undefined);
+    const value = decode(local.value);
+    if (value === undefined) {
+      l1.delete(key);
+      return computeAndStore(key, kv, decode, compute);
+    }
+    const refresh = computeAndStore(key, kv, decode, compute).catch(() => undefined);
     if (waitUntil !== null) {
       waitUntil(refresh);
     }
-    return trusted<T>(local.value);
+    return value;
   }
 
-  return computeAndStore(key, kv, compute);
+  return computeAndStore(key, kv, decode, compute);
 }
 
 /** Drop a cached snapshot from L1 and KV so the next read recomputes. */

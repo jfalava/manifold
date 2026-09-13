@@ -14,6 +14,7 @@ import {
   EventsListResponse,
   ListState,
   MangaDexLibraryResponse,
+  MangaDexLibrarySummary as MangaDexLibrarySummarySchema,
   type MangaDexLibrarySummary as ContractMangaDexLibrarySummary,
   MangaDexLibrarySummaryResponse,
   MangaDexStatsResponse,
@@ -21,11 +22,13 @@ import {
   OkResponse,
   OkWithListStateResponse,
   OpsListResponse,
+  OpsSummary as OpsSummarySchema,
   type OpsSummary as ContractOpsSummary,
   OpsSummaryResponse,
   RegistryEntry as ContractRegistryEntry,
   type RegistryListEntry,
   RegistryListResponse,
+  RegistrySummary as RegistrySummarySchema,
   type RegistrySummary as ContractRegistrySummary,
   RegistrySummaryResponse,
   SyncOp,
@@ -33,7 +36,7 @@ import {
 } from "@manifold/contract";
 import { manifoldUserAgent } from "@manifold/json";
 import { createServerFn } from "@tanstack/react-start";
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
 
 import {
   isFunctionValue,
@@ -367,6 +370,20 @@ export interface LibraryOverview {
   readonly errors: readonly string[];
 }
 
+const LibraryOverviewSchema = Schema.Struct({
+  fetchedAt: Schema.String,
+  registry: Schema.NullOr(RegistrySummarySchema),
+  ops: Schema.NullOr(OpsSummarySchema),
+  mangadex: Schema.NullOr(MangaDexLibrarySummarySchema),
+  errors: Schema.Array(Schema.String),
+});
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: cache decoder validates the persisted overview before use
+const decodeLibraryOverview = (value: unknown): LibraryOverview | undefined => {
+  const decoded = Schema.decodeUnknownOption(LibraryOverviewSchema)(value);
+  return Option.isSome(decoded) ? decoded.value : undefined;
+};
+
 /**
  * Compact registry / ops / MangaDex-shelf metrics for the Overview page.
  * Hits dedicated summary endpoints so a cold dashboard never pays for full
@@ -375,7 +392,7 @@ export interface LibraryOverview {
  */
 export const getLibraryOverview = createServerFn({ method: "GET" }).handler(
   (): Promise<LibraryOverview> =>
-    cachedJson("library-overview:v2", async () => {
+    cachedJson("library-overview:v2", decodeLibraryOverview, async () => {
       const [registry, ops, mangadex] = await Promise.all([
         capture("registry", () =>
           call("/v1/registry/summary", RegistrySummaryResponse).then((body) => body.summary),

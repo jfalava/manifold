@@ -8,12 +8,15 @@ import { manifoldUserAgent } from "@manifold/json";
 import { createServerFn } from "@tanstack/react-start";
 
 import {
+  isBooleanValue,
   isFunctionValue,
+  isJsonArray,
   isJsonObject,
   isNumberValue,
   isSecretHandleObject,
   isStringValue,
   type JsonValue,
+  type JsonObject,
   type SecretHandle,
 } from "./guards";
 import { cachedJson } from "./server-cache";
@@ -107,6 +110,216 @@ interface DoStorageRow {
   max: { storedBytes: number | null };
 }
 
+interface CacheRows {
+  totals: CacheStatusRow[];
+  paths: CacheStatusRow[];
+}
+
+const isRecord = (value: unknown): value is JsonObject =>
+  isJsonObject(value) && !Array.isArray(value);
+
+const isFiniteValue = (value: unknown): value is number =>
+  isNumberValue(value) && Number.isFinite(value);
+
+const accountRows = (data: JsonObject, key: string): readonly JsonObject[] | undefined => {
+  const viewer = isRecord(data.viewer) ? data.viewer : undefined;
+  const accounts = viewer?.accounts;
+  if (!isJsonArray(accounts)) {
+    return undefined;
+  }
+  const account = accounts[0];
+  if (account === undefined) {
+    return [];
+  }
+  if (!isRecord(account) || !isJsonArray(account[key]) || !account[key].every(isRecord)) {
+    return undefined;
+  }
+  return account[key];
+};
+
+const decodeInvocationsRows = (data: JsonObject): InvocationsRow[] | undefined => {
+  const rows = accountRows(data, "workersInvocationsAdaptive");
+  if (rows === undefined) {
+    return undefined;
+  }
+  const decoded: InvocationsRow[] = [];
+  for (const row of rows) {
+    const dimensions = row.dimensions;
+    const sum = row.sum;
+    if (!isRecord(dimensions) || !isRecord(sum) || !isStringValue(dimensions.scriptName)) {
+      return undefined;
+    }
+    const datetimeHour = dimensions.datetimeHour;
+    if (datetimeHour !== undefined && datetimeHour !== null && !isStringValue(datetimeHour)) {
+      return undefined;
+    }
+    if (!isNumberValue(sum.requests) || !isNumberValue(sum.errors)) {
+      return undefined;
+    }
+    decoded.push({
+      dimensions: {
+        scriptName: dimensions.scriptName,
+        ...(isStringValue(datetimeHour) && { datetimeHour }),
+      },
+      sum: { requests: sum.requests, errors: sum.errors },
+    });
+  }
+  return decoded;
+};
+
+const decodeDoInvocationsRows = (data: JsonObject): DoInvocationsRow[] | undefined => {
+  const rows = accountRows(data, "durableObjectsInvocationsAdaptiveGroups");
+  if (rows === undefined) {
+    return undefined;
+  }
+  const decoded: DoInvocationsRow[] = [];
+  for (const row of rows) {
+    const sum = row.sum;
+    if (!isRecord(sum) || !isNumberValue(sum.requests)) {
+      return undefined;
+    }
+    decoded.push({ sum: { requests: sum.requests } });
+  }
+  return decoded;
+};
+
+const decodeDoStorageRows = (data: JsonObject): DoStorageRow[] | undefined => {
+  const rows = accountRows(data, "durableObjectsStorageGroups");
+  if (rows === undefined) {
+    return undefined;
+  }
+  const decoded: DoStorageRow[] = [];
+  for (const row of rows) {
+    const max = row.max;
+    if (!isRecord(max) || (max.storedBytes !== null && !isNumberValue(max.storedBytes))) {
+      return undefined;
+    }
+    decoded.push({ max: { storedBytes: max.storedBytes === null ? null : max.storedBytes } });
+  }
+  return decoded;
+};
+
+const decodeCacheRows = (data: JsonObject): CacheRows | undefined => {
+  const viewer = isRecord(data.viewer) ? data.viewer : undefined;
+  const zones = viewer?.zones;
+  if (!isJsonArray(zones)) {
+    return undefined;
+  }
+  const zone = zones[0];
+  if (zone === undefined) {
+    return { totals: [], paths: [] };
+  }
+  if (!isRecord(zone)) {
+    return undefined;
+  }
+  const decodeRows = (value: JsonValue | undefined): CacheStatusRow[] | undefined => {
+    if (!isJsonArray(value) || !value.every(isRecord)) {
+      return undefined;
+    }
+    const decoded: CacheStatusRow[] = [];
+    for (const row of value) {
+      const dimensions = row.dimensions;
+      const sum = row.sum;
+      if (!isRecord(dimensions) || !isRecord(sum) || !isNumberValue(row.count)) {
+        return undefined;
+      }
+      const cacheStatus = dimensions.cacheStatus;
+      const path = dimensions.clientRequestPath;
+      if (
+        (cacheStatus !== undefined && cacheStatus !== null && !isStringValue(cacheStatus)) ||
+        (path !== undefined && path !== null && !isStringValue(path)) ||
+        !isNumberValue(sum.edgeResponseBytes)
+      ) {
+        return undefined;
+      }
+      decoded.push({
+        count: row.count,
+        sum: { edgeResponseBytes: sum.edgeResponseBytes },
+        dimensions: {
+          cacheStatus: isStringValue(cacheStatus) ? cacheStatus : null,
+          ...(isStringValue(path) && { clientRequestPath: path }),
+        },
+      });
+    }
+    return decoded;
+  };
+  const totals = decodeRows(zone.totals);
+  const paths = decodeRows(zone.paths);
+  return totals === undefined || paths === undefined ? undefined : { totals, paths };
+};
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: cache decoder validates the persisted snapshot before use
+const decodeAnalyticsSnapshot = (value: unknown): AnalyticsSnapshot | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const reason = value.reason;
+  if (
+    !isStringValue(value.fetchedAt) ||
+    !isBooleanValue(value.ok) ||
+    (reason !== null && !isStringValue(reason)) ||
+    !isFiniteValue(value.totalRequests) ||
+    !isFiniteValue(value.totalErrors) ||
+    !isFiniteValue(value.doRequests) ||
+    (value.doStoredBytes !== null && !isFiniteValue(value.doStoredBytes))
+  ) {
+    return undefined;
+  }
+  const workerTrafficValue = value.workerTraffic;
+  if (!isRecord(workerTrafficValue)) {
+    return undefined;
+  }
+  const workerTraffic: Partial<Record<LogicalWorker, WorkerTraffic>> = {};
+  for (const [logical, traffic] of Object.entries(workerTrafficValue)) {
+    const worker = LOGICAL_WORKERS.find((candidate) => candidate === logical);
+    if (worker === undefined || !isRecord(traffic)) {
+      return undefined;
+    }
+    if (!isFiniteValue(traffic.requests) || !isFiniteValue(traffic.errors)) {
+      return undefined;
+    }
+    workerTraffic[worker] = {
+      requests: traffic.requests,
+      errors: traffic.errors,
+    };
+  }
+  const hourlyValue = value.hourly;
+  if (!isRecord(hourlyValue)) {
+    return undefined;
+  }
+  const hourly = emptyHourly();
+  for (const logical of LOGICAL_WORKERS) {
+    const points = hourlyValue[logical];
+    if (!isJsonArray(points)) {
+      return undefined;
+    }
+    const decoded: HourlyPoint[] = [];
+    for (const point of points) {
+      if (
+        !isRecord(point) ||
+        !isStringValue(point.hour) ||
+        !isFiniteValue(point.requests) ||
+        !isFiniteValue(point.errors)
+      ) {
+        return undefined;
+      }
+      decoded.push({ hour: point.hour, requests: point.requests, errors: point.errors });
+    }
+    hourly[logical] = decoded;
+  }
+  return {
+    ok: value.ok,
+    reason,
+    fetchedAt: value.fetchedAt,
+    workerTraffic,
+    totalRequests: value.totalRequests,
+    totalErrors: value.totalErrors,
+    doRequests: value.doRequests,
+    doStoredBytes: value.doStoredBytes,
+    hourly,
+  };
+};
+
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: secret binding comes from untyped workers env; parsed at I/O boundary via isString/isSecretHandle
 async function resolveSecret(binding: unknown): Promise<string | null> {
   if (isStringValue(binding)) {
@@ -137,6 +350,7 @@ async function runGraphQL<T>(
   apiToken: string,
   query: string,
   variables: Record<string, string>,
+  decode: (data: JsonObject) => T | undefined,
 ): Promise<T> {
   const response = await fetch(GRAPHQL_URL, {
     method: "POST",
@@ -151,21 +365,25 @@ async function runGraphQL<T>(
     throw new Error(`GraphQL HTTP ${response.status}`);
   }
   const payload: unknown = await response.json();
-  if (!isJsonObject(payload)) {
+  if (!isJsonObject(payload) || Array.isArray(payload)) {
     throw new Error("GraphQL response was not an object");
   }
   const errorsValue = payload.errors;
-  const messages = Array.isArray(errorsValue)
-    ? // SAFETY: errorsValue is JsonValue array from owned GraphQL endpoint; elements are validated by graphqlErrorMessage
-      (errorsValue as readonly JsonValue[]).flatMap(graphqlErrorMessage)
-    : [];
+  if (errorsValue !== undefined && !isJsonArray(errorsValue)) {
+    throw new Error("GraphQL response errors were not an array");
+  }
+  const messages = isJsonArray(errorsValue) ? errorsValue.flatMap(graphqlErrorMessage) : [];
   if (messages.length > 0) {
     throw new Error(messages.join("; "));
   }
-  if (!isJsonObject(payload.data)) {
+  if (!isJsonObject(payload.data) || Array.isArray(payload.data)) {
     throw new Error("GraphQL response missing data");
   }
-  return trusted<T>(payload.data);
+  const decoded = decode(payload.data);
+  if (decoded === undefined) {
+    throw new Error("GraphQL response data had an unexpected shape");
+  }
+  return decoded;
 }
 
 function emptyHourly(): Record<LogicalWorker, HourlyPoint[]> {
@@ -227,9 +445,7 @@ async function fetchSnapshot(): Promise<AnalyticsSnapshot> {
       );
     }
     const [invocationsData, doData, storageData] = await Promise.all([
-      runGraphQL<{
-        viewer: { accounts: { workersInvocationsAdaptive: InvocationsRow[] }[] };
-      }>(
+      runGraphQL(
         apiToken,
 
         `query($accountTag: string!, $since: Time!) {
@@ -246,14 +462,9 @@ async function fetchSnapshot(): Promise<AnalyticsSnapshot> {
           }
         }`,
         { accountTag, since: sinceIso(WINDOW_HOURS) },
+        decodeInvocationsRows,
       ),
-      runGraphQL<{
-        viewer: {
-          accounts: {
-            durableObjectsInvocationsAdaptiveGroups: DoInvocationsRow[];
-          }[];
-        };
-      }>(
+      runGraphQL(
         apiToken,
 
         `query($accountTag: string!, $since: Time!) {
@@ -269,10 +480,9 @@ async function fetchSnapshot(): Promise<AnalyticsSnapshot> {
           }
         }`,
         { accountTag, since: sinceIso(WINDOW_HOURS) },
+        decodeDoInvocationsRows,
       ),
-      runGraphQL<{
-        viewer: { accounts: { durableObjectsStorageGroups: DoStorageRow[] }[] };
-      }>(
+      runGraphQL(
         apiToken,
 
         `query($accountTag: string!, $since: Date!) {
@@ -288,10 +498,11 @@ async function fetchSnapshot(): Promise<AnalyticsSnapshot> {
           }
         }`,
         { accountTag, since: dayIso(7) },
+        decodeDoStorageRows,
       ),
     ]);
 
-    const rows = invocationsData.viewer.accounts[0]?.workersInvocationsAdaptive ?? [];
+    const rows = invocationsData;
 
     const workerTraffic: Partial<Record<LogicalWorker, WorkerTraffic>> = {};
     let totalRequests = 0;
@@ -317,13 +528,9 @@ async function fetchSnapshot(): Promise<AnalyticsSnapshot> {
         .toSorted((a, b) => a.hour.localeCompare(b.hour));
     }
 
-    const doRequests =
-      doData.viewer.accounts[0]?.durableObjectsInvocationsAdaptiveGroups.reduce(
-        (acc, row) => acc + row.sum.requests,
-        0,
-      ) ?? 0;
+    const doRequests = doData.reduce((acc, row) => acc + row.sum.requests, 0);
 
-    const storedValues = storageData.viewer.accounts[0]?.durableObjectsStorageGroups
+    const storedValues = storageData
       .map((row) => row.max.storedBytes)
       .filter((value): value is number => isNumberValue(value));
     const doStoredBytes =
@@ -350,7 +557,7 @@ async function fetchSnapshot(): Promise<AnalyticsSnapshot> {
 
 export const getAnalyticsSnapshot = createServerFn({ method: "GET" }).handler(
   (): Promise<AnalyticsSnapshot> =>
-    cachedJson("analytics-snapshot:v1", async () => {
+    cachedJson("analytics-snapshot:v1", decodeAnalyticsSnapshot, async () => {
       const snapshot = await fetchSnapshot();
       return { value: snapshot, cacheable: snapshot.ok };
     }),
@@ -411,6 +618,99 @@ interface CacheStatusRow {
   dimensions: { cacheStatus: string | null; clientRequestPath?: string };
 }
 
+const decodeCacheStatusSlices = (value: JsonValue): CacheStatusSlice[] | undefined => {
+  if (!isJsonArray(value)) {
+    return undefined;
+  }
+  const statuses: CacheStatusSlice[] = [];
+  for (const status of value) {
+    if (
+      !isRecord(status) ||
+      !isStringValue(status.status) ||
+      !isFiniteValue(status.requests) ||
+      !isFiniteValue(status.bytes)
+    ) {
+      return undefined;
+    }
+    statuses.push({
+      status: status.status,
+      requests: status.requests,
+      bytes: status.bytes,
+    });
+  }
+  return statuses;
+};
+
+const decodeSurfaceCacheStats = (value: JsonValue): SurfaceCacheStat[] | undefined => {
+  if (!isJsonArray(value)) {
+    return undefined;
+  }
+  const surfaces: SurfaceCacheStat[] = [];
+  for (const surface of value) {
+    if (
+      !isRecord(surface) ||
+      !isStringValue(surface.surface) ||
+      !isStringValue(surface.pathPrefix) ||
+      !isFiniteValue(surface.requests) ||
+      !isFiniteValue(surface.hits) ||
+      !isFiniteValue(surface.misses) ||
+      !isFiniteValue(surface.uncacheable) ||
+      !isFiniteValue(surface.bytes)
+    ) {
+      return undefined;
+    }
+    surfaces.push({
+      surface: surface.surface,
+      pathPrefix: surface.pathPrefix,
+      requests: surface.requests,
+      hits: surface.hits,
+      misses: surface.misses,
+      uncacheable: surface.uncacheable,
+      bytes: surface.bytes,
+    });
+  }
+  return surfaces;
+};
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: cache decoder validates the persisted snapshot before use
+const decodeCacheSnapshot = (value: unknown): CacheSnapshot | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const reason = value.reason;
+  if (
+    !isBooleanValue(value.ok) ||
+    !isStringValue(value.fetchedAt) ||
+    (reason !== null && !isStringValue(reason)) ||
+    !isFiniteValue(value.windowHours) ||
+    !isFiniteValue(value.totalRequests) ||
+    !isFiniteValue(value.totalBytes) ||
+    !isFiniteValue(value.cacheableRequests) ||
+    !isFiniteValue(value.cacheHits) ||
+    !isFiniteValue(value.cachedBytes)
+  ) {
+    return undefined;
+  }
+  const statuses = decodeCacheStatusSlices(value.statuses);
+  const surfaces = decodeSurfaceCacheStats(value.surfaces);
+  if (statuses === undefined || surfaces === undefined) {
+    return undefined;
+  }
+  return {
+    ok: value.ok,
+    reason,
+    fetchedAt: value.fetchedAt,
+    windowHours: value.windowHours,
+    statuses,
+    surfaces,
+    totalRequests: value.totalRequests,
+    totalBytes: value.totalBytes,
+    cacheableRequests: value.cacheableRequests,
+    cacheHits: value.cacheHits,
+    cachedBytes: value.cachedBytes,
+  };
+};
+
 let zoneTagCache: string | null = null;
 
 async function resolveZoneTag(apiToken: string): Promise<string> {
@@ -427,11 +727,10 @@ async function resolveZoneTag(apiToken: string): Promise<string> {
     throw new Error(`zone lookup HTTP ${response.status}`);
   }
   const payload: unknown = await response.json();
-  if (!isJsonObject(payload) || !Array.isArray(payload.result)) {
+  if (!isJsonObject(payload) || Array.isArray(payload) || !isJsonArray(payload.result)) {
     throw new Error("zone lookup returned an unexpected shape");
   }
-  // SAFETY: payload.result is a JsonValue array from the owned Cloudflare REST endpoint; the element is validated below
-  const [zone] = payload.result as readonly JsonValue[];
+  const zone = payload.result.find(isRecord);
   if (!isJsonObject(zone) || !isStringValue(zone.id)) {
     throw new Error(`zone ${ZONE_NAME} not visible to the analytics token`);
   }
@@ -475,14 +774,7 @@ async function fetchCacheSnapshot(): Promise<CacheSnapshot> {
     }
 
     const zoneTag = await resolveZoneTag(apiToken);
-    const data = await runGraphQL<{
-      viewer: {
-        zones: {
-          totals: CacheStatusRow[];
-          paths: CacheStatusRow[];
-        }[];
-      };
-    }>(
+    const data = await runGraphQL(
       apiToken,
 
       `query($zoneTag: string!, $since: Time!, $host: string!) {
@@ -513,11 +805,10 @@ async function fetchCacheSnapshot(): Promise<CacheSnapshot> {
         since: sinceIso(CACHE_WINDOW_HOURS),
         host: PUBLIC_HOSTNAME,
       },
+      decodeCacheRows,
     );
 
-    const zone = data.viewer.zones[0];
-    const totals = zone?.totals ?? [];
-    const pathRows = zone?.paths ?? [];
+    const { totals, paths: pathRows } = data;
 
     const statuses = totals
       .map((row) => ({
@@ -593,7 +884,7 @@ async function fetchCacheSnapshot(): Promise<CacheSnapshot> {
 
 export const getCacheSnapshot = createServerFn({ method: "GET" }).handler(
   (): Promise<CacheSnapshot> =>
-    cachedJson("cache-snapshot:v1", async () => {
+    cachedJson("cache-snapshot:v1", decodeCacheSnapshot, async () => {
       const snapshot = await fetchCacheSnapshot();
       return { value: snapshot, cacheable: snapshot.ok };
     }),

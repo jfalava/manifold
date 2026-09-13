@@ -19,7 +19,6 @@ import {
   fetchAniListLibrary,
   fetchAniListMediaListEntryIds,
   parseAniListReadingStatus,
-  saveAniListProgress,
   saveAniListStatus,
   safeImageUrl,
   type AniListLibraryItem,
@@ -267,38 +266,6 @@ const anilistIdOfEffect = (
     )?.externalId;
     return anilistId ? { entryId, anilistId } : undefined;
   });
-
-/**
- * Pushes a chapter read to the AniList entry WITHOUT touching its status —
- * managed collections are the sole status authority. Reading a DROPPED title
- * bumps progress and stays DROPPED. Returns false when there is nothing to
- * do (no AniList link, or AniList not connected).
- */
-const recordAniListProgressEffect = (
-  sourceManga: SourceManga,
-  chapterNumber: number | undefined,
-): Effect.Effect<boolean, TrackerEffectError> =>
-  Effect.gen(function* () {
-    const token = aniListSessionToken();
-    if (!token) {
-      return false;
-    }
-    if (!isFiniteNumber(chapterNumber) || chapterNumber < 0) {
-      return false;
-    }
-    const resolved = yield* anilistIdOfEffect(sourceManga).pipe(
-      Effect.orElseSucceed(() => undefined),
-    );
-    if (!resolved) {
-      return false;
-    }
-    return yield* fromPromise(() => saveAniListProgress(token, resolved.anilistId, chapterNumber));
-  });
-
-export const recordAniListProgress = (
-  sourceManga: SourceManga,
-  chapterNumber: number | undefined,
-): Promise<boolean> => Effect.runPromise(recordAniListProgressEffect(sourceManga, chapterNumber));
 
 export const getManagedLibraryCollections = (): Promise<ManagedCollection[]> => {
   console.log("[manifold] collections:list");

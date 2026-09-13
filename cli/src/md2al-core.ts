@@ -5,10 +5,12 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import {
   errorMessage,
   isFiniteNumber,
+  isJsonArray,
   isJsonObject,
   isString,
   manifoldUserAgent,
   objectField,
+  stringField,
   type JsonObject,
 } from "@manifold/json";
 import { Effect } from "effect";
@@ -75,16 +77,11 @@ export interface MatchResult {
 
 // ---------- shared HTTP helpers ----------
 
-interface GraphQLResponse<A> {
-  data?: A;
-  errors?: { message?: string }[];
-}
-
-const gqlEffect = <A>(
+const gqlEffect = (
   token: string,
   query: string,
   variables: JsonObject = {},
-): Effect.Effect<A, CliEffectError> =>
+): Effect.Effect<JsonObject, CliEffectError> =>
   Effect.gen(function* () {
     const response = yield* fromPromise(() =>
       platformFetch(ANILIST_ENDPOINT, {
@@ -101,20 +98,32 @@ const gqlEffect = <A>(
     if (response.status === 429) {
       const retryAfter = Number(response.headers.get("retry-after") ?? "5");
       yield* sleepEffect(Math.max(retryAfter, 5) * 1000);
-      return yield* gqlEffect<A>(token, query, variables);
+      return yield* gqlEffect(token, query, variables);
     }
-    // SAFETY: HTTP value is the expected GraphQLResponse<A>
-    const body = (yield* fromPromise(() => response.json()).pipe(
+    const raw: unknown = yield* fromPromise(() => response.json()).pipe(
       Effect.mapError((cause) => cliError(errorMessage(cause))),
-    )) as GraphQLResponse<A>;
-    if (body.errors?.length) {
-      return yield* cliError(body.errors.map((e) => e.message ?? "?").join("; "));
+    );
+    if (!isJsonObject(raw)) {
+      return yield* cliError("AniList returned an invalid GraphQL response");
+    }
+    const errors = raw.errors;
+    if (errors !== undefined && !isJsonArray(errors)) {
+      return yield* cliError("AniList returned an invalid GraphQL errors envelope");
+    }
+    if (isJsonArray(errors) && errors.length > 0) {
+      const messages = errors.map((error) =>
+        isJsonObject(error) ? (stringField(error, "message") ?? "?") : "?",
+      );
+      return yield* cliError(messages.join("; "));
     }
     if (!response.ok) {
       return yield* cliError(`AniList HTTP ${response.status}`);
     }
-    // SAFETY: value matches A at this call site
-    return body.data as A;
+    const data = objectField(raw, "data");
+    if (!data) {
+      return yield* cliError("AniList response missing data");
+    }
+    return data;
   });
 
 /**
@@ -123,7 +132,10 @@ const gqlEffect = <A>(
  */
 export type MdTokenProvider = () => Promise<string>;
 
-const mdFetchEffect = <A>(mdToken: string, path: string): Effect.Effect<A, CliEffectError> =>
+const mdFetchEffect = (
+  mdToken: string,
+  path: string,
+): Effect.Effect<readonly JsonObject[], CliEffectError> =>
   Effect.gen(function* () {
     const response = yield* fromPromise(() =>
       platformFetch(`${MD_API}${path}`, {
@@ -137,16 +149,18 @@ const mdFetchEffect = <A>(mdToken: string, path: string): Effect.Effect<A, CliEf
     if (response.status === 429 || response.status === 403) {
       const retryAfter = Number(response.headers.get("retry-after") ?? "5");
       yield* sleepEffect(Math.max(retryAfter, 5) * 1000);
-      return yield* mdFetchEffect<A>(mdToken, path);
+      return yield* mdFetchEffect(mdToken, path);
     }
     if (!response.ok) {
       return yield* cliError(`MangaDex HTTP ${response.status} for ${path}`);
     }
-    // SAFETY: parsed JSON matches { data: A }
-    const body = (yield* fromPromise(() => response.json()).pipe(
+    const raw: unknown = yield* fromPromise(() => response.json()).pipe(
       Effect.mapError((cause) => cliError(errorMessage(cause))),
-    )) as { data: A };
-    return body.data;
+    );
+    if (!isJsonObject(raw) || !isJsonArray(raw.data) || !raw.data.every(isJsonObject)) {
+      return yield* cliError(`MangaDex returned an invalid data envelope for ${path}`);
+    }
+    return raw.data;
   });
 
 // ---------- progress rendering ----------
@@ -267,34 +281,34 @@ const phaseExportEffect = (
       for (const id of batch) {
         params.append("ids[]", id);
       }
-      const mangaList = yield* mdFetchEffect<
-        {
-          id: string;
-          attributes: {
-            title: Record<string, string>;
-            altTitles: Record<string, string>[];
-            links?: Record<string, string>;
-          };
-        }[]
-      >(mdToken, `/manga?${params.toString()}`);
+      const mangaList = yield* mdFetchEffect(mdToken, `/manga?${params.toString()}`);
 
-      for (const m of mangaList) {
-        const entry = idToEntry.get(m.id);
+      for (const manga of mangaList) {
+        const mangaId = stringField(manga, "id");
+        const attrs = objectField(manga, "attributes");
+        const title = attrs ? objectField(attrs, "title") : undefined;
+        if (!mangaId || !attrs || !title) {
+          continue;
+        }
+        const entry = idToEntry.get(mangaId);
         if (!entry) {
           continue;
         }
-        const attrs = m.attributes;
         entry.title =
-          attrs.title.en ??
-          attrs.title["ja-ro"] ??
-          attrs.title.ja ??
-          Object.values(attrs.title)[0] ??
+          stringField(title, "en") ??
+          stringField(title, "ja-ro") ??
+          stringField(title, "ja") ??
+          Object.values(title).find(isString) ??
           "";
-        entry.altTitles = attrs.altTitles.flatMap((t) => Object.values(t));
-        entry.anilistId =
-          attrs.links?.al && /^\d+$/.test(attrs.links.al) ? attrs.links.al : undefined;
-        entry.malId =
-          attrs.links?.mal && /^\d+$/.test(attrs.links.mal) ? attrs.links.mal : undefined;
+        const altTitles = attrs.altTitles;
+        entry.altTitles = isJsonArray(altTitles)
+          ? altTitles.filter(isJsonObject).flatMap((value) => Object.values(value).filter(isString))
+          : [];
+        const links = objectField(attrs, "links");
+        const anilistId = links ? stringField(links, "al") : undefined;
+        const malId = links ? stringField(links, "mal") : undefined;
+        entry.anilistId = anilistId && /^\d+$/.test(anilistId) ? anilistId : undefined;
+        entry.malId = malId && /^\d+$/.test(malId) ? malId : undefined;
       }
 
       fetched += mangaList.length;
@@ -336,22 +350,12 @@ const saveProgress = (tmpDir: string, progress: Map<string, number>): void => {
 
 // ---------- Phase B: match ----------
 
-interface AniListSearchMedia {
-  Page: {
-    media: {
-      id: number;
-      title: { romaji?: string; english?: string; userPreferred?: string };
-      synonyms?: string[];
-    }[];
-  };
-}
-
 const searchAniListByTitleEffect = (
   token: string,
   search: string,
 ): Effect.Effect<readonly { id: number; titles: readonly string[] }[], CliEffectError> =>
   Effect.gen(function* () {
-    const data = yield* gqlEffect<AniListSearchMedia>(
+    const data = yield* gqlEffect(
       token,
       `query ($search: String) {
       Page(perPage: 10) {
@@ -364,15 +368,32 @@ const searchAniListByTitleEffect = (
     }`,
       { search },
     );
-    return (data.Page.media ?? []).map((m) => ({
-      id: m.id,
-      titles: [
-        m.title.userPreferred,
-        m.title.english,
-        m.title.romaji,
-        ...(m.synonyms ?? []),
-      ].filter((t): t is string => Boolean(t)),
-    }));
+    const page = objectField(data, "Page");
+    const media = page?.media;
+    if (!page || !isJsonArray(media)) {
+      return yield* cliError("AniList returned an invalid title search envelope");
+    }
+    return media.flatMap((value) => {
+      if (!isJsonObject(value) || !isFiniteNumber(value.id)) {
+        return [];
+      }
+      const title = objectField(value, "title");
+      if (!title) {
+        return [];
+      }
+      const synonyms = value.synonyms;
+      return [
+        {
+          id: value.id,
+          titles: [
+            stringField(title, "userPreferred"),
+            stringField(title, "english"),
+            stringField(title, "romaji"),
+            ...(isJsonArray(synonyms) ? synonyms.filter(isString) : []),
+          ].filter((t): t is string => Boolean(t)),
+        },
+      ];
+    });
   });
 
 const phaseMatchEffect = (
@@ -419,7 +440,7 @@ const phaseMatchEffect = (
 
       // 2) MAL link
       if (!result.anilistId && entry.malId) {
-        const malResult = yield* gqlEffect<{ Media: { id: number } | null }>(
+        const malResult = yield* gqlEffect(
           anilistToken,
           `query ($idMal: Int) {
             Media(idMal: $idMal, type: MANGA) { id }
@@ -427,10 +448,12 @@ const phaseMatchEffect = (
           { idMal: Number(entry.malId) },
         ).pipe(
           Effect.map((data) => {
-            if (data.Media?.id) {
+            const media = objectField(data, "Media");
+            const mediaId = media?.id;
+            if (isFiniteNumber(mediaId) && mediaId > 0) {
               return {
                 ...result,
-                anilistId: String(data.Media.id),
+                anilistId: String(mediaId),
                 method: "mal-link" as const,
               } satisfies MatchResult;
             }
@@ -566,13 +589,11 @@ const collectProgressEffect = (
           if (!markerResponse.ok) {
             return yield* cliError(`HTTP ${markerResponse.status}`);
           }
-          // SAFETY: parsed JSON matches { data?: string[] }
-          const markerBody = (yield* fromPromise(() => markerResponse.json()).pipe(
+          const markerBody: unknown = yield* fromPromise(() => markerResponse.json()).pipe(
             Effect.mapError((cause) => cliError(errorMessage(cause))),
-          )) as {
-            data?: string[];
-          };
-          const chapterIds = Array.isArray(markerBody.data) ? markerBody.data : [];
+          );
+          const markerData = isJsonObject(markerBody) ? markerBody.data : undefined;
+          const chapterIds = isJsonArray(markerData) ? markerData.filter(isString) : [];
           if (chapterIds.length > 0) {
             let maxChapter = 0;
             for (let i = 0; i < chapterIds.length; i += 100) {
@@ -582,12 +603,9 @@ const collectProgressEffect = (
               for (const id of batch) {
                 params.append("ids[]", id);
               }
-              const chapters = yield* mdFetchEffect<{ chapter?: string }[]>(
-                mdToken,
-                `/chapter?${params.toString()}`,
-              );
-              for (const c of chapters) {
-                const num = Number.parseFloat(c.chapter ?? "");
+              const chapters = yield* mdFetchEffect(mdToken, `/chapter?${params.toString()}`);
+              for (const chapter of chapters) {
+                const num = Number.parseFloat(stringField(chapter, "chapter") ?? "");
                 if (Number.isFinite(num)) {
                   maxChapter = Math.max(maxChapter, num);
                 }
@@ -636,17 +654,13 @@ const fetchExistingProgressEffect = (
   anilistToken: string,
 ): Effect.Effect<Map<string, number>, CliEffectError> =>
   Effect.gen(function* () {
-    const viewer = yield* gqlEffect<{ Viewer?: { id?: number } }>(
-      anilistToken,
-      `query { Viewer { id } }`,
-    );
-    const viewerId = viewer.Viewer?.id;
-    if (viewerId === undefined) {
+    const viewer = yield* gqlEffect(anilistToken, `query { Viewer { id } }`);
+    const viewerObject = objectField(viewer, "Viewer");
+    const viewerId = viewerObject?.id;
+    if (!isFiniteNumber(viewerId)) {
       return yield* cliError("Could not resolve AniList viewer id.");
     }
-    const data = yield* gqlEffect<{
-      MediaListCollection?: { lists?: { entries?: { mediaId: number; progress?: number }[] }[] };
-    }>(
+    const data = yield* gqlEffect(
       anilistToken,
       `query ($userId: Int) {
       MediaListCollection(userId: $userId, type: MANGA) {
@@ -655,11 +669,31 @@ const fetchExistingProgressEffect = (
     }`,
       { userId: viewerId },
     );
+    const collection = data.MediaListCollection;
+    if (collection === undefined || (collection !== null && !isJsonObject(collection))) {
+      return yield* cliError("AniList returned an invalid progress envelope");
+    }
+    const lists = collection === null ? [] : collection.lists;
+    if (lists === undefined || (lists !== null && !isJsonArray(lists))) {
+      return yield* cliError("AniList returned an invalid progress envelope");
+    }
     const existingProgress = new Map<string, number>();
-    for (const list of data.MediaListCollection?.lists ?? []) {
-      for (const e of list.entries ?? []) {
-        if (isFiniteNumber(e.progress) && e.mediaId !== undefined) {
-          existingProgress.set(String(e.mediaId), e.progress);
+    for (const list of isJsonArray(lists) ? lists : []) {
+      if (!isJsonObject(list)) {
+        return yield* cliError("AniList returned an invalid progress list");
+      }
+      const entries = list.entries;
+      if (entries !== undefined && entries !== null && !isJsonArray(entries)) {
+        return yield* cliError("AniList returned an invalid progress entries list");
+      }
+      for (const entry of isJsonArray(entries) ? entries : []) {
+        if (!isJsonObject(entry)) {
+          return yield* cliError("AniList returned an invalid progress entry");
+        }
+        const mediaId = entry.mediaId;
+        const progress = entry.progress;
+        if (isFiniteNumber(progress) && isFiniteNumber(mediaId)) {
+          existingProgress.set(String(mediaId), progress);
         }
       }
     }
