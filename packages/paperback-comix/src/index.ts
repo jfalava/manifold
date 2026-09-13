@@ -180,6 +180,27 @@ const pageFromMetadata = (metadata: Metadata | undefined): number => {
 const nextMetadata = (current: number, last: number | undefined): Metadata | undefined =>
   last !== undefined && current < last ? { page: current + 1 } : undefined;
 
+const isComixCookie = (cookie: Cookie): boolean => {
+  const domain = cookie.domain
+    .trim()
+    .toLowerCase()
+    .replace(/^\.+/, "")
+    .replace(/^www\./, "");
+  return (domain === "comix.to" || domain.endsWith(".comix.to")) && cookie.value.trim() !== "";
+};
+
+const persistComixCookies = (
+  storage: CookieStorageInterceptor,
+  cookies: readonly Cookie[],
+  clearanceOnly = false,
+): void => {
+  for (const cookie of cookies) {
+    if (isComixCookie(cookie) && (!clearanceOnly || cookie.name === "cf_clearance")) {
+      storage.setCookie(cookie);
+    }
+  }
+};
+
 /**
  * Cookie jar that never learns from failed responses: a 403/503 challenge
  * carries Set-Cookie that would otherwise overwrite a still-valid
@@ -229,7 +250,7 @@ export class ComixSource
   }
 
   async saveCloudflareBypassCookies(cookies: Cookie[]): Promise<void> {
-    this.cookieStorage.cookies = cookies;
+    persistComixCookies(this.cookieStorage, cookies);
   }
 
   async cloudflareBypassCompleted(
@@ -237,7 +258,7 @@ export class ComixSource
     cookies: Cookie[],
     _localStorage: Record<string, string>,
   ): Promise<void> {
-    this.cookieStorage.cookies = cookies;
+    persistComixCookies(this.cookieStorage, cookies, true);
   }
 
   async getSettingsForm(): Promise<Form> {
@@ -245,9 +266,7 @@ export class ComixSource
   }
 
   hasSavedComixCookies(): boolean {
-    return this.cookieStorage.cookies.some(
-      (cookie) => cookie.domain === "comix.to" || cookie.domain.endsWith(".comix.to"),
-    );
+    return this.cookieStorage.cookies.some(isComixCookie);
   }
 
   private async executeComixWebView(url: string, inject: string): Promise<ComixCaptureBody> {
@@ -262,7 +281,7 @@ export class ComixSource
       inject,
       storage: { cookies: [...this.cookieStorage.cookies] },
     });
-    this.cookieStorage.cookies = execution.storage.cookies;
+    persistComixCookies(this.cookieStorage, execution.storage.cookies);
     const captured: unknown = execution.result;
     if (!isJsonValue(captured)) {
       throw new Error(`Comix WebView returned a non-JSON result: ${url}`);
