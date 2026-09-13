@@ -1,9 +1,4 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
+import { DateTime, Effect } from "effect";
 import { manifoldUserAgent } from "@manifold/json";
 import { createServerFn } from "@tanstack/react-start";
 
@@ -19,8 +14,8 @@ import {
   type JsonObject,
   type SecretHandle,
 } from "./guards";
-import { cachedJson } from "./server-cache";
-import { trusted } from "./trusted-cast";
+import { AdminError, platformFetch, runHost, tryPromise, workersRuntime } from "./effect-host";
+import { cachedJsonProgram, type ComputedSnapshot } from "./server-cache";
 
 const GRAPHQL_URL = "https://api.cloudflare.com/client/v4/graphql";
 const REST_URL = "https://api.cloudflare.com/client/v4";
@@ -321,14 +316,17 @@ const decodeAnalyticsSnapshot = (value: unknown): AnalyticsSnapshot | undefined 
 };
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: secret binding comes from untyped workers env; parsed at I/O boundary via isString/isSecretHandle
-async function resolveSecret(binding: unknown): Promise<string | null> {
+const resolveSecret = Effect.fnUntraced(function* (
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: Alchemy secret bindings are runtime handles; guards parse them before use
+  binding: unknown,
+): Effect.fn.Return<string | null, AdminError> {
   if (isStringValue(binding)) {
     return binding;
   }
   if (isSecretHandleObject(binding)) {
     const handle: SecretHandle = binding;
     if (isFunctionValue(handle.get)) {
-      const value = await handle.get();
+      const value = yield* tryPromise(() => handle.get!());
       return isStringValue(value) ? value : null;
     }
     if (isStringValue(handle.value)) {
@@ -336,55 +334,57 @@ async function resolveSecret(binding: unknown): Promise<string | null> {
     }
   }
   return null;
+});
+
+function sinceIso(now: DateTime.Utc, hoursAgo: number): string {
+  return DateTime.formatIso(DateTime.subtract(now, { hours: hoursAgo }));
 }
 
-function sinceIso(hoursAgo: number): string {
-  return new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
+function dayIso(now: DateTime.Utc, daysAgo: number): string {
+  return DateTime.formatIsoDate(DateTime.subtract(now, { days: daysAgo }));
 }
 
-function dayIso(daysAgo: number): string {
-  return new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10);
-}
-
-async function runGraphQL<T>(
+const runGraphQL = Effect.fnUntraced(function* <T>(
   apiToken: string,
   query: string,
   variables: Record<string, string>,
   decode: (data: JsonObject) => T | undefined,
-): Promise<T> {
-  const response = await fetch(GRAPHQL_URL, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${apiToken}`,
-      "user-agent": manifoldUserAgent("admin"),
-    },
-    body: JSON.stringify({ query, variables }),
-  });
+): Effect.fn.Return<T, AdminError> {
+  const response = yield* tryPromise(() =>
+    platformFetch(GRAPHQL_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiToken}`,
+        "user-agent": manifoldUserAgent("admin"),
+      },
+      body: JSON.stringify({ query, variables }),
+    }),
+  );
   if (!response.ok) {
-    throw new Error(`GraphQL HTTP ${response.status}`);
+    return yield* new AdminError({ message: `GraphQL HTTP ${response.status}` });
   }
-  const payload: unknown = await response.json();
+  const payload = yield* tryPromise<unknown>(() => response.json());
   if (!isJsonObject(payload) || Array.isArray(payload)) {
-    throw new Error("GraphQL response was not an object");
+    return yield* new AdminError({ message: "GraphQL response was not an object" });
   }
   const errorsValue = payload.errors;
   if (errorsValue !== undefined && !isJsonArray(errorsValue)) {
-    throw new Error("GraphQL response errors were not an array");
+    return yield* new AdminError({ message: "GraphQL response errors were not an array" });
   }
   const messages = isJsonArray(errorsValue) ? errorsValue.flatMap(graphqlErrorMessage) : [];
   if (messages.length > 0) {
-    throw new Error(messages.join("; "));
+    return yield* new AdminError({ message: messages.join("; ") });
   }
   if (!isJsonObject(payload.data) || Array.isArray(payload.data)) {
-    throw new Error("GraphQL response missing data");
+    return yield* new AdminError({ message: "GraphQL response missing data" });
   }
   const decoded = decode(payload.data);
   if (decoded === undefined) {
-    throw new Error("GraphQL response data had an unexpected shape");
+    return yield* new AdminError({ message: "GraphQL response data had an unexpected shape" });
   }
   return decoded;
-}
+});
 
 function emptyHourly(): Record<LogicalWorker, HourlyPoint[]> {
   // oxlint-disable-next-line anti-slop/no-known-value-widening -- SAFETY: empty arrays are intentionally widened to HourlyPoint[]; no evidence discarded (no elements)
@@ -394,21 +394,6 @@ function emptyHourly(): Record<LogicalWorker, HourlyPoint[]> {
     ManifoldDocs: [],
     "manifold-admin": [],
   };
-}
-
-// Indirect the specifier so bundlers don't try to resolve "cloudflare:workers"
-// at build time — workerd provides it at runtime.
-const WORKERS_MODULE = "cloudflare:workers";
-
-async function workersEnv(): Promise<(typeof import("cloudflare:workers"))["env"]> {
-  const mod: unknown = await import(/* @vite-ignore */ WORKERS_MODULE);
-  if (!isJsonObject(mod) || !("env" in mod)) {
-    throw new Error("cloudflare:workers module unavailable");
-  }
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: workerd provides env, validated by isJsonObject and "env" check
-  const envValue = (mod as { readonly env: unknown }).env;
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: env shape is owned by workerd runtime; validated via isJsonObject check above
-  return trusted(envValue as (typeof import("cloudflare:workers"))["env"]);
 }
 
 function emptyAnalyticsSnapshot(reason: string, fetchedAt: string): AnalyticsSnapshot {
@@ -425,13 +410,14 @@ function emptyAnalyticsSnapshot(reason: string, fetchedAt: string): AnalyticsSna
   };
 }
 
-async function fetchSnapshot(): Promise<AnalyticsSnapshot> {
-  const fetchedAt = new Date().toISOString();
+const fetchSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<AnalyticsSnapshot> {
+  const now = DateTime.nowUnsafe();
+  const fetchedAt = DateTime.formatIso(now);
 
-  try {
-    const env = await workersEnv();
+  return yield* Effect.gen(function* () {
+    const { env } = yield* workersRuntime();
     const accountTag = env.CF_ACCOUNT_ID;
-    const apiToken = await resolveSecret(env.MANIFOLD_ADMIN_PANEL_ANALYTICS_API);
+    const apiToken = yield* resolveSecret(env.MANIFOLD_ADMIN_PANEL_ANALYTICS_API);
 
     if (
       !isStringValue(apiToken) ||
@@ -444,11 +430,12 @@ async function fetchSnapshot(): Promise<AnalyticsSnapshot> {
         fetchedAt,
       );
     }
-    const [invocationsData, doData, storageData] = await Promise.all([
-      runGraphQL(
-        apiToken,
+    const [invocationsData, doData, storageData] = yield* Effect.all(
+      [
+        runGraphQL(
+          apiToken,
 
-        `query($accountTag: string!, $since: Time!) {
+          `query($accountTag: string!, $since: Time!) {
           viewer {
             accounts(filter: { accountTag: $accountTag }) {
               workersInvocationsAdaptive(
@@ -461,13 +448,13 @@ async function fetchSnapshot(): Promise<AnalyticsSnapshot> {
             }
           }
         }`,
-        { accountTag, since: sinceIso(WINDOW_HOURS) },
-        decodeInvocationsRows,
-      ),
-      runGraphQL(
-        apiToken,
+          { accountTag, since: sinceIso(now, WINDOW_HOURS) },
+          decodeInvocationsRows,
+        ),
+        runGraphQL(
+          apiToken,
 
-        `query($accountTag: string!, $since: Time!) {
+          `query($accountTag: string!, $since: Time!) {
           viewer {
             accounts(filter: { accountTag: $accountTag }) {
               durableObjectsInvocationsAdaptiveGroups(
@@ -479,13 +466,13 @@ async function fetchSnapshot(): Promise<AnalyticsSnapshot> {
             }
           }
         }`,
-        { accountTag, since: sinceIso(WINDOW_HOURS) },
-        decodeDoInvocationsRows,
-      ),
-      runGraphQL(
-        apiToken,
+          { accountTag, since: sinceIso(now, WINDOW_HOURS) },
+          decodeDoInvocationsRows,
+        ),
+        runGraphQL(
+          apiToken,
 
-        `query($accountTag: string!, $since: Date!) {
+          `query($accountTag: string!, $since: Date!) {
           viewer {
             accounts(filter: { accountTag: $accountTag }) {
               durableObjectsStorageGroups(
@@ -497,10 +484,12 @@ async function fetchSnapshot(): Promise<AnalyticsSnapshot> {
             }
           }
         }`,
-        { accountTag, since: dayIso(7) },
-        decodeDoStorageRows,
-      ),
-    ]);
+          { accountTag, since: dayIso(now, 7) },
+          decodeDoStorageRows,
+        ),
+      ],
+      { concurrency: "unbounded" },
+    );
 
     const rows = invocationsData;
 
@@ -547,20 +536,22 @@ async function fetchSnapshot(): Promise<AnalyticsSnapshot> {
       doStoredBytes,
       hourly,
     };
-  } catch (error) {
-    return emptyAnalyticsSnapshot(
-      error instanceof Error ? error.message : "analytics query failed",
-      fetchedAt,
-    );
-  }
-}
+  }).pipe(
+    Effect.catch((error) => Effect.succeed(emptyAnalyticsSnapshot(error.message, fetchedAt))),
+  );
+});
 
-export const getAnalyticsSnapshot = createServerFn({ method: "GET" }).handler(
-  (): Promise<AnalyticsSnapshot> =>
-    cachedJson("analytics-snapshot:v1", decodeAnalyticsSnapshot, async () => {
-      const snapshot = await fetchSnapshot();
-      return { value: snapshot, cacheable: snapshot.ok };
-    }),
+export const getAnalyticsSnapshot = createServerFn({ method: "GET" }).handler(() =>
+  runHost(
+    cachedJsonProgram("analytics-snapshot:v1", decodeAnalyticsSnapshot, () =>
+      fetchSnapshot().pipe(
+        Effect.map((snapshot): ComputedSnapshot<AnalyticsSnapshot> => ({
+          value: snapshot,
+          cacheable: snapshot.ok,
+        })),
+      ),
+    ),
+  ),
 );
 
 // ------------------------------------------------------------------
@@ -713,30 +704,36 @@ const decodeCacheSnapshot = (value: unknown): CacheSnapshot | undefined => {
 
 let zoneTagCache: string | null = null;
 
-async function resolveZoneTag(apiToken: string): Promise<string> {
+const resolveZoneTag = Effect.fnUntraced(function* (
+  apiToken: string,
+): Effect.fn.Return<string, AdminError> {
   if (zoneTagCache !== null) {
     return zoneTagCache;
   }
-  const response = await fetch(`${REST_URL}/zones?name=${encodeURIComponent(ZONE_NAME)}`, {
-    headers: {
-      authorization: `Bearer ${apiToken}`,
-      "user-agent": manifoldUserAgent("admin"),
-    },
-  });
+  const response = yield* tryPromise(() =>
+    platformFetch(`${REST_URL}/zones?name=${encodeURIComponent(ZONE_NAME)}`, {
+      headers: {
+        authorization: `Bearer ${apiToken}`,
+        "user-agent": manifoldUserAgent("admin"),
+      },
+    }),
+  );
   if (!response.ok) {
-    throw new Error(`zone lookup HTTP ${response.status}`);
+    return yield* new AdminError({ message: `zone lookup HTTP ${response.status}` });
   }
-  const payload: unknown = await response.json();
+  const payload = yield* tryPromise<unknown>(() => response.json());
   if (!isJsonObject(payload) || Array.isArray(payload) || !isJsonArray(payload.result)) {
-    throw new Error("zone lookup returned an unexpected shape");
+    return yield* new AdminError({ message: "zone lookup returned an unexpected shape" });
   }
   const zone = payload.result.find(isRecord);
   if (!isJsonObject(zone) || !isStringValue(zone.id)) {
-    throw new Error(`zone ${ZONE_NAME} not visible to the analytics token`);
+    return yield* new AdminError({
+      message: `zone ${ZONE_NAME} not visible to the analytics token`,
+    });
   }
   zoneTagCache = zone.id;
   return zone.id;
-}
+});
 
 const matchSurface = (path: string): { surface: string; pathPrefix: string } =>
   SURFACE_PREFIXES.find(
@@ -760,12 +757,13 @@ function emptyCacheSnapshot(reason: string, fetchedAt: string): CacheSnapshot {
   };
 }
 
-async function fetchCacheSnapshot(): Promise<CacheSnapshot> {
-  const fetchedAt = new Date().toISOString();
+const fetchCacheSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<CacheSnapshot> {
+  const now = DateTime.nowUnsafe();
+  const fetchedAt = DateTime.formatIso(now);
 
-  try {
-    const env = await workersEnv();
-    const apiToken = await resolveSecret(env.MANIFOLD_ADMIN_PANEL_ANALYTICS_API);
+  return yield* Effect.gen(function* () {
+    const { env } = yield* workersRuntime();
+    const apiToken = yield* resolveSecret(env.MANIFOLD_ADMIN_PANEL_ANALYTICS_API);
     if (!isStringValue(apiToken) || apiToken === "") {
       return emptyCacheSnapshot(
         "MANIFOLD_ADMIN_PANEL_ANALYTICS_API binding is not configured",
@@ -773,8 +771,8 @@ async function fetchCacheSnapshot(): Promise<CacheSnapshot> {
       );
     }
 
-    const zoneTag = await resolveZoneTag(apiToken);
-    const data = await runGraphQL(
+    const zoneTag = yield* resolveZoneTag(apiToken);
+    const data = yield* runGraphQL(
       apiToken,
 
       `query($zoneTag: string!, $since: Time!, $host: string!) {
@@ -802,7 +800,7 @@ async function fetchCacheSnapshot(): Promise<CacheSnapshot> {
       }`,
       {
         zoneTag,
-        since: sinceIso(CACHE_WINDOW_HOURS),
+        since: sinceIso(now, CACHE_WINDOW_HOURS),
         host: PUBLIC_HOSTNAME,
       },
       decodeCacheRows,
@@ -874,18 +872,18 @@ async function fetchCacheSnapshot(): Promise<CacheSnapshot> {
       cacheHits,
       cachedBytes,
     };
-  } catch (error) {
-    return emptyCacheSnapshot(
-      error instanceof Error ? error.message : "cache analytics query failed",
-      fetchedAt,
-    );
-  }
-}
+  }).pipe(Effect.catch((error) => Effect.succeed(emptyCacheSnapshot(error.message, fetchedAt))));
+});
 
-export const getCacheSnapshot = createServerFn({ method: "GET" }).handler(
-  (): Promise<CacheSnapshot> =>
-    cachedJson("cache-snapshot:v1", decodeCacheSnapshot, async () => {
-      const snapshot = await fetchCacheSnapshot();
-      return { value: snapshot, cacheable: snapshot.ok };
-    }),
+export const getCacheSnapshot = createServerFn({ method: "GET" }).handler(() =>
+  runHost(
+    cachedJsonProgram("cache-snapshot:v1", decodeCacheSnapshot, () =>
+      fetchCacheSnapshot().pipe(
+        Effect.map((snapshot): ComputedSnapshot<CacheSnapshot> => ({
+          value: snapshot,
+          cacheable: snapshot.ok,
+        })),
+      ),
+    ),
+  ),
 );

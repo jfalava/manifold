@@ -5,7 +5,12 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
 
-import { agentIgnores, antiSlopJsPlugins, antiSlopRules } from "../oxlint.config.ts";
+import {
+  agentIgnores,
+  antiSlopEffectRules,
+  antiSlopJsPlugins,
+  antiSlopRules,
+} from "../oxlint.config.ts";
 
 const MOUNT_PATH = "/admin/";
 
@@ -72,9 +77,8 @@ export default defineConfig({
   },
   lint: {
     plugins: ["eslint", "react", "typescript", "jsx-a11y", "unicorn", "oxc", "import", "promise"],
-    // Generic anti-slop only — admin has no direct `effect` dependency.
     // jsPlugins specifier may use `../..` (plugin load path); ignorePatterns may not.
-    jsPlugins: antiSlopJsPlugins(".."),
+    jsPlugins: antiSlopJsPlugins("..", { effect: true }),
     categories: {
       correctness: "error",
       suspicious: "warn",
@@ -180,6 +184,7 @@ export default defineConfig({
       // Side-effect-only stylesheet imports are the standard Vite pattern.
       "import/no-unassigned-import": ["warn", { allow: ["**/*.css"] }],
       ...antiSlopRules,
+      ...antiSlopEffectRules,
     },
   },
 });

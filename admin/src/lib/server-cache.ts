@@ -1,9 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
 /**
  * Stale-while-revalidate JSON cache for server-fn snapshots.
  *
@@ -18,13 +12,16 @@
  * degrades to plain compute.
  */
 
-import { isFunctionValue, isJsonObject, isNumberValue } from "./guards";
-import { trusted } from "./trusted-cast";
+import { DateTime, Deferred, Effect, Option, Schema } from "effect";
+
+import { isJsonObject, isNumberValue } from "./guards";
+import { AdminError, runHost, toError, tryPromise, workersRuntime } from "./effect-host";
 
 /** How long a stored snapshot is served without triggering a refresh. */
 const SOFT_TTL_MS = 60_000;
 /** Hard KV expiry — the longest a stale snapshot can ever be served. */
 const KV_TTL_SECONDS = 21_600; // 6h
+const JsonString = Schema.fromJsonString(Schema.Unknown);
 
 interface Envelope<T> {
   readonly storedAt: number;
@@ -34,67 +31,57 @@ interface Envelope<T> {
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: every cache decoder validates persisted JSON before returning its domain type
 export type CacheDecoder<T> = (value: unknown) => T | undefined;
 
-// Indirect the specifier so bundlers (rolldown) don't try to resolve
-// "cloudflare:workers" at build time — workerd provides it at runtime.
-const WORKERS_MODULE = "cloudflare:workers";
-
 interface WorkersRuntime {
   readonly kv: KVNamespace | null;
   readonly waitUntil: ((promise: Promise<unknown>) => void) | null;
 }
 
-async function workersRuntime(): Promise<WorkersRuntime> {
-  try {
-    const mod: unknown = await import(/* @vite-ignore */ WORKERS_MODULE);
-    if (!isJsonObject(mod) || !("env" in mod)) {
-      return { kv: null, waitUntil: null };
-    }
-    // SAFETY: workerd owns the cloudflare:workers module shape; presence of env is validated above and waitUntil is guarded below
-    const runtime = trusted<{
-      readonly env: { readonly ADMIN_CACHE?: KVNamespace };
-      readonly waitUntil?: (promise: Promise<unknown>) => void;
-    }>(mod);
-    return {
-      kv: runtime.env.ADMIN_CACHE ?? null,
-      waitUntil: isFunctionValue(runtime.waitUntil) ? runtime.waitUntil : null,
-    };
-  } catch {
-    // Not running on workerd (vite dev) — L1-only caching.
-    return { kv: null, waitUntil: null };
-  }
-}
-
 const l1 = new Map<string, Envelope<unknown>>();
-const inflight = new Map<string, Promise<unknown>>();
+const inflight = new Map<string, Deferred.Deferred<unknown, AdminError>>();
+const invalidationEpoch = new Map<string, number>();
 
-async function readKv<T>(
+const workersCacheRuntime = workersRuntime().pipe(
+  Effect.map(
+    ({ env, waitUntil }) =>
+      ({
+        kv: env.ADMIN_CACHE ?? null,
+        waitUntil,
+      }) satisfies WorkersRuntime,
+  ),
+  Effect.orElseSucceed(() => ({ kv: null, waitUntil: null }) satisfies WorkersRuntime),
+);
+
+const readKv = Effect.fnUntraced(function* <T>(
   kv: KVNamespace,
   key: string,
   decode: CacheDecoder<T>,
-): Promise<Envelope<T> | null> {
-  try {
-    const text = await kv.get(key, "text");
-    if (text === null) {
-      return null;
-    }
-    const parsed: unknown = JSON.parse(text);
-    if (!isJsonObject(parsed) || !isNumberValue(parsed.storedAt) || !("value" in parsed)) {
-      return null;
-    }
-    const value = decode(parsed.value);
-    return value === undefined ? null : { storedAt: parsed.storedAt, value };
-  } catch {
+) {
+  const text = yield* tryPromise(() => kv.get(key, "text")).pipe(Effect.orElseSucceed(() => null));
+  if (text === null) {
     return null;
   }
-}
-
-async function writeKv(kv: KVNamespace, key: string, envelope: Envelope<unknown>): Promise<void> {
-  try {
-    await kv.put(key, JSON.stringify(envelope), { expirationTtl: KV_TTL_SECONDS });
-  } catch {
-    // Best effort — the value was still computed and returned.
+  const decoded = Schema.decodeOption(JsonString)(text);
+  const parsed = Option.isSome(decoded) ? decoded.value : null;
+  if (!isJsonObject(parsed) || !isNumberValue(parsed.storedAt) || !("value" in parsed)) {
+    return null;
   }
-}
+  const value = decode(parsed.value);
+  return value === undefined ? null : ({ storedAt: parsed.storedAt, value } satisfies Envelope<T>);
+});
+
+const writeKv = Effect.fnUntraced(function* (
+  kv: KVNamespace,
+  key: string,
+  envelope: Envelope<unknown>,
+) {
+  yield* Schema.encodeEffect(JsonString)(envelope).pipe(
+    Effect.mapError(toError),
+    Effect.flatMap((encoded) =>
+      tryPromise(() => kv.put(key, encoded, { expirationTtl: KV_TTL_SECONDS })),
+    ),
+    Effect.ignore,
+  );
+});
 
 export interface ComputedSnapshot<T> {
   readonly value: T;
@@ -102,49 +89,73 @@ export interface ComputedSnapshot<T> {
   readonly cacheable: boolean;
 }
 
-const computeAndStore = async <T>(
+const computeAndStore = Effect.fnUntraced(function* <T>(
   key: string,
   kv: KVNamespace | null,
   decode: CacheDecoder<T>,
-  compute: () => Promise<ComputedSnapshot<T>>,
-): Promise<T> => {
-  const running = inflight.get(key);
-  if (running !== undefined) {
-    const value = decode(await running);
-    if (value === undefined) {
-      throw new Error(`Cache computation for ${key} returned an invalid value`);
+  compute: () => Effect.Effect<ComputedSnapshot<T>, AdminError>,
+) {
+  const acquired = yield* Effect.sync(() => {
+    const existing = inflight.get(key);
+    if (existing !== undefined) {
+      return { deferred: existing, owner: false } as const;
     }
-    return value;
-  }
-  const task = (async () => {
-    const { value, cacheable } = await compute();
-    if (cacheable) {
-      const envelope: Envelope<T> = { storedAt: Date.now(), value };
-      l1.set(key, envelope);
-      if (kv !== null) {
-        await writeKv(kv, key, envelope);
-      }
-    }
-    return value;
-  })();
-  inflight.set(key, task);
-  try {
-    return await task;
-  } finally {
-    inflight.delete(key);
-  }
-};
+    const deferred = Deferred.makeUnsafe<unknown, AdminError>();
+    inflight.set(key, deferred);
+    return {
+      deferred,
+      epoch: invalidationEpoch.get(key) ?? 0,
+      owner: true,
+    } as const;
+  });
 
-/**
- * Serve `key` from cache when possible, computing (and storing) otherwise.
- * Stale hits return immediately and refresh in the background.
- */
-export async function cachedJson<T>(
+  if (!acquired.owner) {
+    const value = yield* Deferred.await(acquired.deferred);
+    const decoded = decode(value);
+    if (decoded === undefined) {
+      return yield* new AdminError({
+        message: `Cache computation for ${key} returned an invalid value`,
+      });
+    }
+    return decoded;
+  }
+
+  return yield* compute().pipe(
+    Effect.tap(({ value, cacheable }) =>
+      cacheable
+        ? Effect.gen(function* () {
+            if ((invalidationEpoch.get(key) ?? 0) === acquired.epoch) {
+              const envelope: Envelope<T> = {
+                storedAt: DateTime.toEpochMillis(DateTime.nowUnsafe()),
+                value,
+              };
+              l1.set(key, envelope);
+              if (kv !== null) {
+                yield* writeKv(kv, key, envelope);
+              }
+            }
+            yield* Deferred.succeed(acquired.deferred, value);
+          })
+        : Deferred.succeed(acquired.deferred, value),
+    ),
+    Effect.tapError((error) => Deferred.fail(acquired.deferred, error)),
+    Effect.ensuring(
+      Effect.sync(() => {
+        if (inflight.get(key) === acquired.deferred) {
+          inflight.delete(key);
+        }
+      }),
+    ),
+    Effect.map(({ value }) => value),
+  );
+});
+
+const cachedJsonEffect = Effect.fnUntraced(function* <T>(
   key: string,
   decode: CacheDecoder<T>,
-  compute: () => Promise<ComputedSnapshot<T>>,
-): Promise<T> {
-  const now = Date.now();
+  compute: () => Effect.Effect<ComputedSnapshot<T>, AdminError>,
+) {
+  const now = DateTime.toEpochMillis(DateTime.nowUnsafe());
 
   const local = l1.get(key);
   if (local !== undefined && now - local.storedAt < SOFT_TTL_MS) {
@@ -155,9 +166,8 @@ export async function cachedJson<T>(
     l1.delete(key);
   }
 
-  const { kv, waitUntil } = await workersRuntime();
-
-  const stored = kv === null ? null : await readKv<T>(kv, key, decode);
+  const { kv, waitUntil } = yield* workersCacheRuntime;
+  const stored = kv === null ? null : yield* readKv(kv, key, decode);
   if (stored !== null) {
     l1.set(key, stored);
     if (now - stored.storedAt < SOFT_TTL_MS) {
@@ -166,7 +176,7 @@ export async function cachedJson<T>(
     // Stale: serve it now, refresh out of band. Without waitUntil the
     // refresh promise may be cancelled after the response — acceptable,
     // the next request retries.
-    const refresh = computeAndStore(key, kv, decode, compute).catch(() => undefined);
+    const refresh = runHost(computeAndStore(key, kv, decode, compute)).catch(() => undefined);
     if (waitUntil !== null) {
       waitUntil(refresh);
     }
@@ -178,28 +188,47 @@ export async function cachedJson<T>(
     const value = decode(local.value);
     if (value === undefined) {
       l1.delete(key);
-      return computeAndStore(key, kv, decode, compute);
+      return yield* computeAndStore(key, kv, decode, compute);
     }
-    const refresh = computeAndStore(key, kv, decode, compute).catch(() => undefined);
+    const refresh = runHost(computeAndStore(key, kv, decode, compute)).catch(() => undefined);
     if (waitUntil !== null) {
       waitUntil(refresh);
     }
     return value;
   }
 
-  return computeAndStore(key, kv, decode, compute);
+  return yield* computeAndStore(key, kv, decode, compute);
+});
+
+/** Effect-native cache operation for server-side composition. */
+export const cachedJsonProgram = cachedJsonEffect;
+
+/** Promise adapter for non-Effect callers. */
+export function cachedJson<T>(
+  key: string,
+  decode: CacheDecoder<T>,
+  compute: () => Effect.Effect<ComputedSnapshot<T>, AdminError>,
+): Promise<T> {
+  return runHost(cachedJsonEffect(key, decode, compute));
 }
 
-/** Drop a cached snapshot from L1 and KV so the next read recomputes. */
-export async function invalidateCachedJson(key: string): Promise<void> {
-  l1.delete(key);
-  const { kv } = await workersRuntime();
+const invalidateCachedJsonEffect = Effect.fnUntraced(function* (key: string) {
+  yield* Effect.sync(() => {
+    l1.delete(key);
+    invalidationEpoch.set(key, (invalidationEpoch.get(key) ?? 0) + 1);
+    inflight.delete(key);
+  });
+  const { kv } = yield* workersCacheRuntime;
   if (kv === null) {
     return;
   }
-  try {
-    await kv.delete(key);
-  } catch {
-    // Best effort — next soft-TTL expiry still refreshes.
-  }
+  yield* tryPromise(() => kv.delete(key)).pipe(Effect.ignore);
+});
+
+/** Effect-native invalidation for server-side composition. */
+export const invalidateCachedJsonProgram = invalidateCachedJsonEffect;
+
+/** Promise adapter for non-Effect callers. */
+export function invalidateCachedJson(key: string): Promise<void> {
+  return runHost(invalidateCachedJsonEffect(key));
 }
