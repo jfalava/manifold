@@ -22,6 +22,7 @@ const run = (flags: string[], scenario = "normal") =>
     createdAt: 1, updatedAt: 1, tombstoned,
   });
   const scenario = ${JSON.stringify(scenario)};
+  let lastLookupAt;
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     console.log('REQUEST', init.method ?? 'GET', url.pathname + url.search);
@@ -38,6 +39,9 @@ const run = (flags: string[], scenario = "normal") =>
       ] });
     }
     if (url.hostname === 'graphql.anilist.co') {
+      const now = Date.now();
+      if (lastLookupAt !== undefined) console.log('LOOKUP_GAP', now - lastLookupAt);
+      lastLookupAt = now;
       const id = JSON.parse(String(init.body)).variables.id;
       console.log('LOOKUP', id);
       if (scenario === 'unavailable') return new Response('Blocked', {status: 403});
@@ -53,7 +57,7 @@ const run = (flags: string[], scenario = "normal") =>
   };
   try {
     await Effect.runPromise(Command.runWith(makeRootCommand(), { version: 'test' })(
-      ${JSON.stringify(["registry", "mal", "--delay", "0", ...flags])}
+      ${JSON.stringify(["registry", "mal", ...flags])}
     ).pipe(Effect.provide(BunServices.layer)));
   } catch (error) { console.error(error); process.exitCode = 1; }
 `,
@@ -69,6 +73,17 @@ describe("registry mal CLI", () => {
     expect(result.stdout).toContain("UNMAPPED entry-43");
     expect(result.stdout).not.toContain("WRITE");
     expect(result.stdout.match(/LOOKUP \d+/g)).toEqual(["LOOKUP 42", "LOOKUP 43"]);
+    expect(Number(result.stdout.match(/LOOKUP_GAP (\d+)/)?.[1])).toBeGreaterThanOrEqual(2_400);
+    expect(result.stdout).toContain("Load registry rows");
+    expect(result.stdout).toContain("Check MAL links");
+    expect(result.stdout).toContain("eta=");
+    expect(result.stdout).toContain("│");
+  });
+
+  it("does not expose a configurable AniList lookup delay", () => {
+    const result = run(["--delay", "0"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/delay|unknown|unrecognized/i);
   });
 
   it("applies proven links through ingestion without changing list state", () => {

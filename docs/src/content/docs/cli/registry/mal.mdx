@@ -41,16 +41,11 @@ Example:
 bun run manifold registry mal --limit 50
 ```
 
-### `--delay <ms>`
+### AniList rate limiting
 
-Wait between AniList lookups. Default: `1500` milliseconds. Each lookup has a
-15-second timeout. Negative values are rejected.
-
-Example:
-
-```text
-bun run manifold registry mal --delay 2000
-```
+The command waits a fixed **2.5 seconds** between AniList lookups. This is
+hardcoded because AniList is currently in a degraded state with a 30-requests-
+per-minute limit. Each lookup has a 15-second timeout.
 
 ### `--api-token <token>`
 
