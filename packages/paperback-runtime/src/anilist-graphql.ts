@@ -152,6 +152,9 @@ const scheduleCooldown = (headers: Record<string, string>): void => {
 };
 
 const interpretOutcome = <A>(outcome: RawOutcome<A>): A => {
+  if (outcome.status === 401 || outcome.status === 403) {
+    throw new AniListUnauthorizedError();
+  }
   if (outcome.body === undefined) {
     throw new Error(`AniList returned non-JSON response (HTTP ${outcome.status})`);
   }
@@ -159,9 +162,6 @@ const interpretOutcome = <A>(outcome: RawOutcome<A>): A => {
     throw new Error(
       `AniList error: ${outcome.body.errors.map((e) => e.message ?? "?").join("; ")}`,
     );
-  }
-  if (outcome.status === 401 || outcome.status === 403) {
-    throw new AniListUnauthorizedError();
   }
   if (outcome.status < 200 || outcome.status >= 300) {
     throw new Error(`AniList request failed with HTTP ${outcome.status}`);

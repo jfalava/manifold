@@ -1,8 +1,9 @@
 import { Effect } from "effect";
 import type { SyncHost } from "./host";
 import { now, SYNC_MAX_ATTEMPTS } from "./constants";
+import { fromPromise } from "./from-promise";
 
-const scheduleSyncEffect = (host: SyncHost, delayMs = 0): Effect.Effect<void> =>
+const scheduleSyncEffect = (host: SyncHost, delayMs = 0): Effect.Effect<void, unknown> =>
   Effect.gen(function* () {
     if (host.ctx.storage.kv.get("registry_sync_paused")) {
       return;
@@ -24,9 +25,9 @@ const scheduleSyncEffect = (host: SyncHost, delayMs = 0): Effect.Effect<void> =>
     }
 
     const scheduledAt = now() + Math.max(0, delayMs);
-    const currentAlarm = yield* Effect.promise(() => host.ctx.storage.getAlarm());
+    const currentAlarm = yield* fromPromise(() => host.ctx.storage.getAlarm());
     if (currentAlarm === null || currentAlarm <= now() || currentAlarm > scheduledAt) {
-      yield* Effect.promise(() => host.ctx.storage.setAlarm(scheduledAt));
+      yield* fromPromise(() => host.ctx.storage.setAlarm(scheduledAt));
     }
   });
 

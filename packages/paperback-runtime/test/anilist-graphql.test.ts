@@ -144,11 +144,15 @@ describe("aniListRequest throttling", () => {
     expect(getCallCount()).toBe(4);
   });
 
-  it("keeps mapping auth rejections and GraphQL errors as before", async () => {
+  it.each([401, 403])("maps HTTP %s GraphQL responses to auth errors", async (status) => {
     const { aniListRequest, viewerQuery, AniListUnauthorizedError } = await harness.loadModule();
 
-    harness.install(() => ({ status: 401, body: { data: null } }));
+    harness.install(() => ({ status, body: { errors: [{ message: "Invalid token" }] } }));
     await expect(aniListRequest("t", viewerQuery)).rejects.toBeInstanceOf(AniListUnauthorizedError);
+  });
+
+  it("keeps mapping non-auth GraphQL errors as before", async () => {
+    const { aniListRequest, viewerQuery } = await harness.loadModule();
 
     harness.install(() => ({ status: 200, body: { errors: [{ message: "Not Found" }] } }));
     await expect(aniListRequest("t", viewerQuery)).rejects.toThrow("AniList error: Not Found");
