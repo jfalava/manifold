@@ -5,7 +5,7 @@
 /** @effect-diagnostics newPromise:off */
 /** @effect-diagnostics globalTimers:off */
 import { Badge, Banner, Button, Input, Tabs, Text } from "@cloudflare/kumo";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useTable, type ColumnDef, type SortingState } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
@@ -15,6 +15,7 @@ import {
   FilterToggle,
   TablePagination,
   useClientPagination,
+  type ClientPagination,
   type FilterToggleVariant,
 } from "../components/data-table";
 import {
@@ -24,8 +25,31 @@ import {
   type LoadOperationsResult,
   type SyncOpItem,
 } from "../lib/registry";
+import { parseTablePaginationSearch } from "../lib/table-view-state";
+
+type OperationsSearch = {
+  readonly tab?: "operations" | "logs";
+  readonly opsPage?: number;
+  readonly opsPageSize?: number;
+  readonly logsPage?: number;
+  readonly logsPageSize?: number;
+};
+
+// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: TanStack Router search values are narrowed by this route boundary
+function validateOperationsSearch(search: Record<string, unknown>): OperationsSearch {
+  const ops = parseTablePaginationSearch(search, "ops");
+  const logs = parseTablePaginationSearch(search, "logs");
+  return {
+    tab: search.tab === "logs" ? "logs" : undefined,
+    opsPage: ops.page,
+    opsPageSize: ops.pageSize,
+    logsPage: logs.page,
+    logsPageSize: logs.pageSize,
+  };
+}
 
 export const Route = createFileRoute("/operations")({
+  validateSearch: validateOperationsSearch,
   component: OperationsPage,
 });
 
@@ -50,10 +74,27 @@ function variantForOpState(state: string): FilterToggleVariant {
 type Act = (action: () => Promise<void>) => Promise<void>;
 
 function OperationsPage() {
+  const search = useSearch({ from: "/operations" });
+  const navigate = useNavigate({ from: "/operations" });
   const [data, setData] = useState<LoadOperationsResult>();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<OperationsTab>("operations");
+  const tab: OperationsTab = search.tab ?? "operations";
+  const handleTabChange = useCallback(
+    (next: string) => {
+      if (next !== "operations" && next !== "logs") {
+        return;
+      }
+      void navigate({
+        search: (current) => ({
+          ...current,
+          tab: next === "operations" ? undefined : next,
+        }),
+        resetScroll: false,
+      });
+    },
+    [navigate],
+  );
 
   const refresh = useCallback(async () => {
     setBusy(true);
@@ -121,11 +162,7 @@ function OperationsPage() {
         variant="underline"
         tabs={[...OPERATIONS_TABS]}
         value={tab}
-        onValueChange={(value) => {
-          if (value === "operations" || value === "logs") {
-            setTab(value);
-          }
-        }}
+        onValueChange={handleTabChange}
       />
 
       {tab === "operations" && (
@@ -149,10 +186,35 @@ function OpsTable({
   readonly loading: boolean;
   readonly onAct: Act;
 }): ReactNode {
+  const search = useSearch({ from: "/operations" });
+  const navigate = useNavigate({ from: "/operations" });
   const [stateFilters, setStateFilters] = useState<ReadonlySet<string>>(() => new Set());
   const [sorting, setSorting] = useState<SortingState>([]);
+  const controlledPagination = useMemo<ClientPagination>(
+    () => ({
+      pageIndex: Math.max(0, (search.opsPage ?? 1) - 1),
+      pageSize: search.opsPageSize ?? 25,
+    }),
+    [search.opsPage, search.opsPageSize],
+  );
+  const handlePaginationChange = useCallback(
+    (next: ClientPagination) => {
+      void navigate({
+        search: (current) => ({
+          ...current,
+          opsPage: next.pageIndex === 0 ? undefined : next.pageIndex + 1,
+          opsPageSize: next.pageSize === 25 ? undefined : next.pageSize,
+        }),
+        resetScroll: false,
+      });
+    },
+    [navigate],
+  );
   const { pagination, setPagination, goToPage, changePageSize, safePageIndex } =
-    useClientPagination(25);
+    useClientPagination(25, {
+      controlledPagination,
+      onPaginationChange: handlePaginationChange,
+    });
 
   const ops = useMemo(() => [...(data?.ops ?? [])], [data]);
 
@@ -314,10 +376,35 @@ function EventsTable({
   readonly data: LoadOperationsResult | undefined;
   readonly loading: boolean;
 }): ReactNode {
+  const search = useSearch({ from: "/operations" });
+  const navigate = useNavigate({ from: "/operations" });
   const [filter, setFilter] = useState("");
   const [sorting, setSorting] = useState<SortingState>([{ id: "createdAt", desc: true }]);
+  const controlledPagination = useMemo<ClientPagination>(
+    () => ({
+      pageIndex: Math.max(0, (search.logsPage ?? 1) - 1),
+      pageSize: search.logsPageSize ?? 25,
+    }),
+    [search.logsPage, search.logsPageSize],
+  );
+  const handlePaginationChange = useCallback(
+    (next: ClientPagination) => {
+      void navigate({
+        search: (current) => ({
+          ...current,
+          logsPage: next.pageIndex === 0 ? undefined : next.pageIndex + 1,
+          logsPageSize: next.pageSize === 25 ? undefined : next.pageSize,
+        }),
+        resetScroll: false,
+      });
+    },
+    [navigate],
+  );
   const { pagination, setPagination, goToPage, changePageSize, safePageIndex } =
-    useClientPagination(25);
+    useClientPagination(25, {
+      controlledPagination,
+      onPaginationChange: handlePaginationChange,
+    });
 
   const events = useMemo(() => [...(data?.events ?? [])], [data]);
 

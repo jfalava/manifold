@@ -18,4 +18,5 @@ export {
   useClientPagination,
   type ClientPagination,
   type ClientPaginationControls,
+  type ClientPaginationOptions,
 } from "./use-client-pagination";

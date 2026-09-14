@@ -5,7 +5,7 @@
 /** @effect-diagnostics newPromise:off */
 /** @effect-diagnostics globalTimers:off */
 import { Badge, Banner, Button, Select, Text } from "@cloudflare/kumo";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useTable, type ColumnDef, type SortingState } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -16,6 +16,7 @@ import {
   HoverCoverRow,
   TablePagination,
   useClientPagination,
+  type ClientPagination,
   type FilterToggleVariant,
 } from "../components/data-table";
 import { MangaDexLibraryPending } from "../components/loading";
@@ -36,8 +37,10 @@ import {
   type MangaDexLibrarySnapshotMeta,
 } from "../lib/mangadex-idb";
 import { loadMangaDexLibrary, loadMangaDexStats, setMangaDexStatus } from "../lib/registry";
+import { parseTablePaginationSearch } from "../lib/table-view-state";
 
 export const Route = createFileRoute("/mangadex-library")({
+  validateSearch: parseTablePaginationSearch,
   component: MangaDexLibraryPage,
 });
 
@@ -141,6 +144,8 @@ const formatCacheAge = (fetchedAt: number | undefined): string | undefined => {
 };
 
 function MangaDexLibraryPage() {
+  const search = useSearch({ from: "/mangadex-library" });
+  const navigate = useNavigate({ from: "/mangadex-library" });
   const [items, setItems] = useState<readonly MangaDexLibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -155,8 +160,31 @@ function MangaDexLibraryPage() {
   const [refreshingStatus, setRefreshingStatus] = useState<MangaDexReadingStatus | undefined>(
     undefined,
   );
+  const controlledPagination = useMemo<ClientPagination>(
+    () => ({
+      pageIndex: Math.max(0, (search.page ?? 1) - 1),
+      pageSize: search.pageSize ?? 25,
+    }),
+    [search.page, search.pageSize],
+  );
+  const handlePaginationChange = useCallback(
+    (next: ClientPagination) => {
+      void navigate({
+        search: (current) => ({
+          ...current,
+          page: next.pageIndex === 0 ? undefined : next.pageIndex + 1,
+          pageSize: next.pageSize === 25 ? undefined : next.pageSize,
+        }),
+        resetScroll: false,
+      });
+    },
+    [navigate],
+  );
   const { pagination, setPagination, goToPage, changePageSize, safePageIndex } =
-    useClientPagination(25);
+    useClientPagination(25, {
+      controlledPagination,
+      onPaginationChange: handlePaginationChange,
+    });
   const inflightStats = useRef<Set<string>>(new Set());
   const bootstrapped = useRef(false);
 

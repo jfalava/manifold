@@ -6,7 +6,7 @@
 /** @effect-diagnostics globalTimers:off */
 import { Badge, Banner, Button, Dialog, Input, Select, Text } from "@cloudflare/kumo";
 import { XIcon } from "@phosphor-icons/react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useTable, type ColumnDef, type SortingState } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
@@ -17,10 +17,12 @@ import {
   HoverCoverRow,
   TablePagination,
   useClientPagination,
+  type ClientPagination,
   type FilterToggleVariant,
 } from "../components/data-table";
 import { proxiedCoverUrl } from "../lib/mangadex";
 import { readMangaDexLibraryCache } from "../lib/mangadex-idb";
+import { parseTablePaginationSearch } from "../lib/table-view-state";
 import {
   bindProvider,
   loadRegistry,
@@ -31,6 +33,7 @@ import {
 } from "../lib/registry";
 
 export const Route = createFileRoute("/registry")({
+  validateSearch: parseTablePaginationSearch,
   component: RegistryPage,
 });
 
@@ -352,6 +355,8 @@ function EntriesTable({
   readonly loading: boolean;
   readonly onAct: Act;
 }): ReactNode {
+  const search = useSearch({ from: "/registry" });
+  const navigate = useNavigate({ from: "/registry" });
   const [filter, setFilter] = useState("");
   const [statusFilters, setStatusFilters] = useState<ReadonlySet<string>>(() => new Set());
   // Empty set = no provider filtering (the "All" chip), matching the status filter.
@@ -359,8 +364,31 @@ function EntriesTable({
   const [sorting, setSorting] = useState<SortingState>([]);
   const [editingId, setEditingId] = useState<string>();
   const [editorOpen, setEditorOpen] = useState(false);
+  const controlledPagination = useMemo<ClientPagination>(
+    () => ({
+      pageIndex: Math.max(0, (search.page ?? 1) - 1),
+      pageSize: search.pageSize ?? 25,
+    }),
+    [search.page, search.pageSize],
+  );
+  const handlePaginationChange = useCallback(
+    (next: ClientPagination) => {
+      void navigate({
+        search: (current) => ({
+          ...current,
+          page: next.pageIndex === 0 ? undefined : next.pageIndex + 1,
+          pageSize: next.pageSize === 25 ? undefined : next.pageSize,
+        }),
+        resetScroll: false,
+      });
+    },
+    [navigate],
+  );
   const { pagination, setPagination, goToPage, changePageSize, safePageIndex } =
-    useClientPagination(25);
+    useClientPagination(25, {
+      controlledPagination,
+      onPaginationChange: handlePaginationChange,
+    });
 
   const entries = useMemo(() => [...(data?.entries ?? [])], [data]);
 
