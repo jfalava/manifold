@@ -369,7 +369,8 @@ const runGraphQL = Effect.fnUntraced(function* <T>(
     return yield* new AdminError({ message: "GraphQL response was not an object" });
   }
   const errorsValue = payload.errors;
-  if (errorsValue !== undefined && !isJsonArray(errorsValue)) {
+  // Cloudflare returns `errors: null` for successful GraphQL responses.
+  if (errorsValue !== undefined && errorsValue !== null && !isJsonArray(errorsValue)) {
     return yield* new AdminError({ message: "GraphQL response errors were not an array" });
   }
   const messages = isJsonArray(errorsValue) ? errorsValue.flatMap(graphqlErrorMessage) : [];
