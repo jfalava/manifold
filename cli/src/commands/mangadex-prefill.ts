@@ -88,7 +88,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
   Command.withHandler(({ apply, limit, status, delay, apiOrigin, apiToken, anilistToken }) =>
     Effect.tryPromise({
       try: async () => {
-        const config: ApiConfig = apiConfig(apiOrigin, apiToken);
+        const config: ApiConfig = await apiConfig(apiOrigin, apiToken);
         const statusFilter = parseStatusFilter(status);
         const anilist = await resolveAniListToken(Option.getOrUndefined(anilistToken));
         openFrame(`MangaDex registry prefill → ${apply ? "apply" : "dry run"}`);

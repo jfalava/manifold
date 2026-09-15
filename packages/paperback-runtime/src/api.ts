@@ -51,6 +51,13 @@ import { PaperbackRuntimeError } from "./errors.js";
 export const MANIFOLD_API_ORIGIN = "https://manifold.jfa.dev/api";
 export const MANIFOLD_API_TOKEN_KEY = "manifold.api-token";
 export const MANIFOLD_API_STATUS_KEY = "manifold.api-token-status";
+export const MANIFOLD_API_ACCESS_TOKEN_KEY = "manifold.api-access-token";
+export const MANIFOLD_API_REFRESH_TOKEN_KEY = "manifold.api-refresh-token";
+export const MANIFOLD_API_ACCESS_EXPIRES_AT_KEY = "manifold.api-access-expires-at";
+export const MANIFOLD_API_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
+export const MANIFOLD_OAUTH_CLIENT_ID = "paperback";
+export const MANIFOLD_OAUTH_REDIRECT_URI = "paperback://manifold-login";
+export const MANIFOLD_OAUTH_TOKEN_ENDPOINT = `${MANIFOLD_API_ORIGIN}/v1/oauth/token`;
 
 export type PersonalApiRequest = {
   readonly url: string;

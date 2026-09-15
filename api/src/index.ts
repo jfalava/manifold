@@ -22,6 +22,7 @@ import { handleBackups } from "./routes/backups";
 import { handleCanonical } from "./routes/canonical";
 import { handleMangaDex } from "./routes/mangadex";
 import { handleOps } from "./routes/ops";
+import { handleOAuth } from "./routes/oauth";
 import { handleRegistry } from "./routes/registry";
 import type { Env } from "./types";
 
@@ -46,6 +47,11 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, RouteError>
       !(yield* tryPromise(() => authorized(request, env)))
     ) {
       return jsonEncoded(ErrorBody, { error: "Unauthorized" }, 401);
+    }
+
+    const oauth = yield* handleOAuth(ctx);
+    if (oauth) {
+      return oauth;
     }
 
     const canonical = yield* handleCanonical(ctx);

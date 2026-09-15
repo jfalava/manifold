@@ -27,12 +27,7 @@ import {
   type MangaInfo,
   type SourceManga,
 } from "@/pas5-model";
-import {
-  apiConfig,
-  type ApiConfig,
-  type RegistryRow,
-  registryByAnilistId,
-} from "@/commands/toolbox";
+import { apiConfig, type RegistryRow, registryByAnilistId } from "@/commands/toolbox";
 import {
   abortFrame,
   closeFrame,
@@ -547,8 +542,7 @@ export const createPas5Command = Command.make("pas5", {
             {
               title: "Resolve registry UUIDs",
               task: async (_, task) => {
-                // SAFETY: value matches ApiConfig; at this call site
-                const config = apiConfig(apiOrigin, apiToken) as ApiConfig;
+                const config = await apiConfig(apiOrigin, apiToken);
                 registry = await registryByAnilistId(config);
                 makePhaseReporter(task).note(
                   `${registry.size} registry rows with an AniList link.`,

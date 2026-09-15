@@ -92,6 +92,37 @@ export function migrate(host: SyncHost): void {
       updated_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS manifold_oauth_requests (
+      provider_state TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      redirect_uri TEXT NOT NULL,
+      outer_state TEXT NOT NULL,
+      code_challenge TEXT NOT NULL,
+      provider_code_verifier TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS manifold_oauth_codes (
+      code_hash TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      redirect_uri TEXT NOT NULL,
+      code_challenge TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS manifold_sessions (
+      access_token_hash TEXT PRIMARY KEY,
+      refresh_token_hash TEXT NOT NULL UNIQUE,
+      subject TEXT NOT NULL,
+      access_expires_at INTEGER NOT NULL,
+      refresh_expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      revoked_at INTEGER
+    );
+
     CREATE TABLE IF NOT EXISTS list_state (
       entry_id TEXT PRIMARY KEY REFERENCES canonical_entries(id) ON DELETE CASCADE,
       status TEXT,

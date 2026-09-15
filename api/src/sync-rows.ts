@@ -97,6 +97,37 @@ export interface OAuthTokenRow extends Record<string, SqlStorageValue> {
   updated_at: number;
 }
 
+export interface ManifoldOAuthRequestRow extends Record<string, SqlStorageValue> {
+  provider_state: string;
+  client_id: string;
+  redirect_uri: string;
+  outer_state: string;
+  code_challenge: string;
+  provider_code_verifier: string;
+  created_at: number;
+}
+
+export interface ManifoldOAuthCodeRow extends Record<string, SqlStorageValue> {
+  code_hash: string;
+  client_id: string;
+  redirect_uri: string;
+  code_challenge: string;
+  subject: string;
+  created_at: number;
+  expires_at: number;
+}
+
+export interface ManifoldSessionRow extends Record<string, SqlStorageValue> {
+  access_token_hash: string;
+  refresh_token_hash: string;
+  subject: string;
+  access_expires_at: number;
+  refresh_expires_at: number;
+  created_at: number;
+  updated_at: number;
+  revoked_at: number | null;
+}
+
 const parseStoredJsonObject = (text: string): JsonObject => {
   let parsed: unknown;
   try {

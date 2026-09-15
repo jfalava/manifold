@@ -27,6 +27,17 @@ import type {
   UpsertEntryInput,
 } from "../domain";
 import type { OAuthStart } from "../oauth";
+import {
+  authorizeManifoldAccessToken,
+  completeGithubOAuth,
+  createManifoldOAuthAuthorization,
+  exchangeManifoldOAuthToken,
+  revokeManifoldSession,
+  type ManifoldOAuthAuthorizationInput,
+  type ManifoldOAuthRedirect,
+  type ManifoldOAuthTokenInput,
+  type ManifoldOAuthTokenResponse,
+} from "./manifold-oauth";
 import type { MangaDexChapter, MangaDexPaged } from "@manifold/mangadex";
 import type { MangaDexEntryStat } from "../mangadex-stats";
 import type { Env } from "../types";
@@ -116,6 +127,34 @@ export class ManifoldSync extends DurableObject<Env> {
 
   private migrate(): void {
     migrate(this.host());
+  }
+
+  async createManifoldOAuthAuthorization(
+    input: ManifoldOAuthAuthorizationInput,
+  ): Promise<{ readonly authorizationUrl: string }> {
+    return createManifoldOAuthAuthorization(this.host(), input);
+  }
+
+  async completeGithubOAuth(
+    state: string,
+    code?: string,
+    error?: string,
+  ): Promise<ManifoldOAuthRedirect> {
+    return completeGithubOAuth(this.host(), state, code, error);
+  }
+
+  async exchangeManifoldOAuthToken(
+    input: ManifoldOAuthTokenInput,
+  ): Promise<ManifoldOAuthTokenResponse> {
+    return exchangeManifoldOAuthToken(this.host(), input);
+  }
+
+  async authorizeManifoldAccessToken(accessToken: string): Promise<boolean> {
+    return authorizeManifoldAccessToken(this.host(), accessToken);
+  }
+
+  async revokeManifoldSession(token: string): Promise<void> {
+    return revokeManifoldSession(this.host(), token);
   }
 
   async createOAuthSession(

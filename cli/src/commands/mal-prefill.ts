@@ -50,7 +50,7 @@ export const malPrefillCommand = Command.make("mal", {
         if (maximum !== undefined && maximum < 0) {
           throw cliError("--limit must be non-negative");
         }
-        const config = apiConfig(apiOrigin, apiToken);
+        const config = await apiConfig(apiOrigin, apiToken);
         const source = createAniListSource({
           userAgent: manifoldUserAgent("cli"),
           fetcher: (input, init) =>
@@ -133,7 +133,9 @@ export const malPrefillCommand = Command.make("mal", {
                 await sleepPromise(ANILIST_LOOKUP_INTERVAL_MS);
               }
               task.title = `${baseTitle} — ${formatTitle(row.title)}`;
-              const anilistId = row.providers.find((link) => link.provider === "anilist")?.externalId;
+              const anilistId = row.providers.find(
+                (link) => link.provider === "anilist",
+              )?.externalId;
               if (!anilistId) {
                 continue;
               }

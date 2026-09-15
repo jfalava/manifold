@@ -58,7 +58,7 @@ export const wipeMalMangaCommand = Command.make("manga", {
         openFrame("mal wipe manga");
         if (resolveValue(apiToken, "MANIFOLD_TOKEN")) {
           const connection = await apiCall(
-            apiConfig(apiOrigin, apiToken),
+            await apiConfig(apiOrigin, apiToken),
             "/v1/auth/mal",
             "GET",
             undefined,

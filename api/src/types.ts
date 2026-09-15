@@ -27,10 +27,23 @@ import type { MangaDexChapter, MangaDexPaged } from "@manifold/mangadex";
 import type { Ai, SecretsStoreSecret, VectorizeIndex } from "@cloudflare/workers-types";
 import type { MangaDexEntryStat } from "./mangadex-stats";
 import type { OAuthStart } from "./oauth";
+import type {
+  ManifoldOAuthAuthorizationInput,
+  ManifoldOAuthRedirect,
+  ManifoldOAuthTokenInput,
+  ManifoldOAuthTokenResponse,
+} from "./manifold-sync/manifold-oauth";
 
 export type { RegistryListEntry };
 
 export interface ManifoldSyncStub {
+  createManifoldOAuthAuthorization(
+    input: ManifoldOAuthAuthorizationInput,
+  ): Promise<{ readonly authorizationUrl: string }>;
+  completeGithubOAuth(state: string, code?: string, error?: string): Promise<ManifoldOAuthRedirect>;
+  exchangeManifoldOAuthToken(input: ManifoldOAuthTokenInput): Promise<ManifoldOAuthTokenResponse>;
+  authorizeManifoldAccessToken(accessToken: string): Promise<boolean>;
+  revokeManifoldSession(token: string): Promise<void>;
   createOAuthSession(
     provider: OAuthProvider,
     redirectUri: string,
@@ -108,11 +121,14 @@ export interface Env {
   };
   ENVIRONMENT: string;
   MANIFOLD_OAUTH_REDIRECT_BASE_URL: string;
+  MANIFOLD_GITHUB_CLIENT_ID: string;
+  MANIFOLD_GITHUB_ALLOWED_USER_ID: string;
   MANIFOLD_ANILIST_CLIENT_ID: string;
   MANIFOLD_MAL_CLIENT_ID: string;
   MANIFOLD_MANGADEX_CLIENT_ID: string;
   MANIFOLD_TOKEN: RuntimeSecret;
   MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET: RuntimeSecret;
+  MANIFOLD_GITHUB_CLIENT_SECRET: RuntimeSecret;
   MANIFOLD_ANILIST_CLIENT_SECRET: RuntimeSecret;
   MANIFOLD_MAL_CLIENT_SECRET: RuntimeSecret;
   MANIFOLD_MANGADEX_CLIENT_SECRET: RuntimeSecret;

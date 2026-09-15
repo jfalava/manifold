@@ -25,7 +25,8 @@ import {
 } from "@manifold/contract";
 import { errorMessage, isJsonObject, isJsonValue, isString, type JsonValue } from "@manifold/json";
 import type { AuthProvider, OAuthProvider } from "./domain";
-import { readSecret } from "./read-secret";
+import type { ManifoldOAuthTokenResponse } from "./manifold-sync/manifold-oauth";
+import { readSecretOptional } from "./read-secret";
 import type { Env } from "./types";
 
 /** JSON-serializable HTTP bodies Response.json accepts from these routes. */
@@ -39,6 +40,7 @@ export type JsonResponseBody =
   | MangaDexMatchResult
   | MangaDexFeedPage
   | OAuthStart
+  | ManifoldOAuthTokenResponse
   | ReadingProgress
   | RegistryEntry
   | RegistryBackupMetadata
@@ -182,17 +184,25 @@ export const authorized = async (request: Request, env: Env): Promise<boolean> =
     return false;
   }
 
-  const expected = await readSecret(env.MANIFOLD_TOKEN, "MANIFOLD_TOKEN");
-  const supplied = new TextEncoder().encode(authorization.slice("Bearer ".length));
-  const suppliedDigest = new Uint8Array(await crypto.subtle.digest("SHA-256", supplied));
-  const expectedDigest = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(expected)),
-  );
-  let difference = 0;
-  for (let index = 0; index < expectedDigest.length; index += 1) {
-    difference |= suppliedDigest[index] ^ expectedDigest[index];
+  const suppliedToken = authorization.slice("Bearer ".length);
+  const expected = await readSecretOptional(env.MANIFOLD_TOKEN, "MANIFOLD_TOKEN");
+  if (expected) {
+    const suppliedDigest = new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(suppliedToken)),
+    );
+    const expectedDigest = new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(expected)),
+    );
+    let difference = 0;
+    for (let index = 0; index < expectedDigest.length; index += 1) {
+      difference |= suppliedDigest[index] ^ expectedDigest[index];
+    }
+    if (difference === 0) {
+      return true;
+    }
   }
-  return difference === 0;
+
+  return env.MANIFOLD_SYNC.getByName("default").authorizeManifoldAccessToken(suppliedToken);
 };
 
 export const authProvider = (value: string | undefined): AuthProvider | undefined => {
@@ -209,7 +219,7 @@ export const oauthProvider = (value: string | undefined): OAuthProvider | undefi
   return undefined;
 };
 
-const oauthApiBaseUrl = (env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_URL">): string => {
+export const oauthApiBaseUrl = (env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_URL">): string => {
   const base = env.MANIFOLD_OAUTH_REDIRECT_BASE_URL.replace(/\/+$/, "");
   // Older deployments stored the bare origin; the router mounts SyncApi under /api.
   // NOTE: new URL() would discard the base's path for an absolute path arg — concatenate.
@@ -220,6 +230,10 @@ export const oauthRedirectUri = (
   provider: OAuthProvider,
   env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_URL">,
 ): string => `${oauthApiBaseUrl(env)}/v1/auth/${provider}/callback`;
+
+export const manifoldOAuthCallbackUri = (
+  env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_URL">,
+): string => `${oauthApiBaseUrl(env)}/v1/oauth/github/callback`;
 
 export const anilistDeviceRedirectUri = (
   env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_URL">,
@@ -248,6 +262,13 @@ export const publicSiteOrigin = (env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_UR
   new URL(oauthApiBaseUrl(env)).origin;
 
 export const isPublicOAuthRoute = (method: string, path: readonly string[]): boolean => {
+  if (path[0] === "v1" && path[1] === "oauth") {
+    return (
+      (method === "GET" && path.length === 3 && path[2] === "authorize") ||
+      (method === "GET" && path.length === 4 && path[2] === "github" && path[3] === "callback") ||
+      (method === "POST" && path.length === 3 && path[2] === "token")
+    );
+  }
   if (method !== "GET" || path.length !== 4 || path[0] !== "v1" || path[1] !== "auth") {
     return false;
   }

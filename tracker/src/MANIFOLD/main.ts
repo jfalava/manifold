@@ -1,6 +1,7 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalDateInEffect:off */
 import {
   ContentRating,
   FlowSection,
@@ -59,8 +60,15 @@ import {
   correlateProviderCandidates,
   decodeAniListViewer,
   readAdminAccessStatus,
+  MANIFOLD_API_ACCESS_EXPIRES_AT_KEY,
+  MANIFOLD_API_ACCESS_TOKEN_KEY,
+  MANIFOLD_API_ACCESS_TOKEN_TTL_SECONDS,
+  MANIFOLD_API_ORIGIN,
+  MANIFOLD_API_REFRESH_TOKEN_KEY,
   MANIFOLD_API_STATUS_KEY,
-  MANIFOLD_API_TOKEN_KEY,
+  MANIFOLD_OAUTH_CLIENT_ID,
+  MANIFOLD_OAUTH_REDIRECT_URI,
+  MANIFOLD_OAUTH_TOKEN_ENDPOINT,
   aniListRequest,
   configuredPersonalApi,
   errorMessage,
@@ -1005,7 +1013,6 @@ class TrackerStatusForm extends Form {
 class TrackerSettingsForm extends Form {
   readonly requiresExplicitSubmission = true;
 
-  private pendingPersonalApiToken?: string;
   private pendingAniListToken?: string;
   private pendingAdminCommand?: string;
 
@@ -1021,19 +1028,29 @@ class TrackerSettingsForm extends Form {
       FlowSection(
         {
           id: "tracker-personal-api",
-          header: "Personal API",
-          footer: "Same token as the content source; stored once per device.",
+          header: "Manifold API",
+          footer: "Sign in with GitHub. Session credentials stay in Paperback secure state.",
         },
         [
-          InputRow("tracker-personal-api-token", {
-            title: "API token",
-            value: "",
-            onValueChange: Application.Selector(selectorTarget, "tokenChanged"),
+          OAuthButtonRow("tracker-manifold-oauth", {
+            title: "Login with GitHub",
+            subtitle: "Opens GitHub and stores a Manifold session on this device.",
+            authorizeEndpoint: `${MANIFOLD_API_ORIGIN}/v1/oauth/authorize`,
+            clientId: MANIFOLD_OAUTH_CLIENT_ID,
+            redirectUri: MANIFOLD_OAUTH_REDIRECT_URI,
+            responseType: {
+              type: "pkce",
+              tokenEndpoint: MANIFOLD_OAUTH_TOKEN_ENDPOINT,
+              pkceCodeLength: 64,
+              pkceCodeMethod: "S256",
+              formEncodeGrant: true,
+            },
+            onSuccess: Application.Selector(selectorTarget, "manifoldOAuthSuccess"),
           }),
           LabelRow("tracker-personal-api-status", {
             title: "Status",
             value: apiStatus,
-            style: apiStatus === "Configured" ? "success" : "warning",
+            style: apiStatus === "Connected" || apiStatus === "Configured" ? "success" : "warning",
           }),
         ],
       ),
@@ -1088,16 +1105,40 @@ class TrackerSettingsForm extends Form {
     ];
   }
 
-  readonly tokenChanged = async (value: string): Promise<void> => {
-    this.pendingPersonalApiToken = value;
-  };
-
   readonly aniListTokenChanged = async (value: string): Promise<void> => {
     this.pendingAniListToken = value;
   };
 
   readonly adminCommandChanged = async (value: string): Promise<void> => {
     this.pendingAdminCommand = value;
+  };
+
+  readonly manifoldOAuthSuccess = (firstToken: string, secondToken: string): Promise<void> => {
+    return Effect.runPromise(
+      Effect.sync(() => {
+        const first = firstToken?.trim();
+        const second = secondToken?.trim();
+        const accessToken = [first, second].find((value) => value?.startsWith("mf_access_"));
+        const refreshToken = [first, second].find((value) => value?.startsWith("mf_refresh_"));
+        const fallbackAccess = second;
+        const fallbackRefresh = first;
+        const access = accessToken ?? fallbackAccess;
+        const refresh = refreshToken ?? fallbackRefresh;
+        if (!access || !refresh) {
+          Application.setState("Connect failed — try again", MANIFOLD_API_STATUS_KEY);
+          this.reloadForm();
+          return;
+        }
+        Application.setSecureState(access, MANIFOLD_API_ACCESS_TOKEN_KEY);
+        Application.setSecureState(refresh, MANIFOLD_API_REFRESH_TOKEN_KEY);
+        Application.setSecureState(
+          String(Date.now() + MANIFOLD_API_ACCESS_TOKEN_TTL_SECONDS * 1000),
+          MANIFOLD_API_ACCESS_EXPIRES_AT_KEY,
+        );
+        Application.setState("Connected", MANIFOLD_API_STATUS_KEY);
+        this.reloadForm();
+      }),
+    );
   };
 
   readonly aniListOAuthSuccess = (_refreshToken: string, accessToken: string): Promise<void> => {
@@ -1133,12 +1174,6 @@ class TrackerSettingsForm extends Form {
   override formDidSubmit(): Promise<void> {
     return Effect.runPromise(
       Effect.gen({ self: this }, function* () {
-        const personalToken = this.pendingPersonalApiToken?.trim();
-        if (personalToken) {
-          Application.setSecureState(personalToken, MANIFOLD_API_TOKEN_KEY);
-          Application.setState("Configured", MANIFOLD_API_STATUS_KEY);
-        }
-
         const aniListToken = this.pendingAniListToken?.trim();
         if (aniListToken) {
           const outcome = yield* Effect.result(
@@ -1157,7 +1192,6 @@ class TrackerSettingsForm extends Form {
         }
 
         const adminCommand = this.pendingAdminCommand?.trim().toLowerCase();
-        this.pendingPersonalApiToken = undefined;
         this.pendingAniListToken = undefined;
         this.pendingAdminCommand = undefined;
 

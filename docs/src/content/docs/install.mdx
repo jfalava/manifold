@@ -25,8 +25,18 @@ Add the Manifold repository:
 https://manifold.jfa.dev/paperback/extensions/0.9/stable/
 ```
 
-Install **MANIFOLD**, open its settings, and set the personal API token
-from `MANIFOLD_TOKEN`. The token stays in Paperback secure state.
+Install **MANIFOLD**, open its settings, and choose **Login with GitHub**.
+Paperback completes the PKCE exchange and stores only the Manifold session in
+secure state; no `MANIFOLD_TOKEN` is required.
+
+The CLI uses the same GitHub OAuth App:
+
+```text
+bun run manifold login manifold
+```
+
+Open the printed URL in a browser. The session is stored in the OS keychain and
+refreshes automatically for later registry and maintenance commands.
 
 ## Import the library
 
@@ -54,8 +64,8 @@ created. Existing base entries are enriched when they can be matched; obsolete
 ManifoldSource attachments and providerless remnants are removed.
 
 <Aside type="caution" title="Keep the original backup">
-  Restoring a `.pas5` archive may replace the on-device library. Keep the
-  original export until the migrated library has been checked.
+  Restoring a `.pas5` archive may replace the on-device library. Keep the original export until the
+  migrated library has been checked.
 </Aside>
 
 ## How updates flow

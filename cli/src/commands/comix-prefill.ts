@@ -117,7 +117,7 @@ export const comixPrefillCommand = Command.make("comix", {
     }) =>
       Effect.tryPromise({
         try: async () => {
-          const config: ApiConfig = apiConfig(apiOrigin, apiToken);
+          const config: ApiConfig = await apiConfig(apiOrigin, apiToken);
           const statusFilter = parseStatusFilter(status);
           if (refreshSession) {
             await clearStoredSession(bunSecretStore);

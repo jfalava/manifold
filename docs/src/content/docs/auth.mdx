@@ -18,12 +18,28 @@ own provider sessions separately.
 | MangaDex    | Personal-client (password grant or personal token)                                                      |
 | Comix       | Native Comix extension on the device                                                                    |
 
-## Sync API tokens
+## Manifold API login
 
-MANIFOLD and the CLI talk to the personal API with `MANIFOLD_TOKEN`.
-Set it in the tracker settings for Paperback and pass it through the CLI flag
-or environment variable for local commands. It authorizes access to your
-Durable Object; it is not an upstream AniList/MangaDex password.
+The tracker and CLI use a GitHub OAuth App to create a Manifold session. The
+GitHub client secret stays in the Cloudflare Worker; Paperback stores only the
+short-lived Manifold access token and rotated refresh token in secure state.
+The CLI stores the same session in the OS keychain:
+
+```text
+manifold login manifold
+```
+
+Open the printed URL in a browser. The CLI listens only on
+`127.0.0.1:8768/callback` while it completes the exchange. No Manifold API key
+is needed for normal tracker or CLI use.
+
+This deployment is personal rather than multi-tenant. Set
+`MANIFOLD_GITHUB_ALLOWED_USER_ID` to the numeric GitHub user ID that owns the
+instance; other GitHub accounts are rejected after authorization.
+
+`MANIFOLD_TOKEN` and `--api-token` remain as an optional break-glass path for
+administration and migration compatibility. They are not shown in tracker
+settings and are not required after GitHub login.
 
 Admin/API upstream OAuth (MAL code flow; AniList browser-minted token import)
 stores encrypted tokens on the DO. Worker egress cannot call AniList reliably
@@ -41,6 +57,6 @@ headed Chrome session for the same reason; it does not paste `cf_clearance`
 into Worker `fetch`.
 
 <Aside type="caution" title="Do not copy cookies into the Worker">
-  Comix session cookies must not be uploaded to the personal API or canonical
-  database. Keep them on the device that solved the check.
+  Comix session cookies must not be uploaded to the personal API or canonical database. Keep them on
+  the device that solved the check.
 </Aside>

@@ -20,11 +20,17 @@ import {
 
 import { fetchAniListMangaEntries, type AniListEntry } from "@/anilist";
 import { resolveAniListToken } from "@/login/anilist";
+import {
+  loadManifoldSession,
+  refreshManifoldSession,
+  type ManifoldSession,
+} from "@/login/manifold";
 import { resolveValue } from "@/env-resolve";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
 import {
   cliError,
   decodeJsonOption,
+  epochMillisNow,
   fromPromise,
   jsonBodyString,
   platformFetch,
@@ -60,20 +66,37 @@ const mappedRegistryStatus = (
 
 export interface ApiConfig {
   readonly origin: string;
-  readonly token: string;
+  token: string;
+  refreshToken?: string;
+  accessExpiresAt?: number;
 }
+
+const apiConfigEffect = (
+  originFlag: Option.Option<string>,
+  tokenFlag: Option.Option<string>,
+): Effect.Effect<ApiConfig, CliEffectError> =>
+  Effect.gen(function* () {
+    const token = resolveValue(tokenFlag, "MANIFOLD_TOKEN");
+    const origin = resolveValue(originFlag, "MANIFOLD_API_ORIGIN") ?? DEFAULT_API_ORIGIN;
+    if (token) {
+      return { origin: origin.replace(/\/$/, ""), token };
+    }
+    const session = yield* fromPromise(() => loadManifoldSession());
+    if (!session) {
+      return yield* cliError("Manifold session missing: run login manifold or set MANIFOLD_TOKEN");
+    }
+    return {
+      origin: origin.replace(/\/$/, ""),
+      token: session.accessToken,
+      refreshToken: session.refreshToken,
+      accessExpiresAt: session.expiresAt,
+    };
+  });
 
 export const apiConfig = (
   originFlag: Option.Option<string>,
   tokenFlag: Option.Option<string>,
-): ApiConfig => {
-  const token = resolveValue(tokenFlag, "MANIFOLD_TOKEN");
-  if (!token) {
-    throw cliError("Personal API token missing (MANIFOLD_TOKEN)");
-  }
-  const origin = resolveValue(originFlag, "MANIFOLD_API_ORIGIN") ?? DEFAULT_API_ORIGIN;
-  return { origin: origin.replace(/\/$/, ""), token };
-};
+): Promise<ApiConfig> => runHost(apiConfigEffect(originFlag, tokenFlag));
 
 const apiCallEffect = <A>(
   config: ApiConfig,
@@ -83,25 +106,57 @@ const apiCallEffect = <A>(
   schema?: Schema.ConstraintDecoder<A>,
 ): Effect.Effect<A, CliEffectError> =>
   Effect.gen(function* () {
-    const response = yield* fromPromise(() =>
-      platformFetch(`${config.origin}${path}`, {
-        method,
-        headers: {
-          accept: "application/json",
-          authorization: `Bearer ${config.token}`,
-          "user-agent": manifoldUserAgent("cli"),
-          ...(!(body === undefined) && { "content-type": "application/json" }),
-        },
-        ...(!(body === undefined) && { body: jsonBodyString(body) }),
-      }),
-    );
-    const text = yield* fromPromise(() => response.text());
-    const parsed =
-      text.length > 0
-        ? Option.getOrUndefined(decodeJsonOption(Schema.fromJsonString(Schema.Unknown), text))
-        : undefined;
-    const raw: JsonValue | undefined =
-      parsed !== undefined && isJsonValue(parsed) ? parsed : text.length > 0 ? text : undefined;
+    const request = (token: string) =>
+      Effect.gen(function* () {
+        const response = yield* fromPromise(() =>
+          platformFetch(`${config.origin}${path}`, {
+            method,
+            headers: {
+              accept: "application/json",
+              authorization: `Bearer ${token}`,
+              "user-agent": manifoldUserAgent("cli"),
+              ...(!(body === undefined) && { "content-type": "application/json" }),
+            },
+            ...(!(body === undefined) && { body: jsonBodyString(body) }),
+          }),
+        );
+        const text = yield* fromPromise(() => response.text());
+        const parsed =
+          text.length > 0
+            ? Option.getOrUndefined(decodeJsonOption(Schema.fromJsonString(Schema.Unknown), text))
+            : undefined;
+        const raw: JsonValue | undefined =
+          parsed !== undefined && isJsonValue(parsed) ? parsed : text.length > 0 ? text : undefined;
+        return { response, raw };
+      });
+
+    const refresh = () =>
+      fromPromise(() =>
+        refreshManifoldSession(config.origin, {
+          accessToken: config.token,
+          refreshToken: config.refreshToken!,
+          expiresAt: config.accessExpiresAt ?? 0,
+        } satisfies ManifoldSession),
+      );
+    if (
+      config.refreshToken &&
+      config.accessExpiresAt !== undefined &&
+      config.accessExpiresAt <= epochMillisNow() + 30_000
+    ) {
+      const refreshed = yield* refresh();
+      config.token = refreshed.accessToken;
+      config.refreshToken = refreshed.refreshToken;
+      config.accessExpiresAt = refreshed.expiresAt;
+    }
+    let result = yield* request(config.token);
+    if (result.response.status === 401 && config.refreshToken) {
+      const refreshed = yield* refresh();
+      config.token = refreshed.accessToken;
+      config.refreshToken = refreshed.refreshToken;
+      config.accessExpiresAt = refreshed.expiresAt;
+      result = yield* request(config.token);
+    }
+    const { response, raw } = result;
     if (!response.ok) {
       const message =
         isJsonObject(raw) && raw.error !== undefined
@@ -199,7 +254,7 @@ export const opsCommand = Command.make("ops").pipe(
       Command.withHandler(({ apiOrigin, apiToken }) =>
         Effect.gen(function* () {
           openFrame("ops pending");
-          const config = apiConfig(apiOrigin, apiToken);
+          const config = yield* fromPromise(() => apiConfig(apiOrigin, apiToken));
           let total = 0;
           for (const state of ["pending", "failed", "blocked"] as const) {
             const body = yield* apiCallEffect(
@@ -256,7 +311,7 @@ export const opsCommand = Command.make("ops").pipe(
             closeFrame(`Dry run: would reset ${opId} to pending. Re-run with --apply.`);
             return;
           }
-          const config = apiConfig(apiOrigin, apiToken);
+          const config = yield* fromPromise(() => apiConfig(apiOrigin, apiToken));
           yield* apiCallEffect(
             config,
             `/v1/ops/${encodeURIComponent(opId)}/retry`,
@@ -294,7 +349,7 @@ export const reconcileCommand = Command.make("diff", {
           "AniList token missing: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN",
         );
       }
-      const config = apiConfig(apiOrigin, apiToken);
+      const config = yield* fromPromise(() => apiConfig(apiOrigin, apiToken));
 
       const live: readonly AniListEntry[] = yield* fromPromise(() =>
         fetchAniListMangaEntries(token),
@@ -364,7 +419,7 @@ export const importCommand = Command.make("import", {
         return;
       }
 
-      const config = apiConfig(apiOrigin, apiToken);
+      const config = yield* fromPromise(() => apiConfig(apiOrigin, apiToken));
 
       const resolved = yield* apiCallEffect(
         config,

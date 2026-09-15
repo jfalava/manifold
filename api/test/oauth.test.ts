@@ -42,7 +42,12 @@ describe("OAuth provider configuration", () => {
     expect(isPublicOAuthRoute("GET", ["v1", "auth", "anilist", "callback"])).toBe(true);
     expect(isPublicOAuthRoute("GET", ["v1", "auth", "mal", "callback"])).toBe(true);
     expect(isPublicOAuthRoute("GET", ["v1", "auth", "anilist", "device"])).toBe(true);
+    expect(isPublicOAuthRoute("GET", ["v1", "oauth", "authorize"])).toBe(true);
+    expect(isPublicOAuthRoute("GET", ["v1", "oauth", "github", "callback"])).toBe(true);
+    expect(isPublicOAuthRoute("POST", ["v1", "oauth", "token"])).toBe(true);
     expect(isPublicOAuthRoute("POST", ["v1", "auth", "anilist", "callback"])).toBe(false);
+    expect(isPublicOAuthRoute("GET", ["v1", "oauth", "token"])).toBe(false);
+    expect(isPublicOAuthRoute("POST", ["v1", "oauth", "authorize"])).toBe(false);
     expect(isPublicOAuthRoute("GET", ["other", "path", "anilist", "device"])).toBe(false);
   });
 
