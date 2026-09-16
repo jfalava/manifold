@@ -22,7 +22,6 @@ import {
 } from "../components/data-table";
 import { proxiedCoverUrl } from "../lib/mangadex";
 import { readMangaDexLibraryCache } from "../lib/mangadex-idb";
-import { parseTablePaginationSearch } from "../lib/table-view-state";
 import {
   bindProvider,
   loadRegistry,
@@ -31,6 +30,7 @@ import {
   unlinkProvider,
   type RegistryEntry,
 } from "../lib/registry";
+import { parseTablePaginationSearch } from "../lib/table-view-state";
 
 export const Route = createFileRoute("/registry")({
   validateSearch: parseTablePaginationSearch,
