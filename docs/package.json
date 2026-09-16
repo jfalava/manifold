@@ -41,6 +41,7 @@
     "@oxlint/plugins": "catalog:build",
     "@tailwindcss/vite": "catalog:styling",
     "@typescript-eslint/parser": "8.70.0",
+    "cross-spawn": "7.0.6",
     "eslint": "10.10.0",
     "eslint-plugin-astro": "3.1.0",
     "oxlint": "catalog:build",
@@ -48,6 +49,7 @@
     "prettier": "3.9.6",
     "prettier-plugin-astro": "1.0.0",
     "satteri": "0.10.5",
+    "satteri-source-parser": "npm:satteri@0.9.5",
     "tailwindcss": "catalog:styling",
     "typescript": "6.0.2"
   }

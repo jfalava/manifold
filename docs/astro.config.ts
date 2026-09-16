@@ -51,6 +51,7 @@ export default defineConfig({
     // binding instead of the browser/WASI condition used by Cloudflare's
     // runtime bundle.
     resolve: { conditions: ["node", "import", "default"] },
+    ssr: { external: ["satteri", "satteri-source-parser"] },
     plugins: [tailwindcss()],
   },
   // Hover-prefetch link targets so full-page navigations feel instant without
