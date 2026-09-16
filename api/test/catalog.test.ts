@@ -6,8 +6,10 @@ import { catalogApp } from "../src/catalog";
 import type { Env } from "../src/types";
 
 const assets = new Map<string, string>([
-  ["/MANIFOLD/index.js", "tracker-bundle"],
-  ["/MANIFOLD/icon.png", "png"],
+  ["/stable/MANIFOLD/index.js", "tracker-bundle"],
+  ["/stable/MANIFOLD/icon.png", "png"],
+  ["/beta/MANIFOLD-beta/index.js", "tracker-beta-bundle"],
+  ["/beta/MANIFOLD-beta/icon.png", "beta-png"],
 ]);
 
 // SAFETY: test fixture supplies only the Worker Env bindings catalog routes use
@@ -65,6 +67,45 @@ describe("Paperback catalog routes", () => {
     const response = await get("/extensions/0.9/stable/MANIFOLD/icon.png");
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("png");
+  });
+
+  it("publishes the beta catalog separately from stable", async () => {
+    const response = await get("/extensions/0.9/beta/versioning.json");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    // SAFETY: parsed JSON matches the trusted/test versioning payload shape
+    const body = (await response.json()) as {
+      sources: readonly { id: string; name: string; version: string }[];
+    };
+    expect(body.sources).toEqual([
+      expect.objectContaining({
+        id: "MANIFOLD-beta",
+        name: "MANIFOLD beta",
+        version: "0.1.0-r58-beta",
+      }),
+    ]);
+  });
+
+  it("serves beta metadata, bundle, and icon from beta assets", async () => {
+    const info = await get("/extensions/0.9/beta/MANIFOLD-beta/info.json");
+    expect(info.status).toBe(200);
+    expect(await info.json()).toEqual(
+      expect.objectContaining({ id: "MANIFOLD-beta", name: "MANIFOLD beta" }),
+    );
+
+    const bundle = await get("/extensions/0.9/beta/MANIFOLD-beta/index.js");
+    expect(bundle.status).toBe(200);
+    expect(await bundle.text()).toBe("tracker-beta-bundle");
+
+    const icon = await get("/extensions/0.9/beta/MANIFOLD-beta/static/icon.png");
+    expect(icon.status).toBe(200);
+    expect(icon.headers.get("content-type")).toBe("image/png");
+    expect(await icon.text()).toBe("beta-png");
+  });
+
+  it("does not make the beta ID available from stable", async () => {
+    const response = await get("/extensions/0.9/stable/MANIFOLD-beta/info.json");
+    expect(response.status).toBe(404);
   });
 
   it("404s unknown extension ids", async () => {

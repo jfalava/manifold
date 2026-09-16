@@ -3,16 +3,22 @@
 /** @effect-diagnostics globalConsole:off */
 import { DateTime } from "effect";
 import { Hono } from "hono";
-import { catalog as trackerCatalog } from "@manifold/tracker/catalog";
+import { betaCatalog, catalog as trackerCatalog } from "@manifold/tracker/catalog";
 import type { Env } from "./types";
 
 const STABLE = "/extensions/0.9/stable";
+const BETA = "/extensions/0.9/beta";
 
-const extensions = [trackerCatalog] as const;
+const catalogs = [
+  { basePath: STABLE, assetPath: "stable", extensions: [trackerCatalog] },
+  { basePath: BETA, assetPath: "beta", extensions: [betaCatalog] },
+] as const;
 
-const byId = (id: string) => extensions.find((entry) => entry.id === id);
+type Catalog = (typeof catalogs)[number];
 
-const versioningBody = () => ({
+const byId = (catalog: Catalog, id: string) => catalog.extensions.find((entry) => entry.id === id);
+
+const versioningBody = (catalog: Catalog) => ({
   buildTime: DateTime.formatIso(DateTime.nowUnsafe()),
   builtWith: {
     toolchain: "1.0.0-alpha.91",
@@ -22,7 +28,7 @@ const versioningBody = () => ({
     name: "manifold",
     description: "manifold: canonical registry and tracker",
   },
-  sources: extensions.map((entry) => ({
+  sources: catalog.extensions.map((entry) => ({
     ...entry.info,
     id: entry.id,
   })),
@@ -38,8 +44,8 @@ const asset = async (env: Env, pathname: string, contentType: string): Promise<R
   return new Response(response.body, { status: response.status, headers });
 };
 
-const homepage = (): Response => {
-  const items = extensions
+const homepage = (catalog: Catalog): Response => {
+  const items = catalog.extensions
     .map(
       (entry) =>
         `<li><strong>${entry.info.name}</strong> ${entry.info.version} — ${entry.info.description}</li>`,
@@ -55,7 +61,8 @@ const homepage = (): Response => {
 <body>
   <h1>manifold</h1>
   <p>Add this repository in Paperback:</p>
-  <p><code>https://manifold.jfa.dev/paperback/extensions/0.9/stable</code></p>
+  <p><code>https://manifold.jfa.dev/paperback${catalog.basePath}</code></p>
+  ${catalog.basePath === STABLE ? "<p>For iOS 27 UI testing, use <code>https://manifold.jfa.dev/paperback/extensions/0.9/beta</code>.</p>" : ""}
   <ul>${items}</ul>
 </body>
 </html>`;
@@ -64,24 +71,34 @@ const homepage = (): Response => {
   });
 };
 
-export const catalogApp: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
-  .get(`${STABLE}/versioning.json`, (c) =>
-    c.json(versioningBody(), 200, { "cache-control": "no-store" }),
-  )
-  .get(`${STABLE}/:id/info.json`, (c) => {
-    const entry = byId(c.req.param("id"));
-    if (!entry) {
-      return c.json({ error: "Not found" }, 404);
-    }
-    return c.json({ ...entry.info, id: entry.id }, 200, { "cache-control": "no-store" });
-  })
-  .get(`${STABLE}/:id/index.js`, (c) =>
-    asset(c.env, `/${c.req.param("id")}/index.js`, "application/javascript"),
-  )
-  // Paperback 0.9 resolves info.icon as `{id}/static/{icon}` (see inkdex layout).
-  .get(`${STABLE}/:id/static/icon.png`, (c) =>
-    asset(c.env, `/${c.req.param("id")}/icon.png`, "image/png"),
-  )
-  .get(`${STABLE}/:id/icon.png`, (c) => asset(c.env, `/${c.req.param("id")}/icon.png`, "image/png"))
-  .get(STABLE, homepage)
-  .get(`${STABLE}/`, homepage);
+const addCatalogRoutes = (app: Hono<{ Bindings: Env }>, catalog: Catalog): void => {
+  app
+    .get(`${catalog.basePath}/versioning.json`, (c) =>
+      c.json(versioningBody(catalog), 200, { "cache-control": "no-store" }),
+    )
+    .get(`${catalog.basePath}/:id/info.json`, (c) => {
+      const entry = byId(catalog, c.req.param("id"));
+      if (!entry) {
+        return c.json({ error: "Not found" }, 404);
+      }
+      return c.json({ ...entry.info, id: entry.id }, 200, { "cache-control": "no-store" });
+    })
+    .get(`${catalog.basePath}/:id/index.js`, (c) =>
+      asset(c.env, `/${catalog.assetPath}/${c.req.param("id")}/index.js`, "application/javascript"),
+    )
+    // Paperback 0.9 resolves info.icon as `{id}/static/{icon}` (see inkdex layout).
+    .get(`${catalog.basePath}/:id/static/icon.png`, (c) =>
+      asset(c.env, `/${catalog.assetPath}/${c.req.param("id")}/icon.png`, "image/png"),
+    )
+    .get(`${catalog.basePath}/:id/icon.png`, (c) =>
+      asset(c.env, `/${catalog.assetPath}/${c.req.param("id")}/icon.png`, "image/png"),
+    )
+    .get(catalog.basePath, () => homepage(catalog))
+    .get(`${catalog.basePath}/`, () => homepage(catalog));
+};
+
+export const catalogApp: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>();
+
+for (const catalog of catalogs) {
+  addCatalogRoutes(catalogApp, catalog);
+}
