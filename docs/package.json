@@ -22,7 +22,7 @@
     "typecheck": "astro check"
   },
   "dependencies": {
-    "@cloudflare/nimbus-docs": "0.13.1",
+    "@cloudflare/nimbus-docs": "0.14.1",
     "@fontsource/google-sans-code": "catalog:fonts",
     "@fontsource/ibm-plex-sans": "catalog:fonts",
     "@fontsource/zilla-slab": "catalog:fonts",
@@ -30,10 +30,10 @@
     "@manifold/json": "workspace:*",
     "astro": "~7.3.2",
     "astro-icon": "1.2.0",
-    "astro-og-canvas": "0.13.1",
+    "astro-og-canvas": "0.13.2",
     "canvaskit-wasm": "0.42.0",
     "clsx": "2.1.1",
-    "tailwind-merge": "3.6.0"
+    "tailwind-merge": "3.7.0"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",

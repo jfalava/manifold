@@ -20,18 +20,18 @@
       },
       "cloudflare": {
         "@cloudflare/vite-plugin": "1.54.6",
-        "@cloudflare/workers-types": "5.20260911.1",
-        "hono": "4.13.7",
+        "@cloudflare/workers-types": "5.20260916.1",
+        "hono": "4.13.8",
         "wrangler": "4.130.0"
       },
       "build": {
-        "oxlint": "1.82.0",
+        "oxlint": "1.83.0",
         "oxlint-tsgolint": "7.0.2001",
-        "@oxlint/plugins": "1.82.0",
+        "@oxlint/plugins": "1.83.0",
         "typescript": "7.0.2",
-        "oxfmt": "0.67.0",
+        "oxfmt": "0.68.0",
         "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
-        "vitest": "5.0.0"
+        "vitest": "5.0.1"
       },
       "styling": {
         "@tailwindcss/vite": "4.3.3",
