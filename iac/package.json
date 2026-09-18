@@ -15,12 +15,13 @@
   "dependencies": {
     "@effect/platform-bun": "catalog:effect",
     "@effect/platform-node": "catalog:effect",
-    "alchemy": "2.0.0-beta.77",
+    "alchemy": "2.0.0-beta.79",
     "effect": "catalog:effect"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:cloudflare",
     "@types/node": "catalog:types",
+    "bun-types": "catalog:types",
     "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",

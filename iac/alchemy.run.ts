@@ -4,13 +4,15 @@ import * as Output from "alchemy/Output";
 import * as RemovalPolicy from "alchemy/RemovalPolicy";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import type { ManifoldSync as ManifoldSyncClass } from "../api/src/manifold-sync";
 
 import { defineManagedSecrets } from "./src/secrets";
+import { guardedCloudflareHttpClient } from "./src/cloudflare-upload-guard";
 
 // This is binding metadata for the ManifoldApi host, not a standalone
-// resource. ManifoldApi is retained below, and the pinned Alchemy provider
-// fails closed if this class ever appears in deleted_classes.
+// resource. ManifoldApi is retained below so the binding and its Durable
+// Object namespace remain part of the stack's declared lifecycle.
 export const ManifoldSync = Cloudflare.DurableObject<ManifoldSyncClass>("ManifoldSync");
 
 // Backups are independently retained so a stack teardown cannot remove the
@@ -192,7 +194,7 @@ export const ManifoldRouter = Cloudflare.Worker("ManifoldRouter", {
 export default Alchemy.Stack(
   "Manifold",
   {
-    providers: Cloudflare.providers(),
+    providers: Cloudflare.providers().pipe(Layer.provideMerge(guardedCloudflareHttpClient)),
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {

@@ -101,9 +101,5 @@
     "oxlint-tsgolint": "7.0.2001",
     "realm": "catalog:paperback",
     "typescript": "7.0.2"
-  },
-  "patchedDependencies": {
-    "alchemy@2.0.0-beta.77": "patches/alchemy@2.0.0-beta.77.patch",
-    "effect@4.0.0-rc.115": "patches/effect@4.0.0-rc.115.patch"
   }
 }
