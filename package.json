@@ -67,7 +67,7 @@
     "check:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac check",
     "deploy": "bun run build:catalog && bun run --cwd iac deploy",
     "deploy:api": "bun run deploy",
-    "deploy:stable": "bun run build:catalog && bun run --cwd iac deploy -- --stage dev_jfalava --yes",
+    "deploy:stable": "bun run deploy -- --stage dev_jfalava --yes",
     "destroy": "bun run --cwd iac destroy",
     "destroy:api": "bun run destroy",
     "format:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac format",
