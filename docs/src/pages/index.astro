@@ -1,6 +1,7 @@
 ---
 import DocsLayout from "../layouts/DocsLayout.astro";
 import { Code } from "../components/ui/code";
+import { LinkButton } from "../components/ui/link-button";
 import { config } from "virtual:nimbus/config";
 import {
   getBreadcrumbs,
@@ -24,6 +25,11 @@ const prevNext = withBasePrevNext(
 const baseUrl = import.meta.env.BASE_URL;
 const sourceRepoUrl =
   "https://manifold.jfa.dev/paperback/extensions/0.9/stable/";
+const stableRepoUrl =
+  "https://manifold.jfa.dev/paperback/extensions/0.9/stable";
+const betaRepoUrl = "https://manifold.jfa.dev/paperback/extensions/0.9/beta";
+const stableAddRepo = `paperback://addRepo?displayName=${encodeURIComponent("Manifold (Stable)")}&url=${encodeURIComponent(stableRepoUrl)}`;
+const betaAddRepo = `paperback://addRepo?displayName=${encodeURIComponent("Manifold (Beta)")}&url=${encodeURIComponent(betaRepoUrl)}`;
 ---
 
 <DocsLayout
@@ -77,6 +83,14 @@ const sourceRepoUrl =
         </p>
       </p>
       <Code code={sourceRepoUrl} lang="text" />
+      <div class="mt-4 flex flex-wrap gap-3">
+        <LinkButton href={stableAddRepo} variant="primary" icon>
+          Add Stable to Paperback
+        </LinkButton>
+        <LinkButton href={betaAddRepo} variant="secondary" icon>
+          Add Beta to Paperback
+        </LinkButton>
+      </div>
     </section>
 
     <section class="grid gap-6 sm:grid-cols-2">
