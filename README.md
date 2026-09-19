@@ -13,3 +13,6 @@ Manifold-authored code is licensed under the [MIT License](./LICENSE-MIT).
 The Inkdex-derived Comix, MangaDex, AniList, and tracker components remain
 under [GPL-3.0-or-later](./LICENSE). See [ATTRIBUTIONS.md](./ATTRIBUTIONS.md)
 for the exact scope and provider-content and dependency notices.
+
+Run `bun run license:check` with the [REUSE tool](https://reuse.software/)
+installed to verify SPDX metadata and license coverage.

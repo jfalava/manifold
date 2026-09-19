@@ -1,0 +1,26 @@
+version = 1
+
+# Manifold-authored files use MIT unless a closer SPDX header or one of the
+# derived-code annotations below says otherwise.
+[[annotations]]
+path = "**"
+SPDX-FileCopyrightText = "2026 Jorge Fernando Álava"
+SPDX-License-Identifier = "MIT"
+
+# These files contain code derived from Inkdex and remain GPL-3.0-or-later.
+# Keep the paths explicit: nearby Manifold-authored support files remain MIT.
+[[annotations]]
+path = [
+  "packages/mangadex/src/**",
+  "packages/paperback-comix/src/**",
+  "packages/paperback-runtime/src/anilist-graphql.ts",
+  "tracker/src/MANIFOLD/main.ts",
+  "tracker/src/MANIFOLD/managed-collections.ts",
+  "tracker/src/MANIFOLD/pbconfig.ts",
+  "tracker/src/MANIFOLD/read-queue.ts",
+]
+SPDX-FileCopyrightText = [
+  "2026 Inkdex",
+  "2026 Jorge Fernando Álava",
+]
+SPDX-License-Identifier = "GPL-3.0-or-later"

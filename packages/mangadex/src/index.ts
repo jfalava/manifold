@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
-/* Modified by Manifold on 2026-09-19. See ATTRIBUTIONS.md. */
+/* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
 
 /** @effect-diagnostics globalFetch:off */
 import * as Effect from "effect/Effect";
@@ -647,7 +647,9 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         const baseUrl = stringValue(body.baseUrl);
         const hash = stringValue(chapter?.hash);
         if (!baseUrl || !hash) {
-          return yield* Effect.fail(errorFrom(`MangaDex page server returned no hash: ${chapterId}`));
+          return yield* Effect.fail(
+            errorFrom(`MangaDex page server returned no hash: ${chapterId}`),
+          );
         }
         const filenames = chapter !== undefined && isJsonArray(chapter.data) ? chapter.data : [];
         const pages = filenames

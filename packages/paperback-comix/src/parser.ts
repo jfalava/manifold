@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
-/* Modified by Manifold on 2026-09-19. See ATTRIBUTIONS.md. */
+/* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
 
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
