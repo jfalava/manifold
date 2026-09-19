@@ -29,19 +29,6 @@ Install **MANIFOLD**, open its settings, and choose **Login with GitHub**.
 Paperback completes the PKCE exchange and stores only the Manifold session in
 secure state; no `MANIFOLD_TOKEN` is required.
 
-### iOS 27 beta UI testing
-
-Paperback v0.9-r187 testers can add the beta repository separately:
-
-```text
-https://manifold.jfa.dev/paperback/extensions/0.9/beta
-```
-
-Install **MANIFOLD beta** to test the ButtonRow, confirmation-dialog, and
-WebViewRow compatibility probes. This is a separate test extension; do not use
-it as the stable source for a production library. Paperback may cache bundles,
-so remove and re-add the beta source before retesting a newly deployed build.
-
 The CLI uses the same GitHub OAuth App:
 
 ```text
@@ -95,7 +82,6 @@ entry, and fans progress out through the Durable Object outbox.
 | Sync API      | `https://manifold.jfa.dev/api/v1/`                          |
 | Health        | `https://manifold.jfa.dev/api/health`                       |
 | Repository    | `https://manifold.jfa.dev/paperback/extensions/0.9/stable/` |
-| Beta UI test  | `https://manifold.jfa.dev/paperback/extensions/0.9/beta/`   |
 
 ```text
 MangaDex / Comix → Paperback library entry → MANIFOLD

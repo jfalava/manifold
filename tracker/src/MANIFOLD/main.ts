@@ -166,7 +166,7 @@ export class ManifoldTrackerSource
     limit: 25,
     userAgent: manifoldUserAgent("tracker"),
   });
-  protected readonly comix = new ComixSource();
+  private readonly comix = new ComixSource();
 
   async initialise(): Promise<void> {
     await this.comix.initialise();
@@ -529,11 +529,7 @@ export class ManifoldTrackerSource
     // Opening tracker settings is a user-initiated sync point: reconnects
     // with no search/details/read activity otherwise leave queued work stale.
     piggybackDrain();
-    return this.createSettingsForm();
-  }
-
-  protected createSettingsForm(): Form {
-    return new TrackerSettingsForm(this.comix);
+    return new TrackerSettingsForm();
   }
 }
 
@@ -1018,15 +1014,11 @@ class TrackerStatusForm extends Form {
   }
 }
 
-export class TrackerSettingsForm extends Form {
+class TrackerSettingsForm extends Form {
   readonly requiresExplicitSubmission = true;
 
   private pendingAniListToken?: string;
   private pendingAdminCommand?: string;
-
-  constructor(protected readonly comix: ComixSource) {
-    super();
-  }
 
   getSections() {
     // oxlint-disable-next-line typescript/no-this-alias -- Selector cannot resolve callback keys from polymorphic this
