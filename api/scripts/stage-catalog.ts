@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
 const destination = resolve(import.meta.dirname, "../catalog-assets");
+const legalFiles = ["LICENSE", "LICENSE-MIT", "ATTRIBUTIONS.md"] as const;
 
 const plugins = [
   { packageName: "tracker", channel: "stable", id: "MANIFOLD" },
@@ -25,4 +26,8 @@ for (const plugin of plugins) {
   if (existsSync(bundledIcon)) {
     cpSync(bundledIcon, resolve(to, "icon.png"));
   }
+}
+
+for (const file of legalFiles) {
+  cpSync(resolve(root, file), resolve(destination, file));
 }

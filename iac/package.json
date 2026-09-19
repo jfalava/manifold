@@ -1,6 +1,7 @@
 {
   "name": "@manifold/iac",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "check": "oxlint --fix",

@@ -1,6 +1,7 @@
 {
   "name": "@manifold/comix",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

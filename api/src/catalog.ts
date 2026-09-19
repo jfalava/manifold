@@ -8,6 +8,9 @@ import type { Env } from "./types";
 
 const STABLE = "/extensions/0.9/stable";
 const BETA = "/extensions/0.9/beta";
+const REPOSITORY_URL = "https://github.com/jfalava/manifold";
+const LICENSE_NAME = "GPL-3.0-or-later";
+const MIT_LICENSE_NAME = "MIT";
 
 const catalogs = [
   { basePath: STABLE, assetPath: "stable", extensions: [trackerCatalog] },
@@ -27,7 +30,15 @@ const versioningBody = (catalog: Catalog) => ({
   repository: {
     name: "manifold",
     description: "manifold: canonical registry and tracker",
+    url: REPOSITORY_URL,
+    source: `${REPOSITORY_URL}/tree/main`,
+    license: `${MIT_LICENSE_NAME} (Manifold) + ${LICENSE_NAME} (derived)`,
   },
+  license: LICENSE_NAME,
+  licenseUrl: `${catalog.basePath}/LICENSE`,
+  mitLicense: MIT_LICENSE_NAME,
+  mitLicenseUrl: `${catalog.basePath}/LICENSE-MIT`,
+  attributionsUrl: `${catalog.basePath}/ATTRIBUTIONS.md`,
   sources: catalog.extensions.map((entry) => ({
     ...entry.info,
     id: entry.id,
@@ -62,6 +73,7 @@ const homepage = (catalog: Catalog): Response => {
   <h1>manifold</h1>
   <p>Add this repository in Paperback:</p>
   <p><code>https://manifold.jfa.dev/paperback${catalog.basePath}</code></p>
+  <p><a href="${catalog.basePath}/LICENSE">GPL license</a> · <a href="${catalog.basePath}/LICENSE-MIT">MIT license</a> · <a href="${catalog.basePath}/ATTRIBUTIONS.md">Attributions</a> · <a href="${REPOSITORY_URL}">Source repository</a></p>
   ${catalog.basePath === STABLE ? "<p>For iOS 27 UI testing, use <code>https://manifold.jfa.dev/paperback/extensions/0.9/beta</code>.</p>" : ""}
   <ul>${items}</ul>
 </body>
@@ -92,6 +104,15 @@ const addCatalogRoutes = (app: Hono<{ Bindings: Env }>, catalog: Catalog): void 
     )
     .get(`${catalog.basePath}/:id/icon.png`, (c) =>
       asset(c.env, `/${catalog.assetPath}/${c.req.param("id")}/icon.png`, "image/png"),
+    )
+    .get(`${catalog.basePath}/LICENSE`, (c) =>
+      asset(c.env, "/LICENSE", "text/plain; charset=utf-8"),
+    )
+    .get(`${catalog.basePath}/LICENSE-MIT`, (c) =>
+      asset(c.env, "/LICENSE-MIT", "text/plain; charset=utf-8"),
+    )
+    .get(`${catalog.basePath}/ATTRIBUTIONS.md`, (c) =>
+      asset(c.env, "/ATTRIBUTIONS.md", "text/markdown; charset=utf-8"),
     )
     .get(catalog.basePath, () => homepage(catalog))
     .get(`${catalog.basePath}/`, () => homepage(catalog));

@@ -1,6 +1,7 @@
 {
   "name": "manifold",
   "private": true,
+  "license": "SEE LICENSE IN ATTRIBUTIONS.md",
   "workspaces": {
     "packages": [
       "iac",

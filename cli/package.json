@@ -1,6 +1,7 @@
 {
   "name": "@manifold/cli",
   "private": true,
+  "license": "MIT",
   "description": "manifold CLI: migrations, op-log triage, drift reconciliation, registry backfill.",
   "bin": {
     "manifold": "./index.ts"

@@ -6,3 +6,10 @@ place while native MangaDex and Comix extensions own reading and chapter updates
 
 > [!WARNING]
 > This is **very** experimental and requires your own [infrastructure](https://manifold.jfa.dev/architecture/).
+
+## License
+
+Manifold-authored code is licensed under the [MIT License](./LICENSE-MIT).
+The Inkdex-derived Comix, MangaDex, AniList, and tracker components remain
+under [GPL-3.0-or-later](./LICENSE). See [ATTRIBUTIONS.md](./ATTRIBUTIONS.md)
+for the exact scope and provider-content and dependency notices.

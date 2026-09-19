@@ -6,6 +6,9 @@ import { catalogApp } from "../src/catalog";
 import type { Env } from "../src/types";
 
 const assets = new Map<string, string>([
+  ["/LICENSE", "license-text"],
+  ["/LICENSE-MIT", "mit-license-text"],
+  ["/ATTRIBUTIONS.md", "attributions"],
   ["/stable/MANIFOLD/index.js", "tracker-bundle"],
   ["/stable/MANIFOLD/icon.png", "png"],
   ["/beta/MANIFOLD-beta/index.js", "tracker-beta-bundle"],
@@ -34,11 +37,38 @@ describe("Paperback catalog routes", () => {
     const response = await get("/extensions/0.9/stable/versioning.json");
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    // SAFETY: parsed JSON matches { sources: readonly { id: string; version: string }[]; } for this trusted/test payload
+    // SAFETY: parsed JSON matches the trusted/test versioning payload shape
     const body = (await response.json()) as {
+      license: string;
+      licenseUrl: string;
+      mitLicense: string;
+      mitLicenseUrl: string;
+      attributionsUrl: string;
       sources: readonly { id: string; version: string }[];
     };
+    expect(body.license).toBe("GPL-3.0-or-later");
+    expect(body.licenseUrl).toBe("/extensions/0.9/stable/LICENSE");
+    expect(body.mitLicense).toBe("MIT");
+    expect(body.mitLicenseUrl).toBe("/extensions/0.9/stable/LICENSE-MIT");
+    expect(body.attributionsUrl).toBe("/extensions/0.9/stable/ATTRIBUTIONS.md");
     expect(body.sources.map((source) => source.id)).toEqual(["MANIFOLD"]);
+  });
+
+  it("serves the license and attribution notices alongside the catalog", async () => {
+    const license = await get("/extensions/0.9/stable/LICENSE");
+    expect(license.status).toBe(200);
+    expect(license.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(await license.text()).toBe("license-text");
+
+    const mitLicense = await get("/extensions/0.9/stable/LICENSE-MIT");
+    expect(mitLicense.status).toBe(200);
+    expect(mitLicense.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(await mitLicense.text()).toBe("mit-license-text");
+
+    const attributions = await get("/extensions/0.9/stable/ATTRIBUTIONS.md");
+    expect(attributions.status).toBe(200);
+    expect(attributions.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
+    expect(await attributions.text()).toBe("attributions");
   });
 
   it("serves info.json from pbconfig", async () => {

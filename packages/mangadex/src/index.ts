@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
+/* Modified by Manifold on 2026-09-19. See ATTRIBUTIONS.md. */
+
 /** @effect-diagnostics globalFetch:off */
 import * as Effect from "effect/Effect";
 import { Schema } from "effect";

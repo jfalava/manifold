@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: MIT */
+/* Copyright © 2026 Jorge Fernando Álava. */
+/* Modified by Manifold on 2026-09-19. See ATTRIBUTIONS.md. */
+
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
 import {
