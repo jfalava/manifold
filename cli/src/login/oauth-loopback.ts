@@ -17,7 +17,7 @@ import { createInterface } from "node:readline/promises";
 import { errorMessage } from "@manifold/json";
 
 import { cliError, envString } from "@/effect-kit";
-import { frameDetail, muted } from "@/ui";
+import { frameDetail, frameUrl, muted } from "@/ui";
 
 const asError = (cause: unknown): Error =>
   cause instanceof Error ? cause : cliError(errorMessage(cause));
@@ -456,7 +456,8 @@ export const awaitOAuthAuthorizationCode = async (
   }
 
   frameDetail(`Callback URL: ${options.redirectUri}`);
-  frameDetail(`Open this URL in your browser:\n${options.authorizeUrl}`);
+  frameDetail("Open this URL in your browser (click if your terminal supports links):");
+  frameUrl(options.authorizeUrl);
 
   if (pasteOnly && !stdin.isTTY) {
     await server?.stop(true);

@@ -29,9 +29,11 @@ The CLI stores the same session in the OS keychain:
 manifold login manifold
 ```
 
-Open the printed URL in a browser. The CLI listens only on
-`127.0.0.1:8768/callback` while it completes the exchange. No Manifold API key
-is needed for normal tracker or CLI use.
+Open the printed URL in a browser (or press **`c`** to copy it). The CLI races a
+loopback listener on `127.0.0.1:8768/callback` against a paste prompt. On a
+headless host use `--paste-only` and paste the callback URL after authorizing
+elsewhere. Full notes: [`login manifold`](/cli/login/manifold). No Manifold API
+key is needed for normal tracker or CLI use.
 
 This deployment is personal rather than multi-tenant. Set
 `MANIFOLD_GITHUB_ALLOWED_USER_ID` to the numeric GitHub user ID that owns the

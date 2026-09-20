@@ -5,7 +5,8 @@ import pc from "picocolors";
 import cliProgress from "cli-progress";
 import { Listr, PRESET_TIMER, Spinner, type ListrTask } from "listr2";
 import { Effect } from "effect";
-import { epochMillisNow } from "@/effect-kit";
+/** @effect-diagnostics processEnv:off — NO_COLOR presence (incl. empty) is a host signal. */
+import { envString, epochMillisNow } from "@/effect-kit";
 
 /**
  * Terminal UI kit: listr2 owns the task tree (◆/■/◇ icons via the default
@@ -24,10 +25,71 @@ export const muted = (() => {
   return (text: string): string => `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`;
 })();
 
+/** Visual width of the frame rail prefix `│  ` (not counting ANSI). */
+const FRAME_RAIL_COLS = 3;
+
+/**
+ * Hard-wrap plain text to `width` columns so terminal soft-wrap cannot leave
+ * continuation lines without the frame rail.
+ */
+export const wrapFrameText = (text: string, width: number): string[] => {
+  const max = Math.max(8, width);
+  if (text.length === 0) {
+    return [""];
+  }
+  const lines: string[] = [];
+  for (let i = 0; i < text.length; i += max) {
+    lines.push(text.slice(i, i + max));
+  }
+  return lines;
+};
+
+const frameContentWidth = (): number => {
+  const cols = stdout.columns && stdout.columns > 0 ? stdout.columns : 80;
+  return Math.max(24, cols - FRAME_RAIL_COLS);
+};
+
+/**
+ * OSC 8 hyperlink when stdout is a TTY. Visible text stays copyable; click
+ * opens `href` in terminals that support it (Ghostty, iTerm2, kitty, Windows
+ * Terminal, VS Code, …). Non-TTY / dumb terminals get plain text.
+ *
+ * Spec: https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda
+ */
+export const terminalHyperlink = (href: string, label: string): string => {
+  if (!stdout.isTTY || envDisablesHyperlinks()) {
+    return label;
+  }
+  return `\u001b]8;;${href}\u0007${label}\u001b]8;;\u0007`;
+};
+
+const envDisablesHyperlinks = (): boolean => {
+  // NO_COLOR is active when present, including empty string (https://no-color.org).
+  if (process.env.NO_COLOR !== undefined) {
+    return true;
+  }
+  return envString("TERM") === "dumb";
+};
+
 export const frameDetail = (text: string): void => {
-  // Keep the side rail continuous across multi-line details (e.g. OAuth URLs).
-  for (const line of text.split("\n")) {
-    process.stdout.write(`${muted("│")}  ${muted(line)}\n`);
+  // Keep the side rail continuous across explicit newlines and soft wraps.
+  const width = frameContentWidth();
+  for (const paragraph of text.split("\n")) {
+    for (const chunk of wrapFrameText(paragraph, width)) {
+      process.stdout.write(`${muted("│")}  ${muted(chunk)}\n`);
+    }
+  }
+};
+
+/**
+ * Print a URL inside the frame: soft-wrapped with a continuous rail, and as an
+ * OSC 8 hyperlink per segment when the terminal supports clicks.
+ */
+export const frameUrl = (url: string): void => {
+  const width = frameContentWidth();
+  for (const chunk of wrapFrameText(url, width)) {
+    const label = muted(chunk);
+    process.stdout.write(`${muted("│")}  ${terminalHyperlink(url, label)}\n`);
   }
 };
 

@@ -9,6 +9,7 @@ Full documentation lives in the docs site under **The manifold CLI**
 ```text
 bun run manifold <subcommand> [flags]
 
+manifold login manifold                    # authorize Manifold via GitHub (OS keychain)
 manifold login anilist                     # authorize AniList (OS keychain)
 manifold login mal                         # authorize MAL (OS keychain)
 manifold anilist create pas5               # AniList list → Paperback .pas5 backup
