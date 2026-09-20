@@ -5,8 +5,8 @@ sidebar:
   order: 2
 ---
 
-```text
-bun run manifold mangadex stale-status [flags]
+```sh
+manifold mangadex stale-status [flags]
 ```
 
 Scans your MangaDex library for titles whose latest uploaded chapter is older than a cutoff, then moves them to a target reading status (default `on_hold`). Dry-run until `--apply`.
@@ -23,8 +23,8 @@ can be written as a number of days (`90` or `90d`), weeks (`12w`), months
 
 Example:
 
-```text
-bun run manifold mangadex stale-status --older-than 180d
+```sh
+manifold mangadex stale-status --older-than 180d
 ```
 
 ### `--to <status>`
@@ -36,8 +36,8 @@ Set stale titles to this MangaDex reading status. Valid statuses include
 
 Example:
 
-```text
-bun run manifold mangadex stale-status --to dropped
+```sh
+manifold mangadex stale-status --to dropped
 ```
 
 ### `--from <statuses>`
@@ -49,8 +49,8 @@ reading statuses.
 
 Example:
 
-```text
-bun run manifold mangadex stale-status --from reading,on_hold
+```sh
+manifold mangadex stale-status --from reading,on_hold
 ```
 
 ### `--apply`
@@ -62,8 +62,8 @@ reports a plan without changing your library.
 
 Example:
 
-```text
-bun run manifold mangadex stale-status --older-than 180d --to on_hold --apply
+```sh
+manifold mangadex stale-status --older-than 180d --to on_hold --apply
 ```
 
 ### `--use-plan`
@@ -75,8 +75,8 @@ The command requires the relevant flags to match the saved plan.
 
 Example:
 
-```text
-bun run manifold mangadex stale-status --use-plan --apply
+```sh
+manifold mangadex stale-status --use-plan --apply
 ```
 
 ### `--mangadex-client-id <id>`
@@ -86,8 +86,8 @@ OAuth client ID for the MangaDex password grant. Falls back to
 
 Example:
 
-```text
-bun run manifold mangadex stale-status --mangadex-client-id "$MANIFOLD_MANGADEX_CLIENT_ID"
+```sh
+manifold mangadex stale-status --mangadex-client-id "$MANIFOLD_MANGADEX_CLIENT_ID"
 ```
 
 ### `--mangadex-client-secret <secret>`
@@ -97,8 +97,8 @@ OAuth client secret for the MangaDex password grant. Falls back to
 
 Example:
 
-```text
-bun run manifold mangadex stale-status --mangadex-client-secret "$MANIFOLD_MANGADEX_CLIENT_SECRET"
+```sh
+manifold mangadex stale-status --mangadex-client-secret "$MANIFOLD_MANGADEX_CLIENT_SECRET"
 ```
 
 ### `--mangadex-username <username>`
@@ -108,8 +108,8 @@ MangaDex account username for the password grant. Falls back to
 
 Example:
 
-```text
-bun run manifold mangadex stale-status --mangadex-username "$MANIFOLD_MANGADEX_USERNAME"
+```sh
+manifold mangadex stale-status --mangadex-username "$MANIFOLD_MANGADEX_USERNAME"
 ```
 
 ### `--mangadex-password <password>`
@@ -119,15 +119,15 @@ MangaDex account password for the password grant. Falls back to
 
 Example:
 
-```text
-bun run manifold mangadex stale-status --mangadex-password "$MANIFOLD_MANGADEX_PASSWORD"
+```sh
+manifold mangadex stale-status --mangadex-password "$MANIFOLD_MANGADEX_PASSWORD"
 ```
 
 ## Usage
 
-```text
-bun run manifold mangadex stale-status
-bun run manifold mangadex stale-status --older-than 180d --to on_hold
+```sh
+manifold mangadex stale-status
+manifold mangadex stale-status --older-than 180d --to on_hold
 bun run manifold mangadex stale-status --apply
 bun run manifold mangadex stale-status --use-plan --apply
 ```

@@ -5,8 +5,8 @@ sidebar:
   order: 30
 ---
 
-```text
-bun run manifold reconcile diff [flags]
+```sh
+manifold reconcile diff [flags]
 ```
 
 **Read-only.** Walks every live AniList manga entry, maps statuses into registry vocabulary, and prints `NOT IN REGISTRY` / `DRIFT` lines plus a summary.
@@ -19,9 +19,9 @@ AniList access token for the live manga list. Resolve order: flag → `MANIFOLD_
 
 Example:
 
-```text
-bun run manifold login anilist
-bun run manifold reconcile diff
+```sh
+manifold login anilist
+manifold reconcile diff
 ```
 
 ### `--api-token <token>`
@@ -30,8 +30,8 @@ Personal API token used to read the registry. Falls back to `MANIFOLD_TOKEN`.
 
 Example:
 
-```text
-bun run manifold reconcile diff --api-token "$MANIFOLD_TOKEN"
+```sh
+manifold reconcile diff --api-token "$MANIFOLD_TOKEN"
 ```
 
 ### `--api-origin <url>`
@@ -42,14 +42,14 @@ Personal API origin containing the registry.
 
 Example:
 
-```text
-bun run manifold reconcile diff --api-origin https://manifold.example/api
+```sh
+manifold reconcile diff --api-origin https://manifold.example/api
 ```
 
 ## Usage
 
-```text
-bun run manifold reconcile diff
+```sh
+manifold reconcile diff
 ```
 
 When AniList was edited directly on anilist.co, the registry projection silently disagrees. Fix drift with [registry import](/cli/registry/import/) — that command records live status with `appliedRemotely: true` and does **not** enqueue ops.

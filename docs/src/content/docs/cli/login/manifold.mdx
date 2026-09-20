@@ -5,8 +5,8 @@ sidebar:
   order: 0
 ---
 
-```text
-bun run manifold login manifold [flags]
+```sh
+manifold login manifold [flags]
 ```
 
 Local authorization-code OAuth (PKCE S256) against the Manifold API. Creates a
@@ -40,14 +40,14 @@ then paste the authorization code or full callback URL from the address bar
 (`http://127.0.0.1:8768/callback?code=…&state=…`). A connection-refused page is
 expected — copy the URL anyway. PKCE stays on the CLI process.
 
-```text
-bun run manifold login manifold --paste-only
+```sh
+manifold login manifold --paste-only
 ```
 
 ## Usage
 
-```text
-bun run manifold login manifold
+```sh
+manifold login manifold
 ```
 
 The command prints a browser authorization URL (clickable via OSC 8 when the

@@ -1,3 +1,6 @@
+/** @effect-diagnostics newPromise:off */
+/** @effect-diagnostics globalTimers:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 
@@ -138,6 +141,80 @@ export const waitForEnterInFrame = (message: string): Promise<void> =>
       const reader = createInterface({ input: stdin, output: stdout });
       yield* Effect.promise(() => reader.question(""));
       reader.close();
+    }),
+  );
+
+/** Visible single-line prompt inside the open frame. */
+export const promptInFrame = (message: string): Promise<string> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      stdout.write(`${muted("│")}\n${muted("│")}  ${message}: `);
+      const reader = createInterface({ input: stdin, output: stdout });
+      const answer = yield* Effect.promise(() => reader.question(""));
+      reader.close();
+      return answer;
+    }),
+  );
+
+/**
+ * Secret prompt: hides echo when stdin is a TTY with setRawMode.
+ * Falls back to a visible prompt when raw mode is unavailable.
+ */
+export const promptSecretInFrame = (message: string): Promise<string> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      stdout.write(`${muted("│")}\n${muted("│")}  ${message}: `);
+      const setRawMode = stdin.setRawMode?.bind(stdin);
+      if (!stdin.isTTY || setRawMode === undefined) {
+        const reader = createInterface({ input: stdin, output: stdout });
+        const answer = yield* Effect.promise(() => reader.question(""));
+        reader.close();
+        return answer;
+      }
+
+      const answer = yield* Effect.promise(
+        () =>
+          new Promise<string>((resolve, reject) => {
+            let value = "";
+            const onData = (chunk: Buffer | string) => {
+              const text = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk;
+              for (const ch of text) {
+                if (ch === "\n" || ch === "\r") {
+                  cleanup();
+                  stdout.write("\n");
+                  resolve(value);
+                  return;
+                }
+                if (ch === "\u0003") {
+                  cleanup();
+                  reject(new Error("Cancelled."));
+                  return;
+                }
+                if (ch === "\u007f" || ch === "\b") {
+                  if (value.length > 0) {
+                    value = value.slice(0, -1);
+                    stdout.write("\b \b");
+                  }
+                  continue;
+                }
+                if (ch < " ") {
+                  continue;
+                }
+                value += ch;
+                stdout.write("*");
+              }
+            };
+            const cleanup = () => {
+              stdin.off("data", onData);
+              setRawMode(false);
+              stdin.pause();
+            };
+            setRawMode(true);
+            stdin.resume();
+            stdin.on("data", onData);
+          }),
+      );
+      return answer;
     }),
   );
 

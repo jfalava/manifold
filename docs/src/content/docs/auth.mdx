@@ -25,7 +25,7 @@ GitHub client secret stays in the Cloudflare Worker; Paperback stores only the
 short-lived Manifold access token and rotated refresh token in secure state.
 The CLI stores the same session in the OS keychain:
 
-```text
+```sh
 manifold login manifold
 ```
 
@@ -59,6 +59,6 @@ headed Chrome session for the same reason; it does not paste `cf_clearance`
 into Worker `fetch`.
 
 <Aside type="caution" title="Do not copy cookies into the Worker">
-  Comix session cookies must not be uploaded to the personal API or canonical
-  database. Keep them on the device that solved the check.
+  Comix session cookies must not be uploaded to the personal API or canonical database. Keep them on
+  the device that solved the check.
 </Aside>

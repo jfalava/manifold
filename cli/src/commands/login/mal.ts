@@ -3,11 +3,11 @@ import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage } from "@manifold/json";
 
 import { saveMalSession } from "@/login/mal-session";
+import { resolveOAuthClient } from "@/login/oauth-clients";
 import { awaitOAuthAuthorizationCode } from "@/login/oauth-loopback";
-import { resolveValue } from "@/env-resolve";
 import { createMalAuthorization, createMalClient, MAL_REDIRECT_URI, requestMalTokens } from "@/mal";
 import { abortFrame, closeFrame, openFrame } from "@/ui";
-import { cliError, envString } from "@/effect-kit";
+import { cliError } from "@/effect-kit";
 
 /** OAuth server and callback are Promise-based host APIs. */
 /** @effect-diagnostics asyncFunction:off */
@@ -15,7 +15,15 @@ import { cliError, envString } from "@/effect-kit";
 export const malLoginCommand = Command.make("mal", {
   clientId: Flag.String("client-id").pipe(
     Flag.optional,
-    Flag.withDescription("MAL OAuth client ID. Falls back to MANIFOLD_MAL_CLIENT_ID."),
+    Flag.withDescription(
+      "MAL OAuth client ID. Falls back to MANIFOLD_MAL_CLIENT_ID, then OS keychain, then interactive prompt.",
+    ),
+  ),
+  clientSecret: Flag.String("client-secret").pipe(
+    Flag.optional,
+    Flag.withDescription(
+      "MAL OAuth client secret when required. Falls back to MANIFOLD_MAL_CLIENT_SECRET, then OS keychain, then interactive prompt.",
+    ),
   ),
   pasteOnly: Flag.Boolean("paste-only").pipe(
     Flag.withDefault(false),
@@ -25,17 +33,19 @@ export const malLoginCommand = Command.make("mal", {
   ),
 }).pipe(
   Command.withDescription(
-    `Authorize MAL locally; register ${MAL_REDIRECT_URI} as the OAuth redirect URI. Supports loopback callback or pasted code/URL.`,
+    `Authorize MAL locally; register ${MAL_REDIRECT_URI} as the OAuth redirect URI. Supports loopback callback or pasted code/URL. OAuth client id/secret may live in env, keychain, or an interactive prompt.`,
   ),
-  Command.withHandler(({ clientId, pasteOnly }) =>
+  Command.withHandler(({ clientId, clientSecret, pasteOnly }) =>
     Effect.tryPromise({
       try: async () => {
-        const id = resolveValue(clientId, "MANIFOLD_MAL_CLIENT_ID");
-        if (!id) {
-          throw cliError("Set MANIFOLD_MAL_CLIENT_ID or pass --client-id.");
-        }
         openFrame("login mal");
-        const auth = createMalAuthorization(id);
+        const oauth = await resolveOAuthClient({
+          kind: "mal",
+          clientIdFlag: clientId,
+          clientSecretFlag: clientSecret,
+          requireSecret: false,
+        });
+        const auth = createMalAuthorization(oauth.clientId);
         const code = await awaitOAuthAuthorizationCode({
           providerLabel: "MAL",
           authorizeUrl: auth.url,
@@ -44,8 +54,8 @@ export const malLoginCommand = Command.make("mal", {
           pasteOnly,
         });
         const session = await requestMalTokens(
-          id,
-          envString("MANIFOLD_MAL_CLIENT_SECRET"),
+          oauth.clientId,
+          oauth.clientSecret,
           new URLSearchParams({
             grant_type: "authorization_code",
             code,

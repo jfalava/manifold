@@ -18,6 +18,7 @@
     "/cli/migrate/anilist-to-mal",
     "/cli/migrate/anilist-to-mangadex",
     "/cli/migrate/mangadex-to-anilist",
+    "/cli/ops/drain-anilist",
     "/cli/ops/pending",
     "/cli/ops/retry",
     "/cli/reconcile-diff",
@@ -25,6 +26,7 @@
     "/cli/registry/import",
     "/cli/registry/mal",
     "/cli/registry/mangadex",
+    "/cli/upgrade",
     "/development",
     "/install"
   ],

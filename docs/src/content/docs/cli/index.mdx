@@ -8,8 +8,8 @@ sidebar:
 
 `manifold` lives in `cli` (`@manifold/cli`). Run it from the repo root:
 
-```text
-bun run manifold <subcommand> [flags]
+```sh
+manifold <subcommand> [flags]
 ```
 
 Compiled releases (Linux / macOS / Windows) publish on `cli-v*` tags; self-update
@@ -28,8 +28,8 @@ to `MANIFOLD_TOKEN`.
 
 Example:
 
-```text
-bun run manifold ops pending --api-token "$MANIFOLD_TOKEN"
+```sh
+manifold ops pending --api-token "$MANIFOLD_TOKEN"
 ```
 
 ### `--api-origin <url>`
@@ -41,8 +41,8 @@ to `MANIFOLD_API_ORIGIN`.
 
 Example:
 
-```text
-bun run manifold reconcile diff --api-origin https://manifold.example/api
+```sh
+manifold reconcile diff --api-origin https://manifold.example/api
 ```
 
 ### AniList authentication
@@ -50,8 +50,8 @@ bun run manifold reconcile diff --api-origin https://manifold.example/api
 Prefer local OAuth over pasting tokens. Full setup:
 [login anilist](/cli/login/anilist).
 
-```text
-bun run manifold login anilist
+```sh
+manifold login anilist
 ```
 
 Register a separate authorization-code client with redirect URI
@@ -68,9 +68,9 @@ commands. Resolve order: flag → `MANIFOLD_ANILIST_TOKEN` → keychain login.
 
 Example:
 
-```text
-bun run manifold login anilist
-bun run manifold registry import
+```sh
+manifold login anilist
+manifold registry import
 ```
 
 ### MyAnimeList authentication
@@ -80,8 +80,8 @@ Prefer local OAuth over pasting tokens. Full setup:
 [`mal wipe manga`](/cli/mal/wipe-manga),
 [`migrate anilist-to-mal`](/cli/migrate/anilist-to-mal).
 
-```text
-bun run manifold login mal
+```sh
+manifold login mal
 ```
 
 Register a separate MAL OAuth client with redirect URI
@@ -100,9 +100,9 @@ login. A supplied token does not refresh.
 
 Example:
 
-```text
-bun run manifold login mal
-bun run manifold mal wipe manga
+```sh
+manifold login mal
+manifold mal wipe manga
 ```
 
 `registry mal` audits active registry entries and backfills verified MAL links
@@ -119,8 +119,8 @@ OAuth client ID for the MangaDex password grant. Falls back to
 
 Example:
 
-```text
-bun run manifold mangadex stale-status --mangadex-client-id "$MANIFOLD_MANGADEX_CLIENT_ID"
+```sh
+manifold mangadex stale-status --mangadex-client-id "$MANIFOLD_MANGADEX_CLIENT_ID"
 ```
 
 ### `--mangadex-client-secret <secret>`
@@ -130,8 +130,8 @@ OAuth client secret for the MangaDex password grant. Falls back to
 
 Example:
 
-```text
-bun run manifold mangadex stale-status --mangadex-client-secret "$MANIFOLD_MANGADEX_CLIENT_SECRET"
+```sh
+manifold mangadex stale-status --mangadex-client-secret "$MANIFOLD_MANGADEX_CLIENT_SECRET"
 ```
 
 ### `--mangadex-username <username>`
@@ -141,8 +141,8 @@ MangaDex account username for the password grant. Falls back to
 
 Example:
 
-```text
-bun run manifold mangadex stale-status --mangadex-username "$MANIFOLD_MANGADEX_USERNAME"
+```sh
+manifold mangadex stale-status --mangadex-username "$MANIFOLD_MANGADEX_USERNAME"
 ```
 
 ### `--mangadex-password <password>`
@@ -152,8 +152,8 @@ MangaDex account password for the password grant. Falls back to
 
 Example:
 
-```text
-bun run manifold mangadex stale-status --mangadex-password "$MANIFOLD_MANGADEX_PASSWORD"
+```sh
+manifold mangadex stale-status --mangadex-password "$MANIFOLD_MANGADEX_PASSWORD"
 ```
 
 ### MangaDex credentials together
@@ -163,8 +163,8 @@ environment:
 
 Example:
 
-```text
-bun run manifold mangadex stale-status \
+```sh
+manifold mangadex stale-status \
   --mangadex-client-id "$MANIFOLD_MANGADEX_CLIENT_ID" \
   --mangadex-client-secret "$MANIFOLD_MANGADEX_CLIENT_SECRET" \
   --mangadex-username "$MANIFOLD_MANGADEX_USERNAME" \

@@ -6,8 +6,8 @@ reconciliation, and canonical registry backfill.
 Full documentation lives in the docs site under **The manifold CLI**
 (`docs/src/content/docs/cli/index.mdx`). Quick reference:
 
-```text
-bun run manifold <subcommand> [flags]
+```sh
+manifold <subcommand> [flags]
 
 manifold login manifold                    # authorize Manifold via GitHub (OS keychain)
 manifold login anilist                     # authorize AniList (OS keychain)
@@ -39,8 +39,8 @@ headed Chrome window with a dedicated `~/.manifold/comix-chrome` profile
 captures `/browse` the same way the Paperback source does, and stores the
 harvested jar in `Bun.secrets` until `cf_clearance` expires.
 
-```text
-bun run manifold registry comix
+```sh
+manifold registry comix
 ```
 
 If Cloudflare appears, solve it in that new Chrome window and press Enter.

@@ -5,8 +5,8 @@ sidebar:
   order: 4
 ---
 
-```text
-bun run manifold registry mal [flags]
+```sh
+manifold registry mal [flags]
 ```
 
 Audits active registry rows and fills missing MAL links from AniList's `idMal`.
@@ -26,8 +26,8 @@ Persist verified links. Default: `false`. Review the dry-run report first.
 
 Example:
 
-```text
-bun run manifold registry mal --apply
+```sh
+manifold registry mal --apply
 ```
 
 ### `--limit <n>`
@@ -37,8 +37,8 @@ is fully paged before applying the limit. Default: all eligible rows.
 
 Example:
 
-```text
-bun run manifold registry mal --limit 50
+```sh
+manifold registry mal --limit 50
 ```
 
 ### AniList rate limiting
@@ -53,8 +53,8 @@ Override the registry API token. Defaults to `MANIFOLD_TOKEN`.
 
 Example:
 
-```text
-bun run manifold registry mal --api-token "$MANIFOLD_TOKEN"
+```sh
+manifold registry mal --api-token "$MANIFOLD_TOKEN"
 ```
 
 ### `--api-origin <url>`
@@ -64,8 +64,8 @@ Override the API origin. Defaults to `MANIFOLD_API_ORIGIN`, then
 
 Example:
 
-```text
-bun run manifold registry mal --api-origin https://manifold.example/api
+```sh
+manifold registry mal --api-origin https://manifold.example/api
 ```
 
 ## Reading the report

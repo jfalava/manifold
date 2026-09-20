@@ -5,8 +5,8 @@ sidebar:
   order: 3
 ---
 
-```text
-bun run manifold ops drain-anilist [flags]
+```sh
+manifold ops drain-anilist [flags]
 ```
 
 Cloudflare Worker egress is blocked by AniList. Pending `anilist:*` ops in the personal API outbox normally wait for a Paperback device drain. This command is the same protocol on a always-on host (for example oci-agents): pull pending ops, run GraphQL with a local AniList token, report outcomes.
@@ -21,8 +21,8 @@ Run a single drain pass and exit. Default is an infinite loop (for systemd).
 
 Example:
 
-```text
-bun run manifold ops drain-anilist --once
+```sh
+manifold ops drain-anilist --once
 ```
 
 ### `--interval <seconds>`
@@ -33,8 +33,8 @@ Seconds to sleep between passes when looping.
 
 Example:
 
-```text
-bun run manifold ops drain-anilist --interval 45
+```sh
+manifold ops drain-anilist --interval 45
 ```
 
 ### `--limit <n>`
@@ -45,8 +45,8 @@ Max pending `anilist:*` ops fetched per pass (1–100).
 
 Example:
 
-```text
-bun run manifold ops drain-anilist --once --limit 10
+```sh
+manifold ops drain-anilist --once --limit 10
 ```
 
 ### `--anilist-token <token>`
@@ -55,8 +55,8 @@ AniList access token override. Prefer `login anilist` (keychain) or `MANIFOLD_AN
 
 Example:
 
-```text
-bun run manifold ops drain-anilist --once --anilist-token "$MANIFOLD_ANILIST_TOKEN"
+```sh
+manifold ops drain-anilist --once --anilist-token "$MANIFOLD_ANILIST_TOKEN"
 ```
 
 ### `--api-token <token>`
@@ -73,14 +73,14 @@ Personal API origin.
 
 One-shot triage:
 
-```text
-bun run manifold ops drain-anilist --once
+```sh
+manifold ops drain-anilist --once
 ```
 
 Always-on (oci-agents user service):
 
-```text
-bun run manifold ops drain-anilist --interval 30
+```sh
+manifold ops drain-anilist --interval 30
 ```
 
 Device drain in Paperback remains a backup when this host is down. Ops kinds match the device path: `anilist.status`, `anilist.progress`, `anilist.fields`, `anilist.delete`.

@@ -5,8 +5,8 @@ sidebar:
   order: 2
 ---
 
-```text
-bun run manifold login mal [flags]
+```sh
+manifold login mal [flags]
 ```
 
 Local OAuth (authorization code + plain PKCE) for CLI commands that talk to
@@ -19,12 +19,14 @@ MyAnimeList. Prefer this over pasting access tokens. Primary consumers:
 1. Create a **separate** MAL OAuth client in the
    [MyAnimeList API console](https://myanimelist.net/apiconfig).
 2. Set the redirect URI to exactly `http://127.0.0.1:8766/callback`.
-3. Put the client id in `cli/.env`, plus the secret if the client requires it:
+3. Provide the client id (and secret if required) via **one** of:
 
-```text
-MANIFOLD_MAL_CLIENT_ID=
-MANIFOLD_MAL_CLIENT_SECRET=
-```
+   - flags (`--client-id` / `--client-secret`)
+   - `cli/.env` / process env (`MANIFOLD_MAL_CLIENT_ID` /
+     `MANIFOLD_MAL_CLIENT_SECRET`)
+   - interactive prompt on a TTY — values are stored in the OS keychain under
+     `manifold` / `mal-oauth-client`
+   - already-saved keychain entry from a prior login
 
 Do **not** reuse the deployed API's MAL OAuth client or its refresh token. The
 CLI needs its own redirect URI and stores its own session in the OS keychain.
@@ -33,13 +35,20 @@ CLI needs its own redirect URI and stores its own session in the OS keychain.
 
 ### `--client-id <id>`
 
-MAL OAuth client ID. Falls back to `MANIFOLD_MAL_CLIENT_ID`.
+MAL OAuth client ID. Falls back to `MANIFOLD_MAL_CLIENT_ID`, then the OS
+keychain, then an interactive prompt on a TTY.
 
 Example:
 
-```text
-bun run manifold login mal --client-id "$MANIFOLD_MAL_CLIENT_ID"
+```sh
+manifold login mal --client-id "$MANIFOLD_MAL_CLIENT_ID"
 ```
+
+### `--client-secret <secret>`
+
+MAL OAuth client secret when the app requires it. Falls back to
+`MANIFOLD_MAL_CLIENT_SECRET`, then the OS keychain, then an interactive
+prompt on a TTY.
 
 ### `--paste-only`
 
@@ -52,14 +61,14 @@ expected — copy the URL anyway. PKCE stays on the CLI process.
 
 Example:
 
-```text
-bun run manifold login mal --paste-only
+```sh
+manifold login mal --paste-only
 ```
 
 ## Usage
 
-```text
-bun run manifold login mal
+```sh
+manifold login mal
 ```
 
 The command prints a browser authorization URL. On a TTY: press **`c`** to copy

@@ -8,8 +8,8 @@ import {
   exchangeAniListCode,
   validateAniListSession,
 } from "@/login/anilist";
+import { resolveOAuthClient } from "@/login/oauth-clients";
 import { awaitOAuthAuthorizationCode } from "@/login/oauth-loopback";
-import { resolveValue } from "@/env-resolve";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
 import { cliError, envString } from "@/effect-kit";
 
@@ -20,7 +20,15 @@ import { cliError, envString } from "@/effect-kit";
 export const anilistLoginCommand = Command.make("anilist", {
   clientId: Flag.String("client-id").pipe(
     Flag.optional,
-    Flag.withDescription("AniList CLI client ID. Falls back to MANIFOLD_ANILIST_CLIENT_ID."),
+    Flag.withDescription(
+      "AniList CLI client ID. Falls back to MANIFOLD_ANILIST_CLIENT_ID, then OS keychain, then interactive prompt.",
+    ),
+  ),
+  clientSecret: Flag.String("client-secret").pipe(
+    Flag.optional,
+    Flag.withDescription(
+      "AniList CLI client secret. Falls back to MANIFOLD_ANILIST_CLIENT_SECRET, then OS keychain, then interactive prompt.",
+    ),
   ),
   pasteOnly: Flag.Boolean("paste-only").pipe(
     Flag.withDefault(false),
@@ -30,20 +38,22 @@ export const anilistLoginCommand = Command.make("anilist", {
   ),
 }).pipe(
   Command.withDescription(
-    `Authorize AniList locally. Register ${ANILIST_REDIRECT_URI} on a separate authorization-code client. Supports loopback callback or pasted code/URL.`,
+    `Authorize AniList locally. Register ${ANILIST_REDIRECT_URI} on a separate authorization-code client. Supports loopback callback or pasted code/URL. OAuth client id/secret may live in env, keychain, or an interactive prompt.`,
   ),
-  Command.withHandler(({ clientId, pasteOnly }) =>
+  Command.withHandler(({ clientId, clientSecret, pasteOnly }) =>
     Effect.tryPromise({
       try: async () => {
-        const id = resolveValue(clientId, "MANIFOLD_ANILIST_CLIENT_ID");
-        const secret = envString("MANIFOLD_ANILIST_CLIENT_SECRET");
-        if (!id || !secret) {
-          throw cliError(
-            "Set MANIFOLD_ANILIST_CLIENT_ID and MANIFOLD_ANILIST_CLIENT_SECRET for the CLI OAuth application.",
-          );
-        }
         openFrame("login anilist");
-        const auth = createAniListAuthorization(id);
+        const oauth = await resolveOAuthClient({
+          kind: "anilist",
+          clientIdFlag: clientId,
+          clientSecretFlag: clientSecret,
+          requireSecret: true,
+        });
+        if (!oauth.clientSecret) {
+          throw cliError("AniList client secret is required.");
+        }
+        const auth = createAniListAuthorization(oauth.clientId);
         const code = await awaitOAuthAuthorizationCode({
           providerLabel: "AniList",
           authorizeUrl: auth.url,
@@ -51,7 +61,7 @@ export const anilistLoginCommand = Command.make("anilist", {
           expectedState: auth.state,
           pasteOnly,
         });
-        const session = await exchangeAniListCode(id, secret, code);
+        const session = await exchangeAniListCode(oauth.clientId, oauth.clientSecret, code);
         const viewer = await validateAniListSession(session.accessToken);
         await Bun.secrets.set({ ...ANILIST_SECRET, value: JSON.stringify(session) });
         closeFrame(`Signed in as ${viewer.name} (${viewer.id}). Token saved in the OS keychain.`);

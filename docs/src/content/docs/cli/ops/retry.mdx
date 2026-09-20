@@ -5,8 +5,8 @@ sidebar:
   order: 2
 ---
 
-```text
-bun run manifold ops retry --op-id <op_id> [flags]
+```sh
+manifold ops retry --op-id <op_id> [flags]
 ```
 
 Dry-run by default. With `--apply`, POSTs `/v1/ops/:opId/retry` and returns the op to the pending queue.
@@ -20,8 +20,8 @@ admin panel.
 
 Example:
 
-```text
-bun run manifold ops retry --op-id op_123
+```sh
+manifold ops retry --op-id op_123
 ```
 
 ### `--apply`
@@ -33,8 +33,8 @@ flag, the command only shows which op would be retried.
 
 Example:
 
-```text
-bun run manifold ops retry --op-id op_123 --apply
+```sh
+manifold ops retry --op-id op_123 --apply
 ```
 
 ### `--api-token <token>`
@@ -43,8 +43,8 @@ Personal API token used to retry the op. Falls back to `MANIFOLD_TOKEN`.
 
 Example:
 
-```text
-bun run manifold ops retry --op-id op_123 --api-token "$MANIFOLD_TOKEN"
+```sh
+manifold ops retry --op-id op_123 --api-token "$MANIFOLD_TOKEN"
 ```
 
 ### `--api-origin <url>`
@@ -55,15 +55,15 @@ Personal API origin to call.
 
 Example:
 
-```text
-bun run manifold ops retry --op-id op_123 --api-origin https://manifold.example/api
+```sh
+manifold ops retry --op-id op_123 --api-origin https://manifold.example/api
 ```
 
 ## Usage
 
-```text
-bun run manifold ops pending
-bun run manifold ops retry --op-id <op_id>
+```sh
+manifold ops pending
+manifold ops retry --op-id <op_id>
 bun run manifold ops retry --op-id <op_id> --apply
 ```
 

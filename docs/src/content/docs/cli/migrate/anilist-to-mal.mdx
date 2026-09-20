@@ -5,8 +5,8 @@ sidebar:
   order: 3
 ---
 
-```text
-bun run manifold migrate anilist-to-mal [flags]
+```sh
+manifold migrate anilist-to-mal [flags]
 ```
 
 One-shot **list → list** importer: reads your AniList manga library and writes
@@ -33,9 +33,9 @@ Optional AniList access token override. Resolve order: flag →
 
 Example:
 
-```text
-bun run manifold login anilist
-bun run manifold migrate anilist-to-mal
+```sh
+manifold login anilist
+manifold migrate anilist-to-mal
 ```
 
 ### `--mal-token <token>`
@@ -52,8 +52,8 @@ only reports matches.
 
 Example:
 
-```text
-bun run manifold migrate anilist-to-mal --apply --backup-paused
+```sh
+manifold migrate anilist-to-mal --apply --backup-paused
 ```
 
 ### `--backup-paused`
@@ -118,9 +118,9 @@ Chapter progress floors to an integer and becomes `num_chapters_read` unless
 
 ## Typical flow
 
-```text
-bun run manifold login anilist
-bun run manifold login mal
+```sh
+manifold login anilist
+manifold login mal
 # disconnect Manifold MAL backup in admin / credentials
 bun run manifold mal wipe manga --apply --backup-paused
 bun run manifold migrate anilist-to-mal

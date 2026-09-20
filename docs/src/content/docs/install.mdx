@@ -44,8 +44,8 @@ so remove and re-add the beta source before retesting a newly deployed build.
 
 The CLI uses the same GitHub OAuth App:
 
-```text
-bun run manifold login manifold
+```sh
+manifold login manifold
 ```
 
 Open the printed URL in a browser. The session is stored in the OS keychain and
@@ -56,8 +56,8 @@ refreshes automatically for later registry and maintenance commands.
 Generate a source-free `.pas5` backup, using a current Paperback export as the
 base when migrating an existing library:
 
-```text
-bun run manifold anilist create pas5 --apply --base ./Paperback-Backup.pas5
+```sh
+manifold anilist create pas5 --apply --base ./Paperback-Backup.pas5
 ```
 
 Restore the generated archive in Paperback. Each eligible library entry is
@@ -77,8 +77,8 @@ created. Existing base entries are enriched when they can be matched; obsolete
 ManifoldSource attachments and providerless remnants are removed.
 
 <Aside type="caution" title="Keep the original backup">
-  Restoring a `.pas5` archive may replace the on-device library. Keep the
-  original export until the migrated library has been checked.
+  Restoring a `.pas5` archive may replace the on-device library. Keep the original export until the
+  migrated library has been checked.
 </Aside>
 
 ## How updates flow

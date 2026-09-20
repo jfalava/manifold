@@ -5,8 +5,8 @@ sidebar:
   order: 1
 ---
 
-```text
-bun run manifold login anilist [flags]
+```sh
+manifold login anilist [flags]
 ```
 
 Local authorization-code OAuth for CLI commands that talk to AniList (migrations,
@@ -18,12 +18,14 @@ Prefer this over pasting pin tokens.
 1. Create a **separate** AniList developer client at
    [anilist.co/settings/developer](https://anilist.co/settings/developer).
 2. Set the redirect URI to exactly `http://127.0.0.1:8767/callback`.
-3. Put the client id and secret in `cli/.env`:
+3. Provide the client id and secret via **one** of:
 
-```text
-MANIFOLD_ANILIST_CLIENT_ID=
-MANIFOLD_ANILIST_CLIENT_SECRET=
-```
+   - flags (`--client-id` / `--client-secret`)
+   - `cli/.env` / process env (`MANIFOLD_ANILIST_CLIENT_ID` /
+     `MANIFOLD_ANILIST_CLIENT_SECRET`)
+   - interactive prompt on a TTY (compiled binary with no env file) — values
+     are stored in the OS keychain under `manifold` / `anilist-oauth-client`
+   - already-saved keychain entry from a prior login
 
 Do **not** reuse the shared implicit clients:
 
@@ -36,13 +38,19 @@ The CLI needs an authorization-code client with the loopback redirect above.
 
 ### `--client-id <id>`
 
-AniList CLI client ID. Falls back to `MANIFOLD_ANILIST_CLIENT_ID`.
+AniList CLI client ID. Falls back to `MANIFOLD_ANILIST_CLIENT_ID`, then the
+OS keychain, then an interactive prompt on a TTY.
 
 Example:
 
-```text
-bun run manifold login anilist --client-id "$MANIFOLD_ANILIST_CLIENT_ID"
+```sh
+manifold login anilist --client-id "$MANIFOLD_ANILIST_CLIENT_ID"
 ```
+
+### `--client-secret <secret>`
+
+AniList CLI client secret. Falls back to `MANIFOLD_ANILIST_CLIENT_SECRET`,
+then the OS keychain, then an interactive prompt on a TTY.
 
 ### `--paste-only`
 
@@ -55,14 +63,14 @@ expected — copy the URL anyway.
 
 Example:
 
-```text
-bun run manifold login anilist --paste-only
+```sh
+manifold login anilist --paste-only
 ```
 
 ## Usage
 
-```text
-bun run manifold login anilist
+```sh
+manifold login anilist
 ```
 
 The command prints a browser authorization URL. On a TTY: press **`c`** to copy
