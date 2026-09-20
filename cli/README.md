@@ -56,9 +56,11 @@ and `MANIFOLD_ANILIST_CLIENT_SECRET` in `cli/.env`. From `cli/`:
 bun index.ts login anilist
 ```
 
-Login prints a browser authorization URL and waits up to five minutes for the
-loopback callback. The access token lives in the OS keychain under `manifold` /
-`anilist-session`. AniList does not issue refresh tokens, so re-run login when
+Login prints a browser authorization URL and races the loopback callback against
+paste on a TTY (`c` copy URL, Enter paste code/URL, Ctrl+C cancel). On headless
+hosts use `--paste-only`, authorize in another browser, Enter, then paste the
+callback URL or code. The access token lives in the OS keychain under `manifold`
+/ `anilist-session`. AniList does not issue refresh tokens, so re-run login when
 the session expires. Optionally set `MANIFOLD_ANILIST_TOKEN` to override the
 keychain (no expiry tracking). Prefer login over pasting pin tokens.
 
@@ -77,11 +79,13 @@ bun index.ts login mal
 bun index.ts mal wipe manga
 ```
 
-Login prints a browser authorization URL and waits up to five minutes for the
-loopback callback. Access and refresh tokens live in the OS keychain under
-`manifold` / `mal-session`; refresh-token rotations are saved there too.
-Alternatively, set `MANIFOLD_MAL_TOKEN` for a non-refreshing access-token override.
-Do not share the deployed API's refresh token with the CLI.
+Login prints a browser authorization URL and races the loopback callback against
+paste on a TTY (`c` copy URL, Enter paste code/URL, Ctrl+C cancel). On headless
+hosts use `--paste-only`, authorize in another browser, Enter, then paste the
+callback URL or code (PKCE stays on the CLI). Access and refresh tokens live in
+the OS keychain under `manifold` / `mal-session`; refresh-token rotations are
+saved there too. Alternatively, set `MANIFOLD_MAL_TOKEN` for a non-refreshing
+access-token override. Do not share the deployed API's refresh token with the CLI.
 
 The wipe defaults to a dry run. It scans every manga-list page and status,
 including adult entries, before deleting anything. Anime, profile content,

@@ -41,16 +41,36 @@ Example:
 bun run manifold login mal --client-id "$MANIFOLD_MAL_CLIENT_ID"
 ```
 
+### `--paste-only`
+
+Skip binding the local callback server. Use on headless hosts when the browser
+runs elsewhere: open the printed authorize URL on another machine (or press
+**`c`** to copy it), press **Enter**, then paste either the authorization code
+or the full callback URL from the address bar
+(`http://127.0.0.1:8766/callback?code=…&state=…`). A connection-refused page is
+expected — copy the URL anyway. PKCE stays on the CLI process.
+
+Example:
+
+```text
+bun run manifold login mal --paste-only
+```
+
 ## Usage
 
 ```text
 bun run manifold login mal
 ```
 
-The command prints a browser authorization URL, serves
-`http://127.0.0.1:8766/callback` for up to five minutes, exchanges the code
-(with the PKCE verifier) for tokens, validates the profile, and stores the
-session in the OS keychain under `manifold` / `mal-session`.
+The command prints a browser authorization URL. On a TTY: press **`c`** to copy
+the URL, **Enter** to paste a code or callback URL, **Ctrl+C** to cancel. By
+default it also serves `http://127.0.0.1:8766/callback` for up to five minutes
+and races that loopback against paste. If the port is busy, it falls back to
+paste-only automatically.
+
+After the code arrives, it exchanges (with the PKCE verifier) for tokens,
+validates the profile, and stores the session in the OS keychain under
+`manifold` / `mal-session`.
 
 Access **and** refresh tokens are saved. When the access token expires, CLI
 commands that use the keychain session refresh automatically and persist rotated

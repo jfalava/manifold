@@ -54,8 +54,9 @@ bun run manifold login anilist
 Register a separate authorization-code client with redirect URI
 `http://127.0.0.1:8767/callback`, then set `MANIFOLD_ANILIST_CLIENT_ID` and
 `MANIFOLD_ANILIST_CLIENT_SECRET` in `cli/.env`. The access token is stored in
-the OS keychain (`manifold` / `anilist-session`). AniList does not issue refresh
-tokens — re-run login when the session expires.
+the OS keychain (`manifold` / `anilist-session`). On a headless host use
+`--paste-only` and paste the callback URL after authorizing in another browser.
+AniList does not issue refresh tokens — re-run login when the session expires.
 
 ### `--anilist-token <token>`
 
@@ -84,8 +85,9 @@ Register a separate MAL OAuth client with redirect URI
 `http://127.0.0.1:8766/callback`, then set `MANIFOLD_MAL_CLIENT_ID` in
 `cli/.env` (and `MANIFOLD_MAL_CLIENT_SECRET` if required). Access and refresh
 tokens live in the OS keychain (`manifold` / `mal-session`); rotated refresh
-tokens are saved automatically. Do not reuse the deployed API's client or
-refresh token.
+tokens are saved automatically. On a headless host use `--paste-only` and paste
+the callback URL after authorizing elsewhere. Do not reuse the deployed API's
+client or refresh token.
 
 ### `--mal-token <token>`
 

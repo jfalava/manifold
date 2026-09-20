@@ -25,7 +25,10 @@ export const muted = (() => {
 })();
 
 export const frameDetail = (text: string): void => {
-  process.stdout.write(`${muted("│")}  ${muted(text)}\n`);
+  // Keep the side rail continuous across multi-line details (e.g. OAuth URLs).
+  for (const line of text.split("\n")) {
+    process.stdout.write(`${muted("│")}  ${muted(line)}\n`);
+  }
 };
 
 // ---------- frame ----------
