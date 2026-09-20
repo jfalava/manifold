@@ -21,7 +21,7 @@
       },
       "cloudflare": {
         "@cloudflare/vite-plugin": "1.54.6",
-        "@cloudflare/workers-types": "5.20260916.1",
+        "@cloudflare/workers-types": "5.20260920.1",
         "hono": "4.13.8",
         "wrangler": "4.130.0"
       },
@@ -40,7 +40,7 @@
       },
       "types": {
         "bun-types": "1.4.2",
-        "@types/node": "26.5.0"
+        "@types/node": "26.6.2"
       },
       "paperback": {
         "@paperback/toolchain": "1.0.0-alpha.91",

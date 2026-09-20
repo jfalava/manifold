@@ -21,12 +21,7 @@ import {
   type CliEffectError,
 } from "@/effect-kit";
 import { resolveValue } from "@/env-resolve";
-import {
-  confirmInFrame,
-  frameDetail,
-  promptInFrameWithDefault,
-  promptSecretInFrame,
-} from "@/ui";
+import { confirmInFrame, frameDetail, promptInFrameWithDefault, promptSecretInFrame } from "@/ui";
 
 export const OAUTH_CLIENT_SERVICE = "manifold";
 
@@ -75,11 +70,7 @@ const developerUrl = (kind: OAuthClientKind) =>
 
 export type OAuthClientSecretStore = {
   readonly get: (ref: { service: string; name: string }) => Promise<string | null>;
-  readonly set: (ref: {
-    service: string;
-    name: string;
-    value: string;
-  }) => Promise<void>;
+  readonly set: (ref: { service: string; name: string; value: string }) => Promise<void>;
 };
 
 const defaultStore = (): OAuthClientSecretStore => ({
@@ -131,10 +122,8 @@ export const printOAuthClientWizardIntro = (kind: OAuthClientKind): void => {
   } else {
     frameDetail("Do not reuse the deployed API MAL client — CLI needs its own redirect URI.");
   }
-  frameDetail(
-    `Usage: manifold login ${kind} [--client-id …] [--client-secret …] [--paste-only]`,
-  );
-  frameDetail(`Also: manifold --wizard login ${kind}  (Effect CLI walks every flag)`);
+  frameDetail(`Usage: manifold login ${kind} [--client-id …] [--client-secret …] [--paste-only]`);
+  frameDetail(`Also: manifold --wizard login ${kind}  (the CLI will walk every flag)`);
   frameDetail("Enter keeps a shown default. Ctrl+C cancels.");
 };
 
@@ -177,9 +166,7 @@ const persistClient = (
   store: OAuthClientSecretStore,
 ): Effect.Effect<void, CliEffectError> => {
   if (clientSecret !== undefined && clientSecret.length > 0) {
-    return fromPromise(() =>
-      saveStoredOAuthClient(kind, { clientId, clientSecret }, store),
-    );
+    return fromPromise(() => saveStoredOAuthClient(kind, { clientId, clientSecret }, store));
   }
   return fromPromise(() => saveStoredOAuthClient(kind, { clientId }, store));
 };
@@ -243,11 +230,9 @@ const resolveOAuthClientEffect = (
 
     // --- client id ---
     {
-      const next = (
-        yield* fromPromise(() =>
-          promptWithDefault(`${label(input.kind)} client id`, clientId),
-        )
-      ).trim();
+      const next = (yield* fromPromise(() =>
+        promptWithDefault(`${label(input.kind)} client id`, clientId),
+      )).trim();
       if (next.length === 0) {
         return yield* cliError(`${label(input.kind)} client id is required.`);
       }
@@ -259,24 +244,20 @@ const resolveOAuthClientEffect = (
       frameDetail(
         `${label(input.kind)} client secret on file: ${maskSecret(clientSecret)}. Blank keeps it.`,
       );
-      const replacement = (
-        yield* fromPromise(() =>
-          promptSecret(`${label(input.kind)} client secret (blank keeps existing)`),
-        )
-      ).trim();
+      const replacement = (yield* fromPromise(() =>
+        promptSecret(`${label(input.kind)} client secret (blank keeps existing)`),
+      )).trim();
       if (replacement.length > 0) {
         clientSecret = replacement;
       }
     } else {
-      const asked = (
-        yield* fromPromise(() =>
-          promptSecret(
-            input.requireSecret
-              ? `${label(input.kind)} client secret`
-              : `${label(input.kind)} client secret (optional, Enter to skip)`,
-          ),
-        )
-      ).trim();
+      const asked = (yield* fromPromise(() =>
+        promptSecret(
+          input.requireSecret
+            ? `${label(input.kind)} client secret`
+            : `${label(input.kind)} client secret (optional, Enter to skip)`,
+        ),
+      )).trim();
       if (asked.length > 0) {
         clientSecret = asked;
       } else if (input.requireSecret) {

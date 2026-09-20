@@ -41,8 +41,12 @@ describe("MANIFOLD beta UI probes", () => {
     ]);
 
     const stableForm = await new ManifoldTrackerSource().getSettingsForm();
-    expect(stableForm.getSections().some((section) => section.id === "tracker-ios27-beta-ui")).toBe(
-      false,
-    );
+    const stableSections = stableForm.getSections();
+    expect(stableSections.some((section) => section.id === "tracker-ios27-beta-ui")).toBe(false);
+    expect(stableSections.some((section) => section.id === "tracker-admin")).toBe(false);
+    expect(stableSections.map((section) => section.id)).toEqual([
+      "tracker-personal-api",
+      "tracker-anilist",
+    ]);
   });
 });
