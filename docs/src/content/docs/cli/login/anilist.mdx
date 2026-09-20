@@ -73,8 +73,19 @@ manifold login anilist --paste-only
 manifold login anilist
 ```
 
-The command prints a browser authorization URL. On a TTY: press **`c`** to copy
-the URL, **Enter** to paste a code or callback URL, **Ctrl+C** to cancel. By
+**Bare command on a TTY** (no flags): runs a setup wizard first — prints redirect
+URI / developer-app notes, then asks for client id, client secret, and whether to
+use `--paste-only`. Enter keeps defaults from env or the OS keychain. Client
+credentials are saved under `manifold` / `anilist-oauth-client`.
+
+You can also use Effect CLI’s global walkthrough:
+
+```sh
+manifold --wizard login anilist
+```
+
+The command then prints a browser authorization URL. On a TTY: press **`c`** to
+copy the URL, **Enter** to paste a code or callback URL, **Ctrl+C** to cancel. By
 default it also serves `http://127.0.0.1:8767/callback` for up to five minutes
 and races that loopback against paste. If the port is busy, it falls back to
 paste-only automatically.

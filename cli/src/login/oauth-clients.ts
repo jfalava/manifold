@@ -4,6 +4,9 @@
  * Resolve order: flag → process env / cli/.env → OS keychain → interactive
  * prompt (TTY only). After a successful interactive capture, credentials are
  * stored in Bun.secrets so compiled binaries work without a .env file.
+ *
+ * Wizard mode (`wizard: true`) is used for bare `login anilist|mal` on a TTY:
+ * prints setup/usage, then walks each value with Enter-to-keep defaults.
  */
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics nodeBuiltinImport:off */
@@ -18,7 +21,12 @@ import {
   type CliEffectError,
 } from "@/effect-kit";
 import { resolveValue } from "@/env-resolve";
-import { frameDetail, promptInFrame, promptSecretInFrame } from "@/ui";
+import {
+  confirmInFrame,
+  frameDetail,
+  promptInFrameWithDefault,
+  promptSecretInFrame,
+} from "@/ui";
 
 export const OAUTH_CLIENT_SERVICE = "manifold";
 
@@ -56,6 +64,14 @@ const envNames = (kind: OAuthClientKind) =>
       };
 
 const label = (kind: OAuthClientKind) => (kind === "anilist" ? "AniList" : "MAL");
+
+const redirectUri = (kind: OAuthClientKind) =>
+  kind === "anilist" ? "http://127.0.0.1:8767/callback" : "http://127.0.0.1:8766/callback";
+
+const developerUrl = (kind: OAuthClientKind) =>
+  kind === "anilist"
+    ? "https://anilist.co/settings/developer"
+    : "https://myanimelist.net/apiconfig";
 
 export type OAuthClientSecretStore = {
   readonly get: (ref: { service: string; name: string }) => Promise<string | null>;
@@ -100,24 +116,72 @@ export const saveStoredOAuthClient = async (
   await store.set({ ...secretRef(kind), value: JSON.stringify(value) });
 };
 
+/** Setup + usage lines shown at the start of wizard / salvage flows. */
+export const printOAuthClientWizardIntro = (kind: OAuthClientKind): void => {
+  const names = envNames(kind);
+  const provider = label(kind);
+  frameDetail(`${provider} login wizard`);
+  frameDetail(`1. Create a separate ${provider} OAuth app at ${developerUrl(kind)}`);
+  frameDetail(`2. Set redirect URI exactly: ${redirectUri(kind)}`);
+  frameDetail(
+    `3. Client id/secret: flags, ${names.clientId}/${names.clientSecret}, keychain, or prompts below`,
+  );
+  if (kind === "anilist") {
+    frameDetail("Do not reuse app 49218 or Worker 49060 — need authorization-code + loopback.");
+  } else {
+    frameDetail("Do not reuse the deployed API MAL client — CLI needs its own redirect URI.");
+  }
+  frameDetail(
+    `Usage: manifold login ${kind} [--client-id …] [--client-secret …] [--paste-only]`,
+  );
+  frameDetail(`Also: manifold --wizard login ${kind}  (Effect CLI walks every flag)`);
+  frameDetail("Enter keeps a shown default. Ctrl+C cancels.");
+};
+
 export type ResolveOAuthClientInput = {
   readonly kind: OAuthClientKind;
   readonly clientIdFlag: Option.Option<string>;
   readonly clientSecretFlag: Option.Option<string>;
   /** When true, clientSecret must be non-empty after resolution. */
   readonly requireSecret: boolean;
+  /**
+   * Guided mode: print usage and prompt every field (Enter keeps defaults from
+   * flag/env/keychain). Used for bare `login anilist|mal` on a TTY.
+   */
+  readonly wizard?: boolean;
   readonly store?: OAuthClientSecretStore;
   /** Injected for tests; defaults to process.stdin.isTTY. */
   readonly isTty?: boolean;
-  readonly prompt?: (message: string) => Promise<string>;
+  readonly promptWithDefault?: (message: string, defaultValue?: string) => Promise<string>;
   readonly promptSecret?: (message: string) => Promise<string>;
 };
 
 export type ResolvedOAuthClient = {
   readonly clientId: string;
   readonly clientSecret: string | undefined;
-  /** True when credentials were typed interactively this run. */
+  /** True when credentials were typed or confirmed interactively this run. */
   readonly prompted: boolean;
+};
+
+const maskSecret = (value: string): string => {
+  if (value.length <= 4) {
+    return "****";
+  }
+  return `${value.slice(0, 2)}…${value.slice(-2)} (${value.length} chars)`;
+};
+
+const persistClient = (
+  kind: OAuthClientKind,
+  clientId: string,
+  clientSecret: string | undefined,
+  store: OAuthClientSecretStore,
+): Effect.Effect<void, CliEffectError> => {
+  if (clientSecret !== undefined && clientSecret.length > 0) {
+    return fromPromise(() =>
+      saveStoredOAuthClient(kind, { clientId, clientSecret }, store),
+    );
+  }
+  return fromPromise(() => saveStoredOAuthClient(kind, { clientId }, store));
 };
 
 const resolveOAuthClientEffect = (
@@ -127,85 +191,142 @@ const resolveOAuthClientEffect = (
     const names = envNames(input.kind);
     const store = input.store ?? defaultStore();
     const isTty = input.isTty ?? Boolean(process.stdin.isTTY && process.stdout.isTTY);
-    const prompt = input.prompt ?? promptInFrame;
+    const promptWithDefault = input.promptWithDefault ?? promptInFrameWithDefault;
     const promptSecret = input.promptSecret ?? promptSecretInFrame;
+    const wizard = input.wizard === true;
 
     let clientId = resolveValue(input.clientIdFlag, names.clientId);
     let clientSecret = resolveValue(input.clientSecretFlag, names.clientSecret);
-    let prompted = false;
+    let fromKeychain = false;
 
-    if (!clientId || (input.requireSecret && !clientSecret)) {
+    {
       const stored = yield* fromPromise(() => loadStoredOAuthClient(input.kind, store));
       if (stored) {
         clientId = clientId ?? stored.clientId;
         clientSecret = clientSecret ?? stored.clientSecret;
-        frameDetail(`${label(input.kind)} OAuth client loaded from the OS keychain.`);
+        fromKeychain = true;
+        if (!wizard) {
+          frameDetail(`${label(input.kind)} OAuth client loaded from the OS keychain.`);
+        }
       }
     }
 
-    if (!clientId || (input.requireSecret && !clientSecret)) {
-      if (!isTty) {
-        return yield* cliError(
-          [
-            `Missing ${label(input.kind)} OAuth client credentials.`,
-            `Set ${names.clientId}` +
-              (input.requireSecret ? ` and ${names.clientSecret}` : "") +
-              `, pass --client-id` +
-              (input.requireSecret ? " / --client-secret" : "") +
-              `, or run login ${input.kind} on a TTY to save them in the OS keychain.`,
-          ].join(" "),
-        );
-      }
+    const missingId = !clientId || clientId.length === 0;
+    const missingSecret = input.requireSecret && (!clientSecret || clientSecret.length === 0);
+    const needsInteractive = wizard || missingId || missingSecret;
 
-      frameDetail(
-        `No ${label(input.kind)} OAuth client in env or keychain. Enter the CLI app credentials once; they will be saved in the OS keychain.`,
+    if (!needsInteractive) {
+      return {
+        clientId: clientId!,
+        clientSecret: clientSecret && clientSecret.length > 0 ? clientSecret : undefined,
+        prompted: false,
+      };
+    }
+
+    if (!isTty) {
+      return yield* cliError(
+        [
+          `Missing ${label(input.kind)} OAuth client credentials.`,
+          `Set ${names.clientId}` +
+            (input.requireSecret ? ` and ${names.clientSecret}` : "") +
+            `, pass --client-id` +
+            (input.requireSecret ? " / --client-secret" : "") +
+            `, or run login ${input.kind} on a TTY to walk the wizard and save them in the OS keychain.`,
+        ].join(" "),
       );
-      if (!clientId) {
-        clientId = (yield* fromPromise(() =>
-          prompt(`${label(input.kind)} client id`),
-        )).trim();
-      }
-      if (input.requireSecret && !clientSecret) {
-        clientSecret = (yield* fromPromise(() =>
-          promptSecret(`${label(input.kind)} client secret`),
-        )).trim();
-      } else if (!input.requireSecret && clientSecret === undefined) {
-        const optional = (yield* fromPromise(() =>
-          promptSecret(`${label(input.kind)} client secret (optional, Enter to skip)`),
-        )).trim();
-        clientSecret = optional.length > 0 ? optional : undefined;
-      }
-      prompted = true;
     }
 
-    if (!clientId || clientId.length === 0) {
-      return yield* cliError(`${label(input.kind)} client id is required.`);
-    }
-    if (input.requireSecret && (!clientSecret || clientSecret.length === 0)) {
-      return yield* cliError(`${label(input.kind)} client secret is required.`);
+    printOAuthClientWizardIntro(input.kind);
+    if (fromKeychain || clientId || clientSecret) {
+      frameDetail("Defaults from flag/env/keychain are shown — press Enter to keep.");
     }
 
-    if (prompted) {
-      const toStore: StoredOAuthClient = { clientId };
-      if (clientSecret !== undefined && clientSecret.length > 0) {
-        // Build separately so secret is omitted when empty (anti-slop).
-        const withSecret: StoredOAuthClient = {
-          clientId,
-          clientSecret,
-        };
-        yield* fromPromise(() => saveStoredOAuthClient(input.kind, withSecret, store));
+    // --- client id ---
+    {
+      const next = (
+        yield* fromPromise(() =>
+          promptWithDefault(`${label(input.kind)} client id`, clientId),
+        )
+      ).trim();
+      if (next.length === 0) {
+        return yield* cliError(`${label(input.kind)} client id is required.`);
+      }
+      clientId = next;
+    }
+
+    // --- client secret ---
+    if (clientSecret && clientSecret.length > 0) {
+      frameDetail(
+        `${label(input.kind)} client secret on file: ${maskSecret(clientSecret)}. Blank keeps it.`,
+      );
+      const replacement = (
+        yield* fromPromise(() =>
+          promptSecret(`${label(input.kind)} client secret (blank keeps existing)`),
+        )
+      ).trim();
+      if (replacement.length > 0) {
+        clientSecret = replacement;
+      }
+    } else {
+      const asked = (
+        yield* fromPromise(() =>
+          promptSecret(
+            input.requireSecret
+              ? `${label(input.kind)} client secret`
+              : `${label(input.kind)} client secret (optional, Enter to skip)`,
+          ),
+        )
+      ).trim();
+      if (asked.length > 0) {
+        clientSecret = asked;
+      } else if (input.requireSecret) {
+        return yield* cliError(`${label(input.kind)} client secret is required.`);
       } else {
-        yield* fromPromise(() => saveStoredOAuthClient(input.kind, toStore, store));
+        clientSecret = undefined;
       }
-      frameDetail(`${label(input.kind)} OAuth client saved in the OS keychain.`);
     }
+
+    yield* persistClient(input.kind, clientId, clientSecret, store);
+    frameDetail(`${label(input.kind)} OAuth client saved in the OS keychain.`);
 
     return {
       clientId,
       clientSecret: clientSecret && clientSecret.length > 0 ? clientSecret : undefined,
-      prompted,
+      prompted: true,
     };
   });
 
 export const resolveOAuthClient = (input: ResolveOAuthClientInput): Promise<ResolvedOAuthClient> =>
   runHost(resolveOAuthClientEffect(input));
+
+/**
+ * Ask paste-only in wizard mode. Returns existing value when not wizard.
+ */
+export const resolvePasteOnlyWizard = async (
+  current: boolean,
+  wizard: boolean,
+  options?: {
+    readonly isTty?: boolean;
+    readonly confirm?: (message: string) => Promise<boolean>;
+  },
+): Promise<boolean> => {
+  if (!wizard) {
+    return current;
+  }
+  const isTty = options?.isTty ?? Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  if (!isTty) {
+    return current;
+  }
+  frameDetail(
+    "paste-only: skip local callback server (SSH/headless). Open the authorize URL elsewhere, then paste code/URL.",
+  );
+  const confirm = options?.confirm ?? confirmInFrame;
+  return confirm("Use --paste-only mode?");
+};
+
+/** True when the user invoked login without any credential/paste flags (bare command). */
+export const isBareLoginInvocation = (
+  clientId: Option.Option<string>,
+  clientSecret: Option.Option<string>,
+  pasteOnly: boolean,
+): boolean => Option.isNone(clientId) && Option.isNone(clientSecret) && pasteOnly === false;

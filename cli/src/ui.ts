@@ -157,6 +157,32 @@ export const promptInFrame = (message: string): Promise<string> =>
   );
 
 /**
+ * Prompt that accepts Enter to keep `defaultValue` when provided.
+ * Empty input with no default returns "".
+ */
+export const promptInFrameWithDefault = (
+  message: string,
+  defaultValue?: string,
+): Promise<string> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const suffix =
+        defaultValue !== undefined && defaultValue.length > 0
+          ? ` [${defaultValue}]`
+          : "";
+      stdout.write(`${muted("│")}\n${muted("│")}  ${message}${suffix}: `);
+      const reader = createInterface({ input: stdin, output: stdout });
+      const answer = yield* Effect.promise(() => reader.question(""));
+      reader.close();
+      const trimmed = answer.trim();
+      if (trimmed.length === 0) {
+        return defaultValue ?? "";
+      }
+      return trimmed;
+    }),
+  );
+
+/**
  * Secret prompt: hides echo when stdin is a TTY with setRawMode.
  * Falls back to a visible prompt when raw mode is unavailable.
  */

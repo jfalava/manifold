@@ -8,7 +8,11 @@ import {
   exchangeAniListCode,
   validateAniListSession,
 } from "@/login/anilist";
-import { resolveOAuthClient } from "@/login/oauth-clients";
+import {
+  isBareLoginInvocation,
+  resolveOAuthClient,
+  resolvePasteOnlyWizard,
+} from "@/login/oauth-clients";
 import { awaitOAuthAuthorizationCode } from "@/login/oauth-loopback";
 import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
 import { cliError, envString } from "@/effect-kit";
@@ -38,28 +42,31 @@ export const anilistLoginCommand = Command.make("anilist", {
   ),
 }).pipe(
   Command.withDescription(
-    `Authorize AniList locally. Register ${ANILIST_REDIRECT_URI} on a separate authorization-code client. Supports loopback callback or pasted code/URL. OAuth client id/secret may live in env, keychain, or an interactive prompt.`,
+    `Authorize AniList locally. Register ${ANILIST_REDIRECT_URI} on a separate authorization-code client. Bare invocation on a TTY runs a setup wizard; --wizard walks Effect CLI flags. OAuth client id/secret: env, keychain, or prompts.`,
   ),
   Command.withHandler(({ clientId, clientSecret, pasteOnly }) =>
     Effect.tryPromise({
       try: async () => {
         openFrame("login anilist");
+        const wizard = isBareLoginInvocation(clientId, clientSecret, pasteOnly);
         const oauth = await resolveOAuthClient({
           kind: "anilist",
           clientIdFlag: clientId,
           clientSecretFlag: clientSecret,
           requireSecret: true,
+          wizard,
         });
         if (!oauth.clientSecret) {
           throw cliError("AniList client secret is required.");
         }
+        const usePasteOnly = await resolvePasteOnlyWizard(pasteOnly, wizard);
         const auth = createAniListAuthorization(oauth.clientId);
         const code = await awaitOAuthAuthorizationCode({
           providerLabel: "AniList",
           authorizeUrl: auth.url,
           redirectUri: ANILIST_REDIRECT_URI,
           expectedState: auth.state,
-          pasteOnly,
+          pasteOnly: usePasteOnly,
         });
         const session = await exchangeAniListCode(oauth.clientId, oauth.clientSecret, code);
         const viewer = await validateAniListSession(session.accessToken);

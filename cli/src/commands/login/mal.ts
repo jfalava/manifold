@@ -3,7 +3,11 @@ import { Command, Flag } from "effect/unstable/cli";
 import { errorMessage } from "@manifold/json";
 
 import { saveMalSession } from "@/login/mal-session";
-import { resolveOAuthClient } from "@/login/oauth-clients";
+import {
+  isBareLoginInvocation,
+  resolveOAuthClient,
+  resolvePasteOnlyWizard,
+} from "@/login/oauth-clients";
 import { awaitOAuthAuthorizationCode } from "@/login/oauth-loopback";
 import { createMalAuthorization, createMalClient, MAL_REDIRECT_URI, requestMalTokens } from "@/mal";
 import { abortFrame, closeFrame, openFrame } from "@/ui";
@@ -33,25 +37,28 @@ export const malLoginCommand = Command.make("mal", {
   ),
 }).pipe(
   Command.withDescription(
-    `Authorize MAL locally; register ${MAL_REDIRECT_URI} as the OAuth redirect URI. Supports loopback callback or pasted code/URL. OAuth client id/secret may live in env, keychain, or an interactive prompt.`,
+    `Authorize MAL locally; register ${MAL_REDIRECT_URI} as the OAuth redirect URI. Bare invocation on a TTY runs a setup wizard; --wizard walks Effect CLI flags. OAuth client id/secret: env, keychain, or prompts.`,
   ),
   Command.withHandler(({ clientId, clientSecret, pasteOnly }) =>
     Effect.tryPromise({
       try: async () => {
         openFrame("login mal");
+        const wizard = isBareLoginInvocation(clientId, clientSecret, pasteOnly);
         const oauth = await resolveOAuthClient({
           kind: "mal",
           clientIdFlag: clientId,
           clientSecretFlag: clientSecret,
           requireSecret: false,
+          wizard,
         });
+        const usePasteOnly = await resolvePasteOnlyWizard(pasteOnly, wizard);
         const auth = createMalAuthorization(oauth.clientId);
         const code = await awaitOAuthAuthorizationCode({
           providerLabel: "MAL",
           authorizeUrl: auth.url,
           redirectUri: MAL_REDIRECT_URI,
           expectedState: auth.state,
-          pasteOnly,
+          pasteOnly: usePasteOnly,
         });
         const session = await requestMalTokens(
           oauth.clientId,
