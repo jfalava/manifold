@@ -5,8 +5,8 @@ sidebar:
   order: 3
 ---
 
-```text
-bun run manifold anilist wipe manga [flags]
+```sh
+manifold anilist wipe manga [flags]
 ```
 
 **Destructive.** Port of the AniList manga bulk-delete approach: scans your
@@ -27,8 +27,8 @@ activities. Without this flag, the command only scans and reports the data.
 
 Example:
 
-```text
-bun run manifold anilist wipe manga --apply
+```sh
+manifold anilist wipe manga --apply
 ```
 
 ### `--yes`
@@ -40,8 +40,8 @@ combined with `--apply`.
 
 Example:
 
-```text
-bun run manifold anilist wipe manga --apply --yes
+```sh
+manifold anilist wipe manga --apply --yes
 ```
 
 ### `--anilist-token <token>`
@@ -50,22 +50,22 @@ Optional AniList access token override. Resolve order: flag → `MANIFOLD_ANILIS
 
 Example:
 
-```text
-bun run manifold login anilist
-bun run manifold anilist wipe manga
+```sh
+manifold login anilist
+manifold anilist wipe manga
 ```
 
 ## Usage
 
-```text
-bun run manifold anilist wipe manga
-bun run manifold anilist wipe manga --apply
+```sh
+manifold anilist wipe manga
+manifold anilist wipe manga --apply
 bun run manifold anilist wipe manga --apply --yes
 ```
 
 An empty manga list exits cleanly without deleting anything.
 
 <Aside type="danger" title="Irreversible">
-  This permanently removes manga list state and activity history on AniList.
-  Prefer exporting or migrating first if you still need the data.
+  This permanently removes manga list state and activity history on AniList. Prefer exporting or
+  migrating first if you still need the data.
 </Aside>

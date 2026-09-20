@@ -56,7 +56,7 @@ const run = (flags: string[], scenario = "normal") =>
     throw new Error('Unexpected request: ' + url);
   };
   try {
-    await Effect.runPromise(Command.runWith(makeRootCommand(), { version: 'test' })(
+    await Effect.runPromise(Command.runWith(makeRootCommand("test"), { version: 'test' })(
       ${JSON.stringify(["registry", "mal", ...flags])}
     ).pipe(Effect.provide(BunServices.layer)));
   } catch (error) { console.error(error); process.exitCode = 1; }

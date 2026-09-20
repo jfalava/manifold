@@ -9,6 +9,7 @@ import {
   RegistryListEntry,
   RegistryListResponse,
   SyncOp,
+  UpdatedCountResponse,
 } from "@manifold/contract";
 import {
   errorMessage,
@@ -19,6 +20,11 @@ import {
 } from "@manifold/json";
 
 import { fetchAniListMangaEntries, type AniListEntry } from "@/anilist";
+import {
+  drainAniListOpsPassEffect,
+  type DrainApiClient,
+  type PendingAniListOp,
+} from "@/anilist-drain";
 import { resolveAniListToken } from "@/login/anilist";
 import {
   loadManifoldSession,
@@ -35,6 +41,7 @@ import {
   jsonBodyString,
   platformFetch,
   runHost,
+  sleep,
   type CliEffectError,
 } from "@/effect-kit";
 
@@ -243,6 +250,35 @@ const apiTokenFlag = Flag.String("api-token").pipe(
 // ops — inspect and retry the op log.
 // ------------------------------------------------------------------
 
+const drainApiClient = (config: ApiConfig): DrainApiClient => ({
+  pendingAniListOps: (limit = 25) =>
+    runHost(
+      Effect.gen(function* () {
+        const body = yield* apiCallEffect(
+          config,
+          `/v1/ops/pending/anilist?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`,
+          "GET",
+          undefined,
+          OpsListResponse,
+        );
+        return body.ops.map(
+          (op): PendingAniListOp => ({
+            opId: op.opId,
+            kind: op.kind,
+            payload: op.payload,
+            attempts: op.attempts,
+          }),
+        );
+      }),
+    ),
+  completeOps: (results) =>
+    runHost(
+      apiCallEffect(config, "/v1/ops/complete", "POST", { results }, UpdatedCountResponse),
+    ),
+});
+
+const DEFAULT_DRAIN_INTERVAL_SEC = 30;
+
 export const opsCommand = Command.make("ops").pipe(
   Command.withDescription("Inspect the personal API op log."),
   Command.withSubcommands([
@@ -320,6 +356,89 @@ export const opsCommand = Command.make("ops").pipe(
             SyncOp,
           );
           closeFrame(`reset to pending: ${opId}`);
+        }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
+      ),
+    ),
+    Command.make("drain-anilist", {
+      once: Flag.Boolean("once").pipe(
+        Flag.withDefault(false),
+        Flag.withDescription("Run a single drain pass and exit (default: loop)."),
+      ),
+      interval: Flag.Int("interval").pipe(
+        Flag.withDefault(DEFAULT_DRAIN_INTERVAL_SEC),
+        Flag.withDescription(
+          `Seconds between passes when looping (default ${DEFAULT_DRAIN_INTERVAL_SEC}).`,
+        ),
+      ),
+      limit: Flag.Int("limit").pipe(
+        Flag.withDefault(25),
+        Flag.withDescription("Max pending anilist:* ops per pass (default 25, max 100)."),
+      ),
+      anilistToken: anilistTokenFlag,
+      apiOrigin: apiOriginFlag,
+      apiToken: apiTokenFlag,
+    }).pipe(
+      Command.withDescription(
+        "Drain pending anilist:* ops via local AniList GraphQL (non-CF egress). For oci-agents / always-on hosts.",
+      ),
+      Command.withHandler(({ once, interval, limit, anilistToken, apiOrigin, apiToken }) =>
+        Effect.gen(function* () {
+          openFrame(once ? "ops drain-anilist (once)" : "ops drain-anilist");
+          const config = yield* fromPromise(() => apiConfig(apiOrigin, apiToken));
+          const token = yield* fromPromise(() =>
+            resolveAniListToken(Option.getOrUndefined(anilistToken)),
+          );
+          if (!token) {
+            return yield* cliError(
+              "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
+            );
+          }
+          if (!Number.isFinite(interval) || interval < 1) {
+            return yield* cliError("--interval must be a positive integer (seconds).");
+          }
+          if (!Number.isFinite(limit) || limit < 1 || limit > 100) {
+            return yield* cliError("--limit must be between 1 and 100.");
+          }
+
+          const api = drainApiClient(config);
+          let passes = 0;
+
+          const onePass = (): Effect.Effect<void, CliEffectError> =>
+            Effect.gen(function* () {
+              const summary = yield* drainAniListOpsPassEffect(api, token, { limit });
+              passes += 1;
+              if (summary.fetched === 0) {
+                frameDetail(`pass ${passes}: idle (no pending anilist ops)`);
+              } else {
+                frameDetail(
+                  `pass ${passes}: fetched=${summary.fetched} ok=${summary.ok} failed=${summary.failed} reported=${summary.reported}`,
+                );
+              }
+            });
+
+          if (once) {
+            yield* onePass();
+            closeFrame(`drain-anilist once complete (${passes} pass)`);
+            return;
+          }
+
+          frameDetail(
+            `looping every ${interval}s (Ctrl+C to stop). AniList stays on this host's egress IP.`,
+          );
+          // Long-running unit: never close the frame; journald captures stdout.
+          for (;;) {
+            const passResult = yield* onePass().pipe(
+              Effect.map(() => ({ ok: true as const })),
+              Effect.catch((cause) =>
+                Effect.sync(() => {
+                  frameDetail(`pass error: ${errorMessage(cause)}`);
+                  return { ok: false as const };
+                }),
+              ),
+            );
+            void passResult;
+            yield* sleep(interval * 1000);
+          }
         }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
       ),
     ),

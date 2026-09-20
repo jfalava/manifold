@@ -5,8 +5,8 @@ sidebar:
   order: 3
 ---
 
-```text
-bun run manifold mangadex unfollow-dropped [flags]
+```sh
+manifold mangadex unfollow-dropped [flags]
 ```
 
 Unchecks **Follow** on MangaDex for titles in the selected reading status. Reading status itself is unchanged — only the follow relationship is removed. Dry-run until `--apply`.
@@ -23,8 +23,8 @@ comma-separated list. Valid statuses include `reading`, `re_reading`,
 
 Example:
 
-```text
-bun run manifold mangadex unfollow-dropped --status dropped,on_hold
+```sh
+manifold mangadex unfollow-dropped --status dropped,on_hold
 ```
 
 ### `--apply`
@@ -36,8 +36,8 @@ command reports the titles but leaves them followed.
 
 Example:
 
-```text
-bun run manifold mangadex unfollow-dropped --apply
+```sh
+manifold mangadex unfollow-dropped --apply
 ```
 
 ### `--mangadex-client-id <id>`
@@ -47,8 +47,8 @@ OAuth client ID for the MangaDex password grant. Falls back to
 
 Example:
 
-```text
-bun run manifold mangadex unfollow-dropped --mangadex-client-id "$MANIFOLD_MANGADEX_CLIENT_ID"
+```sh
+manifold mangadex unfollow-dropped --mangadex-client-id "$MANIFOLD_MANGADEX_CLIENT_ID"
 ```
 
 ### `--mangadex-client-secret <secret>`
@@ -58,8 +58,8 @@ OAuth client secret for the MangaDex password grant. Falls back to
 
 Example:
 
-```text
-bun run manifold mangadex unfollow-dropped --mangadex-client-secret "$MANIFOLD_MANGADEX_CLIENT_SECRET"
+```sh
+manifold mangadex unfollow-dropped --mangadex-client-secret "$MANIFOLD_MANGADEX_CLIENT_SECRET"
 ```
 
 ### `--mangadex-username <username>`
@@ -69,8 +69,8 @@ MangaDex account username for the password grant. Falls back to
 
 Example:
 
-```text
-bun run manifold mangadex unfollow-dropped --mangadex-username "$MANIFOLD_MANGADEX_USERNAME"
+```sh
+manifold mangadex unfollow-dropped --mangadex-username "$MANIFOLD_MANGADEX_USERNAME"
 ```
 
 ### `--mangadex-password <password>`
@@ -80,15 +80,15 @@ MangaDex account password for the password grant. Falls back to
 
 Example:
 
-```text
-bun run manifold mangadex unfollow-dropped --mangadex-password "$MANIFOLD_MANGADEX_PASSWORD"
+```sh
+manifold mangadex unfollow-dropped --mangadex-password "$MANIFOLD_MANGADEX_PASSWORD"
 ```
 
 ## Usage
 
-```text
-bun run manifold mangadex unfollow-dropped
-bun run manifold mangadex unfollow-dropped --status dropped,on_hold
+```sh
+manifold mangadex unfollow-dropped
+manifold mangadex unfollow-dropped --status dropped,on_hold
 bun run manifold mangadex unfollow-dropped --apply
 ```
 

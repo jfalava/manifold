@@ -1,0 +1,86 @@
+---
+title: drain-anilist
+description: Drain pending anilist:* ops from a non-Cloudflare host (oci-agents).
+sidebar:
+  order: 3
+---
+
+```sh
+manifold ops drain-anilist [flags]
+```
+
+Cloudflare Worker egress is blocked by AniList. Pending `anilist:*` ops in the personal API outbox normally wait for a Paperback device drain. This command is the same protocol on a always-on host (for example oci-agents): pull pending ops, run GraphQL with a local AniList token, report outcomes.
+
+Prefer a host with stable non-CF egress (permanent IPv6). Do not expose a public drain listener — this process only makes outbound HTTPS calls.
+
+## Flags
+
+### `--once`
+
+Run a single drain pass and exit. Default is an infinite loop (for systemd).
+
+Example:
+
+```sh
+manifold ops drain-anilist --once
+```
+
+### `--interval <seconds>`
+
+Seconds to sleep between passes when looping.
+
+- Default: `30`
+
+Example:
+
+```sh
+manifold ops drain-anilist --interval 45
+```
+
+### `--limit <n>`
+
+Max pending `anilist:*` ops fetched per pass (1–100).
+
+- Default: `25`
+
+Example:
+
+```sh
+manifold ops drain-anilist --once --limit 10
+```
+
+### `--anilist-token <token>`
+
+AniList access token override. Prefer `login anilist` (keychain) or `MANIFOLD_ANILIST_TOKEN`.
+
+Example:
+
+```sh
+manifold ops drain-anilist --once --anilist-token "$MANIFOLD_ANILIST_TOKEN"
+```
+
+### `--api-token <token>`
+
+Personal API token. Falls back to `MANIFOLD_TOKEN` or `login manifold`.
+
+### `--api-origin <url>`
+
+Personal API origin.
+
+- Default: `https://manifold.jfa.dev/api` (or `MANIFOLD_API_ORIGIN`)
+
+## Usage
+
+One-shot triage:
+
+```sh
+manifold ops drain-anilist --once
+```
+
+Always-on (oci-agents user service):
+
+```sh
+manifold ops drain-anilist --interval 30
+```
+
+Device drain in Paperback remains a backup when this host is down. Ops kinds match the device path: `anilist.status`, `anilist.progress`, `anilist.fields`, `anilist.delete`.

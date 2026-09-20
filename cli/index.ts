@@ -6,13 +6,14 @@ import { CliError, Command } from "effect/unstable/cli";
 
 import { makeRootCommand } from "@/cli";
 import { loadDotEnv } from "@/dotenv";
+import { CLI_VERSION } from "@/version";
 
 // Pick up CLI credentials from cli/.env (cwd or package-local path).
 loadDotEnv(new URL("./.env", import.meta.url).pathname);
 loadDotEnv(".env");
 
-const program = Command.runWith(makeRootCommand(), {
-  version: "0.1.0",
+const program = Command.runWith(makeRootCommand(CLI_VERSION), {
+  version: CLI_VERSION,
 })(Bun.argv.slice(2)).pipe(
   Effect.provide(BunServices.layer),
   Effect.catch((cause) =>

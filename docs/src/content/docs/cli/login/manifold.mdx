@@ -1,0 +1,64 @@
+---
+title: manifold
+description: Authorize Manifold with GitHub and store the session in the OS keychain.
+sidebar:
+  order: 0
+---
+
+```sh
+manifold login manifold [flags]
+```
+
+Local authorization-code OAuth (PKCE S256) against the Manifold API. Creates a
+Manifold session via GitHub; the CLI never sees the GitHub client secret.
+Primary consumers: registry, ops, reconcile, and other commands that call the
+personal API.
+
+## Setup
+
+No separate OAuth client registration is required. The CLI uses the built-in
+`manifold-cli` client with redirect URI `http://127.0.0.1:8768/callback`.
+
+Optional:
+
+```text
+MANIFOLD_API_ORIGIN=https://manifold.jfa.dev/api
+```
+
+## Flags
+
+### `--api-origin <url>`
+
+Manifold API origin. Falls back to `MANIFOLD_API_ORIGIN`, then
+`https://manifold.jfa.dev/api`.
+
+### `--paste-only`
+
+Skip binding the local callback server. Use on headless hosts: open the printed
+authorize URL on another machine (or press **`c`** to copy it), press **Enter**,
+then paste the authorization code or full callback URL from the address bar
+(`http://127.0.0.1:8768/callback?code=…&state=…`). A connection-refused page is
+expected — copy the URL anyway. PKCE stays on the CLI process.
+
+```sh
+manifold login manifold --paste-only
+```
+
+## Usage
+
+```sh
+manifold login manifold
+```
+
+The command prints a browser authorization URL (clickable via OSC 8 when the
+terminal supports it; soft-wrapped so the frame rail stays continuous). On a
+TTY: **`c`** copies the URL, **Enter** pastes a code/URL, **Ctrl+C** cancels. By
+default it also serves `http://127.0.0.1:8768/callback` for up to five minutes
+and races that loopback against paste.
+
+After the code arrives, it exchanges for access + refresh tokens and stores the
+session in the OS keychain under `manifold` / `manifold-session`. Rotated
+refresh tokens are saved on later API use.
+
+Downstream API credentials resolve as: **flag → `MANIFOLD_TOKEN` → keychain**.
+`MANIFOLD_TOKEN` remains a break-glass override without refresh.

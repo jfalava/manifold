@@ -5,8 +5,8 @@ sidebar:
   order: 2
 ---
 
-```text
-bun run manifold login mal [flags]
+```sh
+manifold login mal [flags]
 ```
 
 Local OAuth (authorization code + plain PKCE) for CLI commands that talk to
@@ -19,12 +19,14 @@ MyAnimeList. Prefer this over pasting access tokens. Primary consumers:
 1. Create a **separate** MAL OAuth client in the
    [MyAnimeList API console](https://myanimelist.net/apiconfig).
 2. Set the redirect URI to exactly `http://127.0.0.1:8766/callback`.
-3. Put the client id in `cli/.env`, plus the secret if the client requires it:
+3. Provide the client id (and secret if required) via **one** of:
 
-```text
-MANIFOLD_MAL_CLIENT_ID=
-MANIFOLD_MAL_CLIENT_SECRET=
-```
+   - flags (`--client-id` / `--client-secret`)
+   - `cli/.env` / process env (`MANIFOLD_MAL_CLIENT_ID` /
+     `MANIFOLD_MAL_CLIENT_SECRET`)
+   - interactive prompt on a TTY — values are stored in the OS keychain under
+     `manifold` / `mal-oauth-client`
+   - already-saved keychain entry from a prior login
 
 Do **not** reuse the deployed API's MAL OAuth client or its refresh token. The
 CLI needs its own redirect URI and stores its own session in the OS keychain.
@@ -33,24 +35,62 @@ CLI needs its own redirect URI and stores its own session in the OS keychain.
 
 ### `--client-id <id>`
 
-MAL OAuth client ID. Falls back to `MANIFOLD_MAL_CLIENT_ID`.
+MAL OAuth client ID. Falls back to `MANIFOLD_MAL_CLIENT_ID`, then the OS
+keychain, then an interactive prompt on a TTY.
 
 Example:
 
-```text
-bun run manifold login mal --client-id "$MANIFOLD_MAL_CLIENT_ID"
+```sh
+manifold login mal --client-id "$MANIFOLD_MAL_CLIENT_ID"
+```
+
+### `--client-secret <secret>`
+
+MAL OAuth client secret when the app requires it. Falls back to
+`MANIFOLD_MAL_CLIENT_SECRET`, then the OS keychain, then an interactive
+prompt on a TTY.
+
+### `--paste-only`
+
+Skip binding the local callback server. Use on headless hosts when the browser
+runs elsewhere: open the printed authorize URL on another machine (or press
+**`c`** to copy it), press **Enter**, then paste either the authorization code
+or the full callback URL from the address bar
+(`http://127.0.0.1:8766/callback?code=…&state=…`). A connection-refused page is
+expected — copy the URL anyway. PKCE stays on the CLI process.
+
+Example:
+
+```sh
+manifold login mal --paste-only
 ```
 
 ## Usage
 
-```text
-bun run manifold login mal
+```sh
+manifold login mal
 ```
 
-The command prints a browser authorization URL, serves
-`http://127.0.0.1:8766/callback` for up to five minutes, exchanges the code
-(with the PKCE verifier) for tokens, validates the profile, and stores the
-session in the OS keychain under `manifold` / `mal-session`.
+**Bare command on a TTY** (no flags): runs a setup wizard first — prints redirect
+URI / API-console notes, then asks for client id, optional client secret, and
+whether to use `--paste-only`. Enter keeps defaults from env or the OS keychain.
+Client credentials are saved under `manifold` / `mal-oauth-client`.
+
+You can also use Effect CLI’s global walkthrough:
+
+```sh
+manifold --wizard login mal
+```
+
+The command then prints a browser authorization URL. On a TTY: press **`c`** to
+copy the URL, **Enter** to paste a code or callback URL, **Ctrl+C** to cancel. By
+default it also serves `http://127.0.0.1:8766/callback` for up to five minutes
+and races that loopback against paste. If the port is busy, it falls back to
+paste-only automatically.
+
+After the code arrives, it exchanges (with the PKCE verifier) for tokens,
+validates the profile, and stores the session in the OS keychain under
+`manifold` / `mal-session`.
 
 Access **and** refresh tokens are saved. When the access token expires, CLI
 commands that use the keychain session refresh automatically and persist rotated

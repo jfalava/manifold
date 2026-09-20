@@ -5,8 +5,8 @@ sidebar:
   order: 2
 ---
 
-```text
-bun run manifold registry mangadex [flags]
+```sh
+manifold registry mangadex [flags]
 ```
 
 Backfills missing `mangadex` provider links. Matching runs on the Worker (vector + live search) — **no local MangaDex secrets** are required. Dry-run until `--apply`.
@@ -22,8 +22,8 @@ command resolves titles and reports results without changing rows.
 
 Example:
 
-```text
-bun run manifold registry mangadex --apply
+```sh
+manifold registry mangadex --apply
 ```
 
 ### `--limit <n>`
@@ -35,8 +35,8 @@ limit is applied.
 
 Example:
 
-```text
-bun run manifold registry mangadex --limit 50
+```sh
+manifold registry mangadex --limit 50
 ```
 
 ### `--status <statuses>`
@@ -49,8 +49,8 @@ every status, or pass a comma-separated list such as `reading,completed`.
 
 Example:
 
-```text
-bun run manifold registry mangadex --status reading,completed
+```sh
+manifold registry mangadex --status reading,completed
 ```
 
 ### `--delay <milliseconds>`
@@ -62,8 +62,8 @@ you want to reduce request pressure on the upstream service.
 
 Example:
 
-```text
-bun run manifold registry mangadex --delay 1200
+```sh
+manifold registry mangadex --delay 1200
 ```
 
 ### `--api-token <token>`
@@ -73,8 +73,8 @@ Personal API token used to read and update registry rows. Falls back to
 
 Example:
 
-```text
-bun run manifold registry mangadex --api-token "$MANIFOLD_TOKEN"
+```sh
+manifold registry mangadex --api-token "$MANIFOLD_TOKEN"
 ```
 
 ### `--api-origin <url>`
@@ -85,8 +85,8 @@ Personal API origin containing the registry.
 
 Example:
 
-```text
-bun run manifold registry mangadex --api-origin https://manifold.example/api
+```sh
+manifold registry mangadex --api-origin https://manifold.example/api
 ```
 
 ### `--anilist-token <token>`
@@ -96,17 +96,17 @@ aliases to searches. Resolve order: flag → `MANIFOLD_ANILIST_TOKEN` → `login
 
 Example:
 
-```text
-bun run manifold registry mangadex --anilist-token "$MANIFOLD_ANILIST_TOKEN"
+```sh
+manifold registry mangadex --anilist-token "$MANIFOLD_ANILIST_TOKEN"
 ```
 
 `--status` filters `row.state.status` before `--limit`. `reading` expands to `reading,re_reading`. `auto` includes every status.
 
 ## Usage
 
-```text
-bun run manifold registry mangadex
-bun run manifold registry mangadex --status reading,completed --limit 50
+```sh
+manifold registry mangadex
+manifold registry mangadex --status reading,completed --limit 50
 bun run manifold registry mangadex --apply
 ```
 

@@ -1,0 +1,45 @@
+---
+title: upgrade
+description: Install the latest compiled manifold CLI release from GitHub.
+sidebar:
+  order: 90
+---
+
+```sh
+manifold upgrade
+# or, from an installed binary:
+manifold upgrade
+```
+
+Self-update for the **compiled** `manifold` binary. Release tags are `cli-vX.Y.Z`
+and must match `cli/package.json` `version`. Assets come from GitHub Releases
+(`manifold-cli-<os>-<arch>.zip` + `.sha256`).
+
+## Requirements
+
+- Must run from the compiled binary (not `bun index.ts` / source).
+- Supported platforms: Linux x64/arm64, macOS arm64, Windows x64.
+
+## Usage
+
+```text
+manifold upgrade
+```
+
+When already current:
+
+```text
+manifold 0.1.0 is already up to date.
+```
+
+## Release workflow
+
+Push a tag to build and publish binaries:
+
+```text
+# bump cli/package.json version first, then:
+git tag cli-v0.1.0
+git push origin cli-v0.1.0
+```
+
+GitHub Actions workflow: `.github/workflows/manifold-cli-release.yml`.

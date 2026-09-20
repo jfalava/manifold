@@ -5,8 +5,8 @@ sidebar:
   order: 3
 ---
 
-```text
-bun run manifold registry comix [flags]
+```sh
+manifold registry comix [flags]
 ```
 
 Backfills missing Comix `hid` provider links. comix.to's JSON API is HMAC-signed and Cloudflare-gated, so the CLI does **not** replay cookies through `fetch`. It captures `/browse?keyword=` inside a local Chrome WebView (same approach as the Paperback source) and stores the jar in `Bun.secrets` until `cf_clearance` expires.
@@ -24,8 +24,8 @@ command only reports the links it finds.
 
 Example:
 
-```text
-bun run manifold registry comix --apply
+```sh
+manifold registry comix --apply
 ```
 
 ### `--limit <n>`
@@ -36,8 +36,8 @@ Attempt at most `n` registry rows that do not already have a Comix link.
 
 Example:
 
-```text
-bun run manifold registry comix --limit 25
+```sh
+manifold registry comix --limit 25
 ```
 
 ### `--status <statuses>`
@@ -51,8 +51,8 @@ the [MangaDex prefill](/cli/registry/mangadex/), `reading` includes
 
 Example:
 
-```text
-bun run manifold registry comix --status reading,completed
+```sh
+manifold registry comix --status reading,completed
 ```
 
 ### `--chrome-cdp-url <url>`
@@ -63,8 +63,8 @@ auto-launching a dedicated browser. The value must look like
 
 Example:
 
-```text
-bun run manifold registry comix --chrome-cdp-url "ws://127.0.0.1:9222/devtools/browser/..."
+```sh
+manifold registry comix --chrome-cdp-url "ws://127.0.0.1:9222/devtools/browser/..."
 ```
 
 ### `--refresh-session`
@@ -76,8 +76,8 @@ Chrome view.
 
 Example:
 
-```text
-bun run manifold registry comix --refresh-session
+```sh
+manifold registry comix --refresh-session
 ```
 
 ### `--cf-clearance <value>`
@@ -87,8 +87,8 @@ used only inside the view; it falls back to `MANIFOLD_COMIX_CF_CLEARANCE`.
 
 Example:
 
-```text
-bun run manifold registry comix --cf-clearance "$MANIFOLD_COMIX_CF_CLEARANCE"
+```sh
+manifold registry comix --cf-clearance "$MANIFOLD_COMIX_CF_CLEARANCE"
 ```
 
 ### `--session <value>`
@@ -97,8 +97,8 @@ Seed the browser view with a session cookie. It falls back to `MANIFOLD_COMIX_SE
 
 Example:
 
-```text
-bun run manifold registry comix --session "$MANIFOLD_COMIX_SESSION"
+```sh
+manifold registry comix --session "$MANIFOLD_COMIX_SESSION"
 ```
 
 ### `--cookies <header>`
@@ -109,8 +109,8 @@ over the individual `--cf-clearance` and `--session` flags, and falls back to
 
 Example:
 
-```text
-bun run manifold registry comix --cookies "cf_clearance=...; session=..."
+```sh
+manifold registry comix --cookies "cf_clearance=...; session=..."
 ```
 
 ### `--api-token <token>`
@@ -120,8 +120,8 @@ Personal API token used to read and update registry rows. Falls back to
 
 Example:
 
-```text
-bun run manifold registry comix --api-token "$MANIFOLD_TOKEN"
+```sh
+manifold registry comix --api-token "$MANIFOLD_TOKEN"
 ```
 
 ### `--api-origin <url>`
@@ -132,8 +132,8 @@ Personal API origin containing the registry.
 
 Example:
 
-```text
-bun run manifold registry comix --api-origin https://manifold.example/api
+```sh
+manifold registry comix --api-origin https://manifold.example/api
 ```
 
 ### `--anilist-token <token>`
@@ -143,8 +143,8 @@ Resolve order: flag → `MANIFOLD_ANILIST_TOKEN` → `login anilist` keychain.
 
 Example:
 
-```text
-bun run manifold registry comix --anilist-token "$MANIFOLD_ANILIST_TOKEN"
+```sh
+manifold registry comix --anilist-token "$MANIFOLD_ANILIST_TOKEN"
 ```
 
 ## Chrome / Cloudflare
@@ -155,9 +155,9 @@ Do **not** tell the CLI to attach by opening plain Chrome with `--remote-debuggi
 
 ## Usage
 
-```text
-bun run manifold registry comix
-bun run manifold registry comix --apply
+```sh
+manifold registry comix
+manifold registry comix --apply
 bun run manifold registry comix --refresh-session --apply
 ```
 

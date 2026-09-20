@@ -6,9 +6,10 @@ reconciliation, and canonical registry backfill.
 Full documentation lives in the docs site under **The manifold CLI**
 (`docs/src/content/docs/cli/index.mdx`). Quick reference:
 
-```text
-bun run manifold <subcommand> [flags]
+```sh
+manifold <subcommand> [flags]
 
+manifold login manifold                    # authorize Manifold via GitHub (OS keychain)
 manifold login anilist                     # authorize AniList (OS keychain)
 manifold login mal                         # authorize MAL (OS keychain)
 manifold anilist create pas5               # AniList list → Paperback .pas5 backup
@@ -19,7 +20,8 @@ manifold mal wipe manga                    # preview a MAL manga-only wipe
 manifold migrate mangadex-to-anilist       # MangaDex library → private AniList entries
 manifold migrate anilist-to-mangadex       # AniList list → MangaDex statuses + markers
 manifold migrate anilist-to-mal            # AniList list → MAL status + chapter progress
-manifold ops pending | retry               # op-log triage
+manifold ops pending | retry | drain-anilist  # op-log triage; AniList drain on non-CF host
+manifold upgrade                           # self-update compiled binary from GitHub Releases
 manifold reconcile diff                    # live AniList list vs registry (read-only)
 manifold registry import                   # snapshot AniList list into the registry
 manifold registry mangadex                 # backfill MangaDex provider links
@@ -28,8 +30,8 @@ manifold registry comix                    # backfill Comix hid links via local 
 
 Credentials resolve flag → `MANIFOLD_*` env → OS keychain login where applicable
 (`MANIFOLD_TOKEN`, `login anilist` / `MANIFOLD_ANILIST_TOKEN`, `login mal` /
-`MANIFOLD_MAL_TOKEN`, `MANIFOLD_API_ORIGIN`). AniList writes run locally —
-AniList blocks Cloudflare Worker egress IPs.
+`MANIFOLD_MAL_TOKEN`, `MANIFOLD_API_ORIGIN`). AniList writes run locally or via
+`ops drain-anilist` on oci-agents — AniList blocks Cloudflare Worker egress IPs.
 
 `registry comix` does not paste `cf_clearance` into `fetch`. It opens a
 headed Chrome window with a dedicated `~/.manifold/comix-chrome` profile
@@ -37,8 +39,8 @@ headed Chrome window with a dedicated `~/.manifold/comix-chrome` profile
 captures `/browse` the same way the Paperback source does, and stores the
 harvested jar in `Bun.secrets` until `cf_clearance` expires.
 
-```text
-bun run manifold registry comix
+```sh
+manifold registry comix
 ```
 
 If Cloudflare appears, solve it in that new Chrome window and press Enter.
@@ -56,9 +58,11 @@ and `MANIFOLD_ANILIST_CLIENT_SECRET` in `cli/.env`. From `cli/`:
 bun index.ts login anilist
 ```
 
-Login prints a browser authorization URL and waits up to five minutes for the
-loopback callback. The access token lives in the OS keychain under `manifold` /
-`anilist-session`. AniList does not issue refresh tokens, so re-run login when
+Login prints a browser authorization URL and races the loopback callback against
+paste on a TTY (`c` copy URL, Enter paste code/URL, Ctrl+C cancel). On headless
+hosts use `--paste-only`, authorize in another browser, Enter, then paste the
+callback URL or code. The access token lives in the OS keychain under `manifold`
+/ `anilist-session`. AniList does not issue refresh tokens, so re-run login when
 the session expires. Optionally set `MANIFOLD_ANILIST_TOKEN` to override the
 keychain (no expiry tracking). Prefer login over pasting pin tokens.
 
@@ -77,11 +81,13 @@ bun index.ts login mal
 bun index.ts mal wipe manga
 ```
 
-Login prints a browser authorization URL and waits up to five minutes for the
-loopback callback. Access and refresh tokens live in the OS keychain under
-`manifold` / `mal-session`; refresh-token rotations are saved there too.
-Alternatively, set `MANIFOLD_MAL_TOKEN` for a non-refreshing access-token override.
-Do not share the deployed API's refresh token with the CLI.
+Login prints a browser authorization URL and races the loopback callback against
+paste on a TTY (`c` copy URL, Enter paste code/URL, Ctrl+C cancel). On headless
+hosts use `--paste-only`, authorize in another browser, Enter, then paste the
+callback URL or code (PKCE stays on the CLI). Access and refresh tokens live in
+the OS keychain under `manifold` / `mal-session`; refresh-token rotations are
+saved there too. Alternatively, set `MANIFOLD_MAL_TOKEN` for a non-refreshing
+access-token override. Do not share the deployed API's refresh token with the CLI.
 
 The wipe defaults to a dry run. It scans every manga-list page and status,
 including adult entries, before deleting anything. Anime, profile content,

@@ -5,8 +5,8 @@ sidebar:
   order: 1
 ---
 
-```text
-bun run manifold ops pending [flags]
+```sh
+manifold ops pending [flags]
 ```
 
 Read-only triage for the personal API op log. Successes are deleted, so this prints every retained op (up to 200 per state) with id, kind, origin, attempt count, and last error, plus the MangaDex shelf mirror queue (pending/blocked counts and last blocked error).
@@ -19,8 +19,8 @@ Personal API token used to read the op log. Falls back to `MANIFOLD_TOKEN`.
 
 Example:
 
-```text
-bun run manifold ops pending --api-token "$MANIFOLD_TOKEN"
+```sh
+manifold ops pending --api-token "$MANIFOLD_TOKEN"
 ```
 
 ### `--api-origin <url>`
@@ -31,16 +31,16 @@ Personal API origin to query.
 
 Example:
 
-```text
-bun run manifold ops pending --api-origin https://manifold.example/api
+```sh
+manifold ops pending --api-origin https://manifold.example/api
 ```
 
 ## Usage
 
-```text
-bun run manifold ops pending
+```sh
+manifold ops pending
 ```
 
 Ops auto-retry up to 5 attempts before landing in `blocked`. Use [retry](/cli/ops/retry/) to re-queue one.
 
-Remember where ops execute: `mangadex:*` drains on the Worker; `anilist:*` waits for your device.
+Remember where ops execute: `mangadex:*` drains on the Worker; `anilist:*` waits for a non-CF drain (Paperback device or [drain-anilist](/cli/ops/drain-anilist/) on oci-agents).

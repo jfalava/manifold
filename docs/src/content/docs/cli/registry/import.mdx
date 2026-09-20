@@ -5,8 +5,8 @@ sidebar:
   order: 1
 ---
 
-```text
-bun run manifold registry import [flags]
+```sh
+manifold registry import [flags]
 ```
 
 Mints registry rows for every live AniList manga entry and records list status with `origin: migration` and `appliedRemotely: true`. **No ops are enqueued** — AniList already holds that state.
@@ -21,9 +21,9 @@ AniList access token for the live manga list. Resolve order: flag → `MANIFOLD_
 
 Example:
 
-```text
-bun run manifold login anilist
-bun run manifold registry import
+```sh
+manifold login anilist
+manifold registry import
 ```
 
 ### `--apply`
@@ -36,8 +36,8 @@ registry.
 
 Example:
 
-```text
-bun run manifold registry import --apply
+```sh
+manifold registry import --apply
 ```
 
 ### `--api-token <token>`
@@ -46,8 +46,8 @@ Personal API token used to write the registry. Falls back to `MANIFOLD_TOKEN`.
 
 Example:
 
-```text
-bun run manifold registry import --api-token "$MANIFOLD_TOKEN"
+```sh
+manifold registry import --api-token "$MANIFOLD_TOKEN"
 ```
 
 ### `--api-origin <url>`
@@ -58,15 +58,15 @@ Personal API origin containing the registry.
 
 Example:
 
-```text
-bun run manifold registry import --api-origin https://manifold.example/api
+```sh
+manifold registry import --api-origin https://manifold.example/api
 ```
 
 ## Usage
 
-```text
-bun run manifold reconcile diff     # optional: see drift first
-bun run manifold registry import
+```sh
+manifold reconcile diff     # optional: see drift first
+manifold registry import
 bun run manifold registry import --apply
 ```
 
