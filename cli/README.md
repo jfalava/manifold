@@ -21,6 +21,7 @@ manifold migrate mangadex-to-anilist       # MangaDex library → private AniLis
 manifold migrate anilist-to-mangadex       # AniList list → MangaDex statuses + markers
 manifold migrate anilist-to-mal            # AniList list → MAL status + chapter progress
 manifold ops pending | retry | drain-anilist  # op-log triage; AniList drain on non-CF host
+manifold upgrade                           # self-update compiled binary from GitHub Releases
 manifold reconcile diff                    # live AniList list vs registry (read-only)
 manifold registry import                   # snapshot AniList list into the registry
 manifold registry mangadex                 # backfill MangaDex provider links

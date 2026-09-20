@@ -92,13 +92,13 @@ const throttleEffect = (): Effect.Effect<void> =>
   });
 
 const errorText = (cause: unknown): string => {
-  if (cause && typeof cause === "object" && "message" in cause && isString(cause.message)) {
-    return cause.message;
-  }
   if (cause instanceof Error) {
     return cause.message;
   }
-  return String(cause);
+  if (isString(cause)) {
+    return cause;
+  }
+  return "unknown error";
 };
 
 const gqlEffect = (

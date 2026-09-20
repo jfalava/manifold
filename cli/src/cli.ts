@@ -11,6 +11,7 @@ import { mangadexPrefillCommand } from "@/commands/mangadex-prefill";
 import { importCommand, opsCommand, reconcileCommand } from "@/commands/toolbox";
 import { al2malCommand } from "@/commands/al2mal";
 import { md2alCommand } from "@/commands/md2al";
+import { makeUpgradeCommand } from "@/commands/upgrade";
 
 const migrateCommand = Command.make("migrate").pipe(
   Command.withDescription("Cross-provider library migrations (AniList ↔ MangaDex, AniList → MAL)."),
@@ -32,7 +33,7 @@ const registryCommand = Command.make("registry").pipe(
   ]),
 );
 
-export const makeRootCommand = () =>
+export const makeRootCommand = (version: string) =>
   Command.make("manifold").pipe(
     Command.withDescription(
       "manifold CLI: provider ops, migrations, op-log triage, drift reconciliation, and registry backfill.",
@@ -46,5 +47,6 @@ export const makeRootCommand = () =>
       opsCommand,
       reconcileGroup,
       registryCommand,
+      makeUpgradeCommand(version),
     ]),
   );

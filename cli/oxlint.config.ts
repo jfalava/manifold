@@ -10,7 +10,9 @@ import {
 export default {
   ...baseConfig,
   jsPlugins: antiSlopJsPlugins("..", { effect: true }),
-  ignorePatterns: [...agentIgnores, "*.d.ts", "**/*.d.ts", "dist/**"],
+  // Tests are covered by vitest + tsc; oxlint tsgolint does not resolve
+  // vitest aliases cleanly and floods no-unsafe-* noise (same as outfitting).
+  ignorePatterns: [...agentIgnores, "*.d.ts", "**/*.d.ts", "dist/**", "test/**"],
   rules: {
     ...baseConfig.rules,
     ...antiSlopEffectRules,
