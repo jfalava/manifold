@@ -43,4 +43,4 @@ bun run manifold ops pending
 
 Ops auto-retry up to 5 attempts before landing in `blocked`. Use [retry](/cli/ops/retry/) to re-queue one.
 
-Remember where ops execute: `mangadex:*` drains on the Worker; `anilist:*` waits for your device.
+Remember where ops execute: `mangadex:*` drains on the Worker; `anilist:*` waits for a non-CF drain (Paperback device or [drain-anilist](/cli/ops/drain-anilist/) on oci-agents).

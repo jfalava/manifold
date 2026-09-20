@@ -20,7 +20,7 @@ manifold mal wipe manga                    # preview a MAL manga-only wipe
 manifold migrate mangadex-to-anilist       # MangaDex library → private AniList entries
 manifold migrate anilist-to-mangadex       # AniList list → MangaDex statuses + markers
 manifold migrate anilist-to-mal            # AniList list → MAL status + chapter progress
-manifold ops pending | retry               # op-log triage
+manifold ops pending | retry | drain-anilist  # op-log triage; AniList drain on non-CF host
 manifold reconcile diff                    # live AniList list vs registry (read-only)
 manifold registry import                   # snapshot AniList list into the registry
 manifold registry mangadex                 # backfill MangaDex provider links
@@ -29,8 +29,8 @@ manifold registry comix                    # backfill Comix hid links via local 
 
 Credentials resolve flag → `MANIFOLD_*` env → OS keychain login where applicable
 (`MANIFOLD_TOKEN`, `login anilist` / `MANIFOLD_ANILIST_TOKEN`, `login mal` /
-`MANIFOLD_MAL_TOKEN`, `MANIFOLD_API_ORIGIN`). AniList writes run locally —
-AniList blocks Cloudflare Worker egress IPs.
+`MANIFOLD_MAL_TOKEN`, `MANIFOLD_API_ORIGIN`). AniList writes run locally or via
+`ops drain-anilist` on oci-agents — AniList blocks Cloudflare Worker egress IPs.
 
 `registry comix` does not paste `cf_clearance` into `fetch`. It opens a
 headed Chrome window with a dedicated `~/.manifold/comix-chrome` profile

@@ -11,6 +11,7 @@
     "/cli/anilist/wipe-manga",
     "/cli/login/anilist",
     "/cli/login/mal",
+    "/cli/login/manifold",
     "/cli/mal/wipe-manga",
     "/cli/mangadex/stale-status",
     "/cli/mangadex/unfollow-dropped",

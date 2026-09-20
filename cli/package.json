@@ -21,6 +21,7 @@
     "manifold": "bun index.ts",
     "md2al": "bun index.ts migrate mangadex-to-anilist",
     "ops": "bun index.ts ops",
+    "ops:drain-anilist": "bun index.ts ops drain-anilist",
     "reconcile:diff": "bun index.ts reconcile diff",
     "registry:comix": "bun index.ts registry comix",
     "registry:import": "bun index.ts registry import",
