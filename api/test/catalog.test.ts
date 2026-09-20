@@ -9,8 +9,28 @@ const assets = new Map<string, string>([
   ["/LICENSE", "license-text"],
   ["/LICENSE-MIT", "mit-license-text"],
   ["/ATTRIBUTIONS.md", "attributions"],
-  ["/MANIFOLD/index.js", "tracker-bundle"],
-  ["/MANIFOLD/icon.png", "png"],
+  [
+    "/stable/MANIFOLD/info.json",
+    JSON.stringify({
+      id: "MANIFOLD",
+      name: "MANIFOLD",
+      version: "0.1.0-r60",
+      description: "stable tracker",
+    }),
+  ],
+  ["/stable/MANIFOLD/index.js", "tracker-bundle"],
+  ["/stable/MANIFOLD/icon.png", "png"],
+  [
+    "/beta/MANIFOLD-beta/info.json",
+    JSON.stringify({
+      id: "MANIFOLD-beta",
+      name: "MANIFOLD beta",
+      version: "0.1.0-r60-beta",
+      description: "beta tracker",
+    }),
+  ],
+  ["/beta/MANIFOLD-beta/index.js", "tracker-beta-bundle"],
+  ["/beta/MANIFOLD-beta/icon.png", "beta-png"],
 ]);
 
 // SAFETY: test fixture supplies only the Worker Env bindings catalog routes use
@@ -31,7 +51,7 @@ const env = {
 const get = (path: string) => catalogApp.request(`https://manifold.jfa.dev${path}`, {}, env);
 
 describe("Paperback catalog routes", () => {
-  it("publishes only the tracker in versioning.json without auth", async () => {
+  it("publishes the stable tracker in versioning.json without auth", async () => {
     const response = await get("/extensions/0.9/stable/versioning.json");
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
@@ -52,6 +72,17 @@ describe("Paperback catalog routes", () => {
     expect(body.sources.map((source) => source.id)).toEqual(["MANIFOLD"]);
   });
 
+  it("publishes the beta tracker under the beta channel", async () => {
+    const response = await get("/extensions/0.9/beta/versioning.json");
+    expect(response.status).toBe(200);
+    // SAFETY: parsed JSON matches the trusted/test versioning payload shape
+    const body = (await response.json()) as {
+      sources: readonly { id: string; name: string }[];
+    };
+    expect(body.sources.map((source) => source.id)).toEqual(["MANIFOLD-beta"]);
+    expect(body.sources[0]?.name).toBe("MANIFOLD beta");
+  });
+
   it("serves the license and attribution notices alongside the catalog", async () => {
     const license = await get("/extensions/0.9/stable/LICENSE");
     expect(license.status).toBe(200);
@@ -69,7 +100,7 @@ describe("Paperback catalog routes", () => {
     expect(await attributions.text()).toBe("attributions");
   });
 
-  it("serves info.json from pbconfig", async () => {
+  it("serves info.json from staged assets", async () => {
     const response = await get("/extensions/0.9/stable/MANIFOLD/info.json");
     expect(response.status).toBe(200);
     // SAFETY: parsed JSON matches { id: string; name: string } for this trusted/test payload
@@ -82,6 +113,12 @@ describe("Paperback catalog routes", () => {
     const response = await get("/extensions/0.9/stable/MANIFOLD/index.js");
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("tracker-bundle");
+  });
+
+  it("serves beta index.js under the beta path", async () => {
+    const response = await get("/extensions/0.9/beta/MANIFOLD-beta/index.js");
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("tracker-beta-bundle");
   });
 
   it("serves icon.png at the Paperback static/ path", async () => {
@@ -99,6 +136,11 @@ describe("Paperback catalog routes", () => {
 
   it("404s unknown extension ids", async () => {
     const response = await get("/extensions/0.9/stable/Nope/info.json");
+    expect(response.status).toBe(404);
+  });
+
+  it("404s the beta id on the stable channel", async () => {
+    const response = await get("/extensions/0.9/stable/MANIFOLD-beta/info.json");
     expect(response.status).toBe(404);
   });
 

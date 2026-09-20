@@ -8,8 +8,8 @@
     "./catalog": "./src/catalog.ts"
   },
   "scripts": {
-    "bundle": "paperback-cli bundle --folder production",
-    "bundle:debug": "paperback-cli bundle --debug --folder production",
+    "bundle": "bun ../scripts/bundle-tracker.ts",
+    "bundle:debug": "bun ../scripts/bundle-tracker.ts --debug",
     "check": "oxlint --fix",
     "dev": "paperback-cli serve --watch",
     "format": "oxfmt",

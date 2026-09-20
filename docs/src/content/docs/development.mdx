@@ -13,7 +13,27 @@ sidebar:
 - Alchemy for Cloudflare infrastructure as code
 - Vitest for deploy-free unit tests
 
-Secrets for local CLI work live in `cli/.env` (see `cli/.env.example`). Deploy secrets live in `iac/.env`.
+Secrets for local CLI work live in `cli/.env` (see `cli/.env.example`). Deploy
+secrets and the catalog channel live in `iac/.env`.
+
+## Deploy channel (`ENV`)
+
+`plan`, `deploy`, and `build:catalog` read `ENV` from the process environment
+or `iac/.env` (process wins):
+
+| `ENV` value         | Catalog path                         | Tracker id       |
+| ------------------- | ------------------------------------ | ---------------- |
+| `manifold-stable`   | `/paperback/extensions/0.9/stable`   | `MANIFOLD`       |
+| `manifold-beta`     | `/paperback/extensions/0.9/beta`     | `MANIFOLD-beta`  |
+
+Only the selected channel is restaged. The other channel's previously deployed
+assets stay on the Worker until you deploy that channel. Set `ENV` in
+`iac/.env` (see `iac/.env.example`) or override for one run:
+
+```sh
+ENV=manifold-stable bun run deploy -- --yes
+ENV=manifold-beta bun run deploy -- --yes
+```
 
 ## Commands
 
@@ -30,8 +50,9 @@ bun run deploy
 bun run manifold <subcommand>
 ```
 
-`plan` and `deploy` always rebuild the Paperback catalog first. Review the
-Alchemy plan before deploying. Non-interactive deploys:
+`plan` and `deploy` always rebuild the Paperback catalog first for the active
+`ENV` channel. Review the Alchemy plan before deploying. Non-interactive
+deploys:
 
 ```sh
 bun run deploy -- --yes

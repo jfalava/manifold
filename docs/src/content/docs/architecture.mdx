@@ -83,5 +83,8 @@ tracker/                  MANIFOLD orchestration extension
 
 Only `iac` owns production deployment. `plan` and `deploy` rebuild the
 tracker catalog first — bundle outputs are gitignored, so Alchemy's build
-cache alone cannot detect extension changes. Non-interactive deploys need
-`bun run deploy -- --yes`.
+cache alone cannot detect extension changes. The catalog channel comes from
+`ENV` (`manifold-stable` or `manifold-beta` in the process environment or
+`iac/.env`): stable stages `MANIFOLD` under `/extensions/0.9/stable`, beta stages
+`MANIFOLD-beta` under `/extensions/0.9/beta`, without wiping the other channel's
+assets. Non-interactive deploys need `bun run deploy -- --yes`.

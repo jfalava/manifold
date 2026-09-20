@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
-/* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
+/* Modified by Manifold on 2026-09-20. See ATTRIBUTIONS.md. */
 
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
@@ -9,14 +9,15 @@ import { ContentRating, SourceIntents, type ExtensionInfo } from "@paperback/typ
 import pkg from "../../package.json" with { type: "json" };
 
 export default {
-  version: pkg.version,
-  name: "MANIFOLD",
+  version: `${pkg.version}-beta`,
+  name: "MANIFOLD beta",
   icon: "icon.png",
-  description: "Canonical registry and progress orchestration for native Paperback providers",
+  description:
+    "Current-tree beta channel for MANIFOLD (install alongside stable under a separate id)",
   contentRating: ContentRating.MATURE,
   developers: [{ name: "MANIFOLD by JFA" }],
   language: "en",
-  badges: [{ label: "stable", textColor: "#ffffff", backgroundColor: "#0f766e" }],
+  badges: [{ label: "beta", textColor: "#ffffff", backgroundColor: "#4f39f6" }],
   capabilities: [
     SourceIntents.PROGRESS_PROVIDING,
     SourceIntents.MANAGED_COLLECTION_PROVIDING,
