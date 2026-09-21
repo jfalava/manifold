@@ -83,4 +83,8 @@ Always-on (oci-agents user service):
 manifold ops drain-anilist --interval 30
 ```
 
+On oci-agents, Home Manager runs `~/.local/bin/manifold ops drain-anilist`
+via `manifold-anilist-drain.service` (outbound-only; keychain sessions). Prefer
+the compiled binary over `bun index.ts` so `manifold upgrade` keeps the unit current.
+
 Device drain in Paperback remains a backup when this host is down. Ops kinds match the device path: `anilist.status`, `anilist.progress`, `anilist.fields`, `anilist.delete`.
