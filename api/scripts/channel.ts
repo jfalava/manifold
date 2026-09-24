@@ -41,7 +41,7 @@ const BETA: ChannelConfig = {
   versionSuffix: "-beta",
   badgeLabel: "beta",
   badgeBackground: "#4f39f6",
-  description: "Current-tree beta channel for MANIFOLD (install alongside stable under a separate id)",
+  description: "Current-tree beta channel for MANIFOLD",
 };
 
 type ProcessEnvMap = Record<string, string | undefined>;

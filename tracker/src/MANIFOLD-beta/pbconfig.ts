@@ -12,8 +12,7 @@ export default {
   version: `${pkg.version}-beta`,
   name: "MANIFOLD beta",
   icon: "icon.png",
-  description:
-    "Current-tree beta channel for MANIFOLD (install alongside stable under a separate id)",
+  description: "Current-tree beta channel for MANIFOLD",
   contentRating: ContentRating.MATURE,
   developers: [{ name: "MANIFOLD by JFA" }],
   language: "en",
