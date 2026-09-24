@@ -68,6 +68,7 @@ import {
   MANIFOLD_API_ORIGIN,
   MANIFOLD_API_REFRESH_TOKEN_KEY,
   MANIFOLD_API_STATUS_KEY,
+  MANIFOLD_API_TOKEN_KEY,
   MANIFOLD_OAUTH_CLIENT_ID,
   MANIFOLD_OAUTH_REDIRECT_URI,
   MANIFOLD_OAUTH_TOKEN_ENDPOINT,
@@ -80,6 +81,8 @@ import {
   parseProviderCandidateId,
   parseProviderSearchInput,
   providerCandidateId,
+  scheduledPersonalRequester,
+  secureStateString,
   saveAniListFields,
   saveAniListProgress,
   saveAniListStatus,
@@ -1015,13 +1018,36 @@ class TrackerStatusForm extends Form {
 class TrackerSettingsForm extends Form {
   readonly requiresExplicitSubmission = true;
 
+  private pendingManifoldToken?: string;
   private pendingAniListToken?: string;
 
   getSections() {
     // oxlint-disable-next-line typescript/no-this-alias -- Selector cannot resolve callback keys from polymorphic this
     const selectorTarget: TrackerSettingsForm = this;
     const storedApiStatus = Application.getState(MANIFOLD_API_STATUS_KEY);
-    const apiStatus = isString(storedApiStatus) ? storedApiStatus : "Not configured";
+    const hasManualApiToken = secureStateString(MANIFOLD_API_TOKEN_KEY) !== undefined;
+    const hasOAuthSession = secureStateString(MANIFOLD_API_ACCESS_TOKEN_KEY) !== undefined;
+    const hasApiCredential = hasManualApiToken || hasOAuthSession;
+    const apiStatus =
+      storedApiStatus === "Configured"
+        ? hasManualApiToken
+          ? "Manual token saved — not verified"
+          : "Not connected"
+        : storedApiStatus === "Connected" && !hasApiCredential
+          ? "Not connected"
+          : isString(storedApiStatus)
+            ? storedApiStatus
+            : hasManualApiToken
+              ? "Manual token saved — not verified"
+              : hasOAuthSession
+                ? "Session saved — not verified"
+                : "Not connected";
+    const apiStatusStyle =
+      apiStatus === "Connected" || apiStatus === "Manual token connected"
+        ? "success"
+        : apiStatus.startsWith("Unauthorized") || apiStatus.startsWith("Token rejected")
+          ? "error"
+          : "warning";
     const storedAniListStatus = Application.getState(ANILIST_STATUS_KEY);
     const aniListStatus = isString(storedAniListStatus) ? storedAniListStatus : "Not connected";
     return [
@@ -1029,7 +1055,8 @@ class TrackerSettingsForm extends Form {
         {
           id: "tracker-personal-api",
           header: "Manifold API",
-          footer: "Sign in with GitHub. Session credentials stay in Paperback secure state.",
+          footer:
+            "GitHub login is recommended. If it fails, paste a Manifold API bearer token; it is stored securely and checked with a read-only request.",
         },
         [
           OAuthButtonRow("tracker-manifold-oauth", {
@@ -1047,10 +1074,16 @@ class TrackerSettingsForm extends Form {
             },
             onSuccess: Application.Selector(selectorTarget, "manifoldOAuthSuccess"),
           }),
+          InputRow("tracker-personal-api-token", {
+            title: "Manual API token",
+            value: "",
+            isSecureEntry: true,
+            onValueChange: Application.Selector(selectorTarget, "manifoldTokenChanged"),
+          }),
           LabelRow("tracker-personal-api-status", {
             title: "Status",
             value: apiStatus,
-            style: apiStatus === "Connected" || apiStatus === "Configured" ? "success" : "warning",
+            style: apiStatusStyle,
           }),
         ],
       ),
@@ -1084,6 +1117,10 @@ class TrackerSettingsForm extends Form {
     ];
   }
 
+  readonly manifoldTokenChanged = async (value: string): Promise<void> => {
+    this.pendingManifoldToken = value;
+  };
+
   readonly aniListTokenChanged = async (value: string): Promise<void> => {
     this.pendingAniListToken = value;
   };
@@ -1104,6 +1141,7 @@ class TrackerSettingsForm extends Form {
           this.reloadForm();
           return;
         }
+        Application.setSecureState("", MANIFOLD_API_TOKEN_KEY);
         Application.setSecureState(access, MANIFOLD_API_ACCESS_TOKEN_KEY);
         Application.setSecureState(refresh, MANIFOLD_API_REFRESH_TOKEN_KEY);
         Application.setSecureState(
@@ -1136,7 +1174,7 @@ class TrackerSettingsForm extends Form {
           );
           const rejected = outcome.failure instanceof AniListUnauthorizedError;
           Application.setState(
-            rejected ? "Token rejected — try logging in again" : "Connect failed — try again",
+            rejected ? "Token rejected. Try logging in again" : "Connect failed: try again",
             ANILIST_STATUS_KEY,
           );
         }
@@ -1149,6 +1187,41 @@ class TrackerSettingsForm extends Form {
   override formDidSubmit(): Promise<void> {
     return Effect.runPromise(
       Effect.gen({ self: this }, function* () {
+        const manifoldToken = this.pendingManifoldToken?.trim();
+        if (manifoldToken) {
+          Application.setSecureState("", MANIFOLD_API_ACCESS_TOKEN_KEY);
+          Application.setSecureState("", MANIFOLD_API_REFRESH_TOKEN_KEY);
+          Application.setSecureState("", MANIFOLD_API_ACCESS_EXPIRES_AT_KEY);
+          Application.setSecureState(manifoldToken, MANIFOLD_API_TOKEN_KEY);
+
+          const validation = yield* Effect.result(
+            fromPromise(() =>
+              scheduledPersonalRequester({
+                url: `${MANIFOLD_API_ORIGIN}/v1/registry?limit=1&offset=0`,
+                method: "GET",
+                headers: {
+                  accept: "application/json",
+                  authorization: `Bearer ${manifoldToken}`,
+                },
+              }),
+            ),
+          );
+          if (validation._tag === "Success") {
+            const { status } = validation.success;
+            Application.setState(
+              status >= 200 && status < 300
+                ? "Manual token connected"
+                : status === 401
+                  ? "Token rejected: check it or log in again"
+                  : `Token saved: could not verify (HTTP ${status})`,
+              MANIFOLD_API_STATUS_KEY,
+            );
+          } else {
+            Application.setState("Token saved — could not verify", MANIFOLD_API_STATUS_KEY);
+          }
+        }
+        this.pendingManifoldToken = undefined;
+
         const aniListToken = this.pendingAniListToken?.trim();
         if (aniListToken) {
           const outcome = yield* Effect.result(
