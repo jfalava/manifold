@@ -1,5 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics schemaSync:off */
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   createMangaDexPasswordGrant,
@@ -14,6 +15,8 @@ import {
   publicSiteOrigin,
 } from "../src/http";
 import { createAuthorizationUrl, getOAuthClientConfig } from "../src/oauth";
+import { handleOAuth } from "../src/routes/oauth";
+import type { Env, ManifoldSyncStub } from "../src/types";
 
 const environment = {
   MANIFOLD_ANILIST_CLIENT_ID: "anilist-client",
@@ -121,5 +124,73 @@ describe("OAuth provider configuration", () => {
     expect(form.get("refresh_token")).toBe("refresh-token");
     expect(form.get("username")).toBeNull();
     expect(form.get("password")).toBeNull();
+  });
+});
+
+describe("Manifold GitHub OAuth callback", () => {
+  const callbackResponse = async (completeResult: {
+    readonly redirectUri: string;
+    readonly state: string;
+    readonly error?: string;
+    readonly accountMismatch?: boolean;
+  }): Promise<Response> => {
+    const url = new URL("https://manifold.example/v1/oauth/github/callback?state=callback-state");
+    const callbackStub: Pick<ManifoldSyncStub, "completeGithubOAuth"> = {
+      completeGithubOAuth: async () => completeResult,
+    };
+    // SAFETY: this callback route only calls completeGithubOAuth on the stub.
+    const sync = callbackStub as ManifoldSyncStub;
+    const env = {
+      // SAFETY: the route only reads MANIFOLD_SYNC on this callback path.
+      ...({} as Env),
+      MANIFOLD_SYNC: {
+        getByName: () => sync,
+      },
+    } satisfies Env;
+    const response = await Effect.runPromise(
+      handleOAuth({
+        request: new Request(url),
+        env,
+        url,
+        path: ["v1", "oauth", "github", "callback"],
+      }),
+    );
+    if (!response) {
+      throw new Error("GitHub OAuth callback returned no response");
+    }
+    return response;
+  };
+
+  it("explains a rejected Paperback GitHub account in the browser callback", async () => {
+    const response = await callbackResponse({
+      redirectUri: "paperback://manifold-login?error=access_denied&state=callback-state",
+      state: "callback-state",
+      error: "access_denied",
+      accountMismatch: true,
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
+    expect(response.headers.get("location")).toBeNull();
+    expect(body).toContain("GitHub account not authorized");
+    expect(body).toContain("Switch to the configured GitHub account in your browser");
+    expect(body).not.toContain("callback-state");
+    expect(body).not.toContain("access_token");
+  });
+
+  it("keeps ordinary GitHub denial on the OAuth redirect", async () => {
+    const response = await callbackResponse({
+      redirectUri: "paperback://manifold-login?error=access_denied&state=callback-state",
+      state: "callback-state",
+      error: "access_denied",
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(
+      "paperback://manifold-login?error=access_denied&state=callback-state",
+    );
   });
 });

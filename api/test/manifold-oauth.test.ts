@@ -11,6 +11,8 @@ import {
   completeGithubOAuth,
   createManifoldOAuthAuthorization,
   exchangeManifoldOAuthToken,
+  MANIFOLD_CLI_OAUTH_CLIENT_ID,
+  MANIFOLD_CLI_OAUTH_REDIRECT_URI,
   MANIFOLD_OAUTH_CLIENT_ID,
   MANIFOLD_OAUTH_REDIRECT_URI,
   revokeManifoldSession,
@@ -200,6 +202,37 @@ describe("Manifold GitHub OAuth", () => {
       const callbackUrl = new URL(callback.redirectUri);
       expect(callbackUrl.searchParams.get("error")).toBe("access_denied");
       expect(callbackUrl.searchParams.get("code")).toBeNull();
+      expect(callback.accountMismatch).toBe(true);
+    } finally {
+      close();
+    }
+  });
+
+  it("keeps CLI account-mismatch failures on the loopback OAuth redirect", async () => {
+    const { host, close } = makeHost();
+    try {
+      const challenge = await createPkceChallenge("cli-blocked-verifier");
+      const start = await createManifoldOAuthAuthorization(host, {
+        clientId: MANIFOLD_CLI_OAUTH_CLIENT_ID,
+        redirectUri: MANIFOLD_CLI_OAUTH_REDIRECT_URI,
+        responseType: "code",
+        state: "cli-blocked-state",
+        codeChallenge: challenge,
+        codeChallengeMethod: "S256",
+      });
+      const providerState = new URL(start.authorizationUrl).searchParams.get("state");
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL) =>
+        requestHref(input).includes("access_token")
+          ? Response.json({ access_token: "github-access-token" })
+          : Response.json({ id: 99999 }),
+      );
+
+      const callback = await completeGithubOAuth(host, providerState!, "github-code");
+      const callbackUrl = new URL(callback.redirectUri);
+      expect(callbackUrl.origin + callbackUrl.pathname).toBe(MANIFOLD_CLI_OAUTH_REDIRECT_URI);
+      expect(callbackUrl.searchParams.get("error")).toBe("access_denied");
+      expect(callbackUrl.searchParams.get("state")).toBe("cli-blocked-state");
+      expect(callback.accountMismatch).toBeUndefined();
     } finally {
       close();
     }
