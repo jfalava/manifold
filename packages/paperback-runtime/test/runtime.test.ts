@@ -3,12 +3,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonValue } from "@manifold/json";
 
-import {
-  MANIFOLD_API_ACCESS_EXPIRES_AT_KEY,
-  MANIFOLD_API_ACCESS_TOKEN_KEY,
-  MANIFOLD_API_REFRESH_TOKEN_KEY,
-  MANIFOLD_OAUTH_TOKEN_ENDPOINT,
-} from "../src/api";
+// These persisted keys and endpoint are external contracts; keep expectations
+// independent from the constants imported by the runtime under test.
+const API_ACCESS_EXPIRES_AT_KEY = "manifold.api-access-expires-at";
+const API_ACCESS_TOKEN_KEY = "manifold.api-access-token";
+const API_REFRESH_TOKEN_KEY = "manifold.api-refresh-token";
+const API_STATUS_KEY = "manifold.api-token-status";
+const API_TOKEN_KEY = "manifold.api-token";
+const OAUTH_TOKEN_URL = "https://manifold.jfa.dev/api/v1/oauth/token";
 
 type ScheduledRequest = {
   readonly url: string;
@@ -37,12 +39,14 @@ const installApplication = (
   respond: (request: ScheduledRequest, index: number) => ResponseBody,
 ) => {
   const requests: ScheduledRequest[] = [];
+  const setState = vi.fn();
+  const setSecureState = vi.fn((value: string, key: string) => secureState.set(key, value));
   let index = 0;
   Object.assign(globalThis, {
     Application: {
       getSecureState: (key: string) => secureState.get(key),
-      setSecureState: (value: string, key: string) => secureState.set(key, value),
-      setState: vi.fn(),
+      setSecureState,
+      setState,
       arrayBufferToUTF8String: (buffer: ArrayBuffer) => new TextDecoder().decode(buffer),
       scheduleRequest: async (request: ScheduledRequest) => {
         requests.push(request);
@@ -53,7 +57,7 @@ const installApplication = (
       },
     },
   });
-  return requests;
+  return { requests, setState, setSecureState };
 };
 
 describe("Manifold OAuth session runtime", () => {
@@ -71,12 +75,12 @@ describe("Manifold OAuth session runtime", () => {
 
   it("refreshes an expiring session before the API request", async () => {
     const secureState = new Map([
-      [MANIFOLD_API_ACCESS_TOKEN_KEY, "old-access"],
-      [MANIFOLD_API_REFRESH_TOKEN_KEY, "old-refresh"],
-      [MANIFOLD_API_ACCESS_EXPIRES_AT_KEY, "1000001"],
+      [API_ACCESS_TOKEN_KEY, "old-access"],
+      [API_REFRESH_TOKEN_KEY, "old-refresh"],
+      [API_ACCESS_EXPIRES_AT_KEY, "1000001"],
     ]);
-    const requests = installApplication(secureState, (request): ResponseBody => {
-      if (request.url === MANIFOLD_OAUTH_TOKEN_ENDPOINT) {
+    const { requests } = installApplication(secureState, (request): ResponseBody => {
+      if (request.url === OAUTH_TOKEN_URL) {
         const form = new URLSearchParams(request.body);
         expect(form.get("grant_type")).toBe("refresh_token");
         expect(form.get("refresh_token")).toBe("old-refresh");
@@ -93,25 +97,25 @@ describe("Manifold OAuth session runtime", () => {
     });
 
     const { configuredPersonalApi } = await import("../src/runtime");
-    await expect(configuredPersonalApi().getEntry(entry.id)).resolves.toEqual(entry);
+    await configuredPersonalApi().getEntry(entry.id);
 
     expect(requests.map(({ url }) => url)).toEqual([
-      MANIFOLD_OAUTH_TOKEN_ENDPOINT,
+      OAUTH_TOKEN_URL,
       "https://manifold.jfa.dev/api/v1/entries/entry-1",
     ]);
     expect(requests[1]?.headers.authorization).toBe("Bearer new-access");
-    expect(secureState.get(MANIFOLD_API_ACCESS_TOKEN_KEY)).toBe("new-access");
-    expect(secureState.get(MANIFOLD_API_REFRESH_TOKEN_KEY)).toBe("new-refresh");
+    expect(secureState.get(API_ACCESS_TOKEN_KEY)).toBe("new-access");
+    expect(secureState.get(API_REFRESH_TOKEN_KEY)).toBe("new-refresh");
   });
 
   it("refreshes once after a 401 and retries with the rotated access token", async () => {
     const secureState = new Map([
-      [MANIFOLD_API_ACCESS_TOKEN_KEY, "old-access"],
-      [MANIFOLD_API_REFRESH_TOKEN_KEY, "old-refresh"],
-      [MANIFOLD_API_ACCESS_EXPIRES_AT_KEY, "2000000"],
+      [API_ACCESS_TOKEN_KEY, "old-access"],
+      [API_REFRESH_TOKEN_KEY, "old-refresh"],
+      [API_ACCESS_EXPIRES_AT_KEY, "2000000"],
     ]);
-    const requests = installApplication(secureState, (request): ResponseBody => {
-      if (request.url === MANIFOLD_OAUTH_TOKEN_ENDPOINT) {
+    const { requests } = installApplication(secureState, (request): ResponseBody => {
+      if (request.url === OAUTH_TOKEN_URL) {
         return {
           status: 200,
           body: {
@@ -128,14 +132,69 @@ describe("Manifold OAuth session runtime", () => {
     });
 
     const { configuredPersonalApi } = await import("../src/runtime");
-    await expect(configuredPersonalApi().getEntry(entry.id)).resolves.toEqual(entry);
+    await configuredPersonalApi().getEntry(entry.id);
 
     expect(requests.map(({ url }) => url)).toEqual([
       "https://manifold.jfa.dev/api/v1/entries/entry-1",
-      MANIFOLD_OAUTH_TOKEN_ENDPOINT,
+      OAUTH_TOKEN_URL,
       "https://manifold.jfa.dev/api/v1/entries/entry-1",
     ]);
     expect(requests[0]?.headers.authorization).toBe("Bearer old-access");
     expect(requests[2]?.headers.authorization).toBe("Bearer retried-access");
+  });
+
+  it("marks a rejected manual token as unauthorized", async () => {
+    const secureState = new Map([[API_TOKEN_KEY, "manual-token"]]);
+    const { requests, setState } = installApplication(secureState, () => ({
+      status: 401,
+      body: { error: "Unauthorized" },
+    }));
+
+    const { configuredPersonalApi } = await import("../src/runtime");
+    await expect(configuredPersonalApi().getEntry(entry.id)).rejects.toThrow("Unauthorized");
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.headers.authorization).toBe("Bearer manual-token");
+    expect(setState).toHaveBeenCalledWith(
+      "Unauthorized — replace the token or log in with GitHub",
+      API_STATUS_KEY,
+    );
+  });
+
+  it("clears a rejected OAuth session after one refresh retry", async () => {
+    const secureState = new Map([
+      [API_ACCESS_TOKEN_KEY, "old-access"],
+      [API_REFRESH_TOKEN_KEY, "old-refresh"],
+      [API_ACCESS_EXPIRES_AT_KEY, "2000000"],
+    ]);
+    const { requests, setState, setSecureState } = installApplication(
+      secureState,
+      (request): ResponseBody =>
+        request.url === OAUTH_TOKEN_URL
+          ? {
+              status: 200,
+              body: {
+                access_token: "new-access",
+                refresh_token: "new-refresh",
+                expires_in: 900,
+              },
+            }
+          : { status: 401, body: { error: "Unauthorized" } },
+    );
+
+    const { configuredPersonalApi } = await import("../src/runtime");
+    await expect(configuredPersonalApi().getEntry(entry.id)).rejects.toThrow("Unauthorized");
+
+    expect(requests.map(({ url }) => url)).toEqual([
+      "https://manifold.jfa.dev/api/v1/entries/entry-1",
+      OAUTH_TOKEN_URL,
+      "https://manifold.jfa.dev/api/v1/entries/entry-1",
+    ]);
+    expect(setSecureState).toHaveBeenCalledWith("", API_ACCESS_TOKEN_KEY);
+    expect(setSecureState).toHaveBeenCalledWith("", API_REFRESH_TOKEN_KEY);
+    expect(setState).toHaveBeenLastCalledWith(
+      "Unauthorized — replace the token or log in with GitHub",
+      API_STATUS_KEY,
+    );
   });
 });

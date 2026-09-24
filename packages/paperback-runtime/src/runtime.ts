@@ -166,13 +166,22 @@ const authorizedPersonalRequester = async (
     ...request,
     headers: { ...request.headers, authorization: `Bearer ${value}` },
   });
-  const response = await scheduledPersonalRequester(withToken(token));
-  if (response.status !== 401 || !accessToken || !refreshToken) {
-    return response;
+  let response = await scheduledPersonalRequester(withToken(token));
+  if (response.status === 401 && accessToken && refreshToken) {
+    token = await refreshManifoldSession();
+    response = await scheduledPersonalRequester(withToken(token));
   }
 
-  token = await refreshManifoldSession();
-  return scheduledPersonalRequester(withToken(token));
+  if (response.status === 401) {
+    if (accessToken) {
+      clearManifoldSession();
+    }
+    Application.setState(
+      "Unauthorized — replace the token or log in with GitHub",
+      MANIFOLD_API_STATUS_KEY,
+    );
+  }
+  return response;
 };
 
 export const configuredPersonalApi = (): PersonalApiClient => {

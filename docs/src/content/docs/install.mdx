@@ -19,15 +19,26 @@ chapter discovery, updates, Cloudflare handling, and reading.
 
 ## MANIFOLD
 
-Add the Manifold repository:
+Add a Manifold repository (stable is the default install):
 
 ```text
 https://manifold.jfa.dev/paperback/extensions/0.9/stable/
 ```
 
-Install **MANIFOLD**, open its settings, and choose **Login with GitHub**.
-Paperback completes the PKCE exchange and stores only the Manifold session in
-secure state; no `MANIFOLD_TOKEN` is required.
+For the current-tree beta channel (separate extension id, safe beside stable):
+
+```text
+https://manifold.jfa.dev/paperback/extensions/0.9/beta/
+```
+
+| Channel | Repository URL                                                   | Extension id    |
+| ------- | ---------------------------------------------------------------- | --------------- |
+| Stable  | `https://manifold.jfa.dev/paperback/extensions/0.9/stable/`      | `MANIFOLD`      |
+| Beta    | `https://manifold.jfa.dev/paperback/extensions/0.9/beta/`        | `MANIFOLD-beta` |
+
+Install **MANIFOLD** (or **MANIFOLD beta**), open its settings, and choose
+**Login with GitHub**. Paperback completes the PKCE exchange and stores only
+the Manifold session in secure state; no `MANIFOLD_TOKEN` is required.
 
 The CLI uses the same GitHub OAuth App:
 
@@ -76,12 +87,13 @@ entry, and fans progress out through the Durable Object outbox.
 
 ## Surfaces
 
-| Surface       | URL                                                         |
-| ------------- | ----------------------------------------------------------- |
-| Documentation | `https://manifold.jfa.dev/`                                 |
-| Sync API      | `https://manifold.jfa.dev/api/v1/`                          |
-| Health        | `https://manifold.jfa.dev/api/health`                       |
-| Repository    | `https://manifold.jfa.dev/paperback/extensions/0.9/stable/` |
+| Surface          | URL                                                         |
+| ---------------- | ----------------------------------------------------------- |
+| Documentation    | `https://manifold.jfa.dev/`                                 |
+| Sync API         | `https://manifold.jfa.dev/api/v1/`                          |
+| Health           | `https://manifold.jfa.dev/api/health`                       |
+| Stable catalog   | `https://manifold.jfa.dev/paperback/extensions/0.9/stable/` |
+| Beta catalog     | `https://manifold.jfa.dev/paperback/extensions/0.9/beta/`   |
 
 ```text
 MangaDex / Comix → Paperback library entry → MANIFOLD

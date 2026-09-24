@@ -1,43 +1,47 @@
 /** Hono / Worker entry — platform async callbacks. */
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
-import { DateTime } from "effect";
+import { DateTime, Schema } from "effect";
 import { Hono } from "hono";
-import { catalog as trackerCatalog } from "@manifold/tracker/catalog";
 import type { Env } from "./types";
 
 const STABLE = "/extensions/0.9/stable";
+const BETA = "/extensions/0.9/beta";
 const REPOSITORY_URL = "https://github.com/jfalava/manifold";
 const LICENSE_NAME = "GPL-3.0-or-later";
 const MIT_LICENSE_NAME = "MIT";
 
-const extensions = [trackerCatalog] as const;
+const catalogs = [
+  { basePath: STABLE, assetPath: "stable", extensionId: "MANIFOLD" },
+  { basePath: BETA, assetPath: "beta", extensionId: "MANIFOLD-beta" },
+] as const;
 
-const byId = (id: string) => extensions.find((entry) => entry.id === id);
+type Catalog = (typeof catalogs)[number];
 
-const versioningBody = () => ({
-  buildTime: DateTime.formatIso(DateTime.nowUnsafe()),
-  builtWith: {
-    toolchain: "1.0.0-alpha.91",
-    types: "1.0.0-alpha.92",
-  },
-  repository: {
-    name: "manifold",
-    description: "manifold: canonical registry and tracker",
-    url: REPOSITORY_URL,
-    source: `${REPOSITORY_URL}/tree/stable`,
-    license: `${MIT_LICENSE_NAME} (Manifold) + ${LICENSE_NAME} (derived)`,
-  },
-  license: LICENSE_NAME,
-  licenseUrl: `${STABLE}/LICENSE`,
-  mitLicense: MIT_LICENSE_NAME,
-  mitLicenseUrl: `${STABLE}/LICENSE-MIT`,
-  attributionsUrl: `${STABLE}/ATTRIBUTIONS.md`,
-  sources: extensions.map((entry) => ({
-    ...entry.info,
-    id: entry.id,
-  })),
+const ExtensionInfoBody = Schema.Struct({
+  id: Schema.optional(Schema.String),
+  name: Schema.optional(Schema.String),
+  version: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
+  icon: Schema.optional(Schema.String),
+  contentRating: Schema.optional(Schema.String),
+  language: Schema.optional(Schema.String),
+  developers: Schema.optional(
+    Schema.Array(Schema.Struct({ name: Schema.String })),
+  ),
+  badges: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        label: Schema.String,
+        textColor: Schema.String,
+        backgroundColor: Schema.String,
+      }),
+    ),
+  ),
+  capabilities: Schema.optional(Schema.Array(Schema.Finite)),
 });
+
+type ExtensionInfoBody = Schema.Schema.Type<typeof ExtensionInfoBody>;
 
 const asset = async (env: Env, pathname: string, contentType: string): Promise<Response> => {
   const response = await env.ASSETS.fetch(new Request(`https://assets.local${pathname}`));
@@ -49,13 +53,68 @@ const asset = async (env: Env, pathname: string, contentType: string): Promise<R
   return new Response(response.body, { status: response.status, headers });
 };
 
-const homepage = (): Response => {
-  const items = extensions
-    .map(
-      (entry) =>
-        `<li><strong>${entry.info.name}</strong> ${entry.info.version} — ${entry.info.description}</li>`,
-    )
-    .join("");
+const readExtensionInfo = async (
+  env: Env,
+  catalog: Catalog,
+): Promise<ExtensionInfoBody | undefined> => {
+  const response = await env.ASSETS.fetch(
+    new Request(`https://assets.local/${catalog.assetPath}/${catalog.extensionId}/info.json`),
+  );
+  if (!response.ok) {
+    return undefined;
+  }
+
+  try {
+    const raw: unknown = await response.json();
+    return Schema.decodeUnknownOption(ExtensionInfoBody)(raw).pipe(
+      (option) => (option._tag === "Some" ? option.value : undefined),
+    );
+  } catch {
+    return undefined;
+  }
+};
+
+const versioningBody = async (env: Env, catalog: Catalog) => {
+  const info = await readExtensionInfo(env, catalog);
+  const sources =
+    info === undefined
+      ? []
+      : [
+          {
+            ...info,
+            id: catalog.extensionId,
+          },
+        ];
+
+  return {
+    buildTime: DateTime.formatIso(DateTime.nowUnsafe()),
+    builtWith: {
+      toolchain: "1.0.0-alpha.91",
+      types: "1.0.0-alpha.92",
+    },
+    repository: {
+      name: "manifold",
+      description: "manifold: canonical registry and tracker",
+      url: REPOSITORY_URL,
+      source: `${REPOSITORY_URL}/tree/${catalog.assetPath}`,
+      license: `${MIT_LICENSE_NAME} (Manifold) + ${LICENSE_NAME} (derived)`,
+    },
+    license: LICENSE_NAME,
+    licenseUrl: `${catalog.basePath}/LICENSE`,
+    mitLicense: MIT_LICENSE_NAME,
+    mitLicenseUrl: `${catalog.basePath}/LICENSE-MIT`,
+    attributionsUrl: `${catalog.basePath}/ATTRIBUTIONS.md`,
+    sources,
+  };
+};
+
+const homepage = async (env: Env, catalog: Catalog): Promise<Response> => {
+  const info = await readExtensionInfo(env, catalog);
+  const items =
+    info === undefined
+      ? "<li><em>No extension staged for this channel yet.</em></li>"
+      : `<li><strong>${String(info.name ?? catalog.extensionId)}</strong> ${String(info.version ?? "")} — ${String(info.description ?? "")}</li>`;
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -64,10 +123,10 @@ const homepage = (): Response => {
   <title>manifold</title>
 </head>
 <body>
-  <h1>manifold</h1>
+  <h1>manifold (${catalog.assetPath})</h1>
   <p>Add this repository in Paperback:</p>
-  <p><code>https://manifold.jfa.dev/paperback/extensions/0.9/stable</code></p>
-  <p><a href="${STABLE}/LICENSE">GPL license</a> · <a href="${STABLE}/LICENSE-MIT">MIT license</a> · <a href="${STABLE}/ATTRIBUTIONS.md">Attributions</a> · <a href="${REPOSITORY_URL}">Source repository</a></p>
+  <p><code>https://manifold.jfa.dev/paperback${catalog.basePath}</code></p>
+  <p><a href="${catalog.basePath}/LICENSE">GPL license</a> · <a href="${catalog.basePath}/LICENSE-MIT">MIT license</a> · <a href="${catalog.basePath}/ATTRIBUTIONS.md">Attributions</a> · <a href="${REPOSITORY_URL}">Source repository</a></p>
   <ul>${items}</ul>
 </body>
 </html>`;
@@ -76,29 +135,51 @@ const homepage = (): Response => {
   });
 };
 
-export const catalogApp: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
-  .get(`${STABLE}/versioning.json`, (c) =>
-    c.json(versioningBody(), 200, { "cache-control": "no-store" }),
-  )
-  .get(`${STABLE}/:id/info.json`, (c) => {
-    const entry = byId(c.req.param("id"));
-    if (!entry) {
-      return c.json({ error: "Not found" }, 404);
-    }
-    return c.json({ ...entry.info, id: entry.id }, 200, { "cache-control": "no-store" });
-  })
-  .get(`${STABLE}/:id/index.js`, (c) =>
-    asset(c.env, `/${c.req.param("id")}/index.js`, "application/javascript"),
-  )
-  // Paperback 0.9 resolves info.icon as `{id}/static/{icon}` (see inkdex layout).
-  .get(`${STABLE}/:id/static/icon.png`, (c) =>
-    asset(c.env, `/${c.req.param("id")}/icon.png`, "image/png"),
-  )
-  .get(`${STABLE}/:id/icon.png`, (c) => asset(c.env, `/${c.req.param("id")}/icon.png`, "image/png"))
-  .get(`${STABLE}/LICENSE`, (c) => asset(c.env, "/LICENSE", "text/plain; charset=utf-8"))
-  .get(`${STABLE}/LICENSE-MIT`, (c) => asset(c.env, "/LICENSE-MIT", "text/plain; charset=utf-8"))
-  .get(`${STABLE}/ATTRIBUTIONS.md`, (c) =>
-    asset(c.env, "/ATTRIBUTIONS.md", "text/markdown; charset=utf-8"),
-  )
-  .get(STABLE, homepage)
-  .get(`${STABLE}/`, homepage);
+const addCatalogRoutes = (app: Hono<{ Bindings: Env }>, catalog: Catalog): void => {
+  app
+    .get(`${catalog.basePath}/versioning.json`, async (c) =>
+      c.json(await versioningBody(c.env, catalog), 200, { "cache-control": "no-store" }),
+    )
+    .get(`${catalog.basePath}/:id/info.json`, async (c) => {
+      const id = c.req.param("id");
+      if (id !== catalog.extensionId) {
+        return c.json({ error: "Not found" }, 404);
+      }
+      const info = await readExtensionInfo(c.env, catalog);
+      if (info === undefined) {
+        return c.json({ error: "Not found" }, 404);
+      }
+      return c.json({ ...info, id: catalog.extensionId }, 200, { "cache-control": "no-store" });
+    })
+    .get(`${catalog.basePath}/:id/index.js`, (c) =>
+      asset(
+        c.env,
+        `/${catalog.assetPath}/${c.req.param("id")}/index.js`,
+        "application/javascript",
+      ),
+    )
+    // Paperback 0.9 resolves info.icon as `{id}/static/{icon}` (see inkdex layout).
+    .get(`${catalog.basePath}/:id/static/icon.png`, (c) =>
+      asset(c.env, `/${catalog.assetPath}/${c.req.param("id")}/icon.png`, "image/png"),
+    )
+    .get(`${catalog.basePath}/:id/icon.png`, (c) =>
+      asset(c.env, `/${catalog.assetPath}/${c.req.param("id")}/icon.png`, "image/png"),
+    )
+    .get(`${catalog.basePath}/LICENSE`, (c) =>
+      asset(c.env, "/LICENSE", "text/plain; charset=utf-8"),
+    )
+    .get(`${catalog.basePath}/LICENSE-MIT`, (c) =>
+      asset(c.env, "/LICENSE-MIT", "text/plain; charset=utf-8"),
+    )
+    .get(`${catalog.basePath}/ATTRIBUTIONS.md`, (c) =>
+      asset(c.env, "/ATTRIBUTIONS.md", "text/markdown; charset=utf-8"),
+    )
+    .get(catalog.basePath, (c) => homepage(c.env, catalog))
+    .get(`${catalog.basePath}/`, (c) => homepage(c.env, catalog));
+};
+
+export const catalogApp: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>();
+
+for (const catalog of catalogs) {
+  addCatalogRoutes(catalogApp, catalog);
+}
