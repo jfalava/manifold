@@ -15,9 +15,9 @@
     ],
     "catalogs": {
       "effect": {
-        "effect": "4.0.0-rc.115",
-        "@effect/platform-bun": "4.0.0-rc.115",
-        "@effect/platform-node": "4.0.0-rc.115"
+        "effect": "4.0.0-rc.117",
+        "@effect/platform-bun": "4.0.0-rc.117",
+        "@effect/platform-node": "4.0.0-rc.117"
       },
       "cloudflare": {
         "@cloudflare/vite-plugin": "1.54.6",
