@@ -5,7 +5,7 @@
 /** @effect-diagnostics preferSchemaOverJson:off */
 import { cliError, newId } from "@/effect-kit";
 import { Effect, Option } from "effect";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import { errorMessage, isFiniteNumber, type JsonObject } from "@manifold/json";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";

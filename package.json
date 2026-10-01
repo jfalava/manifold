@@ -15,9 +15,9 @@
     ],
     "catalogs": {
       "effect": {
-        "effect": "4.0.0-rc.117",
-        "@effect/platform-bun": "4.0.0-rc.117",
-        "@effect/platform-node": "4.0.0-rc.117"
+        "effect": "4.0.0",
+        "@effect/platform-bun": "4.0.0",
+        "@effect/platform-node": "4.0.0"
       },
       "cloudflare": {
         "@cloudflare/vite-plugin": "1.54.6",
@@ -74,6 +74,13 @@
     "plan:api": "bun run plan",
     "prepare": "effect-tsgo patch --typescript --oxlint",
     "test": "bun run test:contract && bun run test:json && bun run test:router && bun run test:canonical && bun run test:mangadex && bun run --cwd api test && bun run --cwd cli test && bun run test:paperback",
+    "test:canonical": "bun run --cwd packages/canonical test",
+    "test:contract": "reuse lint",
+    "test:json": "bun run --cwd packages/json test",
+    "test:mangadex": "bun run --cwd packages/mangadex test",
+    "test:oauth": "bun run --cwd api test:oauth",
+    "test:paperback": "bun run --cwd packages/paperback-comix test && bun run --cwd packages/paperback-runtime test && bun run --cwd tracker test",
+    "test:router": "bun run --cwd router test",
     "typecheck:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/comix --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/paperback-comix --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac typecheck"
   },
   "devDependencies": {

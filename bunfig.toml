@@ -25,5 +25,9 @@ minimumReleaseAgeExcludes = [
   "@distilled.cloud/stripe",
   "workerd",
   "miniflare",
+  "@types/node",
+  "@effect/sql-d1",
+  "@effect/sql-sqlite-do",
+  "@effect/vitest",
 ]
 minimumReleaseAge = 86400

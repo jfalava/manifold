@@ -2,7 +2,7 @@
 import { BunRuntime, BunServices } from "@effect/platform-bun";
 import { errorMessage } from "@manifold/json";
 import { Effect } from "effect";
-import { CliError, Command } from "effect/unstable/cli";
+import { CliError, Command } from "effect/cli";
 
 import { makeRootCommand } from "@/cli";
 import { loadDotEnv } from "@/dotenv";

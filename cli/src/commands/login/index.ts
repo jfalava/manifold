@@ -1,4 +1,4 @@
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 
 import { anilistLoginCommand } from "@/commands/login/anilist";
 import { malLoginCommand } from "@/commands/login/mal";

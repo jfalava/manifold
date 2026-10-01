@@ -1,4 +1,4 @@
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 
 import { staleStatusCommand } from "@/commands/mangadex/stale-status";
 import { unfollowDroppedCommand } from "@/commands/mangadex/unfollow-dropped";

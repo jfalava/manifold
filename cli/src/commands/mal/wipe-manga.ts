@@ -1,6 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
 import { Effect } from "effect";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import { errorMessage } from "@manifold/json";
 import { AuthConnection } from "@manifold/contract";
 import cliProgress from "cli-progress";

@@ -1,4 +1,4 @@
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 
 import { createPas5Command } from "@/commands/anilist/create-pas5";
 import { wipeAlMangaCommand } from "@/commands/anilist/wipe-manga";
