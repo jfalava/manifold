@@ -380,6 +380,7 @@ function CredentialsPage() {
             </div>
             <Input
               type="password"
+              aria-label="AniList access token"
               autoComplete="off"
               placeholder="AniList access token"
               value={aniListTokenDraft}

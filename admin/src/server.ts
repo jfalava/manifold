@@ -22,7 +22,6 @@
  * with a used body" / HTTP 500 on registry binds and other mutations.
  */
 import handler, { createServerEntry } from "@tanstack/react-start/server-entry";
-import { env } from "cloudflare:workers";
 
 const MOUNT = "/admin";
 
@@ -43,6 +42,22 @@ function isFetcher(value: unknown): value is AssetsFetcher {
   return Object.prototype.toString.call(fetchFn).endsWith("Function]");
 }
 
+async function getAssetsFetcher(): Promise<AssetsFetcher | null> {
+  try {
+    // `cloudflare:workers` exists only inside workerd. Vite's Node SSR runner
+    // must still be able to render the app, where its own asset middleware
+    // serves static files instead.
+    // SAFETY: workerd exposes the host module with this env shape; the fetcher is narrowed below.
+    const workers = (await import(/* @vite-ignore */ "cloudflare:workers")) as {
+      readonly env?: { readonly ASSETS?: unknown };
+    };
+    const assets = workers.env?.ASSETS;
+    return isFetcher(assets) ? assets : null;
+  } catch {
+    return null;
+  }
+}
+
 function withPathname(request: Request, pathname: string): Request {
   const url = new URL(request.url);
   url.pathname = pathname;
@@ -59,7 +74,8 @@ async function fetchStaticAsset(request: Request): Promise<Response | null> {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return null;
   }
-  if (!isFetcher(env.ASSETS)) {
+  const assets = await getAssetsFetcher();
+  if (assets === null) {
     return null;
   }
 
@@ -73,7 +89,7 @@ async function fetchStaticAsset(request: Request): Promise<Response | null> {
   }
 
   for (const candidate of candidates) {
-    const response = await env.ASSETS.fetch(candidate);
+    const response = await assets.fetch(candidate);
     // Real file or asset-layer redirect. 404/5xx → try next candidate / SSR.
     if (response.status < 400) {
       return response;

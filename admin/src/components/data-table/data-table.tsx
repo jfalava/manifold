@@ -36,18 +36,38 @@ export function DataTable<TData extends RowData>({
             <Table.Row key={headerGroup.id}>
               {headerGroup.headers.map((header) => {
                 const canSort = header.column.getCanSort();
+                const sort = header.column.getIsSorted();
+                const headerContent = header.isPlaceholder
+                  ? undefined
+                  : flexRender(header.column.columnDef.header, header.getContext());
+                const sortDescription =
+                  sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "not sorted";
+                const ariaSort =
+                  sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "none";
                 return (
                   <Table.Head
                     key={header.id}
-                    onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                    className={canSort ? "cursor-pointer select-none" : undefined}
+                    aria-sort={canSort ? ariaSort : undefined}
+                    className={canSort ? "select-none" : undefined}
                     style={{
                       width: header.getSize() !== 150 ? header.getSize() : undefined,
                     }}
                   >
-                    {header.isPlaceholder
-                      ? undefined
-                      : flexRender(header.column.columnDef.header, header.getContext())}
+                    {canSort ? (
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between gap-2 text-left"
+                        aria-label={`Sort by ${String(header.column.columnDef.header)} (${sortDescription})`}
+                        onClick={header.column.getToggleSortingHandler()}
+                      >
+                        {headerContent}
+                        <span aria-hidden="true" className="text-xs opacity-60">
+                          {sort === "asc" ? "↑" : sort === "desc" ? "↓" : "↕"}
+                        </span>
+                      </button>
+                    ) : (
+                      headerContent
+                    )}
                   </Table.Head>
                 );
               })}

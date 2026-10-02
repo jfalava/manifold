@@ -29,7 +29,12 @@ import {
   Scripts,
   useRouterState,
 } from "@tanstack/react-router";
-import { useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
+import {
+  useState,
+  useSyncExternalStore,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 
 import "../styles/globals.css";
 
@@ -48,6 +53,7 @@ const BRAND_TITLE = "MANIFOLD";
 const BRAND_SUBTITLE = "Admin Panel";
 const DOCUMENT_TITLE = "MANIFOLD/admin";
 const SIDEBAR_HOTKEY = "Mod+B";
+const SIDEBAR_DESKTOP_QUERY = "(min-width: 768px)";
 
 const SIDEBAR_SHORTCUT_SSR = formatForDisplay(SIDEBAR_HOTKEY, { platform: "windows" });
 
@@ -62,6 +68,20 @@ function getSidebarShortcut(): string {
 
 function getSidebarShortcutServer(): string {
   return SIDEBAR_SHORTCUT_SSR;
+}
+
+function subscribeDesktopViewport(onChange: () => void): () => void {
+  const media = window.matchMedia(SIDEBAR_DESKTOP_QUERY);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+}
+
+function getDesktopViewport(): boolean {
+  return window.matchMedia(SIDEBAR_DESKTOP_QUERY).matches;
+}
+
+function getDesktopViewportServer(): boolean {
+  return true;
 }
 
 interface NavItem {
@@ -129,7 +149,7 @@ export const Route = createRootRoute({
 
 function RootDocument() {
   return (
-    <html lang="en" data-theme="kumo">
+    <html lang="en" data-theme="kumo" suppressHydrationWarning>
       <head>
         <HeadContent />
         {/* oxlint-disable-next-line react/no-danger -- must run inline before paint to avoid a theme flash; content is a static constant */}
@@ -202,15 +222,22 @@ function DashboardShell() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
+  const isDesktop = useSyncExternalStore(
+    subscribeDesktopViewport,
+    getDesktopViewport,
+    getDesktopViewportServer,
+  );
   // Controlled so the full-bleed SiteHeader can toggle without nesting inside
   // Sidebar.Provider (contained mode positions the rail absolute to the wrapper).
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOverride, setSidebarOverride] = useState<boolean>();
+  const sidebarOpen = sidebarOverride ?? isDesktop;
+  const toggleSidebar = () => {
+    setSidebarOverride((open) => !(open ?? isDesktop));
+  };
 
   useHotkey(
     SIDEBAR_HOTKEY,
-    () => {
-      setSidebarOpen((open) => !open);
-    },
+    toggleSidebar,
     {
       meta: { name: "Toggle sidebar", description: "Open or close the admin navigation" },
     },
@@ -237,7 +264,7 @@ function DashboardShell() {
           aria-expanded={sidebarOpen}
           aria-controls="admin-sidebar"
           className="gap-1.5 px-2 text-kumo-subtle hover:text-kumo-default"
-          onClick={() => setSidebarOpen((open) => !open)}
+          onClick={toggleSidebar}
         >
           <span className="hidden sm:inline">{sidebarOpen ? "Collapse" : "Menu"}</span>
           <kbd className="hidden items-center rounded border border-kumo-line bg-kumo-fill px-1.5 py-0.5 text-[0.625rem] font-medium text-kumo-subtle lg:inline-flex">
@@ -256,7 +283,6 @@ function DashboardShell() {
           collapsible="icon"
           contained
           open={sidebarOpen}
-          onOpenChange={setSidebarOpen}
           className="min-h-0 min-w-0 flex-1"
         >
           <Sidebar id="admin-sidebar" className="h-full min-h-0 border-r border-kumo-line">
