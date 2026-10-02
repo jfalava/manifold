@@ -1,5 +1,5 @@
 /** @effect-diagnostics asyncFunction:off */
-import { cliError, envString } from "@/effect-kit";
+import { cliError, envString, validateNonNegativeLimit } from "@/effect-kit";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 import { errorMessage } from "@manifold/json";
@@ -103,6 +103,10 @@ export const md2alCommand = Command.make(
     mangadexPassword,
   }) =>
     Effect.gen(function* () {
+      validateNonNegativeLimit(Option.getOrUndefined(limit));
+      if (!new Set(["all", "export", "match", "push"]).has(phase)) {
+        return yield* cliError("--phase must be one of: all, export, match, push.");
+      }
       const env = (key: string): string => envString(key) ?? "";
       const flag = <A>(value: Option.Option<A>): A | undefined => Option.getOrUndefined(value);
 
@@ -113,7 +117,6 @@ export const md2alCommand = Command.make(
         username: flag(mangadexUsername) || env("MANIFOLD_MANGADEX_USERNAME"),
         password: flag(mangadexPassword) || env("MANIFOLD_MANGADEX_PASSWORD"),
       };
-
       if (!anilist) {
         return yield* cliError(
           "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
@@ -165,7 +168,7 @@ export const md2alCommand = Command.make(
                   throw cliError("No snapshot found. Run with --phase export first.");
                 }
                 const max = Option.getOrUndefined(limit);
-                const limited = max !== undefined && max > 0 ? snapshot.slice(0, max) : snapshot;
+                const limited = max === undefined ? snapshot.slice() : snapshot.slice(0, max);
                 // Scope cached matches to the limited slice so --limit also
                 // bounds the push phase.
                 const limitedIds = new Set(limited.map((entry) => entry.mangaDexId));

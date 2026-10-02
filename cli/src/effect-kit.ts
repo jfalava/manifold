@@ -11,6 +11,13 @@ export class CliEffectError extends Data.TaggedError("CliEffectError")<{
 
 export const cliError = (message: string): CliEffectError => new CliEffectError({ message });
 
+/** Validate optional bounded integer flags before they reach slicing or sleeps. */
+export const validateNonNegativeLimit = (value: number | undefined): void => {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+    throw cliError("--limit must be a non-negative integer");
+  }
+};
+
 /** Promise boundary: rejections become typed failures (not defects). */
 export const fromPromise = <A>(action: () => Promise<A>): Effect.Effect<A, CliEffectError> =>
   Effect.tryPromise({ try: action, catch: (cause) => cliError(errorMessage(cause)) });

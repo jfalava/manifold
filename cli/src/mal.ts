@@ -110,7 +110,7 @@ const requestMalTokensEffect = (
     const tokens = bodyResult.ok
       ? Option.getOrUndefined(decodeJsonOption(Tokens, bodyResult.body))
       : undefined;
-    if (!tokens) {
+    if (!tokens || tokens.expires_in <= 0) {
       return yield* cliError("MAL returned an invalid token response. Run login mal again.");
     }
     return {

@@ -3,7 +3,7 @@
 /** @effect-diagnostics globalDateInEffect:off */
 /** @effect-diagnostics nodeBuiltinImport:off */
 /** @effect-diagnostics preferSchemaOverJson:off */
-import { cliError, newId } from "@/effect-kit";
+import { cliError, newId, validateNonNegativeLimit } from "@/effect-kit";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 import { errorMessage, isFiniteNumber, type JsonObject } from "@manifold/json";
@@ -504,6 +504,7 @@ export const createPas5Command = Command.make("pas5", {
   ),
   Command.withHandler(({ apply, tabs, base, out, limit, anilistToken, apiOrigin, apiToken }) =>
     Effect.gen(function* () {
+      validateNonNegativeLimit(Option.getOrUndefined(limit));
       const token =
         (yield* Effect.tryPromise(() =>
           resolveAniListToken(Option.getOrUndefined(anilistToken)),
@@ -517,7 +518,6 @@ export const createPas5Command = Command.make("pas5", {
         try: () => parseTabsFlag(tabs),
         catch: (cause) => cliError(errorMessage(cause)),
       });
-
       interface ScanCtx extends RunContext {
         entries: readonly AniListRichEntry[];
         registry: Map<string, RegistryRow>;
@@ -637,15 +637,11 @@ export const createPas5Command = Command.make("pas5", {
       let upstreamAttachments = 0;
       let providerConflicts = 0;
       let ambiguousBaseEntries = 0;
+      const limitValue = Option.getOrUndefined(limit);
       const tabCounts = new Map<string, number>(allowedTabs.map((t) => [t, 0]));
 
       for (const entry of scan.entries) {
-        if (
-          limit !== undefined &&
-          Option.getOrUndefined(limit) !== undefined &&
-          // SAFETY: value matches number) at this call site
-          totalGenerated >= (Option.getOrUndefined(limit) as number)
-        ) {
+        if (limitValue !== undefined && totalGenerated >= limitValue) {
           break;
         }
         const registryRow = scan.registry.get(String(entry.mediaId));

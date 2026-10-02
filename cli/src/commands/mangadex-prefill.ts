@@ -22,7 +22,7 @@ import {
   RegistryListResponse,
 } from "@manifold/contract";
 import { apiCall, apiConfig, type ApiConfig, type RegistryRow } from "@/commands/toolbox";
-import { cliError, sleepPromise } from "@/effect-kit";
+import { cliError, sleepPromise, validateNonNegativeLimit } from "@/effect-kit";
 
 const sleep = sleepPromise;
 
@@ -88,6 +88,11 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
   Command.withHandler(({ apply, limit, status, delay, apiOrigin, apiToken, anilistToken }) =>
     Effect.tryPromise({
       try: async () => {
+        const limitValue = Option.getOrUndefined(limit);
+        validateNonNegativeLimit(limitValue);
+        if (!Number.isSafeInteger(delay) || delay < 0) {
+          throw cliError("--delay must be a non-negative integer (milliseconds).");
+        }
         const config: ApiConfig = await apiConfig(apiOrigin, apiToken);
         const statusFilter = parseStatusFilter(status);
         const anilist = await resolveAniListToken(Option.getOrUndefined(anilistToken));
@@ -101,7 +106,6 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
           frameDetail("no AniList login: resolving with the registry title only");
         }
 
-        const limitValue = Option.getOrUndefined(limit);
         const delayMs = delay;
 
         const loadTask: ListrTask<MangadexCtx> = {
@@ -282,7 +286,6 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
           abortFrame();
           throw error;
         }
-        process.exit(0);
       },
       catch: (cause) => cliError(errorMessage(cause)),
     }),

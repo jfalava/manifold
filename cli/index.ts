@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+import { fileURLToPath } from "node:url";
+
 import { BunRuntime, BunServices } from "@effect/platform-bun";
 import { errorMessage } from "@manifold/json";
 import { Effect } from "effect";
@@ -9,7 +11,7 @@ import { loadDotEnv } from "@/dotenv";
 import { CLI_VERSION } from "@/version";
 
 // Pick up CLI credentials from cli/.env (cwd or package-local path).
-loadDotEnv(new URL("./.env", import.meta.url).pathname);
+loadDotEnv(fileURLToPath(new URL("./.env", import.meta.url)));
 loadDotEnv(".env");
 
 const program = Command.runWith(makeRootCommand(CLI_VERSION), {
