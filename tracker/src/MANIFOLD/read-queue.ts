@@ -141,7 +141,11 @@ const readPendingProgress = (): PendingProgressMap => {
         },
       ]);
     }
-    return Object.fromEntries(entries);
+    const cleaned = Object.fromEntries(entries);
+    if (entries.length !== Object.keys(parsed).length) {
+      Application.setState(JSON.stringify(cleaned), PENDING_PROGRESS_KEY);
+    }
+    return cleaned;
   } catch {
     return {};
   }
@@ -215,6 +219,11 @@ const flushPendingProgressEffect = (
         acknowledgeProgress(mangaId, entry.chapterNum);
         pushed += 1;
         yield* Effect.logInfo(`[manifold] anilist progress retry:${mangaId}:${entry.chapterNum}`);
+      } else {
+        // There is no token or AniList link to retry. Drop the stale entry so
+        // it does not remain in durable state forever.
+        acknowledgeProgress(mangaId, entry.chapterNum);
+        yield* Effect.logInfo(`[manifold] anilist progress retry skipped:${mangaId}`);
       }
     }
     return pushed;

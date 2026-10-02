@@ -400,9 +400,7 @@ export class ManifoldTrackerSource
           `Unsupported provider candidate: ${String(parsedCandidate.provider)}`,
         );
       }
-      const stored = yield* fromPromise(() => personalApi.getEntry(mangaId)).pipe(
-        Effect.orElseSucceed(() => undefined),
-      );
+      const stored = yield* fromPromise(() => personalApi.getEntry(mangaId));
       let entry = this.canonicalResults.get(mangaId);
       if (!entry) {
         if (!stored) {
@@ -561,9 +559,7 @@ const recordTrackerAniListProgressEffect = (
     }
     let anilistId = sourceManga.mangaInfo.additionalInfo?.["AniList ID"];
     if (!anilistId) {
-      const entry = yield* fromPromise(() =>
-        configuredPersonalApi().getEntry(sourceManga.mangaId),
-      ).pipe(Effect.orElseSucceed(() => undefined));
+      const entry = yield* fromPromise(() => configuredPersonalApi().getEntry(sourceManga.mangaId));
       anilistId = aniLinkOf(entry);
     }
     if (!anilistId) {

@@ -79,7 +79,9 @@ const asDate = (value: JsonValue | undefined): Date | undefined => {
 };
 
 const titleFromUrl = (value: string): string => {
-  const withoutPrefix = value.replace(/^\/title\//, "");
+  const withoutOrigin = value.replace(/^[a-z][a-z\d+.-]*:\/\/[^/]+/i, "").replace(/^\/\/[^/]+/, "");
+  const withoutQuery = withoutOrigin.split(/[?#]/, 1)[0] ?? withoutOrigin;
+  const withoutPrefix = withoutQuery.replace(/^\/?title\//, "");
   return withoutPrefix.split("/")[0] ?? withoutPrefix;
 };
 
@@ -215,7 +217,8 @@ const chapterIdFromItem = (item: JsonObject): string => {
     return explicit;
   }
   const url = asString(first(item.url, item.chapterUrl, item.chapter_url));
-  return url ? (url.split("/").at(-1)?.split("-")[0] ?? url) : "";
+  const path = url.split(/[?#]/, 1)[0] ?? url;
+  return path.split("/").at(-1) ?? path;
 };
 
 const chapterNumberFromItem = (item: JsonObject): number =>
@@ -261,13 +264,25 @@ export const pageItems = (payload: JsonValue): ComixPage[] => {
   const pages = asObject(first(root.pages, root.images, root.data));
   const candidates = asArray(first(pages?.items, pages?.pages, root.items, root.images));
   const baseUrl = asString(first(pages?.baseUrl, pages?.base_url));
+  const resolvePageUrl = (value: string): string => {
+    if (/^https?:\/\//i.test(value)) {
+      return value;
+    }
+    if (value.startsWith("//")) {
+      return `https:${value}`;
+    }
+    if (!baseUrl) {
+      return value;
+    }
+    return `${baseUrl.replace(/\/+$/, "")}/${value.replace(/^\/+/, "")}`;
+  };
 
   return candidates
     .map(pageFromItem)
     .filter((page): page is ComixPage => page !== undefined)
     .map((page) => ({
       ...page,
-      url: page.url.startsWith("http") ? page.url : `${baseUrl}${page.url}`,
+      url: resolvePageUrl(page.url),
     }));
 };
 

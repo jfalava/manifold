@@ -12,11 +12,16 @@ export const COMIX_ORIGIN = "https://comix.to";
 
 export const resolveComixUrl = (value: string): string => {
   const trimmed = value.trim();
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
-  if (trimmed.startsWith("//")) {
-    return `https:${trimmed}`;
+  const absolute = /^(?:https?:)?\/\/([^/?#]+)/i.exec(trimmed);
+  if (absolute) {
+    const host = absolute[1]!
+      .slice(absolute[1]!.lastIndexOf("@") + 1)
+      .split(":", 1)[0]!
+      .toLowerCase();
+    if (host !== "comix.to" && !host.endsWith(".comix.to")) {
+      throw new Error("Comix URL points to an untrusted host");
+    }
+    return trimmed.startsWith("//") ? `https:${trimmed}` : trimmed;
   }
   return `${COMIX_ORIGIN}/${trimmed.replace(/^\/+/, "")}`;
 };

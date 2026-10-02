@@ -76,10 +76,13 @@ const executeOp = (
         return parsed.mediaListEntryId;
       }
       case "anilist.delete": {
-        let listEntryId = parsed.mediaListEntryId;
-        if (listEntryId === undefined && mediaListEntryIds) {
-          listEntryId = mediaListEntryIds[parsed.anilistId];
+        if (mediaListEntryIds !== undefined && mediaListEntryIds[parsed.anilistId] === undefined) {
+          // When the lookup completed and the title is absent, the desired
+          // state is already true. This also makes a delete replay safe after
+          // the device applied it but the completion acknowledgement was lost.
+          return undefined;
         }
+        const listEntryId = mediaListEntryIds?.[parsed.anilistId] ?? parsed.mediaListEntryId;
         if (listEntryId === undefined) {
           return yield* paperbackError(
             `op ${parsed.opId}: no mediaListEntryId for ${parsed.anilistId}`,
@@ -103,9 +106,7 @@ const drainAniListOpsEffect = () =>
       return;
     }
 
-    const needsListEntryIds = ops.some(
-      (op) => op.kind === "anilist.delete" && op.payload["mediaListEntryId"] === undefined,
-    );
+    const needsListEntryIds = ops.some((op) => op.kind === "anilist.delete");
     const userId = aniListUserId();
     const mediaListEntryIds =
       needsListEntryIds && userId !== undefined

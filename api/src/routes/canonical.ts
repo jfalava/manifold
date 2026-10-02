@@ -14,6 +14,7 @@ import { isJsonArray } from "@manifold/json";
 import { getCanonical, searchCanonical, type CanonicalProviderFilter } from "../canonical";
 import {
   attempt,
+  boundedInteger,
   jsonEncoded,
   parseJson,
   routeId,
@@ -37,11 +38,7 @@ const canonicalProvider = (value: string | null): CanonicalProviderFilter | unde
 };
 
 const searchLimit = (value: string | null): number => {
-  const parsed = value === null ? 20 : Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) {
-    return 20;
-  }
-  return Math.min(25, Math.max(1, parsed));
+  return boundedInteger(value, 20, 1, 25);
 };
 
 export const handleCanonical = (ctx: RouteContext): RouteEffect =>
@@ -113,7 +110,8 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
       request.method === "GET"
     ) {
       const sync = env.MANIFOLD_SYNC.getByName("default");
-      const entry = yield* tryPromise(() => sync.entryByProvider("mangadex", routeId(path[4])));
+      const entryId = yield* routeId(path[4]);
+      const entry = yield* tryPromise(() => sync.entryByProvider("mangadex", entryId));
       return jsonEncoded(EntryByProviderResponse, { entry: entry ?? null });
     }
 
@@ -122,7 +120,8 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
       if (!provider || provider === "all" || provider === "auto") {
         return jsonEncoded(ErrorBody, { error: "Unknown canonical provider" }, 404);
       }
-      const outcome = yield* attempt(() => getCanonical(env, provider, routeId(path[3])));
+      const entryId = yield* routeId(path[3]);
+      const outcome = yield* attempt(() => getCanonical(env, provider, entryId));
       if (!outcome.ok) {
         return jsonEncoded(ErrorBody, { error: outcome.error.message }, 502);
       }

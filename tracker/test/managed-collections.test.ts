@@ -9,6 +9,7 @@ import {
   commitManagedCollectionChanges,
   flushPendingNukes,
   flushPendingReconciles,
+  getSourceMangaInManagedCollection,
   resolveManagedCollectionEntries,
 } from "../src/MANIFOLD/managed-collections";
 
@@ -78,6 +79,18 @@ const readAppState = (key: string): string | undefined => {
 };
 
 describe("managed collection registry resolution", () => {
+  it("omits AniList cards that could not be assigned a registry UUID", async () => {
+    mocks.api = {
+      ...makeApi(async () => listState("unused")),
+      resolveEntries: async () => [],
+    };
+    mocks.fetchAniListLibrary.mockResolvedValue(items(1));
+    applicationState.set(ANILIST_SESSION_KEY, "token");
+    applicationState.set(ANILIST_VIEWER_ID_KEY, 1);
+
+    await expect(getSourceMangaInManagedCollection(MANAGED_COLLECTIONS[0]!)).resolves.toEqual([]);
+  });
+
   it("resolves large shelves in bounded batches", async () => {
     const calls: (readonly { readonly providerId: string }[])[] = [];
     const resolveEntries: PersonalApiClient["resolveEntries"] = async (inputs) => {
@@ -223,6 +236,41 @@ describe("managed collection registry reconciliation", () => {
     ]);
     expect(nukeCalls).toEqual([]);
     expect(readAppState(PENDING_RECONCILES_KEY)).toBe("{}");
+  });
+
+  it("does not acknowledge a newer reconcile written while an older one is in flight", async () => {
+    applicationState.set(
+      PENDING_RECONCILES_KEY,
+      JSON.stringify({
+        "entry-1": {
+          kind: "setListState",
+          entryId: "entry-1",
+          status: "reading",
+          at: 1,
+        },
+      }),
+    );
+    let replaced = false;
+    mocks.api = makeApi(async () => {
+      if (!replaced) {
+        replaced = true;
+        applicationState.set(
+          PENDING_RECONCILES_KEY,
+          JSON.stringify({
+            "entry-1": {
+              kind: "setListState",
+              entryId: "entry-1",
+              status: "completed",
+              at: 2,
+            },
+          }),
+        );
+      }
+      return listState("entry-1");
+    });
+
+    expect(await flushPendingReconciles()).toBe(1);
+    expect(readAppState(PENDING_RECONCILES_KEY)).toContain('"status":"completed"');
   });
 
   it("ignores corrupt queued reconciles instead of throwing on flush", async () => {
