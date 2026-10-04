@@ -45,7 +45,7 @@
     "@manifold/mangadex": "workspace:*",
     "cli-progress": "3.12.0",
     "effect": "catalog:effect",
-    "listr2": "11.1.0",
+    "listr2": "11.1.1",
     "picocolors": "1.1.1"
   },
   "devDependencies": {
