@@ -12,6 +12,31 @@ const redirect = (location: string): Response =>
     headers: { location, "cache-control": "no-store" },
   });
 
+const githubAccountMismatchPage = (): Response =>
+  new Response(
+    `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GitHub account not authorized</title></head>
+<body>
+<main>
+<h1>GitHub account not authorized</h1>
+<p>GitHub login succeeded, but this account is not authorized to use this Manifold instance.</p>
+<p>Switch to the configured GitHub account in your browser, then return to Paperback and try again.</p>
+</main>
+</body>
+</html>`,
+    {
+      status: 403,
+      headers: {
+        "cache-control": "no-store",
+        "content-security-policy": "default-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        "content-type": "text/html; charset=utf-8",
+        "referrer-policy": "no-referrer",
+        "x-content-type-options": "nosniff",
+      },
+    },
+  );
+
 export const handleOAuth = (ctx: RouteContext): RouteEffect =>
   Effect.gen(function* () {
     const { path, request, env, url } = ctx;
@@ -65,6 +90,9 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
       );
       if (complete._tag === "Failure") {
         return oauthError("invalid_grant", complete.failure.cause.message);
+      }
+      if (complete.success.accountMismatch) {
+        return githubAccountMismatchPage();
       }
       return redirect(complete.success.redirectUri);
     }

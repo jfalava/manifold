@@ -282,6 +282,26 @@ describe("processReadActions", () => {
     expect(applicationState.get(PENDING_PROGRESS_KEY_SAFE)).toBe("{}");
   });
 
+  it("drops a queued progress push when the retry permanently has no target", async () => {
+    applicationState.set(
+      PENDING_PROGRESS_KEY_SAFE,
+      JSON.stringify({
+        "anilist:1": {
+          sourceManga: manga("anilist:1"),
+          chapterNum: 9,
+          at: 1,
+        },
+      }),
+    );
+    const recordRead = vi.fn().mockResolvedValue({});
+    const pushProgress = vi.fn().mockResolvedValue(false);
+
+    await processReadActions([], { recordRead, pushProgress });
+
+    expect(pushProgress).toHaveBeenCalledOnce();
+    expect(applicationState.get(PENDING_PROGRESS_KEY_SAFE)).toBe("{}");
+  });
+
   it("keeps the queued chapter across a restart and coalesces to the max", async () => {
     // Simulate state written by a previous device session (restart).
     applicationState.set(

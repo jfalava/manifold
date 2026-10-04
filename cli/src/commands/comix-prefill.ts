@@ -1,6 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
 import { Effect, Option } from "effect";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
 import { errorMessage } from "@manifold/json";
 import {
@@ -36,7 +36,7 @@ import {
 } from "@/ui";
 import { RegistryEntry, RegistryListResponse } from "@manifold/contract";
 import { apiCall, apiConfig, type ApiConfig, type RegistryRow } from "@/commands/toolbox";
-import { cliError, sleepPromise } from "@/effect-kit";
+import { cliError, sleepPromise, validateNonNegativeLimit } from "@/effect-kit";
 
 const SEARCH_DELAY_MS = 1_500;
 const CHALLENGE_CIRCUIT_BREAK = 3;
@@ -117,6 +117,8 @@ export const comixPrefillCommand = Command.make("comix", {
     }) =>
       Effect.tryPromise({
         try: async () => {
+          const limitValue = Option.getOrUndefined(limit);
+          validateNonNegativeLimit(limitValue);
           const config: ApiConfig = await apiConfig(apiOrigin, apiToken);
           const statusFilter = parseStatusFilter(status);
           if (refreshSession) {
@@ -174,8 +176,6 @@ export const comixPrefillCommand = Command.make("comix", {
               "no AniList login: searching the registry title, then MangaDex alts if a mangadex link exists",
             );
           }
-
-          const limitValue = Option.getOrUndefined(limit);
 
           const loadTask: ListrTask<ComixCtx> = {
             title: "Load registry rows",
@@ -385,9 +385,6 @@ export const comixPrefillCommand = Command.make("comix", {
             abortFrame();
             throw error;
           }
-          // Bun's keep-alive sockets hold the loop open; the CLI has nothing
-          // left to do once the report is printed.
-          process.exit(0);
         },
         catch: (cause) => cliError(errorMessage(cause)),
       }),

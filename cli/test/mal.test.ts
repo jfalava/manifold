@@ -233,6 +233,18 @@ describe("MAL authentication and retries", () => {
     expect(calls[1]?.[1]?.headers).toMatchObject({ authorization: "Bearer new" });
   });
 
+  it("rejects a token response with a non-positive lifetime", async () => {
+    const ctx = setup(Response.json({ access_token: "new", expires_in: 0 }));
+    await expect(
+      requestMalTokens(
+        "client",
+        undefined,
+        new URLSearchParams({ grant_type: "authorization_code" }),
+        ctx.fetcher,
+      ),
+    ).rejects.toThrow("MAL returned an invalid token response");
+  });
+
   it("refreshes once on 401, then stops on another 401", async () => {
     const ctx = setup(
       new Response(null, { status: 401 }),

@@ -1,6 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
 import { Effect, Option } from "effect";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
 import { createAniListSource } from "@manifold/canonical/sources";
 import { RegistryEntry, RegistryListResponse, type RegistryListEntry } from "@manifold/contract";
@@ -14,7 +14,13 @@ import {
   openFrame,
   type RunContext,
 } from "@/ui";
-import { cliError, platformFetch, runHost, sleepPromise } from "@/effect-kit";
+import {
+  cliError,
+  platformFetch,
+  runHost,
+  sleepPromise,
+  validateNonNegativeLimit,
+} from "@/effect-kit";
 
 /** AniList is currently degraded to 30 requests/minute; keep a safety margin. */
 const ANILIST_LOOKUP_INTERVAL_MS = 2_500;
@@ -47,9 +53,7 @@ export const malPrefillCommand = Command.make("mal", {
     Effect.tryPromise({
       try: async () => {
         const maximum = Option.getOrUndefined(limit);
-        if (maximum !== undefined && maximum < 0) {
-          throw cliError("--limit must be non-negative");
-        }
+        validateNonNegativeLimit(maximum);
         const config = await apiConfig(apiOrigin, apiToken);
         const source = createAniListSource({
           userAgent: manifoldUserAgent("cli"),

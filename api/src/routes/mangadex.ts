@@ -13,6 +13,7 @@ import {
 import { isJsonArray, isJsonObject, isString } from "@manifold/json";
 import {
   jsonEncoded,
+  boundedInteger,
   parseJson,
   routeId,
   tryPromise,
@@ -32,8 +33,9 @@ export const handleMangaDex = (ctx: RouteContext): RouteEffect =>
       return jsonEncoded(MangaDexUserResponse, yield* tryPromise(() => sync.mangaDexCurrentUser()));
     }
     if (path.length === 4 && path[2] === "read-markers" && request.method === "GET") {
+      const mangaId = yield* routeId(path[3]);
       return jsonEncoded(MangaDexReadMarkersResponse, {
-        chapters: yield* tryPromise(() => sync.mangaDexReadMarkers(routeId(path[3]))),
+        chapters: yield* tryPromise(() => sync.mangaDexReadMarkers(mangaId)),
       });
     }
     if (path.length === 3 && path[2] === "library" && request.method === "GET") {
@@ -55,7 +57,9 @@ export const handleMangaDex = (ctx: RouteContext): RouteEffect =>
     if (path.length === 3 && path[2] === "stats" && request.method === "POST") {
       const raw = yield* parseJson(request);
       const idsField = isJsonObject(raw) ? raw.ids : undefined;
-      const ids = isJsonArray(idsField) ? idsField.filter(isString).slice(0, 200) : [];
+      const ids = isJsonArray(idsField)
+        ? idsField.filter((id): id is string => isString(id) && id.trim().length > 0).slice(0, 200)
+        : [];
       if (ids.length === 0) {
         return jsonEncoded(ErrorBody, { error: "No manga ids provided" }, 400);
       }
@@ -64,8 +68,8 @@ export const handleMangaDex = (ctx: RouteContext): RouteEffect =>
       });
     }
     if (path.length === 3 && path[2] === "feed" && request.method === "GET") {
-      const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") ?? 20) || 20));
-      const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0) || 0);
+      const limit = boundedInteger(url.searchParams.get("limit"), 20, 1, 100);
+      const offset = boundedInteger(url.searchParams.get("offset"), 0, 0, 1_000_000);
       return jsonEncoded(
         MangaDexFeedPage,
         yield* tryPromise(() => sync.mangaDexFeed(limit, offset)),
@@ -74,7 +78,8 @@ export const handleMangaDex = (ctx: RouteContext): RouteEffect =>
     if (path.length === 4 && path[2] === "status" && request.method === "POST") {
       const raw = yield* parseJson(request);
       const input = yield* Schema.decodeUnknownEffect(SetMangaDexStatusInput)(raw);
-      yield* tryPromise(() => sync.setMangaDexStatus(routeId(path[3]), input));
+      const mangaDexId = yield* routeId(path[3]);
+      yield* tryPromise(() => sync.setMangaDexStatus(mangaDexId, input));
       return jsonEncoded(OkResponse, { ok: true as const });
     }
     return jsonEncoded(ErrorBody, { error: "Not found" }, 404);

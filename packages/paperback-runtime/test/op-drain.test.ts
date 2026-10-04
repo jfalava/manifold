@@ -33,11 +33,11 @@ const makeHarness = () => {
   const urls: string[] = [];
   let nowMs = 1_000_000;
 
-  const install = (respond: (index: number) => Outcome): void => {
+  const install = (respond: (index: number) => Outcome, viewerId?: number): void => {
     let index = 0;
     Object.assign(globalThis, {
       Application: {
-        getState: () => undefined,
+        getState: () => viewerId,
         getSecureState: () => "token",
         arrayBufferToUTF8String: (buffer: ArrayBuffer): string => new TextDecoder().decode(buffer),
         scheduleRequest: (request: ScheduledRequestLike): Promise<[ResponseLike, ArrayBuffer]> => {
@@ -144,6 +144,51 @@ describe("maybeDrainAniListOps throttle", () => {
     harness.setNow(harness.now() + 31_000);
     maybeDrainAniListOps();
     await vi.waitFor(() => expect(harness.urls).toHaveLength(2));
+  });
+});
+
+describe("AniList operation drain", () => {
+  it("acknowledges a replayed delete when the list entry is already absent", async () => {
+    const harness = makeHarness();
+    harness.install((index): Outcome => {
+      if (index === 0) {
+        return {
+          status: 200,
+          body: {
+            ops: [
+              {
+                id: 1,
+                opId: "delete-1",
+                target: "anilist",
+                kind: "anilist.delete",
+                origin: "device",
+                payload: { anilistId: "42", mediaListEntryId: 99 },
+                state: "pending",
+                attempts: 0,
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            ],
+          },
+        };
+      }
+      if (index === 1) {
+        return {
+          status: 200,
+          body: { data: { MediaListCollection: { lists: [] } } },
+        };
+      }
+      return { status: 200, body: { updated: 1 } };
+    }, 7);
+    const { drainAniListOps } = await harness.loadDrain();
+
+    await drainAniListOps();
+
+    expect(harness.urls).toEqual([
+      "https://manifold.jfa.dev/api/v1/ops/pending/anilist?limit=25",
+      "https://graphql.anilist.co",
+      "https://manifold.jfa.dev/api/v1/ops/complete",
+    ]);
   });
 });
 

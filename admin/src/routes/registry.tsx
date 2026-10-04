@@ -293,6 +293,7 @@ function EntryEditor({
           </Select>
           <Input
             className="w-full min-w-0 sm:flex-1"
+            aria-label="External provider ID"
             placeholder="External id"
             value={externalId}
             onChange={(event) => setExternalId(event.target.value)}
@@ -695,6 +696,7 @@ function EntriesTable({
       <div className="flex flex-wrap items-center gap-2">
         <Input
           className="w-64"
+          aria-label="Filter registry entries"
           placeholder="Filter by title or provider id"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}

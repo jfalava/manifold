@@ -11,6 +11,7 @@ import {
   isPublicOAuthRoute,
   json,
   jsonEncoded,
+  ParseRequestError,
   ResponseEncodeError,
   tryPromise,
   type RouteContext,
@@ -99,6 +100,9 @@ const app: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
           { error: "Internal server error", details: "Response failed schema encode" },
           500,
         );
+      }
+      if (error instanceof ParseRequestError) {
+        return jsonEncoded(ErrorBody, { error: "Invalid request", details: error.message }, 400);
       }
       if (error instanceof Schema.SchemaError) {
         hostLogError(`[manifold/api] schema error:${error.message}`);

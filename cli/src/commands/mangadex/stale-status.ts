@@ -7,7 +7,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 import { Effect, Option } from "effect";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
 import {
   errorMessage,

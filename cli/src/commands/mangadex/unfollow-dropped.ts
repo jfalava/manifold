@@ -1,7 +1,7 @@
 /** @effect-diagnostics asyncFunction:off */
 import { cliError, envString, runHost, sleepPromise } from "@/effect-kit";
 import { Effect, Option } from "effect";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
 import { errorMessage, isJsonObject, manifoldUserAgent, numberField } from "@manifold/json";
 

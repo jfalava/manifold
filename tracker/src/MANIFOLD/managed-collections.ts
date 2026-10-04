@@ -157,12 +157,13 @@ const enqueueReconcile = (reconcile: PendingReconcile): void => {
 };
 
 /** Drops a reconcile once the registry acknowledged it. */
-const acknowledgeReconcile = (entryId: string): void => {
+const acknowledgeReconcile = (reconcile: PendingReconcile): void => {
   const pending = readPendingReconciles();
-  if (pending[entryId] === undefined) {
+  const current = pending[reconcile.entryId];
+  if (current === undefined || JSON.stringify(current) !== JSON.stringify(reconcile)) {
     return;
   }
-  delete pending[entryId];
+  delete pending[reconcile.entryId];
   writePendingReconciles(pending);
 };
 
@@ -337,24 +338,32 @@ const getSourceMangaInManagedCollectionEffect = (
     // as its Paperback manga id so reads/collections bind to registry rows.
     const byAnilist = yield* resolveManagedCollectionEntriesEffect(items, configuredPersonalApi());
 
-    return items.map((item) => {
+    return items.flatMap((item) => {
       const entry = byAnilist.get(item.anilistId);
       const uuid = entry?.id;
-      return {
-        mangaId: uuid ?? `anilist:${item.anilistId}`,
-        mangaInfo: {
-          thumbnailUrl: safeImageUrl(item.coverUrl),
-          synopsis: "",
-          primaryTitle: item.title,
-          secondaryTitles: [],
-          contentRating: ContentRating.MATURE,
-          additionalInfo: {
-            ...(uuid && { "Canonical ID": uuid }),
-            "Canonical provider": "registry",
-            "AniList ID": item.anilistId,
+      if (!uuid) {
+        // A provider candidate ID cannot be used by registry mutations. Do
+        // not expose a card that cannot be read or moved until reconciliation
+        // resolves it to a registry UUID.
+        return [];
+      }
+      return [
+        {
+          mangaId: uuid,
+          mangaInfo: {
+            thumbnailUrl: safeImageUrl(item.coverUrl),
+            synopsis: "",
+            primaryTitle: item.title,
+            secondaryTitles: [],
+            contentRating: ContentRating.MATURE,
+            additionalInfo: {
+              ...(uuid && { "Canonical ID": uuid }),
+              "Canonical provider": "registry",
+              "AniList ID": item.anilistId,
+            },
           },
         },
-      };
+      ];
     });
   });
 
@@ -398,13 +407,14 @@ const commitManagedCollectionChangesEffect = (
       // Device applied it directly; the registry records the new truth without
       // enqueueing a redundant op. The reconcile persists until acknowledged so
       // a failed API call retries across flushes and restarts.
-      enqueueReconcile({
+      const reconcile: PendingReconcile = {
         kind: "setListState",
         entryId: resolved.entryId,
         status,
         ...(result.backupIdentity && { backupIdentity: result.backupIdentity }),
         at: yield* Clock.currentTimeMillis,
-      });
+      };
+      enqueueReconcile(reconcile);
       const setOutcome = yield* Effect.result(
         fromPromise(() =>
           api.setListState(resolved.entryId, {
@@ -416,7 +426,7 @@ const commitManagedCollectionChangesEffect = (
         ),
       );
       if (setOutcome._tag === "Success") {
-        acknowledgeReconcile(resolved.entryId);
+        acknowledgeReconcile(reconcile);
       } else {
         yield* Effect.logError(
           `[manifold] registry setListState failed, queued for retry:${resolved.entryId}:` +
@@ -530,12 +540,17 @@ const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
           // reconciliation persists separately until nukeEntry is acknowledged.
           delete pending[anilistId];
           executed += 1;
-          enqueueReconcile({ kind: "nukeEntry", entryId: nuke.entryId, at: nowMs });
+          const reconcile: PendingReconcile = {
+            kind: "nukeEntry",
+            entryId: nuke.entryId,
+            at: nowMs,
+          };
+          enqueueReconcile(reconcile);
           const registryOutcome = yield* Effect.result(
             fromPromise(() => api.nukeEntry(nuke.entryId)),
           );
           if (registryOutcome._tag === "Success") {
-            acknowledgeReconcile(nuke.entryId);
+            acknowledgeReconcile(reconcile);
           } else {
             yield* Effect.logError(
               `[manifold] registry nukeEntry failed, queued for retry:${nuke.entryId}:` +
@@ -587,7 +602,7 @@ const flushPendingReconcilesEffect = (
         }),
       );
       if (outcome._tag === "Success") {
-        acknowledgeReconcile(entryId);
+        acknowledgeReconcile(reconcile);
         acknowledged += 1;
         yield* Effect.logInfo(
           `[manifold] registry reconcile acknowledged:${entryId}:${reconcile.kind}`,

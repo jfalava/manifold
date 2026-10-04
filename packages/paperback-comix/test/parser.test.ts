@@ -37,6 +37,9 @@ describe("Comix Paperback parser", () => {
 
   it("normalizes Comix title IDs", () => {
     expect(mangaIdFromItem(manga)).toBe("abc123-example-title");
+    expect(
+      mangaIdFromItem({ url: "https://comix.to/title/abc123-example-title?source=search#top" }),
+    ).toBe("abc123-example-title");
     expect(hashIdFromMangaId("abc123-example-title")).toBe("abc123");
   });
 
@@ -61,6 +64,13 @@ describe("Comix Paperback parser", () => {
     expect(chapter.chapNum).toBe(1);
   });
 
+  it("preserves the complete fallback chapter URL ID", () => {
+    const sourceManga = toSourceManga(manga);
+    expect(
+      toChapter({ url: "https://comix.to/title/example/abc-def-chapter-1" }, sourceManga).chapterId,
+    ).toBe("abc-def-chapter-1");
+  });
+
   it("normalizes chapter pages with a relative base URL", () => {
     const sourceManga = toSourceManga(manga);
     const chapter = toChapter({ id: "chapter-1", chapter: 1 }, sourceManga);
@@ -79,6 +89,12 @@ describe("Comix Paperback parser", () => {
       type: "images",
       pages: ["https://cdn.example/images/page-1.jpg", "https://cdn.example/page-2.jpg"],
     });
+    expect(
+      pageItems({
+        pages: { baseUrl: "https://cdn.example/images", items: [{ url: "/page.jpg" }] },
+      }),
+    ).toEqual([{ url: "https://cdn.example/images/page.jpg" }]);
+    expect(pageItems({ pages: { items: [{ url: "page.jpg" }] } })).toEqual([{ url: "page.jpg" }]);
   });
 
   it("reads browser-rendered chapter and page results", () => {
@@ -100,5 +116,6 @@ describe("Comix Paperback parser", () => {
     expect(resolveComixUrl("https://comix.to/chapter/example")).toBe(
       "https://comix.to/chapter/example",
     );
+    expect(() => resolveComixUrl("https://evil.example/chapter/example")).toThrow("untrusted host");
   });
 });

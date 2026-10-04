@@ -46,6 +46,7 @@ export interface ManifoldOAuthRedirect {
   readonly state: string;
   readonly code?: string;
   readonly error?: string;
+  readonly accountMismatch?: boolean;
 }
 
 export interface ManifoldOAuthTokenInput {
@@ -222,7 +223,14 @@ const completeGithubOAuthEffect = (host: SyncHost, state: string, code?: string,
     const userBody = yield* fromPromise(() => userResponse.json());
     const githubUser = yield* Schema.decodeUnknownEffect(GithubUserResponse)(userBody);
     if (String(githubUser.id) !== host.env.MANIFOLD_GITHUB_ALLOWED_USER_ID) {
-      return redirectWithError(request.redirect_uri, request.outer_state, "access_denied");
+      const rejected = redirectWithError(
+        request.redirect_uri,
+        request.outer_state,
+        "access_denied",
+      );
+      return request.client_id === MANIFOLD_OAUTH_CLIENT_ID
+        ? { ...rejected, accountMismatch: true }
+        : rejected;
     }
     const subject = `github:${String(githubUser.id)}`;
     const authorizationCode = yield* issueAuthorizationCodeEffect(host, request, subject);

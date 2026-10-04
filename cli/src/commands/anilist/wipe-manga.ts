@@ -1,6 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
 import { Effect, Option } from "effect";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import { errorMessage } from "@manifold/json";
 import { resolveAniListToken } from "@/login/anilist";
 import {

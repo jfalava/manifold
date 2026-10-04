@@ -11,6 +11,7 @@ import {
 } from "@manifold/contract";
 import {
   jsonEncoded,
+  boundedInteger,
   parseJson,
   routeId,
   tryPromise,
@@ -32,7 +33,7 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
       ) {
         return jsonEncoded(OpsListResponse, {
           ops: yield* tryPromise(() =>
-            sync.pendingAniListOps(Number(url.searchParams.get("limit") ?? 25) || 25),
+            sync.pendingAniListOps(boundedInteger(url.searchParams.get("limit"), 25, 1, 500)),
           ),
         });
       }
@@ -44,7 +45,7 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
       if (path.length === 3 && path[2] === "summary" && request.method === "GET") {
         return jsonEncoded(OpsSummaryResponse, {
           summary: yield* tryPromise(() =>
-            sync.opsSummary(Number(url.searchParams.get("limit") ?? 200) || 200),
+            sync.opsSummary(boundedInteger(url.searchParams.get("limit"), 200, 1, 500)),
           ),
         });
       }
@@ -54,13 +55,14 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
             sync.listOps(
               url.searchParams.get("state") ?? undefined,
               url.searchParams.get("target") ?? undefined,
-              Number(url.searchParams.get("limit") ?? 200) || 200,
+              boundedInteger(url.searchParams.get("limit"), 200, 1, 500),
             ),
           ),
         });
       }
       if (path.length === 4 && path[3] === "retry" && request.method === "POST") {
-        const op = yield* tryPromise(() => sync.retryOp(routeId(path[2])));
+        const opId = yield* routeId(path[2]);
+        const op = yield* tryPromise(() => sync.retryOp(opId));
         return op ? jsonEncoded(SyncOp, op) : jsonEncoded(ErrorBody, { error: "Not found" }, 404);
       }
       return jsonEncoded(ErrorBody, { error: "Not found" }, 404);

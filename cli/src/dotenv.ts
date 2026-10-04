@@ -2,6 +2,46 @@
 /** @effect-diagnostics processEnv:off */
 import { readFileSync } from "node:fs";
 
+const stripInlineComment = (value: string): string => {
+  let quote: "'" | '"' | undefined;
+  let escaped = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\" && quote === '"') {
+      escaped = true;
+      continue;
+    }
+    if (quote !== undefined) {
+      if (character === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+    } else if (character === "#" && (index === 0 || /\s/u.test(value[index - 1] ?? ""))) {
+      return value.slice(0, index).trimEnd();
+    }
+  }
+  return value;
+};
+
+const parseValue = (rawValue: string): string => {
+  const value = stripInlineComment(rawValue).trim();
+  if (
+    value.length >= 2 &&
+    ((value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'")))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+};
+
 /**
  * Minimal KEY=VALUE loader. Sets values into process.env only when unset, so
  * real environment variables always win over file contents.
@@ -25,11 +65,7 @@ export const loadDotEnv = (file: string): void => {
     if (!key || rawValue === undefined) {
       continue;
     }
-    const value =
-      (rawValue.startsWith('"') && rawValue.endsWith('"')) ||
-      (rawValue.startsWith("'") && rawValue.endsWith("'"))
-        ? rawValue.slice(1, -1)
-        : rawValue.replace(/\s+#.*$/u, "").trim();
+    const value = parseValue(rawValue);
     if (value !== "" && process.env[key] === undefined) {
       process.env[key] = value;
     }

@@ -21,6 +21,7 @@ import {
 } from "@manifold/contract";
 import {
   jsonEncoded,
+  boundedInteger,
   parseJson,
   routeId,
   tryPromise,
@@ -40,8 +41,8 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
       request.method === "GET"
     ) {
       const sync = env.MANIFOLD_SYNC.getByName("default");
-      const limit = Number(url.searchParams.get("limit") ?? 500) || 500;
-      const offset = Number(url.searchParams.get("offset") ?? 0) || 0;
+      const limit = boundedInteger(url.searchParams.get("limit"), 500, 1, 5000);
+      const offset = boundedInteger(url.searchParams.get("offset"), 0, 0, 1_000_000);
       return jsonEncoded(RegistryListResponse, {
         entries: yield* tryPromise(() => sync.listRegistry(limit, offset)),
       });
@@ -59,7 +60,7 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
         return jsonEncoded(ErrorBody, { error: "Query parameter q is required" }, 400);
       }
       const sync = env.MANIFOLD_SYNC.getByName("default");
-      const limit = Number(url.searchParams.get("limit") ?? 25) || 25;
+      const limit = boundedInteger(url.searchParams.get("limit"), 25, 1, 50);
       return jsonEncoded(RegistryEntriesResponse, {
         entries: yield* tryPromise(() => sync.searchRegistry(query, limit)),
       });
@@ -97,7 +98,7 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
         events: yield* tryPromise(() =>
           sync.listEvents(
             url.searchParams.get("entryId") ?? undefined,
-            Number(url.searchParams.get("limit") ?? 100) || 100,
+            boundedInteger(url.searchParams.get("limit"), 100, 1, 500),
           ),
         ),
       });
@@ -124,7 +125,7 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
     if (path.length < 3) {
       return jsonEncoded(ErrorBody, { error: "Not found" }, 404);
     }
-    const entryId = routeId(path[2]);
+    const entryId = yield* routeId(path[2]);
 
     if (path[3] === "canonical" && path.length === 4 && request.method === "GET") {
       const entry = yield* tryPromise(() => sync.getEntry(entryId));

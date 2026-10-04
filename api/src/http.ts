@@ -176,7 +176,27 @@ export const attempt = <A>(
     }
   });
 
-export const routeId = (value: string): string => decodeURIComponent(value);
+export const routeId = (value: string): Effect.Effect<string, ParseRequestError> =>
+  Effect.try({
+    try: () => decodeURIComponent(value),
+    catch: () => new ParseRequestError({ message: "Route identifier is not valid URL encoding" }),
+  });
+
+export const boundedInteger = (
+  value: string | null,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number => {
+  if (value === null || value.trim() === "") {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    return fallback;
+  }
+  return Math.min(maximum, Math.max(minimum, parsed));
+};
 
 export const authorized = async (request: Request, env: Env): Promise<boolean> => {
   const authorization = request.headers.get("authorization");

@@ -1,7 +1,7 @@
 /** @effect-diagnostics asyncFunction:off */
 import { cliError, envString } from "@/effect-kit";
 import { Effect, Option } from "effect";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import { errorMessage } from "@manifold/json";
 
 import { ANILIST_REDIRECT_URI, resolveAniListToken } from "@/login/anilist";

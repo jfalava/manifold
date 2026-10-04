@@ -1,4 +1,4 @@
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 
 import { anilistCommand } from "@/commands/anilist";
 import { al2mdCommand } from "@/commands/al2md";

@@ -12,7 +12,7 @@ const run = (flags: string[], scenario = "normal") =>
       `
   import { BunServices } from '@effect/platform-bun';
   import { Effect } from 'effect';
-  import { Command } from 'effect/unstable/cli';
+  import { Command } from 'effect/cli';
   import { makeRootCommand } from './src/cli';
   for (const key of Object.keys(process.env)) if (key.startsWith('MANIFOLD_')) delete process.env[key];
   process.env.MANIFOLD_TOKEN = 'fake';

@@ -493,6 +493,7 @@ function EventsTable({
       <div className="flex flex-wrap items-center gap-2">
         <Input
           className="w-72"
+          aria-label="Filter operations and logs"
           placeholder="Filter by entry, kind, origin, or detail"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}

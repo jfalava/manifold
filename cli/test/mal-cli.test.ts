@@ -13,7 +13,7 @@ const runWipe = (flags: string[], connected: boolean) =>
       `
   import { BunServices } from "@effect/platform-bun";
   import { Effect } from "effect";
-  import { Command } from "effect/unstable/cli";
+  import { Command } from "effect/cli";
   import { wipeMalMangaCommand } from "./src/commands/mal/wipe-manga";
   for (const key of Object.keys(process.env)) {
     if (key.startsWith("MANIFOLD_")) delete process.env[key];
