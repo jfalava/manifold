@@ -1,12 +1,6 @@
 import { Command } from "effect/cli";
 
-import { createPas5Command } from "@/commands/anilist/create-pas5";
 import { wipeAlMangaCommand } from "@/commands/anilist/wipe-manga";
-
-const createCommand = Command.make("create").pipe(
-  Command.withDescription("Build artifacts from the signed-in AniList manga list."),
-  Command.withSubcommands([createPas5Command]),
-);
 
 const wipeCommand = Command.make("wipe").pipe(
   Command.withDescription("Destructive AniList list maintenance (manga only)."),
@@ -14,10 +8,10 @@ const wipeCommand = Command.make("wipe").pipe(
 );
 
 /**
- * Top-level AniList ops: `manifold anilist create pas5 | wipe manga`.
+ * Top-level AniList ops: `manifold anilist wipe manga`.
  * Auth stays under `manifold login anilist`.
  */
 export const anilistCommand = Command.make("anilist").pipe(
-  Command.withDescription("AniList list maintenance and export (auth via login anilist)."),
-  Command.withSubcommands([createCommand, wipeCommand]),
+  Command.withDescription("AniList list maintenance (auth via login anilist)."),
+  Command.withSubcommands([wipeCommand]),
 );

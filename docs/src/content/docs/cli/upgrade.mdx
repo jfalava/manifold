@@ -7,8 +7,6 @@ sidebar:
 
 ```sh
 manifold upgrade
-# or, from an installed binary:
-manifold upgrade
 ```
 
 Self-update for the **compiled** `manifold` binary. Release tags are `cli-vX.Y.Z`
@@ -31,15 +29,3 @@ When already current:
 ```text
 manifold 0.1.0 is already up to date.
 ```
-
-## Release workflow
-
-Push a tag to build and publish binaries:
-
-```text
-# bump cli/package.json version first, then:
-git tag cli-v0.1.0
-git push origin cli-v0.1.0
-```
-
-GitHub Actions workflow: `.github/workflows/manifold-cli-release.yml`.

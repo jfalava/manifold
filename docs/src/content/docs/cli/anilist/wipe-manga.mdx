@@ -11,8 +11,9 @@ manifold anilist wipe manga [flags]
 
 **Destructive.** Port of the AniList manga bulk-delete approach: scans your
 AniList profile, then deletes **all** manga list entries and **all**
-manga-related activities (list updates and text posts matching manga keywords).
-Anime is never touched.
+manga list activities. Text posts are preserved unless you explicitly opt in
+with `--include-text-activities`; post text cannot be reliably classified as
+manga-related. Anime list entries and anime list activities are never touched.
 
 The command scans and reports what it would delete by default. `--apply` enables deletion and still prompts for confirmation. Pass `--yes` with `--apply` only when you intend to skip that prompt.
 
@@ -44,6 +45,16 @@ Example:
 manifold anilist wipe manga --apply --yes
 ```
 
+### `--include-text-activities`
+
+Also target your text posts, without guessing whether they are manga-related.
+Default: `false`. Preview the count in a dry run before deciding to delete them.
+Deletion still requires `--apply` and confirmation (or `--yes`).
+
+```sh
+manifold anilist wipe manga --include-text-activities
+```
+
 ### `--anilist-token <token>`
 
 Optional AniList access token override. Resolve order: flag → `MANIFOLD_ANILIST_TOKEN` → `login anilist` keychain.
@@ -63,9 +74,10 @@ manifold anilist wipe manga --apply
 bun run manifold anilist wipe manga --apply --yes
 ```
 
-An empty manga list exits cleanly without deleting anything.
+If both the manga list and targeted activities are empty, the command exits
+without deleting anything. An empty list alone does not prevent activity deletion.
 
 <Aside type="danger" title="Irreversible">
-  This permanently removes manga list state and activity history on AniList. Prefer exporting or
-  migrating first if you still need the data.
+  This permanently removes manga list state and activity history on AniList.
+  Prefer exporting or migrating first if you still need the data.
 </Aside>

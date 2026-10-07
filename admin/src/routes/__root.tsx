@@ -29,12 +29,7 @@ import {
   Scripts,
   useRouterState,
 } from "@tanstack/react-router";
-import {
-  useState,
-  useSyncExternalStore,
-  type ComponentType,
-  type ReactNode,
-} from "react";
+import { useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 
 import "../styles/globals.css";
 
@@ -235,13 +230,9 @@ function DashboardShell() {
     setSidebarOverride((open) => !(open ?? isDesktop));
   };
 
-  useHotkey(
-    SIDEBAR_HOTKEY,
-    toggleSidebar,
-    {
-      meta: { name: "Toggle sidebar", description: "Open or close the admin navigation" },
-    },
-  );
+  useHotkey(SIDEBAR_HOTKEY, toggleSidebar, {
+    meta: { name: "Toggle sidebar", description: "Open or close the admin navigation" },
+  });
 
   const sidebarLabel = sidebarOpen ? "Collapse sidebar" : "Open sidebar";
   const sidebarShortcut = useSyncExternalStore(

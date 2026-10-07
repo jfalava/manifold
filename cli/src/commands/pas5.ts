@@ -27,7 +27,13 @@ import {
   type MangaInfo,
   type SourceManga,
 } from "@/pas5-model";
-import { apiConfig, type RegistryRow, registryByAnilistId } from "@/commands/toolbox";
+import {
+  apiConfig,
+  getRegistryCanonical,
+  listRegistryRows,
+  type RegistryRow,
+  registryByAnilistId,
+} from "@/commands/toolbox";
 import {
   abortFrame,
   closeFrame,
@@ -46,6 +52,13 @@ const UPSTREAM_SOURCES = [
 ] as const;
 
 const DEFAULT_BASE_HINT = "a real device export (*.pas5) — restore may REPLACE the library";
+
+const parseSource = (value: string): "anilist" | "registry" => {
+  if (value === "anilist" || value === "registry") {
+    return value;
+  }
+  throw cliError(`--source: unknown source "${value}" (allowed: anilist, registry)`);
+};
 
 const parseTabsFlag = (value: string): readonly string[] | "none" | undefined => {
   if (value === "auto") {
@@ -77,10 +90,50 @@ export interface GeneratedEntry {
   readonly infos: Record<string, MangaInfo>;
 }
 
-const buildMangaInfo = (
+export interface Pas5Entry {
+  readonly mediaId?: number;
+  readonly status?: string;
+  readonly title: string;
+  readonly romajiTitle?: string;
+  readonly nativeTitle?: string;
+  readonly synonyms: readonly string[];
+  readonly description?: string;
+  readonly coverUrl?: string;
+  readonly mediaStatus?: string;
+  readonly averageScore?: number;
+  readonly createdAt?: number;
+  readonly canonicalId: string;
+  readonly canonicalProvider: string;
+  readonly canonicalProviderId: string;
+}
+
+export const pas5EntryFromAniList = (
   entry: AniListRichEntry,
-  additionalInfo: Record<string, string>,
-): MangaInfo => {
+  registryRow: RegistryRow | undefined,
+): Pas5Entry => ({
+  ...entry,
+  canonicalId: registryRow?.id ?? `anilist:${entry.mediaId}`,
+  canonicalProvider: "anilist",
+  canonicalProviderId: String(entry.mediaId),
+});
+
+export const pas5EntryFromRegistry = (
+  row: RegistryRow,
+  canonical: Awaited<ReturnType<typeof getRegistryCanonical>>,
+): Pas5Entry => ({
+  status: row.state?.status,
+  title: canonical.title || row.title,
+  synonyms: canonical.aliases,
+  description: canonical.metadata?.description,
+  coverUrl: canonical.metadata?.coverUrl,
+  mediaStatus: canonical.metadata?.status,
+  createdAt: Math.floor(row.createdAt / 1000),
+  canonicalId: row.id,
+  canonicalProvider: canonical.provider,
+  canonicalProviderId: canonical.providerId,
+});
+
+const buildMangaInfo = (entry: Pas5Entry, additionalInfo: Record<string, string>): MangaInfo => {
   const secondary = new Set<string>();
   if (entry.romajiTitle && entry.romajiTitle !== entry.title) {
     secondary.add(entry.romajiTitle);
@@ -121,7 +174,7 @@ const makeSourceManga = (sourceId: string, mangaId: string, infoId: string): Sou
 });
 
 const upstreamEntitiesForEntry = (
-  entry: AniListRichEntry,
+  entry: Pas5Entry,
   registryRow: RegistryRow | undefined,
 ): Pick<GeneratedEntry, "sources" | "infos"> => {
   const sources: SourceManga[] = [];
@@ -146,16 +199,16 @@ export const hasUpstreamProvider = (registryRow: RegistryRow | undefined): boole
   );
 
 export const buildEntitiesForEntry = (
-  entry: AniListRichEntry,
+  entry: Pas5Entry,
   registryRow: RegistryRow | undefined,
   sharedTabs: ReadonlyMap<string, LibraryTab>,
 ): GeneratedEntry => {
-  const mangaId = registryRow?.id ?? `anilist:${entry.mediaId}`;
+  const mangaId = registryRow?.id ?? entry.canonicalId;
   const trackerInfo = buildMangaInfo(entry, {
     "Canonical ID": mangaId,
-    "Canonical provider": "anilist",
-    "Canonical provider ID": String(entry.mediaId),
-    "AniList ID": String(entry.mediaId),
+    "Canonical provider": entry.canonicalProvider,
+    "Canonical provider ID": entry.canonicalProviderId,
+    ...(entry.canonicalProvider === "anilist" && { "AniList ID": entry.canonicalProviderId }),
   });
 
   const trackerInfoId = mangaInfoKey(TRACKER_SOURCE_ID, mangaId);
@@ -164,7 +217,7 @@ export const buildEntitiesForEntry = (
     ...upstream.sources,
     makeSourceManga(TRACKER_SOURCE_ID, mangaId, trackerInfoId),
   ];
-  const tabName = tabForStatus(entry.status);
+  const tabName = tabForStatus(entry.status ?? "");
   // SAFETY: value is LibraryTab] at this site
   const libraryTabs =
     tabName !== undefined && sharedTabs.has(tabName)
@@ -198,11 +251,11 @@ export const buildEntitiesForEntry = (
 
 export const matchingBaseLibraryIds = (
   base: Pas5Entities,
-  entry: AniListRichEntry,
+  entry: Pas5Entry,
   registryRow: RegistryRow | undefined,
 ): readonly string[] => {
-  const canonicalId = registryRow?.id;
-  const fallbackId = `anilist:${entry.mediaId}`;
+  const canonicalId = registryRow?.id ?? entry.canonicalId;
+  const fallbackId = entry.mediaId === undefined ? undefined : `anilist:${entry.mediaId}`;
   const providerIds = new Map<string, string>(
     UPSTREAM_SOURCES.flatMap((upstream) => {
       const externalId = registryRow?.providers.find(
@@ -232,12 +285,11 @@ export const matchingBaseLibraryIds = (
         if (canonicalId !== undefined && info.additionalInfo?.["Canonical ID"] === canonicalId) {
           return true;
         }
-        const aniListId =
-          info.additionalInfo?.["AniList ID"] ??
-          (info.additionalInfo?.["Canonical provider"] === "anilist"
+        const providerId =
+          info.additionalInfo?.["Canonical provider"] === entry.canonicalProvider
             ? info.additionalInfo?.["Canonical provider ID"]
-            : undefined);
-        return aniListId === String(entry.mediaId);
+            : undefined;
+        return providerId === entry.canonicalProviderId;
       }),
     )
     .map(([libraryId]) => libraryId);
@@ -251,7 +303,7 @@ export interface ExistingUpstreamResult extends Pick<GeneratedEntry, "sources" |
 export const migrateLibrarySources = (
   base: Pas5Entities,
   libraryId: string,
-  entry: AniListRichEntry,
+  entry: Pas5Entry,
   registryRow: RegistryRow | undefined,
   sharedTabs: ReadonlyMap<string, LibraryTab> = new Map(),
 ): ExistingUpstreamResult => {
@@ -263,7 +315,7 @@ export const migrateLibrarySources = (
     .map((reference) => base.__SOURCE_MANGA_V5[reference.id])
     .filter((source): source is SourceManga => source !== undefined);
   const upstream = upstreamEntitiesForEntry(entry, registryRow);
-  const mangaId = registryRow?.id ?? `anilist:${entry.mediaId}`;
+  const mangaId = registryRow?.id ?? entry.canonicalId;
   const trackerInfoId = mangaInfoKey(TRACKER_SOURCE_ID, mangaId);
   const tracker = makeSourceManga(TRACKER_SOURCE_ID, mangaId, trackerInfoId);
   // Only current registry rows can authorize a replacement tracker binding.
@@ -272,9 +324,9 @@ export const migrateLibrarySources = (
     ...upstream.infos,
     [trackerInfoId]: buildMangaInfo(entry, {
       "Canonical ID": mangaId,
-      "Canonical provider": "anilist",
-      "Canonical provider ID": String(entry.mediaId),
-      "AniList ID": String(entry.mediaId),
+      "Canonical provider": entry.canonicalProvider,
+      "Canonical provider ID": entry.canonicalProviderId,
+      ...(entry.canonicalProvider === "anilist" && { "AniList ID": entry.canonicalProviderId }),
     }),
   };
   const sources: SourceManga[] = [];
@@ -304,7 +356,7 @@ export const migrateLibrarySources = (
       !(registryRow && source?.sourceId === TRACKER_SOURCE_ID && source.mangaId !== registryRow.id)
     );
   });
-  const tabName = tabForStatus(entry.status);
+  const tabName = tabForStatus(entry.status ?? "");
   const tab = tabName === undefined ? undefined : sharedTabs.get(tabName);
   const libraryTabs = library.libraryTabs.length === 0 && tab ? [tab] : library.libraryTabs;
 
@@ -402,7 +454,7 @@ export const sourceFreeEntities = (
   };
 };
 
-const filterPas5Command = Command.make("filter", {
+export const pas5FilterCommand = Command.make("filter", {
   input: Flag.String("input").pipe(
     Flag.withDescription("Existing .pas5 archive to filter offline."),
   ),
@@ -459,7 +511,8 @@ const filterPas5Command = Command.make("filter", {
   ),
 );
 
-export const createPas5Command = Command.make("pas5", {
+export const pas5CreateCommand = Command.make("create", {
+  source: Flag.String("source").pipe(Flag.withDescription("Input source: anilist or registry.")),
   apply: Flag.Boolean("apply").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Write the .pas5 archive (default: dry-run report only)."),
@@ -500,280 +553,316 @@ export const createPas5Command = Command.make("pas5", {
   ),
 }).pipe(
   Command.withDescription(
-    "Generate a source-free Paperback .pas5 backup with native MangaDex/Comix and MANIFOLD attachments.",
+    "Generate a source-free Paperback .pas5 backup from AniList or the canonical registry.",
   ),
-  Command.withHandler(({ apply, tabs, base, out, limit, anilistToken, apiOrigin, apiToken }) =>
-    Effect.gen(function* () {
-      validateNonNegativeLimit(Option.getOrUndefined(limit));
-      const token =
-        (yield* Effect.tryPromise(() =>
-          resolveAniListToken(Option.getOrUndefined(anilistToken)),
-        )) ?? "";
-      if (!token) {
-        return yield* cliError(
-          "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
-        );
-      }
-      const tabFilter = yield* Effect.try({
-        try: () => parseTabsFlag(tabs),
-        catch: (cause) => cliError(errorMessage(cause)),
-      });
-      interface ScanCtx extends RunContext {
-        entries: readonly AniListRichEntry[];
-        registry: Map<string, RegistryRow>;
-        base?: Pas5Entities;
-      }
-      const scan: ScanCtx = yield* Effect.tryPromise({
-        try: async () => {
-          openFrame("anilist create pas5");
-          let fetchedEntries: readonly AniListRichEntry[] = [];
-          let registry = new Map<string, RegistryRow>();
-          let baseEntities: Pas5Entities | undefined;
-          // SAFETY: value is asserted type at this site
-          const run = createRun<JsonObject>([
-            // SAFETY: value matches ApiConfig; registry = await registryByAnilistId(config); makePhaseReporter(task) at this call site
-            {
-              title: "Fetch AniList manga list",
-              task: async (_, task) => {
-                fetchedEntries = await fetchAniListRichEntries(token);
-                makePhaseReporter(task).note(`${fetchedEntries.length} list entries fetched.`);
-              },
-            },
-            {
-              title: "Resolve registry UUIDs",
-              task: async (_, task) => {
-                const config = await apiConfig(apiOrigin, apiToken);
-                registry = await registryByAnilistId(config);
-                makePhaseReporter(task).note(
-                  `${registry.size} registry rows with an AniList link.`,
-                );
-              },
-            },
-          ] as Parameters<typeof createRun<JsonObject>>[0]);
-          const basePath = Option.getOrUndefined(base);
-          if (basePath !== undefined) {
-            const baseTasks: Parameters<typeof createRun<JsonObject>>[0] = [
-              {
-                title: "Read base archive",
-                task: async (_, task) => {
-                  const parsed = await parsePas5(readFileSync(basePath));
-                  // SAFETY: parsePas5 plus empty-map defaults is a complete Pas5Entities.
-                  baseEntities = {
-                    ...parsed,
-                    __LIBRARY_MANGA_V5: parsed.__LIBRARY_MANGA_V5 ?? {},
-                    __SOURCE_MANGA_V5: parsed.__SOURCE_MANGA_V5 ?? {},
-                    __MANGA_INFO_V5: parsed.__MANGA_INFO_V5 ?? {},
-                  } as Pas5Entities;
-                  makePhaseReporter(task).note(
-                    `${Object.keys(parsed.__LIBRARY_MANGA_V5 ?? {}).length} existing library entries.`,
-                  );
+  Command.withHandler(
+    ({ source: sourceFlag, apply, tabs, base, out, limit, anilistToken, apiOrigin, apiToken }) =>
+      Effect.gen(function* () {
+        validateNonNegativeLimit(Option.getOrUndefined(limit));
+        const source = yield* Effect.try({
+          try: () => parseSource(sourceFlag),
+          catch: (cause) => cliError(errorMessage(cause)),
+        });
+        const token =
+          source === "anilist"
+            ? ((yield* Effect.tryPromise(() =>
+                resolveAniListToken(Option.getOrUndefined(anilistToken)),
+              )) ?? "")
+            : "";
+        if (source === "anilist" && !token) {
+          return yield* cliError(
+            "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
+          );
+        }
+        const tabFilter = yield* Effect.try({
+          try: () => parseTabsFlag(tabs),
+          catch: (cause) => cliError(errorMessage(cause)),
+        });
+        interface ScanCtx extends RunContext {
+          entries: readonly Pas5Entry[];
+          registry: Map<string, RegistryRow>;
+          base?: Pas5Entities;
+        }
+        const scan: ScanCtx = yield* Effect.tryPromise({
+          try: async () => {
+            openFrame(`pas5 create --source ${source}`);
+            let fetchedEntries: readonly Pas5Entry[] = [];
+            let registry = new Map<string, RegistryRow>();
+            let baseEntities: Pas5Entities | undefined;
+            const config = await apiConfig(apiOrigin, apiToken);
+            const tasks: Parameters<typeof createRun<JsonObject>>[0] =
+              source === "anilist"
+                ? [
+                    {
+                      title: "Fetch AniList manga list",
+                      task: async (_, task) => {
+                        const entries = await fetchAniListRichEntries(token);
+                        registry = await registryByAnilistId(config);
+                        fetchedEntries = entries.map((entry) =>
+                          pas5EntryFromAniList(entry, registry.get(String(entry.mediaId))),
+                        );
+                        makePhaseReporter(task).note(
+                          `${fetchedEntries.length} list entries fetched.`,
+                        );
+                      },
+                    },
+                  ]
+                : [
+                    {
+                      title: "Fetch canonical registry",
+                      task: async (_, task) => {
+                        const rows = await listRegistryRows(config);
+                        const activeRows = rows.filter((row) => !row.tombstoned);
+                        const limitValue = Option.getOrUndefined(limit);
+                        const selectedRows =
+                          limitValue === undefined ? activeRows : activeRows.slice(0, limitValue);
+                        const entries: Pas5Entry[] = [];
+                        for (const row of selectedRows) {
+                          registry.set(row.id, row);
+                          const canonical = await getRegistryCanonical(config, row.id);
+                          entries.push(pas5EntryFromRegistry(row, canonical));
+                        }
+                        fetchedEntries = entries;
+                        makePhaseReporter(task).note(
+                          `${fetchedEntries.length} active registry entries fetched.`,
+                        );
+                      },
+                    },
+                  ];
+            const run = createRun<JsonObject>(tasks);
+            const basePath = Option.getOrUndefined(base);
+            if (basePath !== undefined) {
+              const baseTasks: Parameters<typeof createRun<JsonObject>>[0] = [
+                {
+                  title: "Read base archive",
+                  task: async (_, task) => {
+                    const parsed = await parsePas5(readFileSync(basePath));
+                    // SAFETY: parsePas5 plus empty-map defaults is a complete Pas5Entities.
+                    baseEntities = {
+                      ...parsed,
+                      __LIBRARY_MANGA_V5: parsed.__LIBRARY_MANGA_V5 ?? {},
+                      __SOURCE_MANGA_V5: parsed.__SOURCE_MANGA_V5 ?? {},
+                      __MANGA_INFO_V5: parsed.__MANGA_INFO_V5 ?? {},
+                    } as Pas5Entities;
+                    makePhaseReporter(task).note(
+                      `${Object.keys(parsed.__LIBRARY_MANGA_V5 ?? {}).length} existing library entries.`,
+                    );
+                  },
                 },
-              },
-            ];
-            const baseRun = createRun<JsonObject>(baseTasks);
+              ];
+              const baseRun = createRun<JsonObject>(baseTasks);
+              try {
+                await baseRun.run();
+              } catch (error) {
+                abortFrame();
+                throw error;
+              }
+            }
             try {
-              await baseRun.run();
+              await run.run();
             } catch (error) {
               abortFrame();
               throw error;
             }
-          }
-          try {
-            await run.run();
-          } catch (error) {
-            abortFrame();
-            throw error;
-          }
-          return {
-            entries: fetchedEntries,
-            registry,
-            ...(baseEntities && { base: baseEntities }),
-          };
-        },
-        catch: (cause) => cliError(errorMessage(cause)),
-      });
+            return {
+              entries: fetchedEntries,
+              registry,
+              ...(baseEntities && { base: baseEntities }),
+            };
+          },
+          catch: (cause) => cliError(errorMessage(cause)),
+        });
 
-      const allowedTabs = tabFilter === "none" ? [] : (tabFilter ?? TAB_ORDER);
+        const allowedTabs = tabFilter === "none" ? [] : (tabFilter ?? TAB_ORDER);
 
-      // Paperback groups libraryTabs by id, not name — every entry must
-      // reference THE SAME tab object per collection. Reuse ids from the
-      // base export where present so restored entries land in the user's
-      // existing tabs; mint one stable id per new tab for this run.
-      const sharedTabs = new Map<string, { name: string; sortOrder: number; id: string }>();
-      const baseTabs = new Map<string, { name: string; sortOrder: number; id: string }>();
-      if (scan.base) {
-        for (const lib of Object.values(scan.base.__LIBRARY_MANGA_V5)) {
-          for (const tab of lib.libraryTabs ?? []) {
-            if (!baseTabs.has(tab.name)) {
-              baseTabs.set(tab.name, tab);
+        // Paperback groups libraryTabs by id, not name — every entry must
+        // reference THE SAME tab object per collection. Reuse ids from the
+        // base export where present so restored entries land in the user's
+        // existing tabs; mint one stable id per new tab for this run.
+        const sharedTabs = new Map<string, { name: string; sortOrder: number; id: string }>();
+        const baseTabs = new Map<string, { name: string; sortOrder: number; id: string }>();
+        if (scan.base) {
+          for (const lib of Object.values(scan.base.__LIBRARY_MANGA_V5)) {
+            for (const tab of lib.libraryTabs ?? []) {
+              if (!baseTabs.has(tab.name)) {
+                baseTabs.set(tab.name, tab);
+              }
             }
           }
         }
-      }
-      for (const [index, name] of allowedTabs.entries()) {
-        const existing = baseTabs.get(name);
-        sharedTabs.set(
-          name,
-          existing ?? {
+        for (const [index, name] of allowedTabs.entries()) {
+          const existing = baseTabs.get(name);
+          sharedTabs.set(
             name,
-            sortOrder: index,
-            id: deterministicUuid(`paperback-tab:${name}`),
-          },
-        );
-      }
-
-      const entities: Pas5Entities = {
-        __LIBRARY_MANGA_V5: {},
-        __SOURCE_MANGA_V5: {},
-        __MANGA_INFO_V5: {},
-      };
-
-      let skippedExisting = 0;
-      let skippedByTabs = 0;
-      let unresolvedUuid = 0;
-      let withoutContentProvider = 0;
-      let totalGenerated = 0;
-      let enrichedExisting = 0;
-      let upstreamAttachments = 0;
-      let providerConflicts = 0;
-      let ambiguousBaseEntries = 0;
-      const limitValue = Option.getOrUndefined(limit);
-      const tabCounts = new Map<string, number>(allowedTabs.map((t) => [t, 0]));
-
-      for (const entry of scan.entries) {
-        if (limitValue !== undefined && totalGenerated >= limitValue) {
-          break;
+            existing ?? {
+              name,
+              sortOrder: index,
+              id: deterministicUuid(`paperback-tab:${name}`),
+            },
+          );
         }
-        const registryRow = scan.registry.get(String(entry.mediaId));
-        const matchingLibraries = scan.base
-          ? matchingBaseLibraryIds(scan.base, entry, registryRow)
-          : [];
-        if (matchingLibraries.length > 0) {
-          skippedExisting++;
-          if (matchingLibraries.length > 1) {
-            ambiguousBaseEntries++;
+
+        const entities: Pas5Entities = {
+          __LIBRARY_MANGA_V5: {},
+          __SOURCE_MANGA_V5: {},
+          __MANGA_INFO_V5: {},
+        };
+
+        let skippedExisting = 0;
+        let skippedByTabs = 0;
+        let unresolvedUuid = 0;
+        let withoutContentProvider = 0;
+        let totalGenerated = 0;
+        let enrichedExisting = 0;
+        let upstreamAttachments = 0;
+        let providerConflicts = 0;
+        let ambiguousBaseEntries = 0;
+        const limitValue = Option.getOrUndefined(limit);
+        const tabCounts = new Map<string, number>(allowedTabs.map((t) => [t, 0]));
+
+        for (const entry of scan.entries) {
+          if (limitValue !== undefined && totalGenerated >= limitValue) {
+            break;
+          }
+          const registryRow =
+            source === "registry"
+              ? scan.registry.get(entry.canonicalId)
+              : entry.mediaId === undefined
+                ? undefined
+                : scan.registry.get(String(entry.mediaId));
+          const matchingLibraries = scan.base
+            ? matchingBaseLibraryIds(scan.base, entry, registryRow)
+            : [];
+          if (matchingLibraries.length > 0) {
+            skippedExisting++;
+            if (matchingLibraries.length > 1) {
+              ambiguousBaseEntries++;
+              continue;
+            }
+            // SAFETY: length is exactly one in this branch.
+            const libraryId = matchingLibraries[0] as string;
+            // SAFETY: scan.base exists when matchingLibraries is non-empty.
+            const enriched = migrateLibrarySources(
+              scan.base as Pas5Entities,
+              libraryId,
+              entry,
+              registryRow,
+              sharedTabs,
+            );
+            providerConflicts += enriched.conflicts;
+            if (!hasUpstreamProvider(registryRow)) {
+              withoutContentProvider++;
+            }
+            if (
+              enriched.sources.length > 0 ||
+              enriched.library.attachedSources.length !==
+                scan.base?.__LIBRARY_MANGA_V5[libraryId]?.attachedSources.length ||
+              enriched.library.libraryTabs !== scan.base?.__LIBRARY_MANGA_V5[libraryId]?.libraryTabs
+            ) {
+              entities.__LIBRARY_MANGA_V5[libraryId] = enriched.library;
+              for (const attachment of enriched.sources) {
+                entities.__SOURCE_MANGA_V5[attachment.id] = attachment;
+              }
+              Object.assign(entities.__MANGA_INFO_V5, enriched.infos);
+              enrichedExisting++;
+              upstreamAttachments += enriched.sources.filter((attachment) =>
+                UPSTREAM_SOURCES.some((upstream) => upstream.sourceId === attachment.sourceId),
+              ).length;
+            }
             continue;
           }
-          // SAFETY: length is exactly one in this branch.
-          const libraryId = matchingLibraries[0] as string;
-          // SAFETY: scan.base exists when matchingLibraries is non-empty.
-          const enriched = migrateLibrarySources(
-            scan.base as Pas5Entities,
-            libraryId,
-            entry,
-            registryRow,
-            sharedTabs,
-          );
-          providerConflicts += enriched.conflicts;
+          // --tabs doubles as an import filter: titles whose status maps to
+          // a collection you excluded are not imported at all ("none" keeps
+          // everything, tab-less).
+          const entryTab = tabForStatus(entry.status ?? "");
+          if (tabFilter !== "none" && (entryTab === undefined || !sharedTabs.has(entryTab))) {
+            skippedByTabs++;
+            continue;
+          }
+          if (!registryRow) {
+            unresolvedUuid++;
+            continue;
+          }
           if (!hasUpstreamProvider(registryRow)) {
             withoutContentProvider++;
+            continue;
           }
-          if (
-            enriched.sources.length > 0 ||
-            enriched.library.attachedSources.length !==
-              scan.base?.__LIBRARY_MANGA_V5[libraryId]?.attachedSources.length ||
-            enriched.library.libraryTabs !== scan.base?.__LIBRARY_MANGA_V5[libraryId]?.libraryTabs
-          ) {
-            entities.__LIBRARY_MANGA_V5[libraryId] = enriched.library;
-            for (const source of enriched.sources) {
-              entities.__SOURCE_MANGA_V5[source.id] = source;
-            }
-            Object.assign(entities.__MANGA_INFO_V5, enriched.infos);
-            enrichedExisting++;
-            upstreamAttachments += enriched.sources.filter((source) =>
-              UPSTREAM_SOURCES.some((upstream) => upstream.sourceId === source.sourceId),
-            ).length;
+          const generated = buildEntitiesForEntry(entry, registryRow, sharedTabs);
+          for (const attachment of generated.sources) {
+            entities.__SOURCE_MANGA_V5[attachment.id] = attachment;
           }
-          continue;
+          Object.assign(entities.__MANGA_INFO_V5, generated.infos);
+          entities.__LIBRARY_MANGA_V5[generated.library.id] = generated.library;
+          upstreamAttachments += generated.sources.filter((attachment) =>
+            UPSTREAM_SOURCES.some((upstream) => upstream.sourceId === attachment.sourceId),
+          ).length;
+          totalGenerated++;
+          for (const tab of generated.library.libraryTabs) {
+            tabCounts.set(tab.name, (tabCounts.get(tab.name) ?? 0) + 1);
+          }
         }
-        // --tabs doubles as an import filter: titles whose status maps to
-        // a collection you excluded are not imported at all ("none" keeps
-        // everything, tab-less).
-        const entryTab = tabForStatus(entry.status);
-        if (tabFilter !== "none" && (entryTab === undefined || !sharedTabs.has(entryTab))) {
-          skippedByTabs++;
-          continue;
-        }
-        if (!registryRow) {
-          unresolvedUuid++;
-          continue;
-        }
-        if (!hasUpstreamProvider(registryRow)) {
-          withoutContentProvider++;
-          continue;
-        }
-        const generated = buildEntitiesForEntry(entry, registryRow, sharedTabs);
-        for (const source of generated.sources) {
-          entities.__SOURCE_MANGA_V5[source.id] = source;
-        }
-        Object.assign(entities.__MANGA_INFO_V5, generated.infos);
-        entities.__LIBRARY_MANGA_V5[generated.library.id] = generated.library;
-        upstreamAttachments += generated.sources.filter((source) =>
-          UPSTREAM_SOURCES.some((upstream) => upstream.sourceId === source.sourceId),
-        ).length;
-        totalGenerated++;
-        for (const tab of generated.library.libraryTabs) {
-          tabCounts.set(tab.name, (tabCounts.get(tab.name) ?? 0) + 1);
-        }
-      }
 
-      const sourceFree = sourceFreeEntities(scan.base, entities);
+        const sourceFree = sourceFreeEntities(scan.base, entities);
 
-      const lines = [
-        `AniList titles: ${scan.entries.length}`,
-        `New library entries: ${totalGenerated}`,
-        `Existing library entries enriched: ${enrichedExisting}`,
-        `MangaDex/Comix attachments added: ${upstreamAttachments}`,
-        `Skipped (already in base): ${skippedExisting}`,
-        `Skipped (status excluded by --tabs): ${skippedByTabs}`,
-        `Skipped (without registry UUID): ${unresolvedUuid}`,
-        `Skipped (without content provider in registry): ${withoutContentProvider}`,
-        `Base libraries removed after source cleanup: ${sourceFree.removedProviderlessLibraries}`,
-        `ManifoldSource attachments removed: ${sourceFree.removedLegacySources}`,
-        `Base provider conflicts (left unchanged): ${providerConflicts}`,
-        `Ambiguous base matches (left unchanged): ${ambiguousBaseEntries}`,
-      ];
-      for (const [tab, count] of tabCounts) {
-        lines.push(`  ${tab}: ${count}`);
-      }
+        const lines = [
+          `${source === "anilist" ? "AniList titles" : "Registry entries"}: ${scan.entries.length}`,
+          `New library entries: ${totalGenerated}`,
+          `Existing library entries enriched: ${enrichedExisting}`,
+          `MangaDex/Comix attachments added: ${upstreamAttachments}`,
+          `Skipped (already in base): ${skippedExisting}`,
+          `Skipped (status excluded by --tabs): ${skippedByTabs}`,
+          `Skipped (without registry UUID): ${unresolvedUuid}`,
+          `Skipped (without content provider in registry): ${withoutContentProvider}`,
+          `Base libraries removed after source cleanup: ${sourceFree.removedProviderlessLibraries}`,
+          `ManifoldSource attachments removed: ${sourceFree.removedLegacySources}`,
+          `Base provider conflicts (left unchanged): ${providerConflicts}`,
+          `Ambiguous base matches (left unchanged): ${ambiguousBaseEntries}`,
+        ];
+        for (const [tab, count] of tabCounts) {
+          lines.push(`  ${tab}: ${count}`);
+        }
 
-      const stamp = new Date().toISOString().replace("T", ".").slice(0, 19);
-      const outPath = Option.getOrUndefined(out) ?? `Paperback-Generated.${stamp}.pas5`;
+        const stamp = new Date().toISOString().replace("T", ".").slice(0, 19);
+        const outPath = Option.getOrUndefined(out) ?? `Paperback-Generated.${stamp}.pas5`;
 
-      if (!apply) {
+        if (!apply) {
+          for (const line of lines) {
+            frameDetail(line);
+          }
+          closeFrame(`Dry-run complete. Re-run with --apply to write ${outPath}`);
+          return;
+        }
+
+        const merged: Record<string, string> = {};
+        if (scan.base) {
+          for (const [name, records] of Object.entries(scan.base)) {
+            merged[name] = JSON.stringify(records);
+          }
+        }
+        merged.__LIBRARY_MANGA_V5 = JSON.stringify(sourceFree.entities.__LIBRARY_MANGA_V5);
+        merged.__SOURCE_MANGA_V5 = JSON.stringify(sourceFree.entities.__SOURCE_MANGA_V5);
+        merged.__MANGA_INFO_V5 = JSON.stringify(sourceFree.entities.__MANGA_INFO_V5);
+
         for (const line of lines) {
           frameDetail(line);
         }
-        closeFrame(`Dry-run complete. Re-run with --apply to write ${outPath}`);
-        return;
-      }
-
-      const merged: Record<string, string> = {};
-      if (scan.base) {
-        for (const [name, records] of Object.entries(scan.base)) {
-          merged[name] = JSON.stringify(records);
-        }
-      }
-      merged.__LIBRARY_MANGA_V5 = JSON.stringify(sourceFree.entities.__LIBRARY_MANGA_V5);
-      merged.__SOURCE_MANGA_V5 = JSON.stringify(sourceFree.entities.__SOURCE_MANGA_V5);
-      merged.__MANGA_INFO_V5 = JSON.stringify(sourceFree.entities.__MANGA_INFO_V5);
-
-      for (const line of lines) {
-        frameDetail(line);
-      }
-      yield* Effect.tryPromise({
-        try: async () => {
-          const zip = buildPas5Zip(merged);
-          mkdirSync(dirname(outPath), { recursive: true });
-          writeFileSync(outPath, zip);
-          frameDetail(
-            "After restoring, run Paperback database repair and verify a title stays categorized after reopening.",
-          );
-          closeFrame(`Wrote ${outPath}`);
-        },
-        catch: (cause) => cliError(errorMessage(cause)),
-      });
-    }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
+        yield* Effect.tryPromise({
+          try: async () => {
+            const zip = buildPas5Zip(merged);
+            mkdirSync(dirname(outPath), { recursive: true });
+            writeFileSync(outPath, zip);
+            frameDetail(
+              "After restoring, run Paperback database repair and verify a title stays categorized after reopening.",
+            );
+            closeFrame(`Wrote ${outPath}`);
+          },
+          catch: (cause) => cliError(errorMessage(cause)),
+        });
+      }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),
-  Command.withSubcommands([filterPas5Command]),
+);
+
+export const pas5Command = Command.make("pas5").pipe(
+  Command.withDescription("Create and inspect Paperback .pas5 archives."),
+  Command.withSubcommands([pas5CreateCommand, pas5FilterCommand]),
 );

@@ -16,7 +16,7 @@
   "dependencies": {
     "@effect/platform-bun": "catalog:effect",
     "@effect/platform-node": "catalog:effect",
-    "alchemy": "2.0.0-beta.80",
+    "alchemy": "2.0.0-beta.81",
     "effect": "catalog:effect"
   },
   "devDependencies": {

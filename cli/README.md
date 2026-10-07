@@ -12,7 +12,8 @@ manifold <subcommand> [flags]
 manifold login manifold                    # authorize Manifold via GitHub (OS keychain)
 manifold login anilist                     # authorize AniList (OS keychain)
 manifold login mal                         # authorize MAL (OS keychain)
-manifold anilist create pas5               # AniList list → Paperback .pas5 backup
+manifold pas5 create --source anilist     # AniList list → Paperback .pas5 backup
+manifold pas5 create --source registry    # Canonical registry → Paperback .pas5 backup
 manifold anilist wipe manga                # delete AniList manga state (destructive)
 manifold mangadex stale-status             # move stale MangaDex titles to a new status
 manifold mangadex unfollow-dropped         # unfollow MangaDex titles by status

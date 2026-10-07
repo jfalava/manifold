@@ -2,6 +2,7 @@ import { Effect, Option, Schema } from "effect";
 import { Command, Flag } from "effect/cli";
 import {
   decodeResponse,
+  CanonicalIdentity,
   ListState,
   OpsListResponse,
   OpsSummaryResponse,
@@ -200,22 +201,7 @@ const registryByAnilistIdEffect = (
   config: ApiConfig,
 ): Effect.Effect<Map<string, RegistryRow>, CliEffectError> =>
   Effect.gen(function* () {
-    const PAGE_SIZE = 5000;
-    let offset = 0;
-    let page: readonly RegistryRow[];
-    const all: RegistryRow[] = [];
-    do {
-      const body = yield* apiCallEffect(
-        config,
-        `/v1/registry?limit=${PAGE_SIZE}&offset=${offset}`,
-        "GET",
-        undefined,
-        RegistryListResponse,
-      );
-      page = body.entries;
-      all.push(...page);
-      offset += page.length;
-    } while (page.length === PAGE_SIZE);
+    const all = yield* listRegistryRowsEffect(config);
     const map = new Map<string, RegistryRow>();
     for (const row of all) {
       const link = row.providers.find((provider) => provider.provider === "anilist");
@@ -228,6 +214,44 @@ const registryByAnilistIdEffect = (
 
 export const registryByAnilistId = (config: ApiConfig): Promise<Map<string, RegistryRow>> =>
   runHost(registryByAnilistIdEffect(config));
+
+const listRegistryRowsEffect = (
+  config: ApiConfig,
+): Effect.Effect<readonly RegistryRow[], CliEffectError> =>
+  Effect.gen(function* () {
+    const pageSize = 5000;
+    let offset = 0;
+    let page: readonly RegistryRow[];
+    const all: RegistryRow[] = [];
+    do {
+      const body = yield* apiCallEffect(
+        config,
+        `/v1/registry?limit=${pageSize}&offset=${offset}`,
+        "GET",
+        undefined,
+        RegistryListResponse,
+      );
+      page = body.entries;
+      all.push(...page);
+      offset += page.length;
+    } while (page.length === pageSize);
+    return all;
+  });
+
+export const listRegistryRows = (config: ApiConfig): Promise<readonly RegistryRow[]> =>
+  runHost(listRegistryRowsEffect(config));
+
+export const getRegistryCanonical = (
+  config: ApiConfig,
+  entryId: string,
+): Promise<Schema.Schema.Type<typeof CanonicalIdentity>> =>
+  apiCall(
+    config,
+    `/v1/entries/${encodeURIComponent(entryId)}/canonical`,
+    "GET",
+    undefined,
+    CanonicalIdentity,
+  );
 
 const anilistTokenFlag = Flag.String("anilist-token").pipe(
   Flag.optional,

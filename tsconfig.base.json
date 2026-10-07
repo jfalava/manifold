@@ -12,6 +12,7 @@
       {
         "name": "@effect/language-service",
         "ignoreEffectWarningsInTscExitCode": false,
+        "allowedUnstableApis": ["effect/cli", "effect/http"],
         "diagnosticSeverity": {
           "abortControllerInEffect": "error",
           "asyncFunction": "error",

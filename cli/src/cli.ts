@@ -12,6 +12,7 @@ import { importCommand, opsCommand, reconcileCommand } from "@/commands/toolbox"
 import { al2malCommand } from "@/commands/al2mal";
 import { md2alCommand } from "@/commands/md2al";
 import { makeUpgradeCommand } from "@/commands/upgrade";
+import { pas5Command } from "@/commands/pas5";
 
 const migrateCommand = Command.make("migrate").pipe(
   Command.withDescription("Cross-provider library migrations (AniList ↔ MangaDex, AniList → MAL)."),
@@ -40,6 +41,7 @@ export const makeRootCommand = (version: string) =>
     ),
     Command.withSubcommands([
       loginCommand,
+      pas5Command,
       anilistCommand,
       mangadexCommand,
       malCommand,
