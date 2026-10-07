@@ -760,13 +760,13 @@ export const pas5CreateCommand = Command.make("create", {
               enriched.library.libraryTabs !== scan.base?.__LIBRARY_MANGA_V5[libraryId]?.libraryTabs
             ) {
               entities.__LIBRARY_MANGA_V5[libraryId] = enriched.library;
-              for (const source of enriched.sources) {
-                entities.__SOURCE_MANGA_V5[source.id] = source;
+              for (const attachment of enriched.sources) {
+                entities.__SOURCE_MANGA_V5[attachment.id] = attachment;
               }
               Object.assign(entities.__MANGA_INFO_V5, enriched.infos);
               enrichedExisting++;
-              upstreamAttachments += enriched.sources.filter((source) =>
-                UPSTREAM_SOURCES.some((upstream) => upstream.sourceId === source.sourceId),
+              upstreamAttachments += enriched.sources.filter((attachment) =>
+                UPSTREAM_SOURCES.some((upstream) => upstream.sourceId === attachment.sourceId),
               ).length;
             }
             continue;
@@ -788,13 +788,13 @@ export const pas5CreateCommand = Command.make("create", {
             continue;
           }
           const generated = buildEntitiesForEntry(entry, registryRow, sharedTabs);
-          for (const source of generated.sources) {
-            entities.__SOURCE_MANGA_V5[source.id] = source;
+          for (const attachment of generated.sources) {
+            entities.__SOURCE_MANGA_V5[attachment.id] = attachment;
           }
           Object.assign(entities.__MANGA_INFO_V5, generated.infos);
           entities.__LIBRARY_MANGA_V5[generated.library.id] = generated.library;
-          upstreamAttachments += generated.sources.filter((source) =>
-            UPSTREAM_SOURCES.some((upstream) => upstream.sourceId === source.sourceId),
+          upstreamAttachments += generated.sources.filter((attachment) =>
+            UPSTREAM_SOURCES.some((upstream) => upstream.sourceId === attachment.sourceId),
           ).length;
           totalGenerated++;
           for (const tab of generated.library.libraryTabs) {
