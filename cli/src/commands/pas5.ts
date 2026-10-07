@@ -612,11 +612,12 @@ export const pas5CreateCommand = Command.make("create", {
                       title: "Fetch canonical registry",
                       task: async (_, task) => {
                         const rows = await listRegistryRows(config);
+                        const activeRows = rows.filter((row) => !row.tombstoned);
+                        const limitValue = Option.getOrUndefined(limit);
+                        const selectedRows =
+                          limitValue === undefined ? activeRows : activeRows.slice(0, limitValue);
                         const entries: Pas5Entry[] = [];
-                        for (const row of rows) {
-                          if (row.tombstoned) {
-                            continue;
-                          }
+                        for (const row of selectedRows) {
                           registry.set(row.id, row);
                           const canonical = await getRegistryCanonical(config, row.id);
                           entries.push(pas5EntryFromRegistry(row, canonical));
