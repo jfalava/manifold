@@ -8,8 +8,10 @@ import {
   hasUpstreamProvider,
   matchingBaseLibraryIds,
   migrateLibrarySources,
+  pas5EntryFromAniList,
+  pas5EntryFromRegistry,
   sourceFreeEntities,
-} from "../src/commands/anilist/create-pas5";
+} from "../src/commands/pas5";
 import type { RegistryRow } from "../src/commands/toolbox";
 import { buildPas5Zip, filterPas5Providers, parsePas5 } from "../src/pas5";
 import type {
@@ -68,7 +70,11 @@ const buildEntry = (
   registryRow: RegistryRow | undefined,
 ): TestGeneratedEntry => {
   // SAFETY: buildEntitiesForEntry declares this exact structural result contract.
-  return buildEntitiesForEntry(entry, registryRow, new Map()) as TestGeneratedEntry;
+  return buildEntitiesForEntry(
+    pas5EntryFromAniList(entry, registryRow),
+    registryRow,
+    new Map(),
+  ) as TestGeneratedEntry;
 };
 
 const migrate = (
@@ -82,7 +88,7 @@ const migrate = (
   return migrateLibrarySources(
     base,
     libraryId,
-    entry,
+    pas5EntryFromAniList(entry, registryRow),
     registryRow,
     sharedTabs,
   ) as TestExistingUpstreamResult;
@@ -261,13 +267,72 @@ describe("al2pas5 source attachments", () => {
     expect(Object.keys(generated.infos)).toHaveLength(3);
   });
 
+  it("generates from registry identity and list state without AniList metadata", () => {
+    const row: RegistryRow = {
+      ...registryRow,
+      provider: "mal",
+      providerId: "456",
+      state: {
+        entryId: "canonical-id",
+        status: "reading",
+        updatedAt: 2,
+      },
+    };
+    const entry = pas5EntryFromRegistry(row, {
+      id: row.id,
+      provider: "mal",
+      providerId: "456",
+      title: "Registry Title",
+      aliases: ["Registry Alias"],
+      metadata: {
+        description: "A registry-backed description.",
+        coverUrl: "https://example.test/cover.jpg",
+        status: "finished",
+      },
+    });
+    const generated = buildEntitiesForEntry(
+      entry,
+      row,
+      new Map([["Reading", { id: "reading", name: "Reading", sortOrder: 0 }]]),
+    );
+
+    expect(generated.library.libraryTabs).toEqual([
+      { id: "reading", name: "Reading", sortOrder: 0 },
+    ]);
+    expect(generated.sources.map(({ sourceId, mangaId }) => ({ sourceId, mangaId }))).toEqual([
+      { sourceId: "MangaDex", mangaId: "mangadex-id" },
+      { sourceId: "Comix", mangaId: "comix-id" },
+      { sourceId: "MANIFOLD", mangaId: "canonical-id" },
+    ]);
+    const tracker =
+      generated.infos[
+        String(generated.sources.find((source) => source.sourceId === "MANIFOLD")!.mangaInfo.id)
+      ];
+    expect(tracker).toMatchObject({
+      primaryTitle: "Registry Title",
+      synopsis: "A registry-backed description.",
+      thumbnailUrl: "https://example.test/cover.jpg",
+      status: "FINISHED",
+      secondaryTitles: ["Registry Alias"],
+      additionalInfo: {
+        "Canonical ID": "canonical-id",
+        "Canonical provider": "mal",
+        "Canonical provider ID": "456",
+      },
+    });
+  });
+
   it("enriches an existing entry without duplicating its library row", () => {
     const originalRow: RegistryRow = {
       ...registryRow,
       providers: registryRow.providers.filter((provider) => provider.provider === "anilist"),
     };
     const original = entitiesFrom(buildEntry(entry, originalRow));
-    const matches = matchingBaseLibraryIds(original, entry, registryRow);
+    const matches = matchingBaseLibraryIds(
+      original,
+      pas5EntryFromAniList(entry, registryRow),
+      registryRow,
+    );
 
     expect(matches).toEqual([Object.keys(original.__LIBRARY_MANGA_V5)[0]]);
     const result = migrate(original, matches[0]!, entry, registryRow);
@@ -298,7 +363,9 @@ describe("al2pas5 source attachments", () => {
       id: "91a074d5-6c22-42cc-9846-3d55a32bfa83",
     });
     const base = entitiesFrom(generated);
-    expect(matchingBaseLibraryIds(base, entry, registryRow)).toEqual([generated.library.id]);
+    expect(
+      matchingBaseLibraryIds(base, pas5EntryFromAniList(entry, registryRow), registryRow),
+    ).toEqual([generated.library.id]);
     const result = migrate(base, generated.library.id, entry, registryRow);
     expect(result.conflicts).toBe(0);
     expect(result.sources).toEqual([
@@ -431,6 +498,8 @@ describe("al2pas5 source attachments", () => {
       title: "Unrelated Manga",
     };
 
-    expect(matchingBaseLibraryIds(base, unrelated, undefined)).toEqual([]);
+    expect(
+      matchingBaseLibraryIds(base, pas5EntryFromAniList(unrelated, undefined), undefined),
+    ).toEqual([]);
   });
 });

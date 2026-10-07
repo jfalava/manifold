@@ -96,7 +96,7 @@ export interface Pas5Entities {
   readonly __MANGA_INFO_V5: Record<string, MangaInfo>;
 }
 
-/** AniList list status → Paperback tab name, in stable display order. */
+/** Provider and registry list statuses → Paperback tab name, in stable display order. */
 export const TAB_ORDER: readonly string[] = [
   "Reading",
   "Paused",
@@ -112,6 +112,12 @@ const STATUS_TO_TAB = {
   DROPPED: "Dropped",
   COMPLETED: "Completed",
   PLANNING: "Planning",
+  reading: "Reading",
+  re_reading: "Reading",
+  on_hold: "Paused",
+  dropped: "Dropped",
+  completed: "Completed",
+  plan_to_read: "Planning",
 } as const;
 
 type AniListStatusKey = keyof typeof STATUS_TO_TAB;
@@ -122,6 +128,9 @@ const isAniListStatusKey = (status: string): status is AniListStatusKey =>
 export const tabForStatus = (status: string): string | undefined =>
   isAniListStatusKey(status) ? STATUS_TO_TAB[status] : undefined;
 
-/** AniList media status → Paperback MangaInfo status (unknown → RELEASING). */
+/** Provider media status → Paperback MangaInfo status (unknown → RELEASING). */
 export const infoStatusFor = (mediaStatus: string | undefined): "FINISHED" | "RELEASING" =>
-  mediaStatus === "FINISHED" ? "FINISHED" : "RELEASING";
+  mediaStatus !== undefined &&
+  ["finished", "completed", "complete"].includes(mediaStatus.toLowerCase())
+    ? "FINISHED"
+    : "RELEASING";
