@@ -9,6 +9,11 @@ import { withBase } from "../lib/urls";
 import bodyFont from "@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2?url";
 import headingFont from "@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2?url";
 
+const stableRepoUrl = "https://manifold.jfa.dev/paperback/extensions/0.9/stable";
+const betaRepoUrl = "https://manifold.jfa.dev/paperback/extensions/0.9/beta";
+const stableAddRepo = `paperback://addRepo?displayName=${encodeURIComponent("Manifold (Stable)")}&url=${encodeURIComponent(stableRepoUrl)}`;
+const betaAddRepo = `paperback://addRepo?displayName=${encodeURIComponent("Manifold (Beta)")}&url=${encodeURIComponent(betaRepoUrl)}`;
+
 const registryCommand = `manifold login manifold
 manifold pas5 create \\
   --source registry --limit 10 \\
@@ -92,6 +97,27 @@ const references = [
   }))}
 >
   <div data-pagefind-body>
+    <section aria-labelledby="paperback-install-title" class="border-b border-border">
+      <div class="mx-auto flex max-w-5xl flex-col gap-4 px-6 py-6 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 id="paperback-install-title" class="text-base font-semibold text-foreground">
+            Install in Paperback
+          </h2>
+          <p class="mt-1 max-w-sm text-sm leading-relaxed text-muted-foreground">
+            Open these links on a device with Paperback installed.
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-3">
+          <LinkButton href={stableAddRepo} variant="primary" icon>
+            Add Stable to Paperback
+          </LinkButton>
+          <LinkButton href={betaAddRepo} variant="secondary" icon>
+            Add Beta to Paperback
+          </LinkButton>
+        </div>
+      </div>
+    </section>
+
     <section class="border-b border-border">
       <div class="mx-auto max-w-5xl px-6 pb-16 pt-16 sm:pt-24">
         <h1 class="hero-title max-w-3xl text-balance text-foreground">
