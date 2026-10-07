@@ -1,11 +1,14 @@
 [install]
 minimumReleaseAgeExcludes = [
   "@types/node",
-  "effect",
-  "@effect/platform",
-  "@effect/platform-bun",
-  "@effect/platform-node",
-  "@effect/platform-node-shared",
+  "@effect/tsgo",
+  "@effect/tsgo-darwin-arm64",
+  "@effect/tsgo-darwin-x64",
+  "@effect/tsgo-linux-arm",
+  "@effect/tsgo-linux-arm64",
+  "@effect/tsgo-linux-x64",
+  "@effect/tsgo-win32-arm64",
+  "@effect/tsgo-win32-x64",
   "@cloudflare/workers-types",
   "alchemy",
   "@alchemy.run/cloudflare-runtime",
@@ -25,9 +28,5 @@ minimumReleaseAgeExcludes = [
   "@distilled.cloud/stripe",
   "workerd",
   "miniflare",
-  "@types/node",
-  "@effect/sql-d1",
-  "@effect/sql-sqlite-do",
-  "@effect/vitest",
 ]
 minimumReleaseAge = 86400
