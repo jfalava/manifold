@@ -6,9 +6,10 @@ import { tableScroll } from "@cloudflare/nimbus-docs/markdown";
 const nimbusConfig = defineNimbusConfig({
   site: "https://manifold.jfa.dev",
   title: "MANIFOLD by JFA",
-  description: 'Documentation, Architecture, Tools and Motives of the Paperback source "MANIFOLD"',
+  description:
+    "CLI reference for registry maintenance, provider migrations, and Paperback backups.",
   locale: "en",
-  homeLabel: "MANIFOLD by JFA: the Last Source you will ever need",
+  homeLabel: "Manifold CLI",
   github: "https://github.com/jfalava/manifold",
   sidebar: {
     scope: "full",
@@ -18,14 +19,11 @@ const nimbusConfig = defineNimbusConfig({
     overviewLabel: "Overview",
     items: [
       {
-        label: "Guides",
-        items: ["architecture", "auth", "install", "development"],
-      },
-      {
         label: "CLI",
         items: [
           "cli",
           { label: "login", autogenerate: { directory: "cli/login" } },
+          "cli/pas5",
           { label: "anilist", autogenerate: { directory: "cli/anilist" } },
           { label: "mangadex", autogenerate: { directory: "cli/mangadex" } },
           { label: "mal", autogenerate: { directory: "cli/mal" } },
@@ -33,6 +31,7 @@ const nimbusConfig = defineNimbusConfig({
           { label: "ops", autogenerate: { directory: "cli/ops" } },
           { label: "registry", autogenerate: { directory: "cli/registry" } },
           "cli/reconcile-diff",
+          "cli/upgrade",
         ],
       },
     ],

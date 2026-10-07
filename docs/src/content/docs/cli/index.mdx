@@ -1,30 +1,158 @@
 ---
 title: Overview
-description: Provider ops, migrations, op-log triage, drift reconciliation, and registry backfill from the terminal.
+description: Install and use the Manifold CLI for backups, migrations, registry maintenance, and provider operations.
 sidebar:
   order: 1
   label: Overview
 ---
 
-`manifold` lives in `cli` (`@manifold/cli`). Run it from the repo root:
+`manifold` generates Paperback backups, migrates provider lists, and maintains
+your canonical registry. This site documents the CLI only.
+
+## Installation
+
+Download a `manifold-cli-<os>-<arch>.zip` archive and its `.sha256` checksum from
+[GitHub Releases](https://github.com/jfalava/manifold/releases), choosing a
+`cli-v*` release for your platform. Verify the checksum, extract the archive,
+and put `manifold` (or `manifold.exe` on Windows) on your `PATH`. Linux binaries
+support x64 and arm64; macOS supports arm64; Windows supports x64.
+
+From an installed binary:
 
 ```sh
-manifold <subcommand> [flags]
+manifold --help
+manifold --version
 ```
 
-Compiled releases (Linux / macOS / Windows) publish on `cli-v*` tags; self-update
-with [upgrade](/cli/upgrade/) from an installed binary.
+Self-update with [upgrade](/cli/upgrade/).
+
+To run from source, install [Bun](https://bun.sh), clone the repository, and
+run from its root:
+
+```sh
+git clone https://github.com/jfalava/manifold.git
+cd manifold
+bun install
+bun run manifold --help
+```
+
+In the examples below, replace `manifold` with `bun run manifold` when running
+from source. The root script runs inside `cli/`, so relative input/output paths
+resolve there, not at the repository root. Use absolute paths when needed.
+
+## Command reference
+
+Use `manifold <command> --help` for the installed version's flags.
+
+- **Login:** [Manifold](/cli/login/manifold/), [AniList](/cli/login/anilist/),
+  [MyAnimeList](/cli/login/mal/) — authorize and save sessions in the OS keychain.
+- **Paperback backups:** [pas5 create / filter](/cli/pas5/) — generate from
+  AniList or the canonical registry; filter an existing archive offline.
+- **AniList:** [wipe manga](/cli/anilist/wipe-manga/) — remove the manga list.
+- **MangaDex:** [stale-status](/cli/mangadex/stale-status/) — update stale
+  statuses; [unfollow-dropped](/cli/mangadex/unfollow-dropped/) — unfollow dropped titles.
+- **MyAnimeList:** [wipe manga](/cli/mal/wipe-manga/) — remove the manga list.
+- **Migrations:** [mangadex-to-anilist](/cli/migrate/mangadex-to-anilist/),
+  [anilist-to-mangadex](/cli/migrate/anilist-to-mangadex/),
+  [anilist-to-mal](/cli/migrate/anilist-to-mal/).
+- **Operations:** [pending](/cli/ops/pending/) — inspect the queue;
+  [retry](/cli/ops/retry/) — retry an operation;
+  [drain-anilist](/cli/ops/drain-anilist/) — apply queued AniList writes locally.
+- **Registry:** [import](/cli/registry/import/) — snapshot AniList list state;
+  [mal](/cli/registry/mal/), [mangadex](/cli/registry/mangadex/),
+  [comix](/cli/registry/comix/) — backfill provider links.
+- **Reconciliation:** [diff](/cli/reconcile-diff/) — compare providers against registry state.
+- **Updates:** [upgrade](/cli/upgrade/) — update the compiled binary.
+
+## Global flags
+
+### `--help`, `-h`
+
+Print help for the selected command without running it.
+
+```sh
+manifold pas5 create --help
+```
+
+### `--version`, `-v`
+
+Print the installed CLI version.
+
+```sh
+manifold --version
+```
+
+### `--wizard`
+
+Start the interactive wizard for a command. Default: off.
+
+```sh
+manifold pas5 create --wizard
+```
+
+### `--completions <bash|zsh|fish|sh>`
+
+Print a completion script for the selected shell. Load the output using your
+shell's completion setup.
+
+```sh
+manifold --completions zsh
+```
+
+### `--log-level <level>`
+
+Set the minimum log level for this invocation. Accepted values: `all`, `trace`,
+`debug`, `info`, `warn`, `warning`, `error`, `fatal`, and `none`.
+
+```sh
+manifold ops pending --log-level debug
+```
+
+## Preview a registry backup
+
+```sh
+manifold login manifold
+manifold pas5 create --source registry --limit 10 --tabs none --out ./Paperback-Registry-10.pas5
+```
+
+Review the dry-run report, then repeat with `--apply` to write the file.
+`--tabs none` keeps eligible titles without list state. The registry limit
+selects the first ten active rows before eligibility checks, so skipped entries
+can produce fewer than ten titles. See [pas5](/cli/pas5/) for the full reference.
 
 ## Configuration
 
 Remote-touching commands resolve credentials in this order: **flag →
 `MANIFOLD_*` env → OS keychain login** where applicable (from `cli/.env`, the
-process environment, or `login anilist` / `login mal`).
+process environment, or `login manifold` / `login anilist` / `login mal`).
+
+### Manifold authentication
+
+Sign in with GitHub through [login manifold](/cli/login/manifold/). No separate
+OAuth client registration or API token is required for the default API:
+
+```sh
+manifold login manifold
+```
+
+The session is stored in the OS keychain and refreshes on later API use. On a
+headless host, use `--paste-only` and paste the callback URL after authorizing
+in another browser.
+
+**A stale `MANIFOLD_TOKEN` overrides a successful keychain login.** Remove it
+from `cli/.env` and the process environment to use the saved session. For a
+one-off command, an empty process value prevents the dotenv file from supplying it:
+
+```sh
+MANIFOLD_TOKEN= manifold pas5 create --source registry --limit 10 --tabs none
+```
 
 ### `--api-token <token>`
 
-Personal API token for `ops`, `reconcile`, and `registry` commands. Falls back
-to `MANIFOLD_TOKEN`.
+Personal API token override for `pas5 create`, `ops`, `reconcile`, `registry`,
+and MAL backup checks. Falls back to `MANIFOLD_TOKEN`, then the
+`login manifold` keychain session. Explicit tokens do not refresh. Prefer
+keychain login; flags may expose secrets in shell history or process arguments.
 
 Example:
 
@@ -34,8 +162,8 @@ manifold ops pending --api-token "$MANIFOLD_TOKEN"
 
 ### `--api-origin <url>`
 
-Personal API origin for `ops`, `reconcile`, and `registry` requests. Falls back
-to `MANIFOLD_API_ORIGIN`.
+Personal API origin for `pas5 create`, `ops`, `reconcile`, `registry`, and MAL
+backup checks. Falls back to `MANIFOLD_API_ORIGIN`.
 
 - Default: `https://manifold.jfa.dev/api`
 
@@ -63,8 +191,9 @@ AniList does not issue refresh tokens — re-run login when the session expires.
 
 ### `--anilist-token <token>`
 
-Optional AniList access token override for migration, reconcile, and registry
-commands. Resolve order: flag → `MANIFOLD_ANILIST_TOKEN` → keychain login.
+Optional AniList access token override for AniList operations, `pas5 create
+--source anilist`, migrations, reconciliation, registry import, and draining
+AniList writes. Resolve order: flag → `MANIFOLD_ANILIST_TOKEN` → keychain login.
 
 Example:
 
@@ -175,7 +304,7 @@ AniList writes always run on your machine — AniList blocks Cloudflare Worker e
 
 ## Dry-run defaults
 
-Every command that changes remote state is **dry-run until `--apply`**.
+Library, registry, and queued-operation writes are **dry-run until `--apply`**.
 `anilist wipe manga --apply` also requires interactive confirmation unless `--yes`
 is present. `mal wipe manga --apply` requires `--backup-paused` instead of a
 prompt, and refuses to delete while the API's MAL connection is still active.

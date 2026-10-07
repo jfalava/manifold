@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-## Verified restore procedure: start with an empty database
+## `create`: generate a backup
 
 ```sh
 manifold pas5 create --source <anilist|registry> [flags]
@@ -21,15 +21,22 @@ Use `--source anilist` to read the authenticated AniList list, or
 registry. Registry metadata is hydrated through the recorded AniList/MAL links;
 the registry UUID and list state remain authoritative. Tombstoned entries,
 entries without a native MangaDex/Comix link, and AniList entries missing a
-registry UUID are skipped.
+registry UUID are skipped. Both sources require Manifold authentication; only
+`--source anilist` requires AniList authentication.
 
-## After restoring: run Paperback database repair
+## Verified restore procedure: start with an empty database
 
-Follow the [verified restore procedure](#verified-restore-procedure-start-with-an-empty-database)
-above. Repair alone did not fix every imported title in an existing database.
-The successful full-library test used a fresh installation and uppercase internal
-UUIDs, with repair before opening imported titles. Keep the original backup until
-saved state has been checked after reopening titles.
+1. Export and keep the original Paperback backup.
+2. Generate the new archive and ensure the native MangaDex/Comix extensions
+   used by its attachments are installed.
+3. Restore into an empty Paperback database. The successful full-library test
+   used a fresh installation and uppercase internal UUIDs.
+4. Run Paperback's database repair **before opening imported titles**.
+5. Check saved state after leaving and reopening titles before discarding the
+   original backup.
+
+Repair alone did not fix every imported title in an existing database.
+Restoring may replace the on-device library.
 
 ## `filter`: isolate providers in an existing archive
 
@@ -41,7 +48,7 @@ are required and must point to different files. Without `--apply`, this is a dry
 ```sh
 manifold pas5 filter --input generated.pas5 --out mangadex-only.pas5 --exclude-comix --exclude-tracker --apply
 manifold pas5 filter --input generated.pas5 --out comix-only.pas5 --exclude-mangadex --exclude-tracker --apply
-bun run manifold pas5 filter --input generated.pas5 --out tracker-only.pas5 --exclude-mangadex --exclude-comix --apply
+manifold pas5 filter --input generated.pas5 --out tracker-only.pas5 --exclude-mangadex --exclude-comix --apply
 ```
 
 This diagnostic subcommand deliberately retains tracker-only libraries. It
@@ -52,9 +59,73 @@ and unreferenced manga metadata are removed. Other providers are left unchanged.
 
 Keep the original backup and test the outputs separately: restoring may replace
 the device library. A tracker-only archive tests saved/tracking behavior, not
-chapter reading. Normal generation below still requires a native content provider.
+chapter reading. Normal generation still requires a native content provider.
 
-## Flags
+## Filter flags
+
+### `--input <path>`
+
+Required existing `.pas5` archive. The input file is never overwritten.
+
+```sh
+manifold pas5 filter --input ./original.pas5 --out ./filtered.pas5 --exclude-comix
+```
+
+### `--out <path>`
+
+Required output path, different from the input path. Written only with `--apply`.
+
+```sh
+manifold pas5 filter --input ./original.pas5 --out ./filtered.pas5 --exclude-comix --apply
+```
+
+### `--exclude-mangadex`
+
+Remove native MangaDex attachments and their provider data. Default: `false`.
+
+```sh
+manifold pas5 filter --input ./original.pas5 --out ./no-mangadex.pas5 --exclude-mangadex
+```
+
+### `--exclude-comix`
+
+Remove native Comix attachments and their provider data. Default: `false`.
+
+```sh
+manifold pas5 filter --input ./original.pas5 --out ./no-comix.pas5 --exclude-comix
+```
+
+### `--exclude-tracker`
+
+Remove MANIFOLD attachments and their provider data. Default: `false`.
+At least one exclusion is required; excluding all three providers is rejected.
+
+```sh
+manifold pas5 filter --input ./original.pas5 --out ./native-only.pas5 --exclude-tracker
+```
+
+### `--apply`
+
+Write the filtered archive. Default: `false`; otherwise only report the result.
+
+```sh
+manifold pas5 filter --input ./original.pas5 --out ./native-only.pas5 --exclude-tracker --apply
+```
+
+## Create flags
+
+### `--source <anilist|registry>`
+
+Required input source; there is no default. `anilist` reads the live AniList
+list and resolves canonical UUIDs/provider links through Manifold. `registry`
+reads active canonical rows, recorded list state, and hydrated metadata without
+requiring a local AniList or MAL login. MangaDex and Comix are attachments,
+not accepted input sources.
+
+```sh
+manifold login manifold
+manifold pas5 create --source registry
+```
 
 ### `--apply`
 
@@ -72,9 +143,15 @@ manifold pas5 create --source registry --apply
 ### `--tabs <value>`
 
 Choose which AniList or registry statuses become Paperback library tabs. Use `auto` to
-include the default status set, `none` to create no status tabs, or pass a
+include all five mapped statuses, `none` to include all eligible titles without
+creating status tabs, or pass a
 comma-separated list of `reading`, `paused`, `dropped`, `completed`, and
 `planning`.
+
+With `auto` or a status list, new titles without a mapped list status are skipped.
+This flag also filters imports, not just tab names. Use `none` for registry rows
+that have metadata/provider links but no list state. Existing base titles are
+enriched before this new-title filter runs.
 
 - Default: `auto`
 
@@ -116,20 +193,25 @@ manifold pas5 create --source registry --out ./backups/manifold.pas5
 
 ### `--limit <n>`
 
-Generate entries for only the first `n` titles. This is useful for a canary
-archive before exporting the complete list.
+Non-negative limit for a canary archive. For `--source registry`, select the
+first `n` active rows before metadata hydration and eligibility checks; skipped
+entries can produce fewer than `n` new titles. For `--source anilist`, stop
+after generating `n` new eligible titles. Existing base titles do not count as
+new titles; the limit does not trim the base archive to `n` total titles.
 
 - Default: no limit
 
 Example:
 
 ```sh
-manifold pas5 create --source registry --limit 10
+manifold pas5 create --source registry --limit 10 --tabs none --apply --out ./Paperback-Registry-10.pas5
 ```
 
 ### `--anilist-token <token>`
 
-Optional AniList access token override. Resolve order: flag → `MANIFOLD_ANILIST_TOKEN` → `login anilist` keychain.
+Optional AniList access token override for `--source anilist`; unused for
+`--source registry`. Resolve order: flag → `MANIFOLD_ANILIST_TOKEN` →
+`login anilist` keychain.
 
 Example:
 
@@ -141,7 +223,9 @@ manifold pas5 create --source anilist
 ### `--api-token <token>`
 
 Personal API token used to resolve registry UUIDs and provider links. Falls
-back to `MANIFOLD_TOKEN`.
+back to `MANIFOLD_TOKEN`, then the `login manifold` keychain session.
+Required for both sources. A stale environment token overrides keychain login;
+see [Manifold authentication](/cli/#manifold-authentication).
 
 Example:
 
@@ -166,7 +250,7 @@ manifold pas5 create --source registry --api-origin https://manifold.example/api
 ```sh
 manifold pas5 create --source anilist
 manifold pas5 create --source registry --apply
-bun run manifold pas5 create --source registry --apply --base ./Paperback-Backup.pas5 --tabs reading,completed
+manifold pas5 create --source registry --apply --base ./Paperback-Backup.pas5 --tabs reading,completed
 ```
 
 `--tabs` filters source statuses into library tabs. Install the

@@ -92,9 +92,30 @@ test("paperback paths forward to sync api with prefix stripped", async () => {
 });
 
 test("known docs paths forward untouched to docs", async () => {
-  const { response, calls } = request("https://df.example/architecture/");
-  await response;
-  expect(calls.DOCS_WORKER.map((call) => call.pathname)).toEqual(["/architecture/"]);
+  for (const path of ["/cli", "/cli/", "/cli/pas5/", "/cli/login/manifold/index.md"]) {
+    const { response, calls } = request(`https://df.example${path}`);
+    await response;
+    expect(calls.DOCS_WORKER.map((call) => call.pathname)).toEqual([path]);
+  }
+});
+
+test("removed guides and lookalike CLI paths do not forward to docs", async () => {
+  for (const prefix of [
+    "/guides",
+    "/architecture",
+    "/auth",
+    "/development",
+    "/install",
+    "/cli-old",
+  ]) {
+    for (const suffix of ["", "/", "/index.md"]) {
+      const { response, calls } = request(`https://df.example${prefix}${suffix}`);
+      expect((await response).status).toBe(418);
+      expect(calls.DOCS_WORKER).toEqual([]);
+      expect(calls.SYNC_API).toEqual([]);
+      expect(calls.ADMIN).toEqual([]);
+    }
+  }
 });
 
 test("docs home and static assets forward to docs", async () => {

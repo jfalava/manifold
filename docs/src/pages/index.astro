@@ -1,153 +1,217 @@
 ---
 import DocsLayout from "../layouts/DocsLayout.astro";
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
 import { Code } from "../components/ui/code";
 import { LinkButton } from "../components/ui/link-button";
+import { Tabs, TabItem } from "../components/ui/tabs";
 import { config } from "virtual:nimbus/config";
-import {
-  getBreadcrumbs,
-  getPrevNext,
-  getSidebar,
-} from "@cloudflare/nimbus-docs";
-import {
-  withBaseBreadcrumbs,
-  withBasePrevNext,
-  withBaseSidebar,
-} from "../lib/urls";
+import { withBase } from "../lib/urls";
+import bodyFont from "@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2?url";
+import headingFont from "@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2?url";
 
-const rawSidebar = await getSidebar("/", { collection: "docs" });
-const sidebar = withBaseSidebar(rawSidebar);
-const breadcrumbs = withBaseBreadcrumbs(
-  await getBreadcrumbs("/", { collection: "docs" }),
-);
-const prevNext = withBasePrevNext(
-  await getPrevNext("/", { sidebarTree: rawSidebar }),
-);
-const baseUrl = import.meta.env.BASE_URL;
-const sourceRepoUrl =
-  "https://manifold.jfa.dev/paperback/extensions/0.9/stable/";
-const stableRepoUrl =
-  "https://manifold.jfa.dev/paperback/extensions/0.9/stable";
-const betaRepoUrl = "https://manifold.jfa.dev/paperback/extensions/0.9/beta";
-const stableAddRepo = `paperback://addRepo?displayName=${encodeURIComponent("Manifold (Stable)")}&url=${encodeURIComponent(stableRepoUrl)}`;
-const betaAddRepo = `paperback://addRepo?displayName=${encodeURIComponent("Manifold (Beta)")}&url=${encodeURIComponent(betaRepoUrl)}`;
+const registryCommand = `manifold login manifold
+manifold pas5 create \\
+  --source registry --limit 10 \\
+  --tabs none \\
+  --out ./Paperback-Registry-10.pas5`;
+const anilistCommand = `manifold login manifold
+manifold login anilist
+manifold pas5 create \\
+  --source anilist --limit 10 \\
+  --out ./Paperback-AniList-10.pas5`;
+
+const features = [
+  {
+    icon: "ph:archive",
+    title: "Create Paperback backups",
+    body: "Generate PAS5 archives from AniList or your canonical registry. Filter provider attachments in an existing backup offline.",
+  },
+  {
+    icon: "ph:arrows-left-right",
+    title: "Move between providers",
+    body: "Migrate manga lists between AniList and MangaDex, or from AniList to MyAnimeList. Review the plan before applying changes.",
+  },
+  {
+    icon: "ph:database",
+    title: "Maintain the registry",
+    body: "Import AniList list state and backfill verified MyAnimeList, MangaDex, and Comix links on canonical entries.",
+  },
+  {
+    icon: "ph:git-diff",
+    title: "Inspect drift and queued writes",
+    body: "Compare provider lists with registry state, inspect pending operations, retry failures, and drain AniList writes locally.",
+  },
+];
+
+const references = [
+  {
+    title: "Authentication",
+    body: "Sign in with GitHub and save your Manifold session in the OS keychain.",
+    href: "/cli/login/manifold/",
+  },
+  {
+    title: "PAS5 tools",
+    body: "Creation, filtering, status tabs, and restore precautions.",
+    href: "/cli/pas5/",
+  },
+  {
+    title: "Registry import",
+    body: "Snapshot your live AniList manga list into the canonical registry.",
+    href: "/cli/registry/import/",
+  },
+  {
+    title: "AniList to MangaDex",
+    body: "Preview and apply a cross-provider library migration.",
+    href: "/cli/migrate/anilist-to-mangadex/",
+  },
+  {
+    title: "Pending operations",
+    body: "Inspect queued writes before retrying or draining them.",
+    href: "/cli/ops/pending/",
+  },
+  {
+    title: "Reconciliation",
+    body: "Find differences between provider lists and registry state.",
+    href: "/cli/reconcile-diff/",
+  },
+];
 ---
 
 <DocsLayout
   title={config.title}
   description={config.description}
-  sidebar={sidebar}
+  sidebar={false}
   headings={false}
-  breadcrumbs={breadcrumbs}
-  prevNext={prevNext}
+  breadcrumbs={[]}
+  prevNext={{}}
+  mode="custom"
   collection="docs"
+  head={[bodyFont, headingFont].map((href) => ({
+    tag: "link",
+    attrs: { rel: "preload", href, as: "font", type: "font/woff2", crossorigin: "anonymous" },
+  }))}
 >
-  <Fragment slot="page-title">
-    <p class="mt-6 font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
-      Start here
-    </p>
-    <h1
-      class="mt-2 text-foreground text-balance"
-      style={`font-size:var(--nb-h1-size);font-weight:var(--nb-h1-weight);letter-spacing:var(--nb-h1-tracking);line-height:var(--nb-h1-leading);text-transform:var(--nb-h1-transform)`}
-    >
-      Manifold
-    </h1>
-    <p class="mt-3 text-[0.9375rem] sm:text-[1.0625rem] text-muted-foreground leading-relaxed text-pretty">
-      {config.description}
-    </p>
-    <div class="mt-3 mb-6 h-px w-full bg-border" role="none"></div>
-  </Fragment>
-
-  <div class="space-y-10">
-    <section>
-      <h2
-        class="text-foreground"
-        style={`font-size:var(--nb-h2-size);font-weight:var(--nb-h2-weight);letter-spacing:var(--nb-h2-tracking);line-height:var(--nb-h2-leading);text-transform:var(--nb-h2-transform)`}
-      >
-        Source repository
-      </h2>
-      <p class="mt-3 leading-7 text-muted-foreground">
-        Add this URL in Paperback under{" "}
-        <strong class="font-medium text-foreground">
-          Settings → Extensions → Add repository
-        </strong>
-        .
-        <p class="mt-3 leading-7 text-muted-foreground">
-          Full install steps are on the{" "}
-          <a
-            href={`${baseUrl}install/`}
-            class="text-primary no-underline hover:underline"
-          >
-            Install
-          </a>{" "}
-          page.
+  <div data-pagefind-body>
+    <section class="border-b border-border">
+      <div class="mx-auto max-w-5xl px-6 pb-16 pt-16 sm:pt-24">
+        <h1 class="hero-title max-w-3xl text-balance text-foreground">
+          Your library. One registry.
+        </h1>
+        <p class="mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-muted-foreground">
+          Generate Paperback backups, migrate provider lists, and maintain your
+          canonical registry from the terminal.
         </p>
-      </p>
-      <Code code={sourceRepoUrl} lang="text" />
-      <div class="mt-4 flex flex-wrap gap-3">
-        <LinkButton href={stableAddRepo} variant="primary" icon>
-          Add Stable to Paperback
-        </LinkButton>
-        <LinkButton href={betaAddRepo} variant="secondary" icon>
-          Add Beta to Paperback
-        </LinkButton>
+        <div class="mt-8 flex flex-wrap gap-3">
+          <LinkButton
+            href={withBase("/cli/#installation")}
+            variant="primary"
+            size="lg"
+            icon
+          >
+            Get started
+          </LinkButton>
+          <LinkButton
+            href={withBase("/cli/#command-reference")}
+            variant="secondary"
+            size="lg"
+          >
+            CLI reference
+          </LinkButton>
+        </div>
       </div>
     </section>
 
-    <section class="grid gap-6 sm:grid-cols-2">
-      <div>
-        <h2
-          class="text-foreground"
-          style={`font-size:var(--nb-h2-size);font-weight:var(--nb-h2-weight);letter-spacing:var(--nb-h2-tracking);line-height:var(--nb-h2-leading);text-transform:var(--nb-h2-transform)`}
-        >
-          Guides
-        </h2>
-        <ul class="mt-3 space-y-2 leading-7 text-muted-foreground">
-          <li>
+    <section class="mx-auto max-w-5xl px-6 py-16">
+      <h2 class="section-title text-foreground">Preview a backup</h2>
+      <p class="mt-4 max-w-2xl text-pretty leading-relaxed text-muted-foreground">
+        Sign in, choose your source, and review a limited Paperback archive.
+        Repeat with <code>--apply</code> to write the file.
+      </p>
+      <Tabs syncKey="pas5-source" class="backup-tabs mt-6 max-w-2xl">
+        <TabItem label="Registry">
+          <Code code={registryCommand} lang="sh" />
+          <p class="mt-4 text-sm leading-relaxed text-muted-foreground">
+            <code>--tabs none</code> includes eligible titles without list
+            status. Skipped entries among the first ten active rows can leave
+            fewer than ten titles.
+          </p>
+        </TabItem>
+        <TabItem label="AniList" hidden>
+          <Code code={anilistCommand} lang="sh" />
+          <p class="mt-4 text-sm leading-relaxed text-muted-foreground">
             <a
-              href={`${baseUrl}architecture/`}
-              class="text-primary no-underline hover:underline"
+              href={withBase("/cli/login/anilist/")}
+              class="text-primary underline underline-offset-2 hover:decoration-2"
             >
-              Architecture
+              Set up AniList login
             </a>{" "}
-            — Workers, paths, production-only stack
-          </li>
-          <li>
+            first. This example keeps the default status tabs and limits newly
+            generated eligible titles to ten.
+          </p>
+        </TabItem>
+      </Tabs>
+    </section>
+
+    <section class="mx-auto max-w-5xl px-6 pb-16">
+      <h2 class="section-title text-foreground">What it does</h2>
+      <div class="mt-6 grid gap-4 sm:grid-cols-2">
+        {features.map((feature) => (
+          <article class="rounded-lg bg-card p-5 shadow-sm ring ring-border">
+            <Icon
+              name={feature.icon}
+              class="mb-2.5 block h-6 w-6 text-primary"
+            />
+            <h3 class="m-0 text-base font-semibold leading-snug text-foreground">
+              {feature.title}
+            </h3>
+            <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+              {feature.body}
+            </p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="mx-auto max-w-5xl px-6 pb-24">
+      <h2 class="section-title text-foreground">Explore the CLI</h2>
+      <ul class="mt-6 grid list-none gap-x-8 gap-y-4 p-0 sm:grid-cols-2">
+        {references.map((reference) => (
+          <li class="m-0 border-t border-border pt-3">
             <a
-              href={`${baseUrl}auth/`}
-              class="text-primary no-underline hover:underline"
+              href={withBase(reference.href)}
+              class="font-semibold text-foreground no-underline hover:text-primary"
             >
-              Auth
+              {reference.title}
             </a>
-            — OAuth, DO tokens, device-local Comix
+            <p class="mt-1 text-sm leading-relaxed text-muted-foreground">
+              {reference.body}
+            </p>
           </li>
-          <li>
-            <a
-              href={`${baseUrl}development/`}
-              class="text-primary no-underline hover:underline"
-            >
-              Development
-            </a>{" "}
-            — install, test, deploy
-          </li>
-        </ul>
-      </div>
-      <div>
-        <h2
-          class="text-foreground"
-          style={`font-size:var(--nb-h2-size);font-weight:var(--nb-h2-weight);letter-spacing:var(--nb-h2-tracking);line-height:var(--nb-h2-leading);text-transform:var(--nb-h2-transform)`}
-        >
-          CLI
-        </h2>
-        <p class="mt-3 leading-7 text-muted-foreground">
-          Migrations, wipe, prefills, ops triage, and registry maintenance.
-        </p>
-        <a
-          href={`${baseUrl}cli/`}
-          class="mt-4 inline-flex font-medium text-primary no-underline hover:underline"
-        >
-          Browse the CLI docs →
-        </a>
-      </div>
+        ))}
+      </ul>
     </section>
   </div>
 </DocsLayout>
+
+<style>
+  /* Reserve the trigger row before Tabs synthesizes its buttons. */
+  :global(.backup-tabs [role="tablist"]) {
+    min-height: 2.5625rem;
+  }
+
+  .hero-title {
+    font-size: clamp(2.25rem, 6vw, 4rem);
+    font-weight: var(--nb-h1-weight);
+    letter-spacing: var(--nb-h1-tracking);
+    line-height: 1.05;
+    text-transform: var(--nb-h1-transform);
+  }
+
+  .section-title {
+    font-size: var(--nb-h2-size);
+    font-weight: var(--nb-h2-weight);
+    letter-spacing: var(--nb-h2-tracking);
+    line-height: 1.1;
+    text-transform: var(--nb-h2-transform);
+  }
+</style>

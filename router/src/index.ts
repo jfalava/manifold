@@ -80,18 +80,7 @@ const DOCS_EXACT_PATHS = new Set([
 ]);
 
 /** Prefixes that own a whole docs subtree. */
-const DOCS_PREFIXES = [
-  "/architecture",
-  "/auth",
-  "/cli",
-  "/development",
-  "/install",
-  "/og",
-  "/_astro",
-  "/_nimbus",
-  "/pagefind",
-  "/fonts",
-] as const;
+const DOCS_PREFIXES = ["/cli", "/og", "/_astro", "/_nimbus", "/pagefind", "/fonts"] as const;
 
 export function isDocsPath(pathname: string): boolean {
   if (DOCS_EXACT_PATHS.has(pathname)) {
