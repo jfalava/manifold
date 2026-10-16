@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "collections": [
+    "docs"
+  ],
+  "mdxFiles": [
+    "src/content/docs/cli/anilist/wipe-manga.mdx",
+    "src/content/docs/cli/index.mdx",
+    "src/content/docs/cli/login/anilist.mdx",
+    "src/content/docs/cli/login/mal.mdx",
+    "src/content/docs/cli/login/manifold.mdx",
+    "src/content/docs/cli/mal/wipe-manga.mdx",
+    "src/content/docs/cli/mangadex/stale-status.mdx",
+    "src/content/docs/cli/mangadex/unfollow-dropped.mdx",
+    "src/content/docs/cli/migrate/anilist-to-mal.mdx",
+    "src/content/docs/cli/migrate/anilist-to-mangadex.mdx",
+    "src/content/docs/cli/migrate/mangadex-to-anilist.mdx",
+    "src/content/docs/cli/ops/drain-anilist.mdx",
+    "src/content/docs/cli/ops/pending.mdx",
+    "src/content/docs/cli/ops/retry.mdx",
+    "src/content/docs/cli/pas5.mdx",
+    "src/content/docs/cli/reconcile-diff.mdx",
+    "src/content/docs/cli/registry/comix.mdx",
+    "src/content/docs/cli/registry/import.mdx",
+    "src/content/docs/cli/registry/kagane.mdx",
+    "src/content/docs/cli/registry/mal.mdx",
+    "src/content/docs/cli/registry/mangadex.mdx",
+    "src/content/docs/cli/upgrade.mdx",
+    "src/content/partials/example.mdx"
+  ]
+}

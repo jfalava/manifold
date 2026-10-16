@@ -5,5 +5,9 @@
     "nimbus/internal-link": "error"
   },
   "collections": {},
-  "site": "https://manifold.jfa.dev"
+  "site": "https://manifold.jfa.dev",
+  "markdownFeatures": {
+    "gfm": true,
+    "smartPunctuation": true
+  }
 }
