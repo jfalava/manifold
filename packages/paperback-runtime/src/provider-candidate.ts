@@ -42,7 +42,11 @@ export const parseProviderSearchInput = (value: string): ProviderSearchInput => 
 };
 
 const isRegistryProvider = (value: string): value is RegistryProvider =>
-  value === "anilist" || value === "mal" || value === "mangadex" || value === "comix";
+  value === "anilist" ||
+  value === "mal" ||
+  value === "mangadex" ||
+  value === "comix" ||
+  value === "kagane";
 
 export interface ProviderCandidate {
   readonly provider: RegistryProvider;

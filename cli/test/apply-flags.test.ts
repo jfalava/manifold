@@ -18,6 +18,7 @@ const mutatingCommands = [
   ["registry", "import"],
   ["registry", "mangadex"],
   ["registry", "comix"],
+  ["registry", "kagane"],
 ] as const;
 
 describe("remote mutation safeguards", () => {

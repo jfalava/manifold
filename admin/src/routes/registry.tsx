@@ -46,7 +46,7 @@ const STATUSES = [
   "completed",
 ] as const;
 
-const PROVIDERS = ["anilist", "mal", "mangadex", "comix"] as const;
+const PROVIDERS = ["anilist", "mal", "mangadex", "comix", "kagane"] as const;
 
 const STATUS_BADGES = {
   reading: "info",

@@ -1,0 +1,101 @@
+---
+title: kagane
+description: Prefill Kagane series links on canonical registry rows.
+sidebar:
+  order: 5
+---
+
+```sh
+manifold registry kagane [flags]
+```
+
+Backfills missing `kagane` provider links by searching Kagane's public catalog.
+The command accepts only unique exact title/alias matches, verifies the selected
+series details, and never replaces an existing provider link. It is a dry run
+unless `--apply` is supplied.
+
+Kagane has no personal API key. Search and details use public endpoints. Kagane
+may challenge automated requests with Cloudflare; use the Chrome option below
+when direct requests are challenged.
+
+## Flags
+
+### `--apply`
+
+Write verified links to the registry. Writes use conflict rejection, so a
+Kagane ID already owned by another row is never stolen.
+
+```sh
+manifold registry kagane --apply
+```
+
+### `--limit <n>`
+
+Process at most `n` active rows missing a Kagane link. The complete registry is
+loaded before this limit is applied.
+
+```sh
+manifold registry kagane --limit 25
+```
+
+### `--status <statuses>`
+
+Filter rows by reading status. Use `auto` for all statuses, or a comma-separated
+list such as `reading,completed`. `reading` includes `re_reading`.
+
+```sh
+manifold registry kagane --status reading,completed
+```
+
+### `--language <code>`
+
+Filter Kagane records by translated language. Default: `en`.
+
+```sh
+manifold registry kagane --language en
+```
+
+### `--delay <milliseconds>`
+
+Wait between Kagane requests. Default: `1500`.
+
+### `--chrome-cdp-url <url>`
+
+Use an existing Chrome DevTools WebSocket for Kagane requests after solving a
+Cloudflare challenge in that browser. Falls back to
+`MANIFOLD_KAGANE_CHROME_CDP_URL`.
+
+```sh
+manifold registry kagane --chrome-cdp-url "ws://127.0.0.1:9222/devtools/browser/..."
+```
+
+The CLI uses a dedicated `~/.manifold/kagane-chrome` profile and does not reuse
+the Comix cookie profile.
+
+### `--anilist-token <token>`
+
+Optional AniList token used to add English, romaji, native, and synonym aliases
+to Kagane searches. Resolve order: flag → `MANIFOLD_ANILIST_TOKEN` →
+`login anilist` keychain.
+
+### `--api-token <token>` and `--api-origin <url>`
+
+Credentials and origin for the Manifold registry API. The token falls back to
+`MANIFOLD_TOKEN`; the origin defaults to `MANIFOLD_API_ORIGIN`, then
+`https://manifold.jfa.dev/api`.
+
+## Matching behavior
+
+Kagane is an aggregator and can expose multiple source editions for one title.
+The command reports a candidate as ambiguous when more than one Kagane series
+matches, when the detail language/source does not agree with the search result,
+or when the record has an edition label or no available books. Ambiguous and
+unverified records are not written.
+
+## Usage
+
+```sh
+manifold registry kagane
+manifold registry kagane --status reading --limit 50
+manifold registry kagane --apply
+```

@@ -6,7 +6,7 @@ import type {
   AuthProvider,
   CompleteOpsInput,
   IngestCandidateInput,
-  LinkProviderInput,
+  SetProviderLinkInput,
   ListEvent,
   ListState,
   MangaDexLibraryItem,
@@ -308,7 +308,7 @@ export class ManifoldSync extends DurableObject<Env> {
     return registrySummary(this.host());
   }
 
-  async linkProvider(entryId: string, input: LinkProviderInput): Promise<RegistryEntry> {
+  async linkProvider(entryId: string, input: SetProviderLinkInput): Promise<RegistryEntry> {
     return linkProvider(this.host(), entryId, input);
   }
 
