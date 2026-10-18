@@ -10,9 +10,9 @@ manifold registry kagane [flags]
 ```
 
 Backfills missing `kagane` provider links by searching Kagane's public catalog.
-The command accepts only unique exact title/alias matches, verifies the selected
-series details, and never replaces an existing provider link. It is a dry run
-unless `--apply` is supplied.
+The command discovers exact title/alias candidates, verifies their external IDs
+and series details, and never replaces an existing provider link. It is a dry
+run unless `--apply` is supplied. Every run saves an incremental JSONL report.
 
 Kagane has no personal API key. Search and details use public endpoints. Kagane
 may challenge automated requests with Cloudflare; use the Chrome option below
@@ -57,7 +57,58 @@ manifold registry kagane --language en
 
 ### `--delay <milliseconds>`
 
-Wait between Kagane requests. Default: `1500`.
+Wait between Kagane requests, including retries. Default: `1500`. Requests run
+sequentially; this is conservative pacing, not a published Kagane rate limit.
+
+Transient network failures, HTTP 429, and HTTP 500/502/503/504 receive up to three
+retries with exponential backoff. `Retry-After` seconds and HTTP dates are
+honored. A cooldown over 120 seconds stops the run rather than retrying early.
+Cloudflare challenges and malformed responses are not retried. Registry writes
+are not retried by this catalog retry policy.
+
+```sh
+manifold registry kagane --delay 2000
+```
+
+### `--source-priority <names>`
+
+Comma-separated Kagane source names, preferred first. Default: `MangaDex`.
+Names are case-insensitive. Use `none` to disable source preference.
+
+Each preferred source is searched before the full catalog. Only an external-ID
+match can finish a source-scoped search early. A title-only match requires the
+full catalog search. Source preference never overrides contradictory IDs or
+chooses between multiple verified candidates within the same source.
+
+```sh
+manifold registry kagane --source-priority "MangaDex,VIZ Media"
+```
+
+### `--max-pages <n>`
+
+Maximum pages per title search, including source-scoped searches. Default:
+`200`, with 35 results per page. Every search must reach its final page before
+its candidates can be selected. Repeated pages and incomplete searches are
+errors, not catalog misses.
+
+```sh
+manifold registry kagane --max-pages 400
+```
+
+### `--report <path>`
+
+Write a new JSONL report at this path. Default:
+`~/.manifold/reports/kagane-<run>.jsonl`. Existing files are never overwritten.
+Reports are created with owner-only permissions and do not contain tokens.
+
+Records include run options, retries, each entry's outcome, inspected candidate
+sources and external IDs, rejection reasons, and the final counts. Each entry
+is written before the next entry starts, so completed results survive an
+interrupted run. Reports are diagnostic records, not executable apply plans.
+
+```sh
+manifold registry kagane --report ./kagane-dry-run.jsonl
+```
 
 ### `--chrome-cdp-url <url>`
 
@@ -86,10 +137,25 @@ Credentials and origin for the Manifold registry API. The token falls back to
 ## Matching behavior
 
 Kagane is an aggregator and can expose multiple source editions for one title.
-The command reports a candidate as ambiguous when more than one Kagane series
-matches, when the detail language/source does not agree with the search result,
-or when the record has an edition label or no available books. Ambiguous and
-unverified records are not written.
+The command compares AniList, MyAnimeList, and MangaDex work URLs from Kagane's
+`series_links` against existing registry provider IDs. Any contradictory ID
+rejects that candidate, even if another ID or the title matches. URL hosts and
+work paths must match the actual provider, not just the link's label.
+
+Externally verified candidates outrank title-only candidates. When multiple
+verified candidates identify the same work, source priority selects a unique
+candidate from the first available preferred source. Conflicting external IDs
+between verified candidates remain unresolved. The command never chooses by
+chapter count or search-result order.
+
+Without matching external IDs, only a single exact-title candidate from the
+full search can be linked. Language and source must agree, edition labels must
+be absent, formats must be consistent, and books must be available. Ambiguous
+and unverified records are reported but not written.
+
+Completed runs with per-entry errors or ownership conflicts return a nonzero
+exit code and print `Completed with errors` once. Successful links remain
+saved. Reruns skip entries that already have a Kagane link.
 
 ## Usage
 

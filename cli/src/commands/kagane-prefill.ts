@@ -1,25 +1,47 @@
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
 import { RegistryEntry } from "@manifold/contract";
-import { errorMessage } from "@manifold/json";
+import { errorMessage, type JsonValue } from "@manifold/json";
 import { apiCall, apiConfig, listRegistryRows, type RegistryRow } from "@/commands/toolbox";
 import { loadRegistrySearchTitles, searchTitlesFor } from "@/registry-titles";
 import { classifyPage, openBunBrowserView, type BrowserView } from "@/browser-view";
 import { resolveValue } from "@/env-resolve";
-import { cliError, sleepPromise, validateNonNegativeLimit } from "@/effect-kit";
+import {
+  cliError,
+  epochMillisNow,
+  jsonBodyString,
+  newId,
+  sleepPromise,
+  validateNonNegativeLimit,
+} from "@/effect-kit";
 import {
   createKaganeClient,
   hasExactKaganeTitle,
   KAGANE_ORIGIN,
   KaganeChallengeError,
+  KaganeCooldownError,
   kaganeProfileDir,
+  selectKaganeCandidate,
+  verifyKaganeCandidate,
   type KaganeBook,
+  type KaganeCandidate,
 } from "@/kagane";
 import { resolveAniListToken } from "@/login/anilist";
 import { matchesStatusFilter, parseStatusFilter, STATUS_FILTER_HINT } from "@/registry-status";
-import { closeFrame, createRun, makePhaseReporter, openFrame, type RunContext } from "@/ui";
+import {
+  closeFrame,
+  createRun,
+  frameDetail,
+  makePhaseReporter,
+  openFrame,
+  type RunContext,
+} from "@/ui";
 
 interface KaganeCtx extends RunContext {
   rows: readonly RegistryRow[];
@@ -41,6 +63,20 @@ export const kaganePrefillCommand = Command.make("kagane", {
     Flag.withDefault(1_500),
     Flag.withDescription("Milliseconds between Kagane requests."),
   ),
+  maxPages: Flag.Int("max-pages").pipe(
+    Flag.withDefault(200),
+    Flag.withDescription("Maximum pages per search (default 200); incomplete searches never link."),
+  ),
+  sourcePriority: Flag.String("source-priority").pipe(
+    Flag.withDefault("MangaDex"),
+    Flag.withDescription(
+      "Comma-separated Kagane source names, preferred first; none disables preference.",
+    ),
+  ),
+  report: Flag.String("report").pipe(
+    Flag.optional,
+    Flag.withDescription("New JSONL report path; default ~/.manifold/reports/kagane-<run>.jsonl."),
+  ),
   chromeCdpUrl: Flag.String("chrome-cdp-url").pipe(
     Flag.optional,
     Flag.withDescription(
@@ -52,16 +88,42 @@ export const kaganePrefillCommand = Command.make("kagane", {
   anilistToken: Flag.String("anilist-token").pipe(Flag.optional),
 }).pipe(
   Command.withDescription(
-    "Backfill unique Kagane title/alias matches. Dry-run by default; never replaces provider links.",
+    "Backfill Kagane links using external IDs and exact titles. Dry-run by default; never replaces links.",
   ),
   Command.withHandler(
-    ({ apply, limit, status, language, delay, chromeCdpUrl, apiOrigin, apiToken, anilistToken }) =>
+    ({
+      apply,
+      limit,
+      status,
+      language,
+      delay,
+      maxPages,
+      sourcePriority,
+      report,
+      chromeCdpUrl,
+      apiOrigin,
+      apiToken,
+      anilistToken,
+    }) =>
       Effect.tryPromise({
         try: async () => {
           const maximum = Option.getOrUndefined(limit);
           validateNonNegativeLimit(maximum);
           if (!Number.isSafeInteger(delay) || delay < 0) {
             throw cliError("--delay must be a non-negative integer (milliseconds).");
+          }
+          if (!Number.isSafeInteger(maxPages) || maxPages < 1) {
+            throw cliError("--max-pages must be a positive integer.");
+          }
+          const priority =
+            sourcePriority.toLowerCase() === "none"
+              ? []
+              : sourcePriority
+                  .split(",")
+                  .map((part) => part.trim())
+                  .filter(Boolean);
+          if (priority.length === 0 && sourcePriority.toLowerCase() !== "none") {
+            throw cliError("--source-priority requires source names or none.");
           }
           if (!/^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/.test(language)) {
             throw cliError("--language must be a language code such as en or pt-BR.");
@@ -79,7 +141,23 @@ export const kaganePrefillCommand = Command.make("kagane", {
             challenged: 0,
           };
           let view: BrowserView | undefined;
+          const reportPath = resolve(
+            Option.getOrUndefined(report) ??
+              join(
+                homedir(),
+                ".manifold",
+                "reports",
+                `kagane-${epochMillisNow()}-${newId()}.jsonl`,
+              ),
+          );
+          mkdirSync(dirname(reportPath), { recursive: true });
+          // Refuse to truncate an earlier report. Persist each row before processing the next.
+          const reportFile = openSync(reportPath, "wx", 0o600);
+          const record = (line: JsonValue): void => {
+            writeSync(reportFile, `${jsonBodyString(line)}\n`);
+          };
           openFrame(`Kagane registry prefill → ${apply ? "apply" : "dry run"}`);
+          frameDetail(`Report: ${reportPath}`);
           const load: ListrTask<KaganeCtx> = {
             title: "Load registry rows",
             task: async (ctx, task) => {
@@ -127,10 +205,29 @@ export const kaganePrefillCommand = Command.make("kagane", {
                   );
                 }
               }
-              const client = createKaganeClient({ delay, view });
+              const client = createKaganeClient({
+                delay,
+                view,
+                maxPages,
+                onRetry: (message) => {
+                  record({ event: "retry", message });
+                  reporter.detail(message);
+                },
+              });
               const sources = new Map(
                 (await client.sources()).sources.map((source) => [source.source_id, source.title]),
               );
+              const preferredSources = priority.map((name) => {
+                const ids = [...sources]
+                  .filter(([, title]) => title.toLowerCase() === name.toLowerCase())
+                  .map(([id]) => id);
+                if (ids.length === 0) {
+                  throw cliError(
+                    `Unknown Kagane source "${name}"; use a name from sources/list or --source-priority none.`,
+                  );
+                }
+                return ids;
+              });
               const owners = new Map(
                 ctx.rows.flatMap((row) =>
                   row.providers
@@ -139,123 +236,164 @@ export const kaganePrefillCommand = Command.make("kagane", {
                 ),
               );
               for (const [index, row] of ctx.selected.entries()) {
+                const checked = new Map<string, KaganeCandidate>();
+                let selected: KaganeCandidate | undefined;
+                let outcome: "matched" | "ambiguous" | "unmatched" | "conflicts" | "errors" =
+                  "unmatched";
+                let note = "";
                 try {
                   const titles = await loadRegistrySearchTitles(row, { anilistToken: anilist });
-                  const candidates = new Map<string, KaganeBook>();
-                  // Search every term before choosing, so aliases cannot hide a competing edition.
-                  for (const title of searchTitlesFor(titles)) {
-                    for (const book of await client.search(title, language)) {
-                      if (
-                        hasExactKaganeTitle(titles, [book.title, ...(book.alternate_titles ?? [])])
-                      ) {
-                        candidates.set(book.series_id, book);
+                  // Narrow by preferred source first. Only a verified ID match can avoid the global search.
+                  for (const sourceIds of [...preferredSources, []]) {
+                    const candidates = new Map<string, KaganeBook>();
+                    for (const title of searchTitlesFor(titles)) {
+                      for (const book of await client.search(title, language, sourceIds)) {
+                        if (
+                          hasExactKaganeTitle(titles, [
+                            book.title,
+                            ...(book.alternate_titles ?? []),
+                          ])
+                        ) {
+                          candidates.set(book.series_id, book);
+                        }
                       }
                     }
-                  }
-                  if (candidates.size === 0) {
-                    counts.unmatched++;
-                    reporter.note(`UNMATCHED ${row.id} ${row.title}`);
-                  } else if (candidates.size > 1) {
-                    counts.ambiguous++;
-                    reporter.note(
-                      `AMBIGUOUS ${row.id}: ${[...candidates.values()]
-                        .map(
-                          (book) =>
-                            `${book.series_id} [${sources.get(book.source_id ?? "") ?? book.source_id ?? "unknown source"}; books=${book.current_books ?? "?"}]`,
-                        )
-                        .join(", ")}`,
-                    );
-                  } else {
-                    const book = [...candidates.values()][0]!;
-                    const details = await client.details(book.series_id);
-                    const names = [
-                      details.title,
-                      ...(details.series_alternate_titles ?? []).map((alias) => alias.title),
-                    ];
-                    const compatible =
-                      hasExactKaganeTitle(titles, names) &&
-                      details.translated_language === language &&
-                      details.source_id === book.source_id &&
-                      sources.has(details.source_id ?? "") &&
-                      !details.edition_info?.trim() &&
-                      (book.current_books ?? 0) > 0 &&
-                      (!book.format || !details.format || book.format === details.format);
-                    if (!compatible) {
-                      counts.ambiguous++;
-                      reporter.note(
-                        `UNVERIFIED ${row.id} → ${book.series_id}: language=${details.translated_language ?? "?"}; source=${details.source_id ?? "?"}; edition=${details.edition_info ?? "none"}; books=${book.current_books ?? "?"}`,
-                      );
-                    } else if (
-                      owners.has(book.series_id) &&
-                      owners.get(book.series_id) !== row.id
-                    ) {
-                      counts.conflicts++;
-                      reporter.note(
-                        `CONFLICT ${row.id}: kagane:${book.series_id} already belongs to ${owners.get(book.series_id)}`,
-                      );
-                    } else {
-                      if (apply) {
-                        await apiCall(
-                          config,
-                          `/v1/entries/${encodeURIComponent(row.id)}/providers`,
-                          "POST",
-                          {
-                            provider: "kagane",
-                            externalId: book.series_id,
-                            title: details.title,
-                            onConflict: "reject",
-                          },
-                          RegistryEntry,
+                    for (const book of candidates.values()) {
+                      if (!checked.has(book.series_id)) {
+                        const details = await client.details(book.series_id);
+                        checked.set(
+                          book.series_id,
+                          verifyKaganeCandidate(
+                            book,
+                            details,
+                            row,
+                            titles,
+                            language,
+                            sources.get(book.source_id ?? ""),
+                          ),
                         );
                       }
-                      owners.set(book.series_id, row.id);
-                      counts.matched++;
-                      reporter.note(
-                        `${apply ? "LINKED" : "WOULD LINK"} ${row.id} → kagane:${book.series_id} [${sources.get(details.source_id!)}]`,
-                      );
+                    }
+                    selected = selectKaganeCandidate([...checked.values()], priority);
+                    if (sourceIds.length === 0 || selected?.matchedIds.length) {
+                      break;
                     }
                   }
+                  if (checked.size === 0) {
+                    note = `UNMATCHED ${row.id} ${row.title}`;
+                  } else if (!selected) {
+                    outcome = "ambiguous";
+                    note = `${checked.size === 1 ? "UNVERIFIED" : "AMBIGUOUS"} ${row.id} ${row.title}: ${[...checked.values()].map((candidate) => `${candidate.id} [${candidate.source}; books=${candidate.books}; IDs=${candidate.matchedIds.join("+") || "none"}; ${candidate.reasons.join(", ") || "source/identity tie"}]`).join("; ")}`;
+                  } else if (owners.has(selected.id) && owners.get(selected.id) !== row.id) {
+                    outcome = "conflicts";
+                    note = `CONFLICT ${row.id}: kagane:${selected.id} already belongs to ${owners.get(selected.id)}`;
+                  } else {
+                    if (apply) {
+                      await apiCall(
+                        config,
+                        `/v1/entries/${encodeURIComponent(row.id)}/providers`,
+                        "POST",
+                        {
+                          provider: "kagane",
+                          externalId: selected.id,
+                          title: selected.title,
+                          onConflict: "reject",
+                        },
+                        RegistryEntry,
+                      );
+                    }
+                    owners.set(selected.id, row.id);
+                    outcome = "matched";
+                    note = `${apply ? "LINKED" : "WOULD LINK"} ${row.id} → kagane:${selected.id} [${selected.source}] IDs=${selected.matchedIds.join("+") || "title-only"}`;
+                  }
                 } catch (error) {
-                  if (
+                  const challenged =
                     error instanceof KaganeChallengeError ||
-                    /Kagane Cloudflare challenge/.test(errorMessage(error))
-                  ) {
+                    /Kagane Cloudflare challenge/.test(errorMessage(error));
+                  if (challenged || error instanceof KaganeCooldownError) {
+                    if (!challenged) {
+                      counts.errors++;
+                    }
+                    record({
+                      event: "entry",
+                      entryId: row.id,
+                      title: row.title,
+                      outcome: challenged ? "challenged" : "errors",
+                      error: errorMessage(error),
+                      candidates: [...checked.values()],
+                    });
                     throw error;
                   }
                   if (/Provider link conflict:/.test(errorMessage(error))) {
-                    counts.conflicts++;
-                    reporter.note(`CONFLICT ${row.id}: ${errorMessage(error)}`);
+                    outcome = "conflicts";
+                    note = `CONFLICT ${row.id}: ${errorMessage(error)}`;
                   } else {
-                    counts.errors++;
-                    reporter.note(`ERROR ${row.id}: ${errorMessage(error)}`);
+                    outcome = "errors";
+                    note = `ERROR ${row.id} ${row.title}: ${errorMessage(error)}`;
                   }
                 }
+                counts[outcome]++;
+                record({
+                  event: "entry",
+                  entryId: row.id,
+                  title: row.title,
+                  outcome,
+                  selectedId: selected?.id ?? null,
+                  note,
+                  candidates: [...checked.values()],
+                });
+                reporter.note(note);
                 reporter.progress(index + 1, ctx.selected.length, Object.entries(counts));
               }
             },
           };
+          let failure: string | undefined;
           try {
+            record({
+              event: "run",
+              apply,
+              status,
+              language,
+              delay,
+              maxPages,
+              sourcePriority: priority,
+            });
             await createRun<KaganeCtx>([load, sweep]).run({ rows: [], selected: [] });
-            closeFrame(
-              `${apply ? "Applied" : "Dry run"}: ${Object.entries(counts)
-                .map(([name, count]) => `${count} ${name}`)
-                .join("; ")}`,
-            );
-            if (counts.errors + counts.conflicts > 0) {
-              throw cliError("Kagane prefill has errors/conflicts; inspect the report.");
-            }
           } catch (error) {
+            failure = errorMessage(error);
             if (/Kagane Cloudflare challenge/.test(errorMessage(error))) {
               counts.challenged++;
             }
-            closeFrame(
-              `Stopped: ${Object.entries(counts)
-                .map(([name, count]) => `${count} ${name}`)
-                .join("; ")}. Earlier applied links, if any, remain saved.`,
-            );
             throw error;
           } finally {
-            view?.close();
+            try {
+              record({
+                event: "summary",
+                completed: failure === undefined,
+                counts,
+                ...(failure !== undefined && { error: failure }),
+              });
+            } finally {
+              closeSync(reportFile);
+              view?.close();
+              const label = failure
+                ? "Stopped"
+                : counts.errors + counts.conflicts > 0
+                  ? "Completed with errors"
+                  : apply
+                    ? "Applied"
+                    : "Dry run";
+              closeFrame(
+                `${label}: ${Object.entries(counts)
+                  .map(([name, count]) => `${count} ${name}`)
+                  .join(
+                    "; ",
+                  )}\nReport: ${reportPath}${apply && (failure || counts.errors + counts.conflicts > 0) ? "\nSuccessful links remain saved." : ""}`,
+              );
+            }
+          }
+          if (counts.errors + counts.conflicts > 0) {
+            throw cliError(`Kagane prefill completed with errors/conflicts; inspect ${reportPath}`);
           }
         },
         catch: (cause) => cliError(errorMessage(cause)),
