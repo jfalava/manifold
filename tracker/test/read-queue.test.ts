@@ -199,32 +199,27 @@ describe("processReadActions", () => {
     expect(pushProgress).not.toHaveBeenCalled();
   });
 
-  it("routes reads from their native chapter source and manga IDs", async () => {
+  it("rejects retired sources without advancing progress and routes native MangaDex reads", async () => {
     const recordRead = vi.fn().mockResolvedValue({});
     const pushProgress = vi.fn().mockResolvedValue(true);
 
-    await processReadActions(
+    const result = await processReadActions(
       [
-        action("a", "8295088", 12, "anilist:141756", "Comix", "comix-manga"),
+        action("a", "8295088", 99, "anilist:141756", "Comix", "retired-manga"),
         action("b", "df2e5603-uuid", 13, "anilist:141756", "MangaDex", "md-manga"),
       ],
       { recordRead, pushProgress },
     );
 
-    expect(recordRead).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ successfulItems: ["b"], failedItems: ["a"] });
+    expect(recordRead).toHaveBeenCalledTimes(1);
     expect(recordRead.mock.calls[0]?.[1]).toMatchObject({
-      provider: "comix",
-      chapterKey: "comix:8295088",
-      sourceMangaId: "comix-manga",
-      sourceChapterId: "8295088",
-    });
-    expect(recordRead.mock.calls[1]?.[1]).toMatchObject({
       provider: "mangadex",
       chapterKey: "mangadex:df2e5603-uuid",
       sourceMangaId: "md-manga",
       sourceChapterId: "df2e5603-uuid",
     });
-    // AniList progress is keyed by the anilist-canonical manga either way.
+    // A rejected source must not push its higher chapter number to AniList.
     expect(pushProgress).toHaveBeenCalledTimes(1);
     // SAFETY: optional field is | [SourceManga, number] | undefined when present at this call site
     const progressCall = pushProgress.mock.calls[0] as [SourceManga, number] | undefined;

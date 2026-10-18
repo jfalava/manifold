@@ -211,13 +211,7 @@ export const toListEvent = (row: ListEventRow): ListEvent => ({
 });
 
 const CANONICAL_PROVIDERS: ReadonlySet<string> = new Set(["anilist", "mal", "local"]);
-const REGISTRY_PROVIDERS: ReadonlySet<string> = new Set([
-  "anilist",
-  "mal",
-  "mangadex",
-  "comix",
-  "kagane",
-]);
+const REGISTRY_PROVIDERS: ReadonlySet<string> = new Set(["anilist", "mal", "mangadex", "kagane"]);
 
 const isRegistryProvider = (provider: string): provider is ProviderLink["provider"] =>
   REGISTRY_PROVIDERS.has(provider);

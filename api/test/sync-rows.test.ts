@@ -62,13 +62,13 @@ describe("toRegistryEntry", () => {
         updated_at: 1,
       },
       {
-        provider: "comix",
+        provider: "kagane",
         external_id: "hid1",
         title: "",
         updated_at: 1,
       },
     ]);
-    expect(entry.providers).toEqual([{ provider: "comix", externalId: "hid1", updatedAt: 1 }]);
+    expect(entry.providers).toEqual([{ provider: "kagane", externalId: "hid1", updatedAt: 1 }]);
     expect(() => encodeResponse(RegistryEntry, entry)).not.toThrow();
   });
 

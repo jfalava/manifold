@@ -172,6 +172,26 @@ export function migrate(host: SyncHost): void {
     // Column already exists.
   }
   migrateLegacyOutbox(host);
+  retireComix(host);
+}
+
+/** Also run inside restore's transaction: old snapshots must not revive a retired source. */
+export function retireComix(host: SyncHost): void {
+  // Keep UUIDs, list state, numeric progress, event IDs, and pending external
+  // work. Historical keys are opaque; hex preserves identity without exposing
+  // a retired source namespace or confusing it with a live MangaDex chapter.
+  host.ctx.storage.sql.exec(`
+    UPDATE canonical_entries SET provider = 'local', provider_id = id
+      WHERE provider = 'comix';
+    UPDATE progress_state
+      SET chapter_key = 'historical:' || hex(chapter_key),
+          provider = NULL, source_chapter_id = NULL
+      WHERE provider = 'comix' OR substr(chapter_key, 1, 6) = 'comix:';
+    UPDATE read_events
+      SET chapter_key = 'historical:' || hex(chapter_key)
+      WHERE substr(chapter_key, 1, 6) = 'comix:';
+    DELETE FROM provider_links WHERE provider = 'comix';
+  `);
 }
 
 export function migrateLegacyOutbox(host: SyncHost): void {

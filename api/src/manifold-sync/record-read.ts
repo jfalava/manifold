@@ -169,7 +169,7 @@ const recordReadEffect = (host: SyncHost, entryId: string, input: RecordReadInpu
           });
         }
 
-        // Shelf mirror: any chapter read (MangaDex or Comix fallback) on a
+        // Shelf mirror: any chapter read on a
         // title that has a MangaDex provider link but is not yet on the
         // user's MangaDex library should appear there as "reading".
         // Copyrighted titles without an MD link are skipped — nothing to

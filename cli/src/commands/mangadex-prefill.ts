@@ -4,7 +4,7 @@ import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
 import { errorMessage } from "@manifold/json";
 import { resolveAniListToken } from "@/login/anilist";
-import { loadRegistrySearchTitles } from "@/comix-aliases";
+import { loadRegistrySearchTitles } from "@/registry-titles";
 import { matchesStatusFilter, parseStatusFilter, STATUS_FILTER_HINT } from "@/registry-status";
 import {
   abortFrame,

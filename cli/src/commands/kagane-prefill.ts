@@ -5,8 +5,8 @@ import type { ListrTask } from "listr2";
 import { RegistryEntry } from "@manifold/contract";
 import { errorMessage } from "@manifold/json";
 import { apiCall, apiConfig, listRegistryRows, type RegistryRow } from "@/commands/toolbox";
-import { loadRegistrySearchTitles, searchTitlesFor } from "@/comix-aliases";
-import { classifyPage, openBunComixView, type ComixView } from "@/comix-capture";
+import { loadRegistrySearchTitles, searchTitlesFor } from "@/registry-titles";
+import { classifyPage, openBunBrowserView, type BrowserView } from "@/browser-view";
 import { resolveValue } from "@/env-resolve";
 import { cliError, sleepPromise, validateNonNegativeLimit } from "@/effect-kit";
 import {
@@ -78,7 +78,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
             errors: 0,
             challenged: 0,
           };
-          let view: ComixView | undefined;
+          let view: BrowserView | undefined;
           openFrame(`Kagane registry prefill → ${apply ? "apply" : "dry run"}`);
           const load: ListrTask<KaganeCtx> = {
             title: "Load registry rows",
@@ -104,7 +104,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
               }
               const reporter = makePhaseReporter(task);
               if (chromeUrl) {
-                view = openBunComixView({ chromeUrl, profileDir: kaganeProfileDir() });
+                view = openBunBrowserView({ chromeUrl, profileDir: kaganeProfileDir() });
                 await view.navigate(`${KAGANE_ORIGIN}/`);
                 let ready = false;
                 // Navigation can resolve before the new document is committed.

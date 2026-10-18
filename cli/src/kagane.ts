@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { manifoldUserAgent, type JsonObject, type JsonValue } from "@manifold/json";
 import { cliError, fromPromise, platformFetch, runHost, sleepPromise } from "@/effect-kit";
-import type { ComixView } from "@/comix-capture";
+import type { BrowserView } from "@/browser-view";
 
 export const KAGANE_ORIGIN = "https://kagane.org";
 
@@ -66,7 +66,7 @@ export const hasExactKaganeTitle = (
 /** Catalog-only client: no reader tokens, chapter downloads, or account credentials. */
 export const createKaganeClient = (options: {
   readonly delay: number;
-  readonly view?: ComixView;
+  readonly view?: BrowserView;
 }) => {
   let requested = false;
   const request = async <A>(

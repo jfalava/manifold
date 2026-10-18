@@ -1,14 +1,14 @@
 import { Effect } from "effect";
 import { fetchAniListTitles } from "./anilist";
-import { uniqueTitles } from "./comix-match";
+import { uniqueTitles } from "./title-normalization";
 import { errorMessage, manifoldUserAgent } from "@manifold/json";
 import { createMangaDexClient } from "@manifold/mangadex";
 import { cliError, fromPromise, runHost } from "@/effect-kit";
 
-export const MAX_COMIX_SEARCH_TERMS = 3;
+export const MAX_SEARCH_TERMS = 3;
 
 export const searchTitlesFor = (titles: readonly string[]): readonly string[] =>
-  uniqueTitles(titles).slice(0, MAX_COMIX_SEARCH_TERMS);
+  uniqueTitles(titles).slice(0, MAX_SEARCH_TERMS);
 
 export const providerIdOf = (
   row: {
@@ -21,7 +21,7 @@ export const providerIdOf = (
  * Collect every language/title variant for registry prefill matching.
  * AniList english/romaji/native/synonyms first; MangaDex alts only when the
  * row already has a mangadex link and AniList did not add a second name.
- * Used by both Comix (browse) and MangaDex (Worker resolve) prefills.
+ * Shared by registry provider prefills.
  */
 const loadRegistrySearchTitlesEffect = (
   row: {

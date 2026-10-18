@@ -55,7 +55,7 @@ describe("filterAdminAccessCookies", () => {
     const input: Cookie[] = [
       { name: "CF_Authorization", value: jwt, domain: "", path: "/" },
       { name: "noise", value: "1", domain: "manifold.jfa.dev", path: "/" },
-      { name: "cf_clearance", value: "comix", domain: "comix.to", path: "/" },
+      { name: "cf_clearance", value: "unrelated", domain: "example.test", path: "/" },
     ];
     const out = filterAdminAccessCookies(input, now);
     expect(out).toHaveLength(1);

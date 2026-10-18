@@ -11,7 +11,7 @@ import { safeImageUrl } from "./image-url.js";
 
 const CANDIDATE_PREFIX = "provider-candidate:";
 
-export type ProviderSearchScope = "all" | "registry" | "anilist" | "mal" | "mangadex" | "comix";
+export type ProviderSearchScope = "all" | "registry" | "anilist" | "mal" | "mangadex";
 
 export interface ProviderSearchInput {
   readonly query: string;
@@ -35,18 +35,12 @@ export const parseProviderSearchInput = (value: string): ProviderSearchInput => 
           ? "mal"
           : prefix === "mangadex" || prefix === "md"
             ? "mangadex"
-            : prefix === "comix"
-              ? "comix"
-              : undefined;
+            : undefined;
   return scope && query ? { query, scope } : { query: trimmed, scope: "all" };
 };
 
 const isRegistryProvider = (value: string): value is RegistryProvider =>
-  value === "anilist" ||
-  value === "mal" ||
-  value === "mangadex" ||
-  value === "comix" ||
-  value === "kagane";
+  value === "anilist" || value === "mal" || value === "mangadex" || value === "kagane";
 
 export interface ProviderCandidate {
   readonly provider: RegistryProvider;
@@ -191,11 +185,9 @@ export const toProviderCandidateSearchResult = (
   subtitle: [
     candidate.provider === "mangadex"
       ? "MangaDex"
-      : candidate.provider === "comix"
-        ? "Comix"
-        : candidate.provider === "anilist"
-          ? "AniList"
-          : "MyAnimeList",
+      : candidate.provider === "anilist"
+        ? "AniList"
+        : "MyAnimeList",
     ...candidate.aliases,
   ]
     .filter(Boolean)

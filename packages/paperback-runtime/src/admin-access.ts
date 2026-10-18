@@ -164,8 +164,7 @@ const emailFromAuthorization = (value: string): string | undefined => {
 
 /**
  * Keep only CF Access session cookies for the admin host. Pins empty domains
- * and synthesizes expires when the jar would otherwise drop session cookies
- * (same class of problem as Comix cf_clearance).
+ * and synthesizes expires when the jar would otherwise drop session cookies.
  */
 export const filterAdminAccessCookies = (
   cookies: readonly Cookie[],

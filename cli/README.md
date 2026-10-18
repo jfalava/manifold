@@ -26,7 +26,7 @@ manifold upgrade                           # self-update compiled binary from Gi
 manifold reconcile diff                    # live AniList list vs registry (read-only)
 manifold registry import                   # snapshot AniList list into the registry
 manifold registry mangadex                 # backfill MangaDex provider links
-manifold registry comix                    # backfill Comix hid links via local Chrome
+manifold registry kagane                   # backfill verified Kagane catalog links
 ```
 
 Credentials resolve flag → `MANIFOLD_*` env → OS keychain login where applicable
@@ -34,17 +34,9 @@ Credentials resolve flag → `MANIFOLD_*` env → OS keychain login where applic
 `MANIFOLD_MAL_TOKEN`, `MANIFOLD_API_ORIGIN`). AniList writes run locally or via
 `ops drain-anilist` on oci-agents — AniList blocks Cloudflare Worker egress IPs.
 
-`registry comix` does not paste `cf_clearance` into `fetch`. It opens a
-headed Chrome window with a dedicated `~/.manifold/comix-chrome` profile
-(Chrome 136+ ignores `--remote-debugging-port` on the default profile),
-captures `/browse` the same way the Paperback source does, and stores the
-harvested jar in `Bun.secrets` until `cf_clearance` expires.
-
-```sh
-manifold registry comix
-```
-
-If Cloudflare appears, solve it in that new Chrome window and press Enter.
+PAS5 generation no longer creates Comix attachments and removes existing Comix
+attachments from base archives, including their chapters and progress markers.
+Other source attachments and tracker bindings are preserved.
 
 ## AniList login
 

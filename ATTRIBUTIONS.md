@@ -17,15 +17,14 @@ repositories. The original code is GPL-3.0-or-later and remains subject to its
 copyright and license terms:
 
 - [Inkdex General Extensions](https://github.com/inkdex/general-extensions),
-  branch `0.9/stable`, including the Comix and MangaDex extensions. The
-  relevant upstream paths are `src/Comix/` and `src/MangaDex/`.
+  branch `0.9/stable`, including the MangaDex extension. The
+  relevant upstream path is `src/MangaDex/`.
 - [Inkdex Tracker Extensions](https://github.com/inkdex/tracker-extensions),
   branch `0.9/stable`, including the AniList extension. The relevant upstream
   path is `src/AniList/`.
 
 The corresponding Manifold-derived implementation is in:
 
-- `packages/paperback-comix/`
 - `packages/mangadex/`
 - `packages/paperback-runtime/src/anilist-graphql.ts` (AniList runtime)
 - `tracker/src/MANIFOLD/main.ts`
@@ -54,8 +53,8 @@ not replace the licenses above.
 
 ## Provider content and branding
 
-This license covers Manifold's software, not content returned by Comix,
-MangaDex, or AniList. Titles, descriptions, covers, chapter pages, metadata,
+This license covers Manifold's software, not content returned by MangaDex
+or AniList. Titles, descriptions, covers, chapter pages, metadata,
 provider APIs, and service terms remain controlled by their respective
 providers and rights holders. Provider names and logos are used descriptively
 and do not imply affiliation or endorsement.

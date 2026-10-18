@@ -46,7 +46,7 @@ const STATUSES = [
   "completed",
 ] as const;
 
-const PROVIDERS = ["anilist", "mal", "mangadex", "comix", "kagane"] as const;
+const PROVIDERS = ["anilist", "mal", "mangadex", "kagane"] as const;
 
 const STATUS_BADGES = {
   reading: "info",
@@ -496,7 +496,7 @@ function EntriesTable({
         return false;
       }
       // Each active provider chip excludes entries that *have* that provider,
-      // so "comix" shows everything still missing a comix binding.
+      // showing entries still missing the selected binding.
       for (const value of providerFilters) {
         if (value === "unlinked") {
           if (entry.providers.length !== 0) {

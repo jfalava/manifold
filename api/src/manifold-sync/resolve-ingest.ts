@@ -156,8 +156,8 @@ export function resolveEntrySync(host: SyncHost, request: ResolveEntryInput): Re
   }
 
   const id = newId();
-  // canonical_entries.provider is CanonicalProvider (anilist|mal|local). Content
-  // providers (mangadex/comix) only live on provider_links — mint source stays local.
+  // canonical_entries.provider is CanonicalProvider (anilist|mal|local).
+  // Content providers only live on provider_links — mint source stays local.
   const mintProvider =
     request.provider === "anilist" || request.provider === "mal" ? request.provider : "local";
   host.ctx.storage.sql.exec(
