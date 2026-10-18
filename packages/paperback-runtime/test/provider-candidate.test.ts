@@ -101,10 +101,14 @@ describe("provider candidates", () => {
   });
 
   it("round-trips provider ids without confusing them with registry UUIDs", () => {
-    const id = providerCandidateId("comix", "abc/title:one");
+    const id = providerCandidateId("mangadex", "abc/title:one");
     expect(parseProviderCandidateId(id)).toEqual({
-      provider: "comix",
+      provider: "mangadex",
       providerId: "abc/title:one",
+    });
+    expect(parseProviderCandidateId(providerCandidateId("kagane", "book/title:one"))).toEqual({
+      provider: "kagane",
+      providerId: "book/title:one",
     });
     expect(parseProviderCandidateId("11111111-1111-1111-1111-111111111111")).toBeUndefined();
   });
@@ -130,9 +134,9 @@ describe("provider candidates", () => {
       query: "One Piece",
       scope: "mangadex",
     });
-    expect(parseProviderSearchInput("comix:Villainess")).toEqual({
+    expect(parseProviderSearchInput("al:Villainess")).toEqual({
       query: "Villainess",
-      scope: "comix",
+      scope: "anilist",
     });
     expect(parseProviderSearchInput("Title: Subtitle")).toEqual({
       query: "Title: Subtitle",

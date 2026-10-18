@@ -2,7 +2,7 @@
 /** @effect-diagnostics schemaSync:off */
 import { describe, expect, it } from "vitest";
 
-import { loadRegistrySearchTitles, providerIdOf, searchTitlesFor } from "../src/comix-aliases";
+import { loadRegistrySearchTitles, providerIdOf, searchTitlesFor } from "../src/registry-titles";
 
 const anilistFixtureTitles = async (): Promise<readonly string[]> => [
   "My Neighbor Furi-san is Scary",
@@ -20,10 +20,10 @@ describe("registry search aliases", () => {
       ],
     };
     expect(providerIdOf(row, "anilist")).toBe("123");
-    expect(providerIdOf(row, "comix")).toBeUndefined();
+    expect(providerIdOf(row, "kagane")).toBeUndefined();
   });
 
-  it("keeps the first three unique titles for Comix browse", () => {
+  it("keeps the first three unique titles for provider search", () => {
     expect(
       searchTitlesFor([
         "Tonari no Uchuubito ga Kowai",

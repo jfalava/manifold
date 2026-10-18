@@ -108,7 +108,99 @@ const entitiesFrom = (generated: TestGeneratedEntry): Pas5Entities => ({
   __MANGA_INFO_V5: generated.infos,
 });
 
+const legacyEntry = (): TestGeneratedEntry => {
+  const generated = buildEntry(entry, registryRow);
+  const comix = {
+    ...generated.sources[0]!,
+    id: "legacy-comix",
+    sourceId: "Comix",
+    mangaId: "comix-id",
+    mangaInfo: { id: "Comix:comix-id", type: "__MANGA_INFO_V5" as const },
+  };
+  return {
+    library: {
+      ...generated.library,
+      attachedSources: [
+        ...generated.library.attachedSources,
+        { id: comix.id, type: "__SOURCE_MANGA_V5" },
+      ],
+    },
+    sources: [generated.sources[0]!, comix, generated.sources[1]!],
+    infos: { ...generated.infos, [comix.mangaInfo.id]: Object.values(generated.infos)[0]! },
+  };
+};
+
 describe("al2pas5 source attachments", () => {
+  it.each([false, true])(
+    "strips retired base attachments and dependent records (enrich=%s)",
+    async (enrich) => {
+      const generated = legacyEntry();
+      const base = entitiesFrom(generated);
+      const [mangadex, comix, tracker] = generated.sources;
+      for (const [id, sources] of [
+        ["COMIX-ONLY", [comix!]],
+        ["TRACKER-ONLY", [comix!, tracker!]],
+        ["OTHER-SOURCE", [comix!, { ...mangadex!, id: "other", sourceId: "OtherSource" }]],
+      ] as const) {
+        base.__LIBRARY_MANGA_V5[id] = {
+          ...generated.library,
+          id,
+          attachedSources: sources.map((source) => ({ id: source.id, type: "__SOURCE_MANGA_V5" })),
+        };
+        for (const source of sources) base.__SOURCE_MANGA_V5[source.id] = source;
+      }
+      const archive = {
+        ...base,
+        "__CHAPTER_V5-1": { retired: { id: "retired", sourceManga: { id: comix!.id } } },
+        "__CHAPTER_V5-2": { kept: { id: "kept", sourceManga: { id: mangadex!.id } } },
+        "__CHAPTER_PROGRESS_MARKER_V5-1": { retired: { chapter: { id: "retired" } } },
+        "__CHAPTER_PROGRESS_MARKER_V5-2": { kept: { chapter: { id: "kept" } } },
+        __OTHER_ENTITY: { untouched: true },
+      };
+      const migrated = enrich ? migrate(base, generated.library.id, entry, registryRow) : undefined;
+      const cleaned = sourceFree(archive, {
+        __LIBRARY_MANGA_V5: migrated ? { [generated.library.id]: migrated.library } : {},
+        __SOURCE_MANGA_V5: Object.fromEntries(
+          (migrated?.sources ?? []).map((source) => [source.id, source]),
+        ),
+        __MANGA_INFO_V5: migrated?.infos ?? {},
+      }).entities;
+      const result = await parsePas5(
+        buildPas5Zip(
+          Object.fromEntries(
+            Object.entries(cleaned).map(([name, records]) => [name, JSON.stringify(records)]),
+          ),
+        ),
+      );
+      expect(
+        Object.values(result.__SOURCE_MANGA_V5)
+          .map((source) => source.sourceId)
+          .sort(),
+      ).toEqual(["MANIFOLD", "MangaDex", "OtherSource"]);
+      expect(result.__MANGA_INFO_V5).not.toHaveProperty(comix!.mangaInfo.id);
+      expect(result.__LIBRARY_MANGA_V5).not.toHaveProperty("COMIX-ONLY");
+      expect(result.__LIBRARY_MANGA_V5["TRACKER-ONLY"]!.attachedSources).toEqual([
+        { id: tracker!.id, type: "__SOURCE_MANGA_V5" },
+      ]);
+      expect(result.__LIBRARY_MANGA_V5["OTHER-SOURCE"]!.attachedSources).toEqual([
+        { id: "other", type: "__SOURCE_MANGA_V5" },
+      ]);
+      expect(result).toMatchObject({
+        "__CHAPTER_V5-2": archive["__CHAPTER_V5-2"],
+        "__CHAPTER_PROGRESS_MARKER_V5-2": archive["__CHAPTER_PROGRESS_MARKER_V5-2"],
+        __OTHER_ENTITY: archive.__OTHER_ENTITY,
+      });
+      expect(
+        Object.entries(result).filter(([name]) =>
+          ["__CHAPTER_V5-1", "__CHAPTER_PROGRESS_MARKER_V5-1"].includes(name),
+        ),
+      ).toEqual([
+        ["__CHAPTER_V5-1", {}],
+        ["__CHAPTER_PROGRESS_MARKER_V5-1", {}],
+      ]);
+    },
+  );
+
   it.each([
     ["MangaDex", ["Comix", "MANIFOLD"]],
     ["Comix", ["MangaDex", "MANIFOLD"]],
@@ -116,7 +208,7 @@ describe("al2pas5 source attachments", () => {
   ] as const)(
     "isolates %s without changing entry identity or metadata",
     async (retained, excluded) => {
-      const original = entitiesFrom(buildEntry(entry, registryRow));
+      const original = entitiesFrom(legacyEntry());
       const source = Object.values(original.__SOURCE_MANGA_V5).find(
         (s) => s.sourceId === retained,
       )!;
@@ -146,7 +238,7 @@ describe("al2pas5 source attachments", () => {
   );
 
   it("drops entries missing the remaining provider and retains shared metadata", () => {
-    const generated = buildEntry(entry, registryRow);
+    const generated = legacyEntry();
     const original = entitiesFrom(generated);
     const [mangadex, comix, tracker] = generated.sources;
     original.__SOURCE_MANGA_V5[comix!.id] = { ...comix!, mangaInfo: mangadex!.mangaInfo };
@@ -164,7 +256,7 @@ describe("al2pas5 source attachments", () => {
   });
 
   it("removes excluded chapters and their markers across chunks, preserving unrelated data", () => {
-    const original = entitiesFrom(buildEntry(entry, registryRow));
+    const original = entitiesFrom(legacyEntry());
     const [mangadex, comix] = Object.values(original.__SOURCE_MANGA_V5);
     const keptChapter = { id: "kept", sourceManga: { id: comix!.id, type: "__SOURCE_MANGA_V5" } };
     const keptMarker = { id: "marker-kept", chapter: { id: "kept", type: "__CHAPTER_V5" } };
@@ -217,7 +309,6 @@ describe("al2pas5 source attachments", () => {
     // Provider identities are untouched: real registry UUID and provider IDs.
     expect(generated.sources.map(({ sourceId, mangaId }) => ({ sourceId, mangaId }))).toEqual([
       { sourceId: "MangaDex", mangaId: "mangadex-id" },
-      { sourceId: "Comix", mangaId: "comix-id" },
       { sourceId: "MANIFOLD", mangaId: "canonical-id" },
     ]);
   });
@@ -258,13 +349,12 @@ describe("al2pas5 source attachments", () => {
 
     expect(generated.sources.map(({ sourceId, mangaId }) => ({ sourceId, mangaId }))).toEqual([
       { sourceId: "MangaDex", mangaId: "mangadex-id" },
-      { sourceId: "Comix", mangaId: "comix-id" },
       { sourceId: "MANIFOLD", mangaId: "canonical-id" },
     ]);
     expect(generated.library.attachedSources.map((source) => source.id)).toEqual(
       generated.sources.map((source) => source.id),
     );
-    expect(Object.keys(generated.infos)).toHaveLength(3);
+    expect(Object.keys(generated.infos)).toHaveLength(2);
   });
 
   it("generates from registry identity and list state without AniList metadata", () => {
@@ -301,7 +391,6 @@ describe("al2pas5 source attachments", () => {
     ]);
     expect(generated.sources.map(({ sourceId, mangaId }) => ({ sourceId, mangaId }))).toEqual([
       { sourceId: "MangaDex", mangaId: "mangadex-id" },
-      { sourceId: "Comix", mangaId: "comix-id" },
       { sourceId: "MANIFOLD", mangaId: "canonical-id" },
     ]);
     const tracker =
@@ -338,9 +427,8 @@ describe("al2pas5 source attachments", () => {
     const result = migrate(original, matches[0]!, entry, registryRow);
     expect(result.sources.map(({ sourceId, mangaId }) => ({ sourceId, mangaId }))).toEqual([
       { sourceId: "MangaDex", mangaId: "mangadex-id" },
-      { sourceId: "Comix", mangaId: "comix-id" },
     ]);
-    expect(result.library.attachedSources).toHaveLength(3);
+    expect(result.library.attachedSources).toHaveLength(2);
     expect(result.conflicts).toBe(0);
 
     const enriched: Pas5Entities = {
@@ -376,7 +464,7 @@ describe("al2pas5 source attachments", () => {
       __SOURCE_MANGA_V5: Object.fromEntries(result.sources.map((source) => [source.id, source])),
       __MANGA_INFO_V5: result.infos,
     }).entities;
-    expect(Object.values(cleaned.__SOURCE_MANGA_V5)).toHaveLength(3);
+    expect(Object.values(cleaned.__SOURCE_MANGA_V5)).toHaveLength(2);
     expect(
       Object.values(cleaned.__SOURCE_MANGA_V5)
         .filter((source) => source.sourceId === "MANIFOLD")
@@ -432,7 +520,7 @@ describe("al2pas5 source attachments", () => {
     expect(result.conflicts).toBe(1);
   });
 
-  it("removes ManifoldSource and drops tracker-only libraries", () => {
+  it("removes ManifoldSource and preserves tracker-only libraries", () => {
     const generated = buildEntry(entry, registryRow);
     const base = entitiesFrom(generated);
     const legacyInfoId = "ManifoldSource:canonical-id";
@@ -473,9 +561,8 @@ describe("al2pas5 source attachments", () => {
       }),
     );
     const pruned = sourceFree(undefined, trackerOnly);
-    expect(pruned.removedProviderlessLibraries).toBe(1);
-    expect(pruned.entities.__LIBRARY_MANGA_V5).toEqual({});
-    expect(pruned.entities.__SOURCE_MANGA_V5).toEqual({});
+    expect(pruned.removedProviderlessLibraries).toBe(0);
+    expect(pruned.entities).toEqual(trackerOnly);
   });
 
   it("requires a proven native content provider", () => {

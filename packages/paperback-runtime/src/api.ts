@@ -33,6 +33,7 @@ import {
   RegistryListResponse,
   type RegistryListEntry,
   type RegistryProvider,
+  type SetProviderLinkInput,
   UpdatedCountResponse,
 } from "@manifold/contract";
 import {
@@ -128,14 +129,7 @@ export interface PersonalApiClient {
   readonly upsertEntry: (
     entry: Pick<CanonicalSearchResult, "id" | "provider" | "providerId" | "title">,
   ) => Promise<PersonalEntry>;
-  readonly linkProvider: (
-    entryId: string,
-    link: {
-      readonly provider: "mangadex" | "comix";
-      readonly externalId: string;
-      readonly title?: string;
-    },
-  ) => Promise<PersonalEntry>;
+  readonly linkProvider: (entryId: string, link: SetProviderLinkInput) => Promise<PersonalEntry>;
   readonly getCanonical: (
     provider: "anilist" | "mal",
     providerId: string,

@@ -1,6 +1,7 @@
 /** @effect-diagnostics asyncFunction:off */
 import { Effect, Schema } from "effect";
 import { scheduleSync } from "./schedule";
+import { retireComix } from "./migrate";
 import type { SyncHost } from "./host";
 import { now } from "./constants";
 import { fromPromise } from "./from-promise";
@@ -321,6 +322,7 @@ export function restoreRegistry(host: SyncHost, backup: RegistryBackup): void {
         );
       }
     }
+    retireComix(host);
   });
 }
 

@@ -2,7 +2,7 @@ import { Command } from "effect/cli";
 
 import { anilistCommand } from "@/commands/anilist";
 import { al2mdCommand } from "@/commands/al2md";
-import { comixPrefillCommand } from "@/commands/comix-prefill";
+import { kaganePrefillCommand } from "@/commands/kagane-prefill";
 import { loginCommand } from "@/commands/login";
 import { malCommand } from "@/commands/mal";
 import { malPrefillCommand } from "@/commands/mal-prefill";
@@ -30,7 +30,7 @@ const registryCommand = Command.make("registry").pipe(
     importCommand,
     malPrefillCommand,
     mangadexPrefillCommand,
-    comixPrefillCommand,
+    kaganePrefillCommand,
   ]),
 );
 

@@ -44,6 +44,13 @@ export const LinkProviderInput = Schema.Struct({
 });
 export type LinkProviderInput = Schema.Schema.Type<typeof LinkProviderInput>;
 
+/** Entry-targeted link write; reject never replaces an existing identity or owner. */
+export const SetProviderLinkInput = Schema.Struct({
+  ...LinkProviderInput.fields,
+  onConflict: Schema.optional(Schema.Literals(["reject", "replace"])),
+});
+export type SetProviderLinkInput = Schema.Schema.Type<typeof SetProviderLinkInput>;
+
 export const ResolveEntryInput = Schema.Struct({
   provider: RegistryProvider,
   providerId: Schema.NonEmptyString,

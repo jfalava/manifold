@@ -11,6 +11,7 @@ import type {
   RegistryEntry,
   RegistryListEntry,
   LinkProviderInput,
+  SetProviderLinkInput,
   ListState,
   ReadingProgress,
   RegistrySummary,
@@ -210,6 +211,54 @@ export function registrySummary(host: SyncHost): RegistrySummary {
 }
 
 export function linkProvider(
+  host: SyncHost,
+  entryId: string,
+  input: SetProviderLinkInput,
+): RegistryEntry {
+  return host.ctx.storage.transactionSync(() => {
+    if (input.onConflict === "reject") {
+      const target = host.ctx.storage.sql
+        .exec<EntryRow>("SELECT * FROM canonical_entries WHERE id = ?", entryId)
+        .toArray()[0];
+      if (!target || target.tombstoned_at !== null) {
+        throw new Error(`Active canonical entry not found: ${entryId}`);
+      }
+      const binding = host.ctx.storage.sql
+        .exec<{ external_id: string }>(
+          "SELECT external_id FROM provider_links WHERE entry_id = ? AND provider = ?",
+          entryId,
+          input.provider,
+        )
+        .toArray()[0];
+      if (binding && binding.external_id !== input.externalId) {
+        throw new Error(
+          `Provider link conflict: ${entryId} already has a different ${input.provider} binding`,
+        );
+      }
+      // Do not join active entries: tombstoned owners still reserve their identities.
+      const owner = host.ctx.storage.sql
+        .exec<{ entry_id: string }>(
+          "SELECT entry_id FROM provider_links WHERE provider = ? AND external_id = ? AND entry_id <> ?",
+          input.provider,
+          input.externalId,
+          entryId,
+        )
+        .toArray()[0];
+      if (owner) {
+        throw new Error(
+          `Provider link conflict: ${input.provider}:${input.externalId} is already owned by ${owner.entry_id}`,
+        );
+      }
+      if (binding) {
+        // Identity replay is a true no-op, including title, timestamps and events.
+        return readEntry(host, entryId)!;
+      }
+    }
+    return writeProviderLink(host, entryId, input);
+  });
+}
+
+function writeProviderLink(
   host: SyncHost,
   entryId: string,
   input: LinkProviderInput,

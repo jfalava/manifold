@@ -35,6 +35,7 @@ export {
   RegistrySummary,
   ResolveEntryInput,
   SetListStateInput,
+  SetProviderLinkInput,
   SetMangaDexStatusInput,
   SyncOp,
   UpsertEntryInput,

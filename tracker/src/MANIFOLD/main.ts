@@ -15,8 +15,6 @@ import {
   OAuthButtonRow,
   SelectRow,
   type Chapter,
-  type CloudflareBypassRequestProviding,
-  type Cookie,
   type Extension,
   type MangaProgress,
   type ManagedCollection,
@@ -25,7 +23,6 @@ import {
   type Metadata,
   type MangaProgressProviding,
   type PagedResults,
-  type Request,
   type SearchQuery,
   type SearchResultItem,
   type SearchResultsProviding,
@@ -51,8 +48,6 @@ import { Clock, DateTime } from "effect";
 import * as Effect from "effect/Effect";
 import type { CanonicalFetcher } from "@manifold/canonical/sources";
 import { createMangaDexClient, type MangaDexSourceError } from "@manifold/mangadex";
-import { ComixSource } from "@manifold/paperback-comix";
-import { hashIdFromMangaId } from "@manifold/paperback-comix/parser";
 import {
   ANILIST_OAUTH_CLIENT_ID,
   ANILIST_SESSION_KEY,
@@ -157,8 +152,7 @@ export class ManifoldTrackerSource
     SearchResultsProviding,
     MangaProgressProviding,
     ManagedCollectionProviding,
-    SettingsFormProviding,
-    CloudflareBypassRequestProviding
+    SettingsFormProviding
 {
   private readonly canonicalResults = new Map<string, CanonicalSearchResult>();
   private readonly providerCandidates = new Map<string, ProviderCandidate>();
@@ -167,23 +161,9 @@ export class ManifoldTrackerSource
     limit: 25,
     userAgent: manifoldUserAgent("tracker"),
   });
-  private readonly comix = new ComixSource();
 
   async initialise(): Promise<void> {
-    await this.comix.initialise();
     console.log("[MANIFOLD] initialise:ready");
-  }
-
-  async saveCloudflareBypassCookies(cookies: Cookie[]): Promise<void> {
-    await this.comix.saveCloudflareBypassCookies(cookies);
-  }
-
-  async cloudflareBypassCompleted(
-    request: Request,
-    cookies: Cookie[],
-    browserStorage: Record<string, string>,
-  ): Promise<void> {
-    await this.comix.cloudflareBypassCompleted(request, cookies, browserStorage);
   }
 
   async getSearchResults(
@@ -200,24 +180,19 @@ export class ManifoldTrackerSource
     }
 
     const api = configuredPersonalApi();
-    const [registryResult, canonicalResult, mangaDexResult, comixResult] = await Promise.allSettled(
-      [
-        search.scope === "all" || search.scope === "registry"
-          ? api.searchRegistry(title, 25)
-          : Promise.resolve([]),
-        search.scope === "all" || search.scope === "anilist" || search.scope === "mal"
-          ? api
-              .searchCanonical(title, 25, search.scope === "all" ? "auto" : search.scope)
-              .then((response) => response.results)
-          : Promise.resolve([]),
-        search.scope === "all" || search.scope === "mangadex"
-          ? Effect.runPromise(this.mangaDex.search(title))
-          : Promise.resolve([]),
-        search.scope === "all" || search.scope === "comix"
-          ? this.comix.getSearchResults({ ...query, title }, undefined, undefined)
-          : Promise.resolve({ items: [] }),
-      ],
-    );
+    const [registryResult, canonicalResult, mangaDexResult] = await Promise.allSettled([
+      search.scope === "all" || search.scope === "registry"
+        ? api.searchRegistry(title, 25)
+        : Promise.resolve([]),
+      search.scope === "all" || search.scope === "anilist" || search.scope === "mal"
+        ? api
+            .searchCanonical(title, 25, search.scope === "all" ? "auto" : search.scope)
+            .then((response) => response.results)
+        : Promise.resolve([]),
+      search.scope === "all" || search.scope === "mangadex"
+        ? Effect.runPromise(this.mangaDex.search(title))
+        : Promise.resolve([]),
+    ]);
     const selectedResult =
       search.scope === "registry"
         ? registryResult
@@ -225,9 +200,7 @@ export class ManifoldTrackerSource
           ? canonicalResult
           : search.scope === "mangadex"
             ? mangaDexResult
-            : search.scope === "comix"
-              ? comixResult
-              : undefined;
+            : undefined;
     if (selectedResult?.status === "rejected") {
       throw selectedResult.reason;
     }
@@ -281,20 +254,6 @@ export class ManifoldTrackerSource
     } else {
       console.error(`[MANIFOLD] MangaDex search failed: ${errorMessage(mangaDexResult.reason)}`);
     }
-    if (comixResult.status === "fulfilled") {
-      for (const result of comixResult.value.items) {
-        candidates.push({
-          provider: "comix",
-          providerId: hashIdFromMangaId(result.mangaId),
-          title: result.title,
-          aliases: [],
-          imageUrl: result.imageUrl,
-        });
-      }
-    } else {
-      console.error(`[MANIFOLD] Comix search failed: ${errorMessage(comixResult.reason)}`);
-    }
-
     for (const candidate of correlateProviderCandidates(candidates)) {
       if (linkedKeys.has(`${candidate.provider}:${candidate.providerId}`)) {
         continue;
@@ -370,31 +329,6 @@ export class ManifoldTrackerSource
             },
             manga.anilistId,
           );
-        }
-        if (parsedCandidate.provider === "comix") {
-          const details = yield* fromPromise(() =>
-            this.comix.getMangaDetails(parsedCandidate.providerId),
-          );
-          const stored = yield* fromPromise(() =>
-            personalApi.ingestCandidate({
-              provider: "comix",
-              providerId: parsedCandidate.providerId,
-              title: candidate?.title ?? details.mangaInfo.primaryTitle,
-            }),
-          );
-          return {
-            ...details,
-            mangaId: stored.id,
-            mangaInfo: {
-              ...details.mangaInfo,
-              thumbnailUrl: safeImageUrl(details.mangaInfo.thumbnailUrl),
-              additionalInfo: {
-                ...details.mangaInfo.additionalInfo,
-                "Canonical ID": stored.id,
-                "Canonical provider": "registry",
-              },
-            },
-          };
         }
         return yield* trackerError(
           `Unsupported provider candidate: ${String(parsedCandidate.provider)}`,
@@ -485,12 +419,8 @@ export class ManifoldTrackerSource
           return undefined;
         }
 
-        const lastReadChapterId =
-          progress.provider === "comix"
-            ? `comix:${progress.sourceChapterId}`
-            : progress.sourceChapterId;
         const lastReadChapter: Chapter = {
-          chapterId: lastReadChapterId,
+          chapterId: progress.sourceChapterId,
           sourceManga,
           langCode: "en",
           chapNum: progress.chapterNumber ?? 0,

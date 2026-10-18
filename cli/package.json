@@ -30,7 +30,6 @@
     "ops:drain-anilist": "bun index.ts ops drain-anilist",
     "pas5": "bun index.ts pas5 create",
     "reconcile:diff": "bun index.ts reconcile diff",
-    "registry:comix": "bun index.ts registry comix",
     "registry:import": "bun index.ts registry import",
     "registry:mangadex": "bun index.ts registry mangadex",
     "test": "vitest run",
@@ -45,7 +44,7 @@
     "@manifold/mangadex": "workspace:*",
     "cli-progress": "3.12.0",
     "effect": "catalog:effect",
-    "listr2": "11.1.1",
+    "listr2": "11.2.0",
     "picocolors": "1.1.1"
   },
   "devDependencies": {

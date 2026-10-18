@@ -2,7 +2,7 @@
 
 An experimental canonical manga registry and [Paperback](https://paperback.moe/)
 tracker. Manifold keeps identity, provider links, list state, and progress in one
-place while native MangaDex and Comix extensions own reading and chapter updates.
+place while the native MangaDex extension owns reading and chapter updates.
 
 > [!WARNING]
 > This is **very** experimental and requires your own [infrastructure](https://manifold.jfa.dev/architecture/).
@@ -10,6 +10,6 @@ place while native MangaDex and Comix extensions own reading and chapter updates
 ## License
 
 Manifold-authored code is licensed under the [MIT License](./LICENSE-MIT).
-The Inkdex-derived Comix, MangaDex, AniList, and tracker components remain
+The Inkdex-derived MangaDex, AniList, and tracker components remain
 under [GPL-3.0-or-later](./LICENSE). See [ATTRIBUTIONS.md](./ATTRIBUTIONS.md)
 for the exact scope and provider-content and dependency notices.

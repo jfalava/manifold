@@ -46,10 +46,7 @@ import {
 
 const SOURCE_ID = "ManifoldSource";
 const TRACKER_SOURCE_ID = "MANIFOLD";
-const UPSTREAM_SOURCES = [
-  { provider: "mangadex", sourceId: "MangaDex" },
-  { provider: "comix", sourceId: "Comix" },
-] as const;
+const UPSTREAM_SOURCES = [{ provider: "mangadex", sourceId: "MangaDex" }] as const;
 
 const DEFAULT_BASE_HINT = "a real device export (*.pas5) — restore may REPLACE the library";
 
@@ -394,18 +391,19 @@ export const sourceFreeEntities = (
   base: Pas5Entities | undefined,
   updates: Pas5Entities,
 ): SourceFreeResult => {
-  const libraries = {
-    ...base?.__LIBRARY_MANGA_V5,
-    ...updates.__LIBRARY_MANGA_V5,
-  };
-  const allSources = {
-    ...base?.__SOURCE_MANGA_V5,
-    ...updates.__SOURCE_MANGA_V5,
-  };
-  const allInfos = {
-    ...base?.__MANGA_INFO_V5,
-    ...updates.__MANGA_INFO_V5,
-  };
+  const filtered = filterPas5Providers(
+    {
+      ...base,
+      ...updates,
+      __LIBRARY_MANGA_V5: { ...base?.__LIBRARY_MANGA_V5, ...updates.__LIBRARY_MANGA_V5 },
+      __SOURCE_MANGA_V5: { ...base?.__SOURCE_MANGA_V5, ...updates.__SOURCE_MANGA_V5 },
+      __MANGA_INFO_V5: { ...base?.__MANGA_INFO_V5, ...updates.__MANGA_INFO_V5 },
+    },
+    new Set(["Comix"]),
+  );
+  const libraries = filtered.__LIBRARY_MANGA_V5;
+  const allSources = filtered.__SOURCE_MANGA_V5;
+  const allInfos = filtered.__MANGA_INFO_V5;
   const sources = Object.fromEntries(
     Object.entries(allSources).filter(([, source]) => source.sourceId !== SOURCE_ID),
   );
@@ -421,11 +419,7 @@ export const sourceFreeEntities = (
     ]),
   );
   const retainedLibraries = Object.fromEntries(
-    Object.entries(sourceFreeLibraries).filter(([, library]) =>
-      library.attachedSources.some(
-        (reference) => sources[reference.id]?.sourceId !== TRACKER_SOURCE_ID,
-      ),
-    ),
+    Object.entries(sourceFreeLibraries).filter(([, library]) => library.attachedSources.length > 0),
   );
   const usedSourceIds = new Set(
     Object.values(retainedLibraries).flatMap((library) =>
@@ -444,13 +438,15 @@ export const sourceFreeEntities = (
 
   return {
     entities: {
+      ...filtered,
       __LIBRARY_MANGA_V5: retainedLibraries,
       __SOURCE_MANGA_V5: retainedSources,
       __MANGA_INFO_V5: retainedInfos,
     },
     removedLegacySources: Object.keys(allSources).length - Object.keys(sources).length,
     removedProviderlessLibraries:
-      Object.keys(sourceFreeLibraries).length - Object.keys(retainedLibraries).length,
+      Object.keys({ ...base?.__LIBRARY_MANGA_V5, ...updates.__LIBRARY_MANGA_V5 }).length -
+      Object.keys(retainedLibraries).length,
   };
 };
 
@@ -463,23 +459,29 @@ export const pas5FilterCommand = Command.make("filter", {
   ),
   apply: Flag.Boolean("apply").pipe(Flag.withDefault(false)),
   excludeMangadex: Flag.Boolean("exclude-mangadex").pipe(Flag.withDefault(false)),
-  excludeComix: Flag.Boolean("exclude-comix").pipe(Flag.withDefault(false)),
+  excludeSource: Flag.String("exclude-source").pipe(
+    Flag.withDefault(""),
+    Flag.withDescription("Comma-separated source IDs to exclude."),
+  ),
   excludeTracker: Flag.Boolean("exclude-tracker").pipe(Flag.withDefault(false)),
 }).pipe(
   Command.withDescription(
     "Isolate PAS5 providers without fetching AniList or registry data; tracker-only entries are retained.",
   ),
-  Command.withHandler(({ input, out, apply, excludeMangadex, excludeComix, excludeTracker }) =>
+  Command.withHandler(({ input, out, apply, excludeMangadex, excludeSource, excludeTracker }) =>
     Effect.tryPromise({
       try: async () => {
         const excluded = new Set([
           ...(excludeMangadex ? ["MangaDex"] : []),
-          ...(excludeComix ? ["Comix"] : []),
+          ...excludeSource
+            .split(",")
+            .map((id) => id.trim())
+            .filter(Boolean),
           ...(excludeTracker ? ["MANIFOLD"] : []),
         ]);
-        if (excluded.size === 0 || excluded.size === 3) {
+        if (excluded.size === 0) {
           throw cliError(
-            "Exclude one or two providers with --exclude-mangadex, --exclude-comix, or --exclude-tracker.",
+            "Exclude providers with --exclude-source, --exclude-mangadex, or --exclude-tracker.",
           );
         }
         if (resolve(input) === resolve(out)) {
@@ -808,7 +810,7 @@ export const pas5CreateCommand = Command.make("create", {
           `${source === "anilist" ? "AniList titles" : "Registry entries"}: ${scan.entries.length}`,
           `New library entries: ${totalGenerated}`,
           `Existing library entries enriched: ${enrichedExisting}`,
-          `MangaDex/Comix attachments added: ${upstreamAttachments}`,
+          `MangaDex attachments added: ${upstreamAttachments}`,
           `Skipped (already in base): ${skippedExisting}`,
           `Skipped (status excluded by --tabs): ${skippedByTabs}`,
           `Skipped (without registry UUID): ${unresolvedUuid}`,
@@ -834,14 +836,9 @@ export const pas5CreateCommand = Command.make("create", {
         }
 
         const merged: Record<string, string> = {};
-        if (scan.base) {
-          for (const [name, records] of Object.entries(scan.base)) {
-            merged[name] = JSON.stringify(records);
-          }
+        for (const [name, records] of Object.entries(sourceFree.entities)) {
+          merged[name] = JSON.stringify(records);
         }
-        merged.__LIBRARY_MANGA_V5 = JSON.stringify(sourceFree.entities.__LIBRARY_MANGA_V5);
-        merged.__SOURCE_MANGA_V5 = JSON.stringify(sourceFree.entities.__SOURCE_MANGA_V5);
-        merged.__MANGA_INFO_V5 = JSON.stringify(sourceFree.entities.__MANGA_INFO_V5);
 
         for (const line of lines) {
           frameDetail(line);

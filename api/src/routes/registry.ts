@@ -3,7 +3,7 @@ import {
   CanonicalIdentity,
   ErrorBody,
   IngestCandidateInput,
-  LinkProviderInput,
+  SetProviderLinkInput,
   ListState,
   ListStateResponse,
   NukeEntryInput,
@@ -143,13 +143,13 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
 
     if (path[3] === "providers" && path.length === 4 && request.method === "POST") {
       const raw = yield* parseJson(request);
-      const input = yield* Schema.decodeUnknownEffect(LinkProviderInput)(raw);
+      const input = yield* Schema.decodeUnknownEffect(SetProviderLinkInput)(raw);
       return jsonEncoded(RegistryEntry, yield* tryPromise(() => sync.linkProvider(entryId, input)));
     }
 
     if (path[3] === "unlink" && path.length === 5 && request.method === "POST") {
       const provider = path[4];
-      if (!["anilist", "mal", "mangadex", "comix"].includes(provider)) {
+      if (!["anilist", "mal", "mangadex", "kagane"].includes(provider)) {
         return jsonEncoded(ErrorBody, { error: "Unknown provider" }, 400);
       }
       return jsonEncoded(

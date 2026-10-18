@@ -3,11 +3,11 @@ import { Schema } from "effect";
 export const CanonicalProvider = Schema.Literals(["anilist", "mal", "local"]);
 export type CanonicalProvider = Schema.Schema.Type<typeof CanonicalProvider>;
 
-export const ContentProvider = Schema.Literals(["mangadex", "comix"]);
+export const ContentProvider = Schema.Literals(["mangadex"]);
 export type ContentProvider = Schema.Schema.Type<typeof ContentProvider>;
 
 /** Providers that appear in registry links. */
-export const RegistryProvider = Schema.Literals(["anilist", "mal", "mangadex", "comix"]);
+export const RegistryProvider = Schema.Literals(["anilist", "mal", "mangadex", "kagane"]);
 export type RegistryProvider = Schema.Schema.Type<typeof RegistryProvider>;
 
 export const ListStatus = Schema.Literals([

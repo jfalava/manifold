@@ -3,7 +3,6 @@ import type {
   AuthProvider,
   CompleteOpsInput,
   IngestCandidateInput,
-  LinkProviderInput,
   ListEvent,
   ListState,
   MangaDexLibraryItem,
@@ -20,6 +19,7 @@ import type {
   ResolveEntryInput,
   SetListStateInput,
   SetMangaDexStatusInput,
+  SetProviderLinkInput,
   SyncOp,
   UpsertEntryInput,
 } from "./domain";
@@ -71,7 +71,7 @@ export interface ManifoldSyncStub {
   upsertEntry(input: UpsertEntryInput): Promise<RegistryEntry>;
   listEntries(): Promise<readonly RegistryEntry[]>;
   getEntry(entryId: string): Promise<RegistryEntry | undefined>;
-  linkProvider(entryId: string, input: LinkProviderInput): Promise<RegistryEntry>;
+  linkProvider(entryId: string, input: SetProviderLinkInput): Promise<RegistryEntry>;
   getProgress(entryId: string): Promise<ReadingProgress | undefined>;
   recordRead(entryId: string, input: RecordReadInput): Promise<ReadingProgress>;
   listPendingSync(): Promise<readonly SyncOp[]>;

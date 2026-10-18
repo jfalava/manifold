@@ -29,7 +29,7 @@ export interface ReadQueueDeps {
 }
 
 interface ChapterProvenance {
-  readonly provider: "mangadex" | "comix";
+  readonly provider: "mangadex";
   readonly chapterKey: string;
 }
 
@@ -232,9 +232,6 @@ const flushPendingProgressEffect = (
 const chapterProvenance = (chapterSourceId: string, sourceChapterId: string): ChapterProvenance => {
   if (chapterSourceId === "MangaDex") {
     return { provider: "mangadex", chapterKey: `mangadex:${sourceChapterId}` };
-  }
-  if (chapterSourceId === "Comix") {
-    return { provider: "comix", chapterKey: `comix:${sourceChapterId}` };
   }
   throw trackerError(`Unsupported chapter source: ${chapterSourceId}`);
 };
