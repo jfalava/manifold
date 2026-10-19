@@ -46,7 +46,12 @@ import {
 
 const SOURCE_ID = "ManifoldSource";
 const TRACKER_SOURCE_ID = "MANIFOLD";
-const UPSTREAM_SOURCES = [{ provider: "mangadex", sourceId: "MangaDex" }] as const;
+// Native source IDs and unmodified manga IDs verified against a device PAS5 export.
+const UPSTREAM_SOURCES = [
+  { provider: "mangadex", sourceId: "MangaDex" },
+  { provider: "kagane", sourceId: "Kagane" },
+  { provider: "manganato", sourceId: "MangaNato" },
+] as const;
 
 const DEFAULT_BASE_HINT = "a real device export (*.pas5) — restore may REPLACE the library";
 
@@ -810,7 +815,7 @@ export const pas5CreateCommand = Command.make("create", {
           `${source === "anilist" ? "AniList titles" : "Registry entries"}: ${scan.entries.length}`,
           `New library entries: ${totalGenerated}`,
           `Existing library entries enriched: ${enrichedExisting}`,
-          `MangaDex attachments added: ${upstreamAttachments}`,
+          `Native content attachments added: ${upstreamAttachments}`,
           `Skipped (already in base): ${skippedExisting}`,
           `Skipped (status excluded by --tabs): ${skippedByTabs}`,
           `Skipped (without registry UUID): ${unresolvedUuid}`,
