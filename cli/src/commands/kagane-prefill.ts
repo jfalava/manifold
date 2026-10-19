@@ -68,9 +68,9 @@ export const kaganePrefillCommand = Command.make("kagane", {
     Flag.withDescription("Maximum pages per search (default 200); incomplete searches never link."),
   ),
   sourcePriority: Flag.String("source-priority").pipe(
-    Flag.withDefault("MangaDex"),
+    Flag.withDefault("Kodansha Comics,VIZ Media,Manga Up!,Comikey,Crunchyroll,Square Enix Manga"),
     Flag.withDescription(
-      "Comma-separated Kagane source names, preferred first; none disables preference.",
+      "Comma-separated Kagane source names, preferred first; none disables preference. MangaDex is excluded.",
     ),
   ),
   report: Flag.String("report").pipe(
@@ -124,6 +124,11 @@ export const kaganePrefillCommand = Command.make("kagane", {
                   .filter(Boolean);
           if (priority.length === 0 && sourcePriority.toLowerCase() !== "none") {
             throw cliError("--source-priority requires source names or none.");
+          }
+          if (priority.some((name) => name.toLowerCase() === "mangadex")) {
+            throw cliError(
+              "MangaDex is excluded as a Kagane content source; use the native MangaDex provider.",
+            );
           }
           if (!/^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/.test(language)) {
             throw cliError("--language must be a language code such as en or pt-BR.");
@@ -225,6 +230,12 @@ export const kaganePrefillCommand = Command.make("kagane", {
               const sources = new Map(
                 (await client.sources()).sources.map((source) => [source.source_id, source.title]),
               );
+              const allowedSources = [...sources]
+                .filter(([, title]) => title.trim().toLowerCase() !== "mangadex")
+                .map(([id]) => id);
+              if (allowedSources.length === 0) {
+                throw cliError("No non-MangaDex Kagane sources are available.");
+              }
               const preferredSources = priority.map((name) => {
                 const ids = [...sources]
                   .filter(([, title]) => title.toLowerCase() === name.toLowerCase())
@@ -259,11 +270,13 @@ export const kaganePrefillCommand = Command.make("kagane", {
                   });
                   // Narrow by preferred source first. Only a verified ID match can avoid the global search.
                   for (const sourceIds of [...preferredSources, []]) {
-                    context = `${entryContext} [${sourceIds.length ? sources.get(sourceIds[0]!) : "all sources"}]`;
+                    context = `${entryContext} [${sourceIds.length ? sources.get(sourceIds[0]!) : "all non-MangaDex sources"}]`;
                     const candidates = new Map<string, KaganeBook>();
                     for (const title of searchTitlesFor(titles)) {
                       for (const book of await client.search(title, language, sourceIds)) {
+                        // Kagane caps source_id values; filter the full-catalog fallback locally.
                         if (
+                          allowedSources.includes(book.source_id ?? "") &&
                           hasExactKaganeTitle(titles, [
                             book.title,
                             ...(book.alternate_titles ?? []),
@@ -373,6 +386,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
               delay,
               maxPages,
               sourcePriority: priority,
+              excludedSources: ["MangaDex"],
             });
             await createRun<KaganeCtx>([load, sweep]).run({ rows: [], selected: [] });
           } catch (error) {

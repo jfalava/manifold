@@ -58,13 +58,23 @@ const run = (flags: string[] = [], scenario = "normal") => {
     if (url.hostname === 'kagane.org') {
       if (scenario === 'challenge') return new Response('<title>Just a moment...</title>', {status:403, headers:{'cf-mitigated':'challenge'}});
       if (url.pathname.endsWith('/sources/list')) return Response.json({sources:[
-        {source_id:'source-a', source_type:'Official', title:'Example Source'},
-        {source_id:'source-b', source_type:'Unofficial', title:'MangaDex'}
+        ...(scenario === 'excluded-catalog' ? [] : [
+          {source_id:'source-a', source_type:'Official', title:'Example Source'},
+          {source_id:'source-b', source_type:'Official', title:'Kodansha Comics'}
+        ]),
+        {source_id:'source-md', source_type:'Unofficial', title:'MangaDex'},
+        ...(scenario === 'identity-default' ? ['VIZ Media','Manga Up!','Comikey','Crunchyroll','Square Enix Manga'].map((title, i) => ({source_id:'priority-'+i, title})) : [])
       ]});
       if (url.pathname.endsWith('/search/series')) {
         const body = JSON.parse(init.body);
         console.info('SEARCH', body.title, JSON.stringify(body.content_lang));
+        console.info('SEARCH_BODY', JSON.stringify(body));
         if (body.title !== 'A Story') return Response.json({content:[], last:true});
+        // Deliberately ignore source_id to exercise client-side exclusion too.
+        if (scenario.startsWith('excluded-source-')) return Response.json({content:[
+          {...book('mangadex-series'), source_id:'source-md'},
+          ...(scenario === 'excluded-source-mixed' ? [book('series/one')] : [])
+        ], last:true});
         if (scenario === 'malformed') return Response.json({content:[book('series/one')]});
         if (scenario === 'failure') return new Response('unavailable', {status:503});
         if (scenario === 'retry') {
@@ -107,7 +117,7 @@ const run = (flags: string[] = [], scenario = "normal") => {
   };
   try {
     await Effect.runPromise(Command.runWith(makeRootCommand('test'), {version:'test'})(
-      ${JSON.stringify(["registry", "kagane", "--report", report, ...(flags.includes("--source-priority") ? [] : ["--source-priority", "none"]), ...(flags.includes("--delay") ? [] : ["--delay", "0"]), "--status", "reading", ...flags])}
+      ${JSON.stringify(["registry", "kagane", "--report", report, ...(flags.includes("--source-priority") || scenario === "identity-default" ? [] : ["--source-priority", "none"]), ...(flags.includes("--delay") ? [] : ["--delay", "0"]), "--status", "reading", ...flags])}
     ).pipe(Effect.provide(BunServices.layer)));
   } catch (error) { console.error(error); process.exitCode = 1; }
 `,
@@ -138,6 +148,13 @@ describe("registry kagane", () => {
       'SEARCH A Story ["en"]',
       'SEARCH Nothing ["en"]',
     ]);
+    // Omission means unrestricted on Kagane, unlike MangaDex's safe+suggestive default.
+    expect(
+      [...result.stdout.matchAll(/^SEARCH_BODY (.+)$/gm)].map((match) => JSON.parse(match[1]!)),
+    ).toEqual([
+      { title: "A Story", content_lang: ["en"] },
+      { title: "Nothing", content_lang: ["en"] },
+    ]);
     expect(result.stdout).not.toContain("WRITE");
   });
 
@@ -149,6 +166,37 @@ describe("registry kagane", () => {
     );
     expect(result.stdout).toContain("LINKED target");
     expect(result.stdout).not.toContain("list-state");
+  });
+
+  it.each(["mixed", "only"])(
+    "excludes MangaDex even with source preference disabled and %s results ignoring the filter",
+    (pool) => {
+      const result = run(["--apply"], `excluded-source-${pool}`);
+      expect(result.status, result.stderr).toBe(0);
+      const entry = result.report.find((item) => item.entryId === "target");
+      if (pool === "mixed") {
+        expect(entry).toMatchObject({ outcome: "matched", selectedId: "series/one" });
+        expect(result.stdout).toContain('"externalId":"series/one"');
+      } else {
+        expect(entry).toMatchObject({ outcome: "unmatched", selectedId: null });
+        expect(result.stdout).not.toContain("WRITE");
+      }
+      expect(entry.candidates.map((candidate) => candidate.id)).not.toContain("mangadex-series");
+    },
+  );
+
+  it("rejects MangaDex priority and refuses an empty allowed catalog instead of searching unfiltered", () => {
+    for (const priority of ["MangaDex", "  mAnGaDeX  ", "Kodansha Comics,MangaDex"]) {
+      const result = run(["--apply", "--source-priority", priority]);
+      expect(result.status).toBe(1);
+      expect(result.stdout + result.stderr).toContain("native MangaDex provider");
+      expect(result.stdout).not.toContain("REGISTRY_PAGE");
+    }
+    const empty = run(["--apply"], "excluded-catalog");
+    expect(empty.status).toBe(1);
+    expect(empty.stdout + empty.stderr).toContain("No non-MangaDex Kagane sources");
+    expect(empty.stdout).not.toContain("SEARCH");
+    expect(empty.stdout).not.toContain("WRITE");
   });
 
   it("does not accept the first match before a competing edition on the next page", () => {
@@ -199,7 +247,7 @@ describe("registry kagane", () => {
   );
 
   it("uses source priority only after verifying IDs, not chapter counts or result order", () => {
-    const result = run(["--apply", "--source-priority", "MangaDex"], "identity-priority");
+    const result = run(["--apply", "--source-priority", "Kodansha Comics"], "identity-priority");
     expect(result.status, result.stderr).toBe(0);
     expect(result.report.find((entry) => entry.entryId === "target")).toMatchObject({
       outcome: "matched",
@@ -212,8 +260,31 @@ describe("registry kagane", () => {
     ).toEqual(["anilist", "mal"]);
   });
 
+  it("defaults to non-MangaDex source priorities", () => {
+    const result = run(["--apply"], "identity-default");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.report.find((entry) => entry.entryId === "target")).toMatchObject({
+      outcome: "matched",
+      selectedId: "series/two",
+    });
+    expect(result.report.find((entry) => entry.event === "run")).toMatchObject({
+      sourcePriority: [
+        "Kodansha Comics",
+        "VIZ Media",
+        "Manga Up!",
+        "Comikey",
+        "Crunchyroll",
+        "Square Enix Manga",
+      ],
+      excludedSources: ["MangaDex"],
+    });
+  });
+
   it("falls back globally when the preferred source has a contradictory ID", () => {
-    const result = run(["--apply", "--source-priority", "MangaDex"], "identity-contradiction");
+    const result = run(
+      ["--apply", "--source-priority", "Kodansha Comics"],
+      "identity-contradiction",
+    );
     expect(result.status, result.stderr).toBe(0);
     const entry = result.report.find((item) => item.entryId === "target");
     expect(entry.selectedId).toBe("series/one");
@@ -232,7 +303,7 @@ describe("registry kagane", () => {
       [
         "--apply",
         "--source-priority",
-        scenario === "identity-shared-conflict" ? "none" : "MangaDex",
+        scenario === "identity-shared-conflict" ? "none" : "Kodansha Comics",
       ],
       scenario,
     );
@@ -245,7 +316,7 @@ describe("registry kagane", () => {
   });
 
   it("accepts renamed details when external IDs prove identity", () => {
-    const result = run(["--apply", "--source-priority", "MangaDex"], "identity-renamed");
+    const result = run(["--apply", "--source-priority", "Kodansha Comics"], "identity-renamed");
     expect(result.status, result.stderr).toBe(0);
     expect(result.report.find((entry) => entry.entryId === "target")).toMatchObject({
       outcome: "matched",
@@ -273,7 +344,9 @@ describe("registry kagane", () => {
     );
     expect(progress).toBeGreaterThan(0);
     expect(progress).toBeLessThan(complete.report.findIndex((entry) => entry.entryId === "target"));
-    expect(complete.stdout).toContain('1/2 A Story [all sources]: Search "A Story" page 21/21');
+    expect(complete.stdout).toContain(
+      '1/2 A Story [all non-MangaDex sources]: Search "A Story" page 21/21',
+    );
     for (const scenario of ["long-search", "stuck-search"]) {
       const incomplete = run(["--apply", "--max-pages", "20"], scenario);
       expect(incomplete.status).toBe(1);

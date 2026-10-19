@@ -14,6 +14,10 @@ The command discovers exact title/alias candidates, verifies their external IDs
 and series details, and never replaces an existing provider link. It is a dry
 run unless `--apply` is supplied. Every run saves an incremental JSONL report.
 
+MangaDex is always excluded as a Kagane content source. Native MangaDex bindings
+remain separate for PAS5. Other Kagane sources can still use MangaDex URLs as
+identity evidence; those URLs do not make MangaDex the content source.
+
 Kagane has no personal API key. Search and details use public endpoints. Kagane
 may challenge automated requests with Cloudflare; use the Chrome option below
 when direct requests are challenged.
@@ -51,6 +55,9 @@ manifold registry kagane --status reading,completed
 
 Filter Kagane records by translated language. Default: `en`.
 
+Searches include all age and content ratings. The command does not send rating
+filters or use the website's content preferences.
+
 ```sh
 manifold registry kagane --language en
 ```
@@ -72,16 +79,19 @@ manifold registry kagane --delay 2000
 
 ### `--source-priority <names>`
 
-Comma-separated Kagane source names, preferred first. Default: `MangaDex`.
-Names are case-insensitive. Use `none` to disable source preference.
+Comma-separated Kagane source names, preferred first. The default order is
+`Kodansha Comics,VIZ Media,Manga Up!,Comikey,Crunchyroll,Square Enix Manga`.
+Names are case-insensitive. Use `none` to disable source preference, but MangaDex
+remains excluded. Explicitly prioritizing MangaDex is an error.
 
-Each preferred source is searched before the full catalog. Only an external-ID
-match can finish a source-scoped search early. A title-only match requires the
-full catalog search. Source preference never overrides contradictory IDs or
-chooses between multiple verified candidates within the same source.
+Each preferred source is searched before the remaining non-MangaDex catalog.
+Only an external-ID match can finish a source-scoped search early. A title-only
+match requires the full non-MangaDex search. Source preference never overrides
+contradictory IDs or chooses between multiple verified candidates within the
+same source.
 
 ```sh
-manifold registry kagane --source-priority "MangaDex,VIZ Media"
+manifold registry kagane --source-priority "Kodansha Comics,VIZ Media"
 ```
 
 ### `--max-pages <n>`
@@ -156,6 +166,11 @@ and unverified records are reported but not written.
 Completed runs with per-entry errors or ownership conflicts return a nonzero
 exit code and print `Completed with errors` once. Successful links remain
 saved. Reruns skip entries that already have a Kagane link.
+
+The source exclusion does not remove existing links. Before re-running a
+prefill for older MangaDex-sourced Kagane bindings, audit and unlink only those
+`kagane` bindings. Preserve non-MangaDex Kagane bindings, native `mangadex`
+bindings, registry entries, list state, and progress.
 
 ## Usage
 

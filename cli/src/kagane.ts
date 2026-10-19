@@ -233,8 +233,7 @@ export const createKaganeClient = (options: {
           {
             title,
             content_lang: [language],
-            content_rating: ["Safe", "Suggestive", "Erotica", "Pornographic"],
-            age_rating: ["Safe", "FifteenPlus", "EighteenPlus"],
+            // Unlike MangaDex, Kagane includes all ratings when rating filters are omitted.
             ...(sourceIds.length > 0 && { source_id: [...sourceIds] }),
           },
           `Search "${title}" page ${page + 1}/${totalPages ?? "?"} (cap ${maxPages})`,
