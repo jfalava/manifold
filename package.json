@@ -21,9 +21,9 @@
       },
       "cloudflare": {
         "@cloudflare/vite-plugin": "1.64.0",
-        "@cloudflare/workers-types": "5.20261016.1",
+        "@cloudflare/workers-types": "5.20261019.1",
         "hono": "4.13.13",
-        "wrangler": "4.151.0"
+        "wrangler": "4.151.1"
       },
       "build": {
         "oxlint": "1.88.0",
@@ -84,7 +84,7 @@
     "typecheck:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac typecheck"
   },
   "devDependencies": {
-    "@effect/tsgo": "0.53.2",
+    "@effect/tsgo": "0.54.0",
     "@oxlint/plugins": "catalog:build",
     "@types/node": "catalog:types",
     "mime": "4.1.1",
