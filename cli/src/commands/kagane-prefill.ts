@@ -181,7 +181,14 @@ export const kaganePrefillCommand = Command.make("kagane", {
                 return;
               }
               const reporter = makePhaseReporter(task);
+              let context = "Kagane catalog";
+              const progress = (message: string): void => {
+                const detail = `${context}: ${message}`;
+                record({ event: "progress", message: detail });
+                reporter.detail(detail);
+              };
               if (chromeUrl) {
+                progress("Connecting to Chrome");
                 view = openBunBrowserView({ chromeUrl, profileDir: kaganeProfileDir() });
                 await view.navigate(`${KAGANE_ORIGIN}/`);
                 let ready = false;
@@ -209,6 +216,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
                 delay,
                 view,
                 maxPages,
+                onProgress: progress,
                 onRetry: (message) => {
                   record({ event: "retry", message });
                   reporter.detail(message);
@@ -242,9 +250,16 @@ export const kaganePrefillCommand = Command.make("kagane", {
                   "unmatched";
                 let note = "";
                 try {
-                  const titles = await loadRegistrySearchTitles(row, { anilistToken: anilist });
+                  const entryContext = `${index + 1}/${ctx.selected.length} ${row.title}`;
+                  context = entryContext;
+                  progress("Loading search titles");
+                  const titles = await loadRegistrySearchTitles(row, {
+                    anilistToken: anilist,
+                    onProgress: progress,
+                  });
                   // Narrow by preferred source first. Only a verified ID match can avoid the global search.
                   for (const sourceIds of [...preferredSources, []]) {
+                    context = `${entryContext} [${sourceIds.length ? sources.get(sourceIds[0]!) : "all sources"}]`;
                     const candidates = new Map<string, KaganeBook>();
                     for (const title of searchTitlesFor(titles)) {
                       for (const book of await client.search(title, language, sourceIds)) {
@@ -289,6 +304,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
                     note = `CONFLICT ${row.id}: kagane:${selected.id} already belongs to ${owners.get(selected.id)}`;
                   } else {
                     if (apply) {
+                      progress("Saving verified provider link");
                       await apiCall(
                         config,
                         `/v1/entries/${encodeURIComponent(row.id)}/providers`,

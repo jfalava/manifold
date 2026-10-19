@@ -76,7 +76,7 @@ const run = (flags: string[] = [], scenario = "normal") => {
         }
         if (scenario === 'cooldown' || scenario === 'cooldown-date') return new Response('later', {status:429, headers:{'retry-after':scenario === 'cooldown' ? '121' : new Date(Date.now()+180000).toUTCString()}});
         const page = url.searchParams.get('page');
-        if (scenario === 'long-search') return Response.json({content:[book('page-'+page, page === '20' ? 'A Story' : 'Unrelated '+page)], last:page === '20'});
+        if (scenario === 'long-search') return Response.json({content:[book('page-'+page, page === '20' ? 'A Story' : 'Unrelated '+page)], last:page === '20', total_pages:21});
         if (scenario === 'stuck-search') return Response.json({content:[book('same')], last:false});
         if (scenario === 'ambiguous') return Response.json({content:[book(page === '0' ? 'series/one' : 'series/two')], last:page !== '0'});
         if (identityScenario) {
@@ -267,6 +267,13 @@ describe("registry kagane", () => {
     const complete = run(["--apply"], "long-search");
     expect(complete.status, complete.stderr).toBe(0);
     expect(complete.report.find((entry) => entry.entryId === "target").selectedId).toBe("page-20");
+    const progress = complete.report.findIndex(
+      (entry) =>
+        entry.event === "progress" && entry.message.includes('Search "A Story" page 21/21'),
+    );
+    expect(progress).toBeGreaterThan(0);
+    expect(progress).toBeLessThan(complete.report.findIndex((entry) => entry.entryId === "target"));
+    expect(complete.stdout).toContain('1/2 A Story [all sources]: Search "A Story" page 21/21');
     for (const scenario of ["long-search", "stuck-search"]) {
       const incomplete = run(["--apply", "--max-pages", "20"], scenario);
       expect(incomplete.status).toBe(1);

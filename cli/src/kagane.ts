@@ -22,7 +22,11 @@ const SearchBook = Schema.Struct({
   alternate_titles: Schema.optional(Schema.Array(Schema.String)),
 });
 export type KaganeBook = Schema.Schema.Type<typeof SearchBook>;
-const SearchPage = Schema.Struct({ content: Schema.Array(SearchBook), last: Schema.Boolean });
+const SearchPage = Schema.Struct({
+  content: Schema.Array(SearchBook),
+  last: Schema.Boolean,
+  total_pages: Schema.optional(Schema.Finite),
+});
 const Sources = Schema.Struct({
   sources: Schema.Array(Schema.Struct({ source_id: Schema.NonEmptyString, title: Schema.String })),
 });
@@ -75,6 +79,7 @@ export const createKaganeClient = (options: {
   readonly view?: BrowserView;
   readonly maxPages?: number;
   readonly onRetry?: (message: string) => void;
+  readonly onProgress?: (message: string) => void;
 }) => {
   let requested = false;
   const maxPages = options.maxPages ?? 200;
@@ -131,11 +136,13 @@ export const createKaganeClient = (options: {
     path: string,
     schema: Schema.ConstraintDecoder<A>,
     body?: JsonObject,
+    description = path,
   ): Promise<A> => {
     // Catalog requests are read-only, including search POSTs. Never retry registry writes here.
     for (let attempt = 0; ; attempt++) {
       let response: Awaited<ReturnType<typeof send>>;
       try {
+        options.onProgress?.(`${description}${attempt ? `; attempt ${attempt + 1}/4` : ""}`);
         response = await send(path, body);
       } catch (error) {
         if (
@@ -217,15 +224,22 @@ export const createKaganeClient = (options: {
       }
       const books = new Map<string, KaganeBook>();
       const pages = new Set<string>();
+      let totalPages: number | undefined;
       // Never accept a unique match from a truncated result set. Preserve cooldown/challenge errors.
       for (let page = 0; page < maxPages; page++) {
-        const result = await request(`/api/v2/search/series?page=${page}&size=35`, SearchPage, {
-          title,
-          content_lang: [language],
-          content_rating: ["Safe", "Suggestive", "Erotica", "Pornographic"],
-          age_rating: ["Safe", "FifteenPlus", "EighteenPlus"],
-          ...(sourceIds.length > 0 && { source_id: [...sourceIds] }),
-        });
+        const result = await request(
+          `/api/v2/search/series?page=${page}&size=35`,
+          SearchPage,
+          {
+            title,
+            content_lang: [language],
+            content_rating: ["Safe", "Suggestive", "Erotica", "Pornographic"],
+            age_rating: ["Safe", "FifteenPlus", "EighteenPlus"],
+            ...(sourceIds.length > 0 && { source_id: [...sourceIds] }),
+          },
+          `Search "${title}" page ${page + 1}/${totalPages ?? "?"} (cap ${maxPages})`,
+        );
+        totalPages = result.total_pages;
         const fingerprint = JSON.stringify(result.content.map((book) => book.series_id));
         if (pages.has(fingerprint) && result.content.length > 0) {
           throw cliError("Kagane search pagination did not advance");

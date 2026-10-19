@@ -3,7 +3,7 @@ import { fetchAniListTitles } from "./anilist";
 import { uniqueTitles } from "./title-normalization";
 import { errorMessage, manifoldUserAgent } from "@manifold/json";
 import { createMangaDexClient } from "@manifold/mangadex";
-import { cliError, fromPromise, runHost } from "@/effect-kit";
+import { cliError, platformFetch, runHost } from "@/effect-kit";
 
 export const MAX_SEARCH_TERMS = 3;
 
@@ -30,8 +30,13 @@ const loadRegistrySearchTitlesEffect = (
   },
   options: {
     readonly anilistToken?: string;
-    readonly anilistTitles?: (token: string, mediaId: number) => Promise<readonly string[]>;
-    readonly mangaDexTitles?: (id: string) => Promise<readonly string[]>;
+    readonly anilistTitles?: (
+      token: string,
+      mediaId: number,
+      signal: AbortSignal,
+    ) => Promise<readonly string[]>;
+    readonly mangaDexTitles?: (id: string, signal: AbortSignal) => Promise<readonly string[]>;
+    readonly onProgress?: (message: string) => void;
   } = {},
 ): Effect.Effect<readonly string[]> =>
   Effect.gen(function* () {
@@ -40,14 +45,23 @@ const loadRegistrySearchTitlesEffect = (
     if (anilistId && options.anilistToken) {
       const parsed = Number(anilistId);
       if (Number.isInteger(parsed) && parsed > 0) {
-        yield* fromPromise(() => {
-          const loadAniList = options.anilistTitles ?? fetchAniListTitles;
-          return loadAniList(options.anilistToken!, parsed);
+        options.onProgress?.("Loading AniList aliases (20s timeout)");
+        yield* Effect.tryPromise({
+          try: (signal) =>
+            (options.anilistTitles ?? fetchAniListTitles)(options.anilistToken!, parsed, signal),
+          catch: (cause) => cliError(errorMessage(cause)),
         }).pipe(
+          Effect.timeout("20 seconds"),
           Effect.map((extra) => {
             titles.push(...extra);
           }),
-          Effect.ignore,
+          Effect.catch(() =>
+            Effect.sync(() => {
+              options.onProgress?.(
+                "AniList aliases unavailable or timed out; continuing with known titles",
+              );
+            }),
+          ),
         );
       }
     }
@@ -59,20 +73,30 @@ const loadRegistrySearchTitlesEffect = (
     if (!mangadexId) {
       return unique;
     }
-    const loadMangaDex =
-      options.mangaDexTitles ??
-      ((id: string) =>
-        runHost(
-          Effect.gen(function* () {
-            const manga = yield* createMangaDexClient({
-              userAgent: manifoldUserAgent("cli"),
-            }).getManga(id);
-            return [manga.title, ...manga.altTitles] as const;
-          }).pipe(Effect.mapError((cause) => cliError(errorMessage(cause)))),
-        ));
-    return yield* fromPromise(() => loadMangaDex(mangadexId)).pipe(
+    options.onProgress?.("Loading MangaDex aliases (20s timeout)");
+    return yield* Effect.gen(function* () {
+      const signal = yield* Effect.abortSignal;
+      if (options.mangaDexTitles) {
+        return yield* Effect.tryPromise({
+          try: () => options.mangaDexTitles!(mangadexId, signal),
+          catch: (cause) => cliError(errorMessage(cause)),
+        });
+      }
+      const manga = yield* createMangaDexClient({
+        userAgent: manifoldUserAgent("cli"),
+        fetcher: (input, init) => platformFetch(input, { ...init, signal }),
+      }).getManga(mangadexId);
+      return [manga.title, ...manga.altTitles] as const;
+    }).pipe(
+      Effect.scoped,
+      Effect.timeout("20 seconds"),
       Effect.map((extra) => uniqueTitles([...unique, ...extra])),
-      Effect.orElseSucceed(() => unique),
+      Effect.orElseSucceed(() => {
+        options.onProgress?.(
+          "MangaDex aliases unavailable or timed out; continuing with known titles",
+        );
+        return unique;
+      }),
     );
   });
 
@@ -83,7 +107,12 @@ export const loadRegistrySearchTitles = (
   },
   options: {
     readonly anilistToken?: string;
-    readonly anilistTitles?: (token: string, mediaId: number) => Promise<readonly string[]>;
-    readonly mangaDexTitles?: (id: string) => Promise<readonly string[]>;
+    readonly anilistTitles?: (
+      token: string,
+      mediaId: number,
+      signal: AbortSignal,
+    ) => Promise<readonly string[]>;
+    readonly mangaDexTitles?: (id: string, signal: AbortSignal) => Promise<readonly string[]>;
+    readonly onProgress?: (message: string) => void;
   } = {},
 ): Promise<readonly string[]> => runHost(loadRegistrySearchTitlesEffect(row, options));

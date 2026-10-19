@@ -82,6 +82,7 @@ const gqlEffect = (
   query: string,
   variables: JsonObject = {},
   attempt = 0,
+  signal?: AbortSignal,
 ): Effect.Effect<JsonObject, CliEffectError> =>
   Effect.gen(function* () {
     yield* throttleEffect();
@@ -95,12 +96,13 @@ const gqlEffect = (
           "user-agent": USER_AGENT,
         },
         body: JSON.stringify({ query, variables }),
+        ...(signal !== undefined && { signal }),
       }),
     ).pipe(Effect.mapError((cause) => cliError(`AniList fetch failed: ${cause.message}`)));
     if (response.status === 429 && attempt < 5) {
       const retryAfter = Number(response.headers.get("retry-after") ?? "5");
       yield* sleep(Math.max(retryAfter, 5) * 1000);
-      return yield* gqlEffect(token, query, variables, attempt + 1);
+      return yield* gqlEffect(token, query, variables, attempt + 1, signal);
     }
     const raw = yield* jsonFromResponseEffect(response, "anilist.gql");
     if (!isJsonObject(raw)) {
@@ -136,9 +138,10 @@ const MEDIA_TITLES_QUERY = `query ($id: Int) {
 const fetchAniListTitlesEffect = (
   token: string,
   mediaId: number,
+  signal?: AbortSignal,
 ): Effect.Effect<readonly string[], CliEffectError> =>
   Effect.gen(function* () {
-    const data = yield* gqlEffect(token, MEDIA_TITLES_QUERY, { id: mediaId });
+    const data = yield* gqlEffect(token, MEDIA_TITLES_QUERY, { id: mediaId }, 0, signal);
     const media = objectField(data, "Media");
     const title = media ? objectField(media, "title") : undefined;
     const synonyms = media?.synonyms;
@@ -150,8 +153,12 @@ const fetchAniListTitlesEffect = (
     ].filter((value): value is string => isString(value) && value.trim().length > 0);
   });
 
-export const fetchAniListTitles = (token: string, mediaId: number): Promise<readonly string[]> =>
-  runHost(fetchAniListTitlesEffect(token, mediaId));
+export const fetchAniListTitles = (
+  token: string,
+  mediaId: number,
+  signal?: AbortSignal,
+): Promise<readonly string[]> =>
+  Effect.runPromise(fetchAniListTitlesEffect(token, mediaId, signal), { signal });
 
 /** Resolves the token owner's AniList user id. */
 const fetchAniListViewerIdEffect = (token: string): Effect.Effect<number, CliEffectError> =>
