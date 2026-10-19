@@ -29,6 +29,7 @@ export interface ProviderRow extends Record<string, SqlStorageValue> {
   provider: ProviderLink["provider"];
   external_id: string;
   title: string | null;
+  source_name: string | null;
   updated_at: number;
 }
 
@@ -250,10 +251,12 @@ export const toRegistryEntry = (
       continue;
     }
     const title = nonEmpty(link.title);
+    const sourceName = nonEmpty(link.source_name);
     providers.push({
       provider: link.provider,
       externalId,
       ...(title !== undefined && { title }),
+      ...(sourceName !== undefined && { sourceName }),
       updatedAt: finiteMs(link.updated_at, nowMs),
     });
   }

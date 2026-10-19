@@ -111,7 +111,7 @@ const run = (flags: string[] = [], scenario = "normal") => {
       const body = JSON.parse(init.body);
       console.info('WRITE', url.pathname, JSON.stringify(body));
       if (scenario === 'server-conflict') return Response.json({error:'Provider link conflict: already owned by other'}, {status:500});
-      return Response.json(row('target', 'A Story', {providers:[{provider:'kagane', externalId:body.externalId, title:body.title, updatedAt:1}]}));
+      return Response.json(row('target', 'A Story', {providers:[{provider:'kagane', externalId:body.externalId, title:body.title, sourceName:body.sourceName, updatedAt:1}]}));
     }
     throw new Error('Unexpected request: ' + url);
   };
@@ -162,7 +162,7 @@ describe("registry kagane", () => {
     const result = run(["--apply"]);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
-      'WRITE /api/v1/entries/target/providers {"provider":"kagane","externalId":"series/one","title":"A Story","onConflict":"reject"}',
+      'WRITE /api/v1/entries/target/providers {"provider":"kagane","externalId":"series/one","title":"A Story","sourceName":"Example Source","onConflict":"reject"}',
     );
     expect(result.stdout).toContain("LINKED target");
     expect(result.stdout).not.toContain("list-state");

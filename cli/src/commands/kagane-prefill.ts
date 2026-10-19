@@ -326,6 +326,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
                           provider: "kagane",
                           externalId: selected.id,
                           title: selected.title,
+                          sourceName: selected.source,
                           onConflict: "reject",
                         },
                         RegistryEntry,

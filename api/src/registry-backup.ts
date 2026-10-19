@@ -26,7 +26,7 @@ export const REGISTRY_BACKUP_TABLE_COLUMNS = {
     "updated_at",
     "tombstoned_at",
   ],
-  provider_links: ["entry_id", "provider", "external_id", "title", "updated_at"],
+  provider_links: ["entry_id", "provider", "external_id", "title", "source_name", "updated_at"],
   read_events: ["event_id", "entry_id", "chapter_key", "read_at"],
   progress_state: [
     "entry_id",
@@ -177,10 +177,15 @@ const parseRows = (value: JsonValue, table: RegistryBackupTableName): readonly B
     }
     const row: Record<string, BackupScalar> = {};
     for (const column of columns) {
-      if (!(column in rawRow) || !isBackupScalar(rawRow[column])) {
+      // Older v1 snapshots predate provider source names; restore them as unknown.
+      const cell =
+        table === "provider_links" && column === "source_name"
+          ? (rawRow[column] ?? null)
+          : rawRow[column];
+      if (!isBackupScalar(cell)) {
         throw new Error(`Backup table ${table} row ${index} is missing ${column}`);
       }
-      row[column] = rawRow[column];
+      row[column] = cell;
     }
     return row;
   });

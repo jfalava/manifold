@@ -41,6 +41,7 @@ export const LinkProviderInput = Schema.Struct({
   provider: RegistryProvider,
   externalId: Schema.NonEmptyString,
   title: Schema.optional(Schema.String),
+  sourceName: Schema.optional(Schema.NonEmptyString),
 });
 export type LinkProviderInput = Schema.Schema.Type<typeof LinkProviderInput>;
 

@@ -68,7 +68,7 @@ export function ingestCandidate(host: SyncHost, input: IngestCandidateInput): Re
   if (matchedId) {
     const existingLinks = host.ctx.storage.sql
       .exec<ProviderRow>(
-        "SELECT provider, external_id, title, updated_at FROM provider_links WHERE entry_id = ?",
+        "SELECT provider, external_id, title, source_name, updated_at FROM provider_links WHERE entry_id = ?",
         entryId,
       )
       .toArray();
@@ -103,15 +103,17 @@ export function ingestCandidate(host: SyncHost, input: IngestCandidateInput): Re
 
   for (const link of links) {
     host.ctx.storage.sql.exec(
-      `INSERT INTO provider_links (entry_id, provider, external_id, title, updated_at)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO provider_links (entry_id, provider, external_id, title, source_name, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(entry_id, provider) DO UPDATE SET
          title = COALESCE(excluded.title, provider_links.title),
+         source_name = COALESCE(excluded.source_name, provider_links.source_name),
          updated_at = excluded.updated_at`,
       entryId,
       link.provider,
       link.externalId,
       link.title ?? null,
+      link.sourceName ?? null,
       timestamp,
     );
   }

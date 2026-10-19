@@ -135,7 +135,7 @@ export function readEntry(
 
   const providerRows = host.ctx.storage.sql
     .exec<ProviderRow>(
-      "SELECT provider, external_id, title, updated_at FROM provider_links WHERE entry_id = ? ORDER BY provider",
+      "SELECT provider, external_id, title, source_name, updated_at FROM provider_links WHERE entry_id = ? ORDER BY provider",
       entryId,
     )
     .toArray();

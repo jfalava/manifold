@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { build } from "esbuild";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { Schema } from "effect";
-import { RegistryEntry } from "@manifold/contract";
+import { RegistryEntry, RegistryListResponse } from "@manifold/contract";
 import { isJsonValue, type JsonValue } from "@manifold/json";
 import { newId } from "../src/effect-host";
 
@@ -110,6 +110,7 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
         provider: "kagane",
         externalId,
         title: "Provider title",
+        sourceName: "Kodansha Comics",
         ...(onConflict !== undefined && { onConflict }),
       },
       status,
@@ -123,15 +124,27 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
       id: target.id,
       provider: "local",
       title: "Local title",
-      providers: [{ provider: "kagane", externalId: "book/replay", title: "Provider title" }],
+      providers: [
+        {
+          provider: "kagane",
+          externalId: "book/replay",
+          title: "Provider title",
+          sourceName: "Kodansha Comics",
+        },
+      ],
     });
     expect(await entry(target.id)).toEqual(linked);
     const before = await snapshot();
+    const listed = Schema.decodeUnknownSync(RegistryListResponse)(before.registry).entries.find(
+      (row) => row.id === target.id,
+    );
+    expect(listed?.providers).toMatchObject([{ sourceName: "Kodansha Comics" }]);
     expect(
       await request(`/v1/entries/${target.id}/providers`, {
         provider: "kagane",
         externalId: "book/replay",
         title: "Do not update",
+        sourceName: "Do not update the source either",
         onConflict: "reject",
       }),
     ).toEqual(linked);
@@ -139,6 +152,30 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     expect(await request(`/v1/entries/${target.id}/unlink/kagane`, {})).toMatchObject({
       providers: [],
     });
+  });
+
+  it("preserves omitted source metadata only when the provider identity is unchanged", async () => {
+    const target = await create();
+    await link(target.id, "source-original");
+    const same = await request(`/v1/entries/${target.id}/providers`, {
+      provider: "kagane",
+      externalId: "source-original",
+      onConflict: "replace",
+    });
+    expect(Schema.decodeUnknownSync(RegistryEntry)(same).providers[0]?.sourceName).toBe(
+      "Kodansha Comics",
+    );
+    const replaced = await request(`/v1/entries/${target.id}/providers`, {
+      provider: "kagane",
+      externalId: "source-replacement",
+      onConflict: "replace",
+    });
+    expect(Schema.decodeUnknownSync(RegistryEntry)(replaced).providers).toEqual([
+      expect.objectContaining({ externalId: "source-replacement" }),
+    ]);
+    expect(
+      Schema.decodeUnknownSync(RegistryEntry)(replaced).providers[0]?.sourceName,
+    ).toBeUndefined();
   });
 
   it("allows only one of two competing targets, without minting or stealing", async () => {

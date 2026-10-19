@@ -30,6 +30,25 @@ describe("registry backups", () => {
     expect(parseRegistryBackup(emptyBackup)).toEqual(emptyBackup);
   });
 
+  it("retains provider sources and restores older links with unknown sources", () => {
+    const legacy = {
+      entry_id: "entry-1",
+      provider: "kagane",
+      external_id: "series-1",
+      title: "A Story",
+      updated_at: 1,
+    };
+    const current = { ...legacy, source_name: "Kodansha Comics" };
+    const backup = {
+      ...emptyBackup,
+      tables: { ...emptyBackup.tables, provider_links: [legacy, current] },
+    } satisfies JsonValue;
+    expect(parseRegistryBackup(backup).tables.provider_links).toEqual([
+      { ...legacy, source_name: null },
+      current,
+    ]);
+  });
+
   it("rejects incomplete rows", () => {
     const invalid = {
       ...emptyBackup,
