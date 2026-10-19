@@ -1,0 +1,75 @@
+---
+title: manganato
+description: Find and verify MangaNato registry links through regular Chrome.
+sidebar:
+  order: 6
+---
+
+```sh
+manifold registry manganato --chrome-cdp-url <browser-websocket-url> [flags]
+```
+
+Backfills missing `manganato` links on active registry entries. The external ID
+is the native MangaNato manga slug. Runs are dry-run by default. `--apply` saves
+verified links using conflict rejection and never replaces an existing binding.
+This command does not change PAS5 generation.
+
+## Use regular Chrome
+
+Start a separate Chrome profile with loopback-only debugging on the desktop
+runner. Open MangaNato and complete any challenge there.
+
+```sh
+open -na 'Google Chrome' --args \
+  --user-data-dir="$HOME/.manifold/manganato-chrome" \
+  --remote-debugging-address=127.0.0.1 \
+  --remote-debugging-port=9224 \
+  --no-first-run --no-default-browser-check https://www.manganato.gg/
+
+curl -fsS http://127.0.0.1:9224/json/version
+```
+
+Pass the returned `webSocketDebuggerUrl` to `--chrome-cdp-url`, or set
+`MANIFOLD_MANGANATO_CHROME_CDP_URL`. The URL changes when Chrome restarts.
+Catalog requests execute inside Chrome with its cookies. Cookies are not copied
+into CLI requests or reports. Chrome for Testing remained challenged in the
+initial test; regular Chrome loaded the catalog, but that does not guarantee
+future challenge clearance.
+
+```sh
+manifold registry manganato --status reading,planning,on_hold --limit 10 \
+  --chrome-cdp-url 'ws://127.0.0.1:9224/devtools/browser/<id>'
+```
+
+## Matching and limits
+
+The matcher reads aliases and author/artist credits from an existing MangaDex
+binding. MangaDex supplies identity evidence, not MangaNato's chapter content.
+Missing or unavailable credits cannot produce automatic title-only links.
+
+It searches one long word from each of up to three distinct title variants,
+with Latin-script aliases preferred. Search results must match a complete known
+title or alias after punctuation, spacing, case and accent normalization.
+Numbers and edition suffixes remain significant. A unique candidate also needs
+an exact author/artist name match, allowing reversed name order and parenthetical
+credits. Fuzzy author spelling matches are not accepted.
+
+Every search follows pagination to the end. Duplicate slugs remain ambiguous,
+even when only one has author credits. Chapter counts and chapter numbers never
+break ties. This is bounded candidate discovery, not a completeness guarantee
+for the entire catalog. MangaNato's extension is an English source; the matcher
+does not detect the language of individual chapters.
+
+- `--delay <ms>` defaults to `4000` between catalog requests.
+- `--max-pages <n>` defaults to `20` per query. Reaching the cap, malformed
+  pagination or repeated pages produces an error, never a partial match.
+- `--limit <n>` limits eligible rows after loading the complete registry.
+- `--status <statuses>` uses the shared registry status filter, default `auto`.
+- `--report <path>` creates a new JSONL report instead of overwriting a file.
+  The default is `~/.manifold/reports/manganato-<run>.jsonl`.
+- `--api-origin` and `--api-token` override the usual Manifold API configuration.
+
+Reports persist progress, candidates, title/author evidence and each row's
+outcome as the run proceeds. HTTP 403, HTTP 429 and Cloudflare challenges stop
+the sweep without automatic retries. Earlier successful applied links remain
+saved. Inspect the report before applying a larger run.
