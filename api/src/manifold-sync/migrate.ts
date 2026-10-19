@@ -171,6 +171,11 @@ export function migrate(host: SyncHost): void {
   } catch {
     // Column already exists.
   }
+  try {
+    host.ctx.storage.sql.exec("ALTER TABLE provider_links ADD COLUMN source_name TEXT");
+  } catch {
+    // Column already exists.
+  }
   migrateLegacyOutbox(host);
   retireComix(host);
 }

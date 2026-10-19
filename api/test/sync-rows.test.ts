@@ -27,12 +27,14 @@ describe("toRegistryEntry", () => {
         provider: "anilist",
         external_id: "123",
         title: null,
+        source_name: null,
         updated_at: 2,
       },
       {
         provider: "mangadex",
         external_id: "md-1",
         title: "MD",
+        source_name: null,
         updated_at: 3,
       },
     ]);
@@ -46,12 +48,14 @@ describe("toRegistryEntry", () => {
         provider: "mangadex",
         external_id: "",
         title: "x",
+        source_name: null,
         updated_at: 1,
       },
       {
         provider: "mangadex",
         external_id: "   ",
         title: "y",
+        source_name: null,
         updated_at: 1,
       },
       {
@@ -59,12 +63,14 @@ describe("toRegistryEntry", () => {
         provider: "unknown" as ProviderRow["provider"],
         external_id: "z",
         title: null,
+        source_name: null,
         updated_at: 1,
       },
       {
         provider: "kagane",
         external_id: "hid1",
         title: "",
+        source_name: null,
         updated_at: 1,
       },
     ]);

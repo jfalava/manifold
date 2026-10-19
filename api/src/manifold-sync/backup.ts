@@ -201,7 +201,7 @@ const snapshotRegistryEffect = (host: SyncHost) =>
           provider_links: toBackupRows(
             host.ctx.storage.sql
               .exec<ProviderRow>(
-                "SELECT entry_id, provider, external_id, title, updated_at FROM provider_links",
+                "SELECT entry_id, provider, external_id, title, source_name, updated_at FROM provider_links",
               )
               .toArray(),
             REGISTRY_BACKUP_TABLE_COLUMNS.provider_links,

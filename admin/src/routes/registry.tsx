@@ -257,9 +257,24 @@ function EntryEditor({
           {entry.providers.map((link) => (
             <div key={link.provider} className="flex min-w-0 items-center gap-2 text-sm">
               <Badge variant="info">{link.provider}</Badge>
-              <span className="min-w-0 flex-1 truncate font-mono text-[0.9em] opacity-70">
-                {link.externalId}
-              </span>
+              <div className="grid min-w-0 flex-1 justify-items-start gap-1">
+                <span
+                  className="max-w-full truncate font-mono text-[0.9em] opacity-70"
+                  title={link.externalId}
+                >
+                  {link.externalId}
+                </span>
+                {link.provider === "kagane" && (
+                  <Badge variant="neutral" className="max-w-full">
+                    <span
+                      className="truncate"
+                      title={`Kagane source: ${link.sourceName ?? "unknown"}`}
+                    >
+                      {link.sourceName ?? "Source unknown"}
+                    </span>
+                  </Badge>
+                )}
+              </div>
               <Button
                 size="sm"
                 variant="ghost"
@@ -512,7 +527,11 @@ function EntriesTable({
       return (
         entry.title.toLowerCase().includes(needle) ||
         entry.id.toLowerCase().includes(needle) ||
-        entry.providers.some((link) => link.externalId.toLowerCase().includes(needle))
+        entry.providers.some(
+          (link) =>
+            link.externalId.toLowerCase().includes(needle) ||
+            link.sourceName?.toLowerCase().includes(needle),
+        )
       );
     });
   }, [entries, filter, statusFilters, providerFilters]);
@@ -567,11 +586,19 @@ function EntriesTable({
               <span
                 key={link.provider}
                 className="inline-flex max-w-56 items-baseline gap-1.5 rounded px-1.5 py-0.5 text-sm ring ring-kumo-line"
-                title={`${link.provider}: ${link.externalId}`}
+                title={`${link.provider}: ${link.externalId}${link.provider === "kagane" ? `\nSource: ${link.sourceName ?? "unknown"}` : ""}`}
               >
                 <span className="font-medium">{link.provider}</span>
-                <span className="truncate font-mono text-[0.85em] opacity-60">
-                  {link.externalId}
+                <span
+                  className={
+                    link.provider === "kagane"
+                      ? "truncate text-kumo-subtle"
+                      : "truncate font-mono text-[0.85em] opacity-60"
+                  }
+                >
+                  {link.provider === "kagane"
+                    ? (link.sourceName ?? "Source unknown")
+                    : link.externalId}
                 </span>
               </span>
             ))}
@@ -770,7 +797,7 @@ function EntriesTable({
       <Dialog.Root open={editorOpen && editing !== undefined} onOpenChange={setEditorOpen}>
         <Dialog
           size="lg"
-          className="w-[calc(100vw-2rem)] overflow-x-hidden overflow-y-auto p-4 sm:w-[32rem] sm:p-6"
+          className="w-[calc(100vw-2rem)] -translate-y-1/2 overflow-x-hidden overflow-y-auto p-4 sm:w-[32rem] sm:p-6"
         >
           {editing && (
             <EntryEditor

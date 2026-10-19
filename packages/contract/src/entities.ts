@@ -18,6 +18,7 @@ export const ProviderLink = Schema.Struct({
   provider: RegistryProvider,
   externalId: Schema.NonEmptyString,
   title: Schema.optional(Schema.String),
+  sourceName: Schema.optional(Schema.NonEmptyString),
   updatedAt: Schema.Finite,
 });
 export type ProviderLink = Schema.Schema.Type<typeof ProviderLink>;

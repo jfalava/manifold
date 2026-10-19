@@ -282,16 +282,20 @@ function writeProviderLink(
   }
   host.ctx.storage.sql.exec(
     `INSERT INTO provider_links
-       (entry_id, provider, external_id, title, updated_at)
-     VALUES (?, ?, ?, ?, ?)
+       (entry_id, provider, external_id, title, source_name, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(entry_id, provider) DO UPDATE SET
        external_id = excluded.external_id,
        title = excluded.title,
+       source_name = CASE WHEN provider_links.external_id = excluded.external_id
+         THEN COALESCE(excluded.source_name, provider_links.source_name)
+         ELSE excluded.source_name END,
        updated_at = excluded.updated_at`,
     entryId,
     input.provider,
     input.externalId,
     input.title ?? null,
+    input.sourceName ?? null,
     timestamp,
   );
   appendEvent(host, entryId, "link.set", "admin", {
