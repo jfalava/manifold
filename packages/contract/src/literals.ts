@@ -13,6 +13,7 @@ export const RegistryProvider = Schema.Literals([
   "mangadex",
   "kagane",
   "manganato",
+  "xcomic",
 ]);
 export type RegistryProvider = Schema.Schema.Type<typeof RegistryProvider>;
 

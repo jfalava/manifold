@@ -116,6 +116,10 @@ describe("provider candidates", () => {
       provider: "manganato",
       providerId: "a-couple-of-cuckoos",
     });
+    expect(parseProviderCandidateId(providerCandidateId("xcomic", "5ovmw"))).toEqual({
+      provider: "xcomic",
+      providerId: "5ovmw",
+    });
     expect(parseProviderCandidateId("11111111-1111-1111-1111-111111111111")).toBeUndefined();
   });
 

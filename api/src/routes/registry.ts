@@ -149,7 +149,7 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
 
     if (path[3] === "unlink" && path.length === 5 && request.method === "POST") {
       const provider = path[4];
-      if (!["anilist", "mal", "mangadex", "kagane", "manganato"].includes(provider)) {
+      if (!["anilist", "mal", "mangadex", "kagane", "manganato", "xcomic"].includes(provider)) {
         return jsonEncoded(ErrorBody, { error: "Unknown provider" }, 400);
       }
       return jsonEncoded(

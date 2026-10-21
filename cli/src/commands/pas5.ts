@@ -51,6 +51,7 @@ const UPSTREAM_SOURCES = [
   { provider: "mangadex", sourceId: "MangaDex" },
   { provider: "kagane", sourceId: "Kagane" },
   { provider: "manganato", sourceId: "MangaNato" },
+  { provider: "xcomic", sourceId: "XCOMIC" },
 ] as const;
 
 const DEFAULT_BASE_HINT = "a real device export (*.pas5) — restore may REPLACE the library";

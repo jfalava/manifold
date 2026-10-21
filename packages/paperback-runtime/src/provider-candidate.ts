@@ -44,7 +44,8 @@ const isRegistryProvider = (value: string): value is RegistryProvider =>
   value === "mal" ||
   value === "mangadex" ||
   value === "kagane" ||
-  value === "manganato";
+  value === "manganato" ||
+  value === "xcomic";
 
 export interface ProviderCandidate {
   readonly provider: RegistryProvider;

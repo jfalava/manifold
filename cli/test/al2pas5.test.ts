@@ -71,6 +71,7 @@ const multiProviderRow: RegistryRow = {
     ...registryRow.providers,
     { provider: "kagane", externalId: "019c3a01-3106-7c50-b441-987e27995a11", updatedAt: 1 },
     { provider: "manganato", externalId: "villains-are-destined-to-die", updatedAt: 1 },
+    { provider: "xcomic", externalId: "5ovmw", updatedAt: 1 },
   ],
 };
 
@@ -360,12 +361,13 @@ describe("al2pas5 source attachments", () => {
       { sourceId: "MangaDex", mangaId: "mangadex-id" },
       { sourceId: "Kagane", mangaId: "019c3a01-3106-7c50-b441-987e27995a11" },
       { sourceId: "MangaNato", mangaId: "villains-are-destined-to-die" },
+      { sourceId: "XCOMIC", mangaId: "5ovmw" },
       { sourceId: "MANIFOLD", mangaId: "canonical-id" },
     ]);
     expect(generated.library.attachedSources.map((source) => source.id)).toEqual(
       generated.sources.map((source) => source.id),
     );
-    expect(Object.keys(generated.infos)).toHaveLength(4);
+    expect(Object.keys(generated.infos)).toHaveLength(5);
     for (const source of generated.sources) {
       expect(generated.infos[source.mangaInfo.id]?.primaryTitle).toBe(entry.title);
     }
@@ -453,8 +455,9 @@ describe("al2pas5 source attachments", () => {
       { sourceId: "MangaDex", mangaId: "mangadex-id" },
       { sourceId: "Kagane", mangaId: "019c3a01-3106-7c50-b441-987e27995a11" },
       { sourceId: "MangaNato", mangaId: "villains-are-destined-to-die" },
+      { sourceId: "XCOMIC", mangaId: "5ovmw" },
     ]);
-    expect(result.library.attachedSources).toHaveLength(4);
+    expect(result.library.attachedSources).toHaveLength(5);
     expect(result.conflicts).toBe(0);
 
     const enriched: Pas5Entities = {
@@ -532,7 +535,7 @@ describe("al2pas5 source attachments", () => {
     expect(result.library.attachedSources).toHaveLength(2);
   });
 
-  it.each(["MangaDex", "Kagane", "MangaNato"])(
+  it.each(["MangaDex", "Kagane", "MangaNato", "XCOMIC"])(
     "does not replace a conflicting %s attachment",
     (sourceId) => {
       const generated = buildEntry(entry, multiProviderRow);
@@ -609,6 +612,7 @@ describe("al2pas5 source attachments", () => {
   it.each([
     ["kagane", "Kagane", "019c3a01-3106-7c50-b441-987e27995a11"],
     ["manganato", "MangaNato", "villains-are-destined-to-die"],
+    ["xcomic", "XCOMIC", "5ovmw"],
   ])(
     "generates and finds %s-only entries without MangaDex or tracker evidence",
     (provider, sourceId, externalId) => {

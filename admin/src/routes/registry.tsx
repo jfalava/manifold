@@ -46,7 +46,7 @@ const STATUSES = [
   "completed",
 ] as const;
 
-const PROVIDERS = ["anilist", "mal", "mangadex", "kagane", "manganato"] as const;
+const PROVIDERS = ["anilist", "mal", "mangadex", "kagane", "manganato", "xcomic"] as const;
 
 const STATUS_BADGES = {
   reading: "info",
@@ -264,11 +264,11 @@ function EntryEditor({
                 >
                   {link.externalId}
                 </span>
-                {link.provider === "kagane" && (
+                {(link.provider === "kagane" || link.provider === "xcomic") && (
                   <Badge variant="neutral" className="max-w-full">
                     <span
                       className="truncate"
-                      title={`Kagane source: ${link.sourceName ?? "unknown"}`}
+                      title={`${link.provider} source: ${link.sourceName ?? "unknown"}`}
                     >
                       {link.sourceName ?? "Source unknown"}
                     </span>
@@ -586,17 +586,17 @@ function EntriesTable({
               <span
                 key={link.provider}
                 className="inline-flex max-w-56 items-baseline gap-1.5 rounded px-1.5 py-0.5 text-sm ring ring-kumo-line"
-                title={`${link.provider}: ${link.externalId}${link.provider === "kagane" ? `\nSource: ${link.sourceName ?? "unknown"}` : ""}`}
+                title={`${link.provider}: ${link.externalId}${link.provider === "kagane" || link.provider === "xcomic" ? `\nSource: ${link.sourceName ?? "unknown"}` : ""}`}
               >
                 <span className="font-medium">{link.provider}</span>
                 <span
                   className={
-                    link.provider === "kagane"
+                    link.provider === "kagane" || link.provider === "xcomic"
                       ? "truncate text-kumo-subtle"
                       : "truncate font-mono text-[0.85em] opacity-60"
                   }
                 >
-                  {link.provider === "kagane"
+                  {link.provider === "kagane" || link.provider === "xcomic"
                     ? (link.sourceName ?? "Source unknown")
                     : link.externalId}
                 </span>

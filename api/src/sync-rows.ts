@@ -218,6 +218,7 @@ const REGISTRY_PROVIDERS: ReadonlySet<string> = new Set([
   "mangadex",
   "kagane",
   "manganato",
+  "xcomic",
 ]);
 
 const isRegistryProvider = (provider: string): provider is ProviderLink["provider"] =>

@@ -9,6 +9,7 @@ import { malPrefillCommand } from "@/commands/mal-prefill";
 import { mangadexCommand } from "@/commands/mangadex";
 import { mangadexPrefillCommand } from "@/commands/mangadex-prefill";
 import { manganatoPrefillCommand } from "@/commands/manganato-prefill";
+import { xcomicPrefillCommand } from "@/commands/xcomic-prefill";
 import { importCommand, opsCommand, reconcileCommand } from "@/commands/toolbox";
 import { al2malCommand } from "@/commands/al2mal";
 import { md2alCommand } from "@/commands/md2al";
@@ -33,6 +34,7 @@ const registryCommand = Command.make("registry").pipe(
     mangadexPrefillCommand,
     kaganePrefillCommand,
     manganatoPrefillCommand,
+    xcomicPrefillCommand,
   ]),
 );
 

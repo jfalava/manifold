@@ -13,7 +13,7 @@ manifold pas5 create --source <anilist|registry> [flags]
 
 Builds a source-free Paperback `.pas5` archive. Every imported title has a
 canonical registry UUID, all available registry-linked native **MangaDex**,
-**Kagane** and **MangaNato** attachments, and **MANIFOLD**. Native sources own
+**Kagane**, **MangaNato** and **XComic** attachments, and **MANIFOLD**. Native sources own
 reading and chapter updates; the tracker owns canonical progress synchronization.
 Only providers already linked in the registry are attached. The generator does
 not search providers or choose between candidates.
@@ -28,18 +28,19 @@ registry UUID are skipped. Both sources require Manifold authentication; only
 
 Kagane attachments use the series UUID as `mangaId` and the exact native source
 ID `Kagane`. MangaNato attachments use the bare manga slug and source ID
-`MangaNato`. These identities were checked against a native device export.
+`MangaNato`. XComic uses its opaque comic/edition ID, not the title-group ID,
+and exact source ID `XCOMIC`. These identities were checked against native device exports.
 Generated metadata uses canonical title information until the native extension
 refreshes it; existing provider metadata in `--base` is retained.
 
-XComic generation is deferred. Existing `XCOMIC` attachments in `--base` are
-preserved, but the generator does not add new ones.
+Existing native attachments in `--base` are preserved. A conflicting edition ID
+is reported rather than replaced, even when a registry audit proposes a larger inventory.
 
 ## Verified restore procedure: start with an empty database
 
 1. Export and keep the original Paperback backup.
 2. Generate the new archive and install every native extension used by its
-   attachments: MangaDex, Kagane and/or MangaNato.
+   attachments: MangaDex, Kagane, MangaNato and/or XComic.
 3. Restore into an empty Paperback database. The successful full-library test
    used a fresh installation and uppercase internal UUIDs.
 4. Run Paperback's database repair **before opening imported titles**.
@@ -48,7 +49,7 @@ preserved, but the generator does not add new ones.
 
 Repair alone did not fix every imported title in an existing database.
 Restoring may replace the on-device library.
-The historical restore test above predates Kagane and MangaNato generation.
+The historical restore test above predates Kagane, MangaNato and XComic generation.
 Their native identity formats are verified, but a device restore and chapter
 refresh of a generated archive still needs testing.
 
@@ -133,7 +134,7 @@ manifold pas5 filter --input ./original.pas5 --out ./native-only.pas5 --exclude-
 Required input source; there is no default. `anilist` reads the live AniList
 list and resolves canonical UUIDs/provider links through Manifold. `registry`
 reads active canonical rows, recorded list state, and hydrated metadata without
-requiring a local AniList or MAL login. MangaDex, Kagane and MangaNato are
+requiring a local AniList or MAL login. MangaDex, Kagane, MangaNato and XComic are
 attachments, not accepted input sources.
 
 ```sh
@@ -179,8 +180,8 @@ manifold pas5 create --source registry --tabs reading,completed
 
 Seed the generated archive from an existing `.pas5` export. Existing tab IDs
 are reused when possible, which helps preserve device tab references. Titles
-already present in the backup are enriched with missing MangaDex, Kagane and
-MangaNato attachments. Repeating enrichment does not duplicate attachments.
+already present in the backup are enriched with missing MangaDex, Kagane,
+MangaNato and XComic attachments. Repeating enrichment does not duplicate attachments.
 Existing attachments with a different provider ID and ambiguous
 matches are reported and left unchanged. All ManifoldSource attachments are
 removed, along with retired-source attachments and their chapter data. Orphan

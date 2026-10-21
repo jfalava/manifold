@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { manifoldUserAgent, type JsonObject, type JsonValue } from "@manifold/json";
 import { cliError, epochMillisNow, platformFetch, runHost, sleepPromise } from "@/effect-kit";
 import type { BrowserView } from "@/browser-view";
+import { chapterCoverage, mostCovered, type ChapterCoverage } from "@/chapter-coverage";
 
 export const KAGANE_ORIGIN = "https://kagane.org";
 
@@ -41,6 +42,23 @@ const Details = Schema.Struct({
   series_links: Schema.optional(Schema.Array(Schema.Struct({ url: Schema.String }))),
 });
 export type KaganeDetails = Schema.Schema.Type<typeof Details>;
+
+const ChapterIndex = Schema.Struct({
+  count: Schema.Int,
+  fields: Schema.Array(Schema.String),
+  books: Schema.Array(Schema.Array(Schema.Unknown)),
+});
+const ChapterPage = Schema.Struct({
+  items: Schema.Array(
+    Schema.Struct({
+      book_id: Schema.NonEmptyString,
+      series_id: Schema.optional(Schema.NullOr(Schema.String)),
+      chapter_no: Schema.optional(Schema.NullOr(Schema.Union([Schema.String, Schema.Finite]))),
+      volume_no: Schema.optional(Schema.NullOr(Schema.Union([Schema.String, Schema.Finite]))),
+    }),
+  ),
+  next_cursor: Schema.NullOr(Schema.String),
+});
 
 export class KaganeCooldownError extends Data.TaggedError("KaganeCooldownError")<{
   readonly message: string;
@@ -84,6 +102,7 @@ export const createKaganeClient = (options: {
   let requested = false;
   const maxPages = options.maxPages ?? 200;
   const detailCache = new Map<string, KaganeDetails>();
+  const coverageCache = new Map<string, ChapterCoverage>();
   const searchCache = new Map<string, readonly KaganeBook[]>();
   const send = async (path: string, body?: JsonObject) => {
     if (requested) {
@@ -207,6 +226,67 @@ export const createKaganeClient = (options: {
 
   return {
     sources: () => request("/api/v2/sources/list", Sources, { source_types: null }),
+    coverage: async (id: string): Promise<ChapterCoverage> => {
+      const cached = coverageCache.get(id);
+      if (cached) {
+        return cached;
+      }
+      const base = `/api/v2/series/${encodeURIComponent(id)}/books`;
+      const index = await request(`${base}/index`, ChapterIndex);
+      const column = index.fields.indexOf("book_id");
+      const expected = new Set(index.books.map((row) => row[column]));
+      if (
+        column < 0 ||
+        index.count < 0 ||
+        index.count !== index.books.length ||
+        expected.size !== index.count ||
+        [...expected].some((value) => !Schema.is(Schema.NonEmptyString)(value))
+      ) {
+        throw cliError(`Kagane ${id}: invalid chapter index`);
+      }
+      const books: Schema.Schema.Type<typeof ChapterPage>["items"][number][] = [];
+      const seen = new Set<string>();
+      const cursors = new Set<string>();
+      let before: string | undefined;
+      for (let page = 0; page < maxPages; page++) {
+        const result = await request(
+          `${base}?limit=200${before ? `&before=${encodeURIComponent(before)}` : ""}`,
+          ChapterPage,
+        );
+        for (const book of result.items) {
+          if (
+            seen.has(book.book_id) ||
+            !expected.has(book.book_id) ||
+            (book.series_id && book.series_id !== id)
+          ) {
+            throw cliError(`Kagane ${id}: chapter inventory disagrees with its index`);
+          }
+          seen.add(book.book_id);
+          books.push(book);
+        }
+        if (result.next_cursor === null) {
+          if (seen.size !== expected.size) {
+            throw cliError(`Kagane ${id}: incomplete chapter inventory`);
+          }
+          const coverage = chapterCoverage(
+            books.map((book) => ({ chapter: book.chapter_no, volume: book.volume_no })),
+          );
+          coverageCache.set(id, coverage);
+          return coverage;
+        }
+        if (
+          !result.next_cursor.trim() ||
+          cursors.has(result.next_cursor) ||
+          !result.items.length ||
+          seen.size >= expected.size
+        ) {
+          throw cliError(`Kagane ${id}: chapter pagination did not advance`);
+        }
+        before = result.next_cursor;
+        cursors.add(before);
+      }
+      throw cliError(`Kagane ${id}: chapter inventory exceeded ${maxPages} pages`);
+    },
     details: async (id: string) => {
       const cached = detailCache.get(id);
       if (cached) {
@@ -254,19 +334,19 @@ export const createKaganeClient = (options: {
         }
       }
       throw cliError(
-        `Kagane search exceeded ${maxPages} pages; no link selected. Narrow --source-priority or increase --max-pages.`,
+        `Kagane search exceeded ${maxPages} pages; no link selected. Increase --max-pages.`,
       );
     },
   };
 };
 
-type ProviderIdentity = {
+export type ProviderIdentity = {
   readonly provider: string;
   readonly externalId: string;
 };
 
 /** Only recognize work URLs on the provider's own host, never labels or embedded URLs. */
-const identityFromUrl = (value: string): ProviderIdentity | undefined => {
+export const identityFromUrl = (value: string): ProviderIdentity | undefined => {
   let url: URL;
   try {
     url = new URL(value);
@@ -301,6 +381,7 @@ export type KaganeCandidate = {
   readonly title: string;
   readonly source: string;
   readonly books: number;
+  readonly coverage?: ChapterCoverage;
   readonly identities: readonly ProviderIdentity[];
   readonly matchedIds: readonly string[];
   readonly reasons: readonly string[];
@@ -347,13 +428,13 @@ export const verifyKaganeCandidate = (
   if (!source || details.source_id !== book.source_id) {
     reasons.push("unknown or inconsistent source");
   }
+  if (source?.trim().toLowerCase() === "mangadex") {
+    reasons.push("MangaDex content source excluded");
+  }
   if (details.edition_info?.trim()) {
     reasons.push(`edition=${details.edition_info}`);
   }
   const books = details.current_books ?? book.current_books ?? 0;
-  if (books <= 0) {
-    reasons.push("no available books");
-  }
   if (book.format && details.format && book.format.toLowerCase() !== details.format.toLowerCase()) {
     reasons.push("format mismatch");
   }
@@ -368,16 +449,33 @@ export const verifyKaganeCandidate = (
   };
 };
 
-/** Source preference is only a tie-break between externally verified identities. */
+/** Coverage ranks proven editions; source preference only breaks equal-coverage ties. */
 export const selectKaganeCandidate = (
   candidates: readonly KaganeCandidate[],
   priority: readonly string[],
 ): KaganeCandidate | undefined => {
-  const compatible = candidates.filter((candidate) => candidate.reasons.length === 0);
+  const compatible = candidates.filter(
+    (candidate) =>
+      candidate.reasons.length === 0 &&
+      !(candidate.coverage?.unit === "chapters" && candidate.coverage.count === 0),
+  );
   const verified = compatible.filter((candidate) => candidate.matchedIds.length > 0);
   if (verified.length === 0) {
     // A rejected competing title is not proof that the remaining title is the right work.
-    return candidates.length === 1 ? compatible[0] : undefined;
+    const only = candidates.length === 1 ? compatible[0] : undefined;
+    return only?.coverage && only.coverage.unit !== "unknown" && only.coverage.count > 0
+      ? only
+      : undefined;
+  }
+  if (
+    verified.some(
+      (candidate) =>
+        !candidate.coverage ||
+        candidate.coverage.unit === "unknown" ||
+        candidate.coverage.count === 0,
+    )
+  ) {
+    return undefined;
   }
   for (const provider of ["anilist", "mal", "mangadex"]) {
     const ids = new Set(
@@ -392,8 +490,12 @@ export const selectKaganeCandidate = (
   if (verified.length === 1) {
     return verified[0];
   }
+  const largest = mostCovered(verified);
+  if (largest.length === 1) {
+    return largest[0];
+  }
   for (const source of priority) {
-    const preferred = verified.filter(
+    const preferred = largest.filter(
       (candidate) => candidate.source.toLowerCase() === source.toLowerCase(),
     );
     if (preferred.length > 0) {
