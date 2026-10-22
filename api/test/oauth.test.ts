@@ -27,8 +27,8 @@ const environment = {
 
 describe("OAuth provider configuration", () => {
   it("builds public callback and device URLs behind the /api router mount", () => {
-    const bareOrigin = { MANIFOLD_OAUTH_REDIRECT_BASE_URL: "https://example.test/" };
-    const apiOrigin = { MANIFOLD_OAUTH_REDIRECT_BASE_URL: "https://example.test/api/" };
+    const bareOrigin = "https://example.test/";
+    const apiOrigin = "https://example.test/api/";
 
     expect(oauthRedirectUri("mal", bareOrigin)).toBe(
       "https://example.test/api/v1/auth/mal/callback",
@@ -64,12 +64,8 @@ describe("OAuth provider configuration", () => {
   });
 
   it("derives the public site origin from the OAuth redirect base", () => {
-    expect(publicSiteOrigin({ MANIFOLD_OAUTH_REDIRECT_BASE_URL: "https://example.test/" })).toBe(
-      "https://example.test",
-    );
-    expect(publicSiteOrigin({ MANIFOLD_OAUTH_REDIRECT_BASE_URL: "https://example.test/api" })).toBe(
-      "https://example.test",
-    );
+    expect(publicSiteOrigin("https://example.test/")).toBe("https://example.test");
+    expect(publicSiteOrigin("https://example.test/api")).toBe("https://example.test");
   });
 
   it("creates the MAL callback URL with its supported plain PKCE method", async () => {

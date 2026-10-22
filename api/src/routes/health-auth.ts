@@ -17,6 +17,7 @@ import {
   oauthRedirectUri,
   parseJson,
   publicSiteOrigin,
+  resolveRedirectBase,
   tryPromise,
   type RouteContext,
   type RouteEffect,
@@ -113,6 +114,8 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
       return null;
     }
 
+    const redirectBase = yield* tryPromise(() => resolveRedirectBase(env));
+
     if (path.length === 2 && request.method === "GET") {
       const sync = env.MANIFOLD_SYNC.getByName("default");
       return jsonEncoded(
@@ -169,7 +172,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
     if (oauth && path.length === 4 && path[3] === "start" && request.method === "GET") {
       const returnPath = adminOAuthReturnPath(url.searchParams.get("return"));
       const start = yield* tryPromise(() =>
-        sync.createOAuthSession(oauth, oauthRedirectUri(oauth, env), returnPath),
+        sync.createOAuthSession(oauth, oauthRedirectUri(oauth, redirectBase), returnPath),
       );
       // Browser navigation (curl -I / Paperback) keeps the 302. Admin's
       // server fn asks for JSON so it can hand the URL to window.location.
@@ -207,7 +210,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
           return new Response(null, {
             status: 302,
             headers: {
-              location: `${publicSiteOrigin(env)}${cancelled.returnPath}?oauth=denied&provider=${oauth}`,
+              location: `${publicSiteOrigin(redirectBase)}${cancelled.returnPath}?oauth=denied&provider=${oauth}`,
               "cache-control": "no-store",
             },
           });
@@ -228,7 +231,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
         return new Response(null, {
           status: 302,
           headers: {
-            location: `${publicSiteOrigin(env)}${connection.returnPath}?oauth=connected&provider=${oauth}`,
+            location: `${publicSiteOrigin(redirectBase)}${connection.returnPath}?oauth=connected&provider=${oauth}`,
             "cache-control": "no-store",
           },
         });

@@ -170,6 +170,9 @@ export const cancelOAuthSession = (
 
 const loginMangaDexEffect = (host: SyncHost) =>
   Effect.gen(function* () {
+    const clientId = yield* fromPromise(() =>
+      readSecret(host.env.MANIFOLD_MANGADEX_CLIENT_ID, "MANIFOLD_MANGADEX_CLIENT_ID"),
+    );
     const clientSecret = yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_MANGADEX_CLIENT_SECRET, "MANIFOLD_MANGADEX_CLIENT_SECRET"),
     );
@@ -189,7 +192,7 @@ const loginMangaDexEffect = (host: SyncHost) =>
           "user-agent": manifoldUserAgent("api"),
         },
         body: createMangaDexPasswordGrant({
-          clientId: host.env.MANIFOLD_MANGADEX_CLIENT_ID,
+          clientId,
           clientSecret,
           username,
           password,
@@ -302,7 +305,9 @@ const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
       provider === "mangadex"
         ? createMangaDexRefreshGrant(
             {
-              clientId: host.env.MANIFOLD_MANGADEX_CLIENT_ID,
+              clientId: yield* fromPromise(() =>
+                readSecret(host.env.MANIFOLD_MANGADEX_CLIENT_ID, "MANIFOLD_MANGADEX_CLIENT_ID"),
+              ),
               clientSecret: yield* fromPromise(() =>
                 readSecret(
                   host.env.MANIFOLD_MANGADEX_CLIENT_SECRET,

@@ -12,6 +12,7 @@ import {
   VECTOR_ACCEPT_SCORE,
 } from "./mangadex-match";
 import type { Env } from "./types";
+import { readSecret } from "./read-secret";
 import { apiError, fromPromise } from "./manifold-sync/from-promise";
 
 export const MalBackupPayload = Schema.Struct({
@@ -81,15 +82,20 @@ export const resolveMalBackup = (
   env: Pick<Env, "AI" | "MANIFOLD_MAL_CLIENT_ID">,
   entry: RegistryEntry,
   identity?: MalBackupIdentity,
-  source: CanonicalSearchSource = createMyAnimeListSource({
-    clientId: env.MANIFOLD_MAL_CLIENT_ID,
-    userAgent: manifoldUserAgent("api"),
-    fetcher: (input, init) =>
-      platformFetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
-  }),
+  suppliedSource?: CanonicalSearchSource,
 ): Promise<MalMatch> =>
   Effect.runPromise(
     Effect.gen(function* () {
+      const source =
+        suppliedSource ??
+        createMyAnimeListSource({
+          clientId: yield* Effect.promise(() =>
+            readSecret(env.MANIFOLD_MAL_CLIENT_ID, "MANIFOLD_MAL_CLIENT_ID"),
+          ),
+          userAgent: manifoldUserAgent("api"),
+          fetcher: (input, init) =>
+            platformFetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
+        });
       const binding = entry.providers.find((link) => link.provider === "mal");
       if (binding) {
         return { externalId: binding.externalId, title: binding.title, method: "binding" as const };

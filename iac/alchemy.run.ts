@@ -2,7 +2,6 @@ import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Output from "alchemy/Output";
 import * as RemovalPolicy from "alchemy/RemovalPolicy";
-import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type { ManifoldSync as ManifoldSyncClass } from "../api/src/manifold-sync";
@@ -28,15 +27,23 @@ export const SharedSecretsStore = Cloudflare.SecretsStore.Store("SharedSecretsSt
   Alchemy.remote(),
 );
 
-/** Secrets provisioned into the account Secrets Store and bound to SyncApi
- * as `secrets_store_secret` bindings. Non-sensitive identifiers (client IDs,
- * redirect base URL) remain plain vars sourced from iac/.env. */
-const SYNC_SECRET_NAMES = [
+/** Everything SyncApi reads from the account Secrets Store, bound as
+ * `secrets_store_secret` descriptors: values (public identifiers and
+ * secrets alike) are created and rotated manually in Cloudflare outside
+ * this deployment. The matching records must already exist, active with
+ * Workers scope (see iac/README.md). */
+const SYNC_STORE_NAMES = [
   "MANIFOLD_TOKEN",
   "MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET",
+  "MANIFOLD_GITHUB_CLIENT_ID",
   "MANIFOLD_GITHUB_CLIENT_SECRET",
+  "MANIFOLD_GITHUB_ALLOWED_USER_ID",
+  "MANIFOLD_OAUTH_REDIRECT_BASE_URL",
+  "MANIFOLD_ANILIST_CLIENT_ID",
   "MANIFOLD_ANILIST_CLIENT_SECRET",
+  "MANIFOLD_MAL_CLIENT_ID",
   "MANIFOLD_MAL_CLIENT_SECRET",
+  "MANIFOLD_MANGADEX_CLIENT_ID",
   "MANIFOLD_MANGADEX_CLIENT_SECRET",
   "MANIFOLD_MANGADEX_USERNAME",
   "MANIFOLD_MANGADEX_PASSWORD",
@@ -105,12 +112,6 @@ export const ManifoldApi = Cloudflare.Worker("ManifoldApi", {
     MANIFOLD_SYNC: ManifoldSync,
     REGISTRY_BACKUPS: RegistryBackups,
     ENVIRONMENT: "production",
-    MANIFOLD_OAUTH_REDIRECT_BASE_URL: Config.String("MANIFOLD_OAUTH_REDIRECT_BASE_URL"),
-    MANIFOLD_GITHUB_CLIENT_ID: Config.String("MANIFOLD_GITHUB_CLIENT_ID"),
-    MANIFOLD_GITHUB_ALLOWED_USER_ID: Config.String("MANIFOLD_GITHUB_ALLOWED_USER_ID"),
-    MANIFOLD_ANILIST_CLIENT_ID: Config.String("MANIFOLD_ANILIST_CLIENT_ID"),
-    MANIFOLD_MAL_CLIENT_ID: Config.String("MANIFOLD_MAL_CLIENT_ID"),
-    MANIFOLD_MANGADEX_CLIENT_ID: Config.String("MANIFOLD_MANGADEX_CLIENT_ID"),
   },
 }).pipe(RemovalPolicy.retain());
 
@@ -219,7 +220,7 @@ export default Alchemy.Stack(
     const sharedSecretsStore = yield* SharedSecretsStore;
     const syncApiResource = yield* ManifoldApi;
     yield* syncApiResource.bind("SyncSecretsStoreBindings", {
-      bindings: SYNC_SECRET_NAMES.map((secretName) => ({
+      bindings: SYNC_STORE_NAMES.map((secretName) => ({
         type: "secrets_store_secret" as const,
         name: secretName,
         secretName,

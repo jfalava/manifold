@@ -5,9 +5,9 @@ import { toBase64Url } from "./token-crypto";
 import type { RuntimeSecret } from "./types";
 
 export interface OAuthEnvironment {
-  readonly MANIFOLD_ANILIST_CLIENT_ID: string;
+  readonly MANIFOLD_ANILIST_CLIENT_ID: RuntimeSecret;
   readonly MANIFOLD_ANILIST_CLIENT_SECRET: RuntimeSecret;
-  readonly MANIFOLD_MAL_CLIENT_ID: string;
+  readonly MANIFOLD_MAL_CLIENT_ID: RuntimeSecret;
   readonly MANIFOLD_MAL_CLIENT_SECRET: RuntimeSecret;
 }
 
@@ -45,7 +45,9 @@ export const getOAuthClientConfig = (
           provider,
           authorizationEndpoint: "https://anilist.co/api/v2/oauth/authorize",
           tokenEndpoint: "https://anilist.co/api/v2/oauth/token",
-          clientId: env.MANIFOLD_ANILIST_CLIENT_ID,
+          clientId: yield* Effect.promise(() =>
+            readSecret(env.MANIFOLD_ANILIST_CLIENT_ID, "MANIFOLD_ANILIST_CLIENT_ID"),
+          ),
           clientSecret: yield* Effect.promise(() =>
             readSecret(env.MANIFOLD_ANILIST_CLIENT_SECRET, "MANIFOLD_ANILIST_CLIENT_SECRET"),
           ),
@@ -57,7 +59,9 @@ export const getOAuthClientConfig = (
         provider,
         authorizationEndpoint: "https://myanimelist.net/v1/oauth2/authorize",
         tokenEndpoint: "https://myanimelist.net/v1/oauth2/token",
-        clientId: env.MANIFOLD_MAL_CLIENT_ID,
+        clientId: yield* Effect.promise(() =>
+          readSecret(env.MANIFOLD_MAL_CLIENT_ID, "MANIFOLD_MAL_CLIENT_ID"),
+        ),
         clientSecret:
           (yield* Effect.promise(() =>
             readSecretOptional(env.MANIFOLD_MAL_CLIENT_SECRET, "MANIFOLD_MAL_CLIENT_SECRET"),

@@ -20,9 +20,27 @@ secrets with the Workers scope:
 | `MANIFOLD_MANGADEX_PASSWORD`             | `MANIFOLD_MANGADEX_PASSWORD`             | api        |
 | `MANIFOLD_ADMIN_PANEL_ANALYTICS_API`     | `MANIFOLD_ADMIN_PANEL_ANALYTICS_API`     | admin      |
 
-Non-sensitive identifiers (OAuth client IDs, `MANIFOLD_OAUTH_REDIRECT_BASE_URL`,
-`MANIFOLD_GITHUB_ALLOWED_USER_ID`) and the deploy channel (`ENV`) remain plain
-vars in `iac/.env` (copy from `iac/.env.example`; gitignored).
+Public identifiers are store-bound too — OAuth client IDs, the redirect base
+URL, and the GitHub access gate are the same kind of deployment-wide config and
+move with the secrets, so `iac/.env` carries nothing but the deploy channel:
+
+| Worker binding                           | Existing secret name                     | Consumers  |
+| ---------------------------------------- | ---------------------------------------- | ---------- |
+| `MANIFOLD_OAUTH_REDIRECT_BASE_URL`       | `MANIFOLD_OAUTH_REDIRECT_BASE_URL`       | api        |
+| `MANIFOLD_GITHUB_CLIENT_ID`              | `MANIFOLD_GITHUB_CLIENT_ID`              | api        |
+| `MANIFOLD_GITHUB_ALLOWED_USER_ID`        | `MANIFOLD_GITHUB_ALLOWED_USER_ID`        | api        |
+| `MANIFOLD_ANILIST_CLIENT_ID`             | `MANIFOLD_ANILIST_CLIENT_ID`             | api        |
+| `MANIFOLD_MAL_CLIENT_ID`                 | `MANIFOLD_MAL_CLIENT_ID`                 | api        |
+| `MANIFOLD_MANGADEX_CLIENT_ID`            | `MANIFOLD_MANGADEX_CLIENT_ID`            | api        |
+
+These values are not sensitive, but they rotate with the credentials they pair
+with, so they live in the same store records. At runtime the Worker resolves a
+`secrets_store_secret` binding with `.get()`; the API code accepts either a
+plain string (tests, local doubles) or the binding via `readSecret`.
+
+The deploy channel (`ENV`) is the only plain var in `iac/.env` (copy from
+`iac/.env.example`; gitignored). It is deploy-time input that selects which
+catalog channel to stage — no Worker reads it.
 
 Create and rotate values in the Cloudflare Secrets Store outside this
 deployment. CI needs permission to bind the secrets, not their values; the CLI

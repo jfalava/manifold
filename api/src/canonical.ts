@@ -15,6 +15,7 @@ import type {
   CanonicalSourceError,
 } from "@manifold/canonical";
 import type { Env } from "./types";
+import { readSecret } from "./read-secret";
 
 const JsonString = Schema.fromJsonString(Schema.Unknown);
 
@@ -60,28 +61,28 @@ const searchSource = (
 const isUnavailable = (error: { readonly status?: number }): boolean =>
   error.status === undefined || [401, 403, 408, 429].includes(error.status) || error.status >= 500;
 
-const selectedSources = (
-  env: Env,
-  provider: CanonicalProviderFilter,
-): readonly CanonicalSearchSource[] => {
-  const sources: CanonicalSearchSource[] = [];
-  const userAgent = manifoldUserAgent("api");
-  const fetcher: CanonicalFetcher = (input, init) =>
-    platformFetch(input, { ...init, signal: AbortSignal.timeout(5_000) });
-  if (provider === "all" || provider === "anilist") {
-    sources.push(createAniListSource({ userAgent, fetcher }));
-  }
-  if (provider === "all" || provider === "mal") {
-    sources.push(
-      createMyAnimeListSource({
-        clientId: env.MANIFOLD_MAL_CLIENT_ID,
-        userAgent,
-        fetcher,
-      }),
-    );
-  }
-  return sources;
-};
+const selectedSourcesEffect = (env: Env, provider: CanonicalProviderFilter) =>
+  Effect.gen(function* () {
+    const sources: CanonicalSearchSource[] = [];
+    const userAgent = manifoldUserAgent("api");
+    const fetcher: CanonicalFetcher = (input, init) =>
+      platformFetch(input, { ...init, signal: AbortSignal.timeout(5_000) });
+    if (provider === "all" || provider === "anilist") {
+      sources.push(createAniListSource({ userAgent, fetcher }));
+    }
+    if (provider === "all" || provider === "mal") {
+      sources.push(
+        createMyAnimeListSource({
+          clientId: yield* Effect.promise(() =>
+            readSecret(env.MANIFOLD_MAL_CLIENT_ID, "MANIFOLD_MAL_CLIENT_ID"),
+          ),
+          userAgent,
+          fetcher,
+        }),
+      );
+    }
+    return sources;
+  });
 
 export const searchCanonical = (
   env: Env,
@@ -93,7 +94,7 @@ export const searchCanonical = (
     Effect.gen(function* () {
       const providers: CanonicalProviderSearch[] = [];
       if (provider === "auto") {
-        for (const source of selectedSources(env, "all")) {
+        for (const source of yield* selectedSourcesEffect(env, "all")) {
           const result = yield* searchSource(source, query, limit);
           providers.push(result);
           if (!result.error || !isUnavailable(result.error)) {
@@ -103,7 +104,7 @@ export const searchCanonical = (
       } else {
         providers.push(
           ...(yield* Effect.forEach(
-            selectedSources(env, provider),
+            yield* selectedSourcesEffect(env, provider),
             (source) => searchSource(source, query, limit),
             { concurrency: "unbounded" },
           )),
@@ -124,7 +125,7 @@ export const getCanonical = (
 ): Promise<CanonicalEntry | undefined> =>
   Effect.runPromise(
     Effect.gen(function* () {
-      const source = selectedSources(env, provider)[0];
+      const source = (yield* selectedSourcesEffect(env, provider))[0];
       if (!source) {
         return undefined;
       }
@@ -136,7 +137,7 @@ export const getCanonical = (
 export const getRegistryCanonical = (env: Env, entry: RegistryEntry): Promise<CanonicalEntry> =>
   Effect.runPromise(
     Effect.gen(function* () {
-      for (const source of selectedSources(env, "all")) {
+      for (const source of yield* selectedSourcesEffect(env, "all")) {
         const link = entry.providers.find((item) => item.provider === source.provider);
         if (!link) {
           continue;

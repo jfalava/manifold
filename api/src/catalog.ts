@@ -26,9 +26,7 @@ const ExtensionInfoBody = Schema.Struct({
   icon: Schema.optional(Schema.String),
   contentRating: Schema.optional(Schema.String),
   language: Schema.optional(Schema.String),
-  developers: Schema.optional(
-    Schema.Array(Schema.Struct({ name: Schema.String })),
-  ),
+  developers: Schema.optional(Schema.Array(Schema.Struct({ name: Schema.String }))),
   badges: Schema.optional(
     Schema.Array(
       Schema.Struct({
@@ -66,8 +64,8 @@ const readExtensionInfo = async (
 
   try {
     const raw: unknown = await response.json();
-    return Schema.decodeUnknownOption(ExtensionInfoBody)(raw).pipe(
-      (option) => (option._tag === "Some" ? option.value : undefined),
+    return Schema.decodeUnknownOption(ExtensionInfoBody)(raw).pipe((option) =>
+      option._tag === "Some" ? option.value : undefined,
     );
   } catch {
     return undefined;
@@ -152,11 +150,7 @@ const addCatalogRoutes = (app: Hono<{ Bindings: Env }>, catalog: Catalog): void 
       return c.json({ ...info, id: catalog.extensionId }, 200, { "cache-control": "no-store" });
     })
     .get(`${catalog.basePath}/:id/index.js`, (c) =>
-      asset(
-        c.env,
-        `/${catalog.assetPath}/${c.req.param("id")}/index.js`,
-        "application/javascript",
-      ),
+      asset(c.env, `/${catalog.assetPath}/${c.req.param("id")}/index.js`, "application/javascript"),
     )
     // Paperback 0.9 resolves info.icon as `{id}/static/{icon}` (see inkdex layout).
     .get(`${catalog.basePath}/:id/static/icon.png`, (c) =>

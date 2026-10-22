@@ -26,7 +26,7 @@ import {
 import { errorMessage, isJsonObject, isJsonValue, isString, type JsonValue } from "@manifold/json";
 import type { AuthProvider, OAuthProvider } from "./domain";
 import type { ManifoldOAuthTokenResponse } from "./manifold-sync/manifold-oauth";
-import { readSecretOptional } from "./read-secret";
+import { readSecret, readSecretOptional } from "./read-secret";
 import type { Env } from "./types";
 
 /** JSON-serializable HTTP bodies Response.json accepts from these routes. */
@@ -239,25 +239,28 @@ export const oauthProvider = (value: string | undefined): OAuthProvider | undefi
   return undefined;
 };
 
-export const oauthApiBaseUrl = (env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_URL">): string => {
-  const base = env.MANIFOLD_OAUTH_REDIRECT_BASE_URL.replace(/\/+$/, "");
+/** Resolves the public API base URL from the Worker env, accepting a plain
+ * string (local dev) or a Secrets Store binding fetched with `.get()`. */
+export const resolveRedirectBase = (
+  env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_URL">,
+): Promise<string> =>
+  readSecret(env.MANIFOLD_OAUTH_REDIRECT_BASE_URL, "MANIFOLD_OAUTH_REDIRECT_BASE_URL");
+
+export const oauthApiBaseUrl = (base: string): string => {
+  const trimmed = base.replace(/\/+$/, "");
   // Older deployments stored the bare origin; the router mounts SyncApi under /api.
   // NOTE: new URL() would discard the base's path for an absolute path arg — concatenate.
-  return base.endsWith("/api") ? base : `${base}/api`;
+  return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
 };
 
-export const oauthRedirectUri = (
-  provider: OAuthProvider,
-  env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_URL">,
-): string => `${oauthApiBaseUrl(env)}/v1/auth/${provider}/callback`;
+export const oauthRedirectUri = (provider: OAuthProvider, base: string): string =>
+  `${oauthApiBaseUrl(base)}/v1/auth/${provider}/callback`;
 
-export const manifoldOAuthCallbackUri = (
-  env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_URL">,
-): string => `${oauthApiBaseUrl(env)}/v1/oauth/github/callback`;
+export const manifoldOAuthCallbackUri = (base: string): string =>
+  `${oauthApiBaseUrl(base)}/v1/oauth/github/callback`;
 
-export const anilistDeviceRedirectUri = (
-  env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_URL">,
-): string => `${oauthApiBaseUrl(env)}/v1/auth/anilist/device`;
+export const anilistDeviceRedirectUri = (base: string): string =>
+  `${oauthApiBaseUrl(base)}/v1/auth/anilist/device`;
 
 /**
  * Optional browser landing path after OAuth callback. Only same-origin admin
@@ -278,8 +281,7 @@ export const adminOAuthReturnPath = (value: string | null): string | undefined =
 };
 
 /** Public site origin (router), derived from the OAuth redirect base. */
-export const publicSiteOrigin = (env: Pick<Env, "MANIFOLD_OAUTH_REDIRECT_BASE_URL">): string =>
-  new URL(oauthApiBaseUrl(env)).origin;
+export const publicSiteOrigin = (base: string): string => new URL(oauthApiBaseUrl(base)).origin;
 
 export const isPublicOAuthRoute = (method: string, path: readonly string[]): boolean => {
   if (path[0] === "v1" && path[1] === "oauth") {
