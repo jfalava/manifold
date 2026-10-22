@@ -7,7 +7,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type { ManifoldSync as ManifoldSyncClass } from "../api/src/manifold-sync";
 
-import { defineManagedSecrets } from "./src/secrets";
 import { guardedCloudflareHttpClient } from "./src/cloudflare-upload-guard";
 
 // This is binding metadata for the ManifoldApi host, not a standalone
@@ -21,7 +20,13 @@ export const RegistryBackups = Cloudflare.R2.Bucket("RegistryBackups", {
   name: "manifold-registry-backups",
 }).pipe(RemovalPolicy.retain());
 
-export const SharedSecretsStore = Cloudflare.SecretsStore.Store("SharedSecretsStore");
+// The Store provider discovers and adopts the account store by name; it never
+// creates or rotates secret records and never deletes the shared store. Pinned
+// remote so `alchemy dev` binds the real account secrets instead of an empty
+// local simulator store.
+export const SharedSecretsStore = Cloudflare.SecretsStore.Store("SharedSecretsStore").pipe(
+  Alchemy.remote(),
+);
 
 /** Secrets provisioned into the account Secrets Store and bound to SyncApi
  * as `secrets_store_secret` bindings. Non-sensitive identifiers (client IDs,
@@ -36,8 +41,6 @@ const SYNC_SECRET_NAMES = [
   "MANIFOLD_MANGADEX_USERNAME",
   "MANIFOLD_MANGADEX_PASSWORD",
 ] as const;
-
-const MANAGED_SECRET_NAMES = [...SYNC_SECRET_NAMES, "MANIFOLD_ADMIN_PANEL_ANALYTICS_API"];
 
 const CF_ACCOUNT_ID = "cb3d0c5cb46f4e801b0b7f4cc3fc78d3";
 
@@ -198,17 +201,23 @@ export default Alchemy.Stack(
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {
+    // Secret values live only in the account Secrets Store; deployments bind
+    // them as `secrets_store_secret` descriptors and never read or rotate
+    // them (the HTTP guard in src/cloudflare-upload-guard.ts blocks secret
+    // record writes and deletes at the API level). Removing a managed
+    // `Secret` declaration from this file schedules its cloud delete, so
+    // forget the state rows with `alchemy state delete` BEFORE deploying
+    // binding-only code (see iac/README.md).
     const mangaDexIndex = yield* MangaDexIndex;
     yield* MangaDexAniListMetadataIndex;
     yield* MangaDexMalMetadataIndex;
 
     // The store is account-scoped and already exists; the provider adopts it
-    // and never deletes it. Values supplied via MANIFOLD_* entries in iac/.env
-    // are provisioned into the store; SyncApi binds its own subset as
-    // `secrets_store_secret` bindings.
+    // and never deletes it. Secret values are created and rotated manually in
+    // Cloudflare outside this deployment; deployments only bind them as
+    // `secrets_store_secret` descriptors.
     const sharedSecretsStore = yield* SharedSecretsStore;
     const syncApiResource = yield* ManifoldApi;
-    yield* defineManagedSecrets(sharedSecretsStore, MANAGED_SECRET_NAMES);
     yield* syncApiResource.bind("SyncSecretsStoreBindings", {
       bindings: SYNC_SECRET_NAMES.map((secretName) => ({
         type: "secrets_store_secret" as const,
