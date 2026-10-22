@@ -29,7 +29,7 @@
     "@fontsource/zilla-slab": "catalog:fonts",
     "@iconify-json/ph": "1.2.2",
     "@manifold/json": "workspace:*",
-    "astro": "~7.4.0",
+    "astro": "~7.4.2",
     "astro-icon": "1.2.0",
     "astro-og-canvas": "0.13.2",
     "canvaskit-wasm": "0.42.0",
@@ -37,11 +37,11 @@
     "tailwind-merge": "3.7.0"
   },
   "devDependencies": {
-    "@astrojs/check": "0.9.10",
+    "@astrojs/check": "0.9.12",
     "@astrojs/compiler": "4.0.0",
     "@oxlint/plugins": "catalog:build",
     "@tailwindcss/vite": "catalog:styling",
-    "@typescript-eslint/parser": "8.71.2",
+    "@typescript-eslint/parser": "8.72.0",
     "cross-spawn": "7.0.6",
     "eslint": "10.13.0",
     "eslint-plugin-astro": "3.2.1",
