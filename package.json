@@ -15,15 +15,15 @@
     ],
     "catalogs": {
       "effect": {
-        "effect": "4.0.5",
-        "@effect/platform-bun": "4.0.5",
-        "@effect/platform-node": "4.0.5"
+        "effect": "4.0.6",
+        "@effect/platform-bun": "4.0.6",
+        "@effect/platform-node": "4.0.6"
       },
       "cloudflare": {
         "@cloudflare/vite-plugin": "1.64.0",
-        "@cloudflare/workers-types": "5.20261022.1",
+        "@cloudflare/workers-types": "5.20261023.1",
         "hono": "4.13.13",
-        "wrangler": "4.151.3"
+        "wrangler": "4.152.0"
       },
       "build": {
         "oxlint": "1.89.0",
@@ -39,7 +39,7 @@
         "tailwindcss": "4.3.3"
       },
       "types": {
-        "bun-types": "1.4.3",
+        "bun-types": "1.4.4",
         "@types/node": "26.6.5"
       },
       "paperback": {

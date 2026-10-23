@@ -20,6 +20,7 @@
     "src/content/docs/cli/ops/retry.mdx",
     "src/content/docs/cli/pas5.mdx",
     "src/content/docs/cli/reconcile-diff.mdx",
+    "src/content/docs/cli/registry/import-pas5.mdx",
     "src/content/docs/cli/registry/import.mdx",
     "src/content/docs/cli/registry/kagane.mdx",
     "src/content/docs/cli/registry/mal.mdx",
