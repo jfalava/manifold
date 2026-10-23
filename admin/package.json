@@ -12,6 +12,7 @@
     "lint": "vp lint",
     "preview": "vp preview",
     "serve": "vp preview",
+    "test": "bun test tests",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -73,7 +73,7 @@
     "plan": "bun run build:catalog && bun run --cwd iac plan",
     "plan:api": "bun run plan",
     "prepare": "effect-tsgo patch --typescript --oxlint",
-    "test": "bun run test:contract && bun run test:json && bun run test:router && bun run test:canonical && bun run test:mangadex && bun run --cwd api test && bun run --cwd cli test && bun run test:paperback",
+    "test": "bun run test:contract && bun run test:json && bun run test:router && bun run test:canonical && bun run test:mangadex && bun run --cwd admin test && bun run --cwd api test && bun run --cwd cli test && bun run test:paperback",
     "test:canonical": "bun run --cwd packages/canonical test",
     "test:contract": "reuse lint",
     "test:json": "bun run --cwd packages/json test",
