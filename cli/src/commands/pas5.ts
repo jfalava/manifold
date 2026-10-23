@@ -47,7 +47,7 @@ import {
 const SOURCE_ID = "ManifoldSource";
 const TRACKER_SOURCE_ID = "MANIFOLD";
 // Native source IDs and unmodified manga IDs verified against a device PAS5 export.
-const UPSTREAM_SOURCES = [
+export const UPSTREAM_SOURCES = [
   { provider: "mangadex", sourceId: "MangaDex" },
   { provider: "kagane", sourceId: "Kagane" },
   { provider: "manganato", sourceId: "MangaNato" },

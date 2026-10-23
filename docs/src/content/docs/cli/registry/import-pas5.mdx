@@ -1,0 +1,77 @@
+---
+title: import-pas5
+description: Populate missing registry provider links from a Paperback library export.
+sidebar:
+  order: 2
+---
+
+```sh
+manifold registry import-pas5 --input ./Paperback-Archive.pas5
+```
+
+Reads a Paperback `.pas5` export and proposes missing provider links on existing
+registry entries. Dry-run is the default. No provider searches, browser sessions,
+AniList login or chapter-inventory requests are needed. Manifold authentication
+is required to read the registry and, with `--apply`, write links.
+
+The importer follows `__LIBRARY_MANGA_V5.attachedSources`, not every cached
+`__SOURCE_MANGA_V5` record. Native exports can contain many historical source
+records that no longer belong to a library entry.
+
+## Identity and conflicts
+
+Supported native source IDs are `MangaDex`, `Kagane`, `MangaNato` and `XCOMIC`.
+Their `mangaId` strings become registry external IDs unchanged. Unknown and
+retired sources are ignored, not deleted. Source-origin badges are not inferred
+from titles, hostnames or upload-status strings.
+
+A `MANIFOLD` attachment identifies the target registry UUID. Its `Canonical ID`,
+stamped AniList/MAL identities and existing native-provider ownership must agree.
+Without a MANIFOLD attachment, an exact native identity already linked in the
+registry can identify the target. Titles alone never resolve an entry.
+
+The importer does not mint entries, revive tombstones, replace editions or take
+links from another entry. Missing/stale UUIDs, contradictory identities,
+multiple editions of the same provider, and conflicting claims across library
+entries are reported without writing those entries. Repeated identical bindings
+are deduplicated; importing an already-populated export is a no-op.
+
+**A Paperback attachment records a user association, not independent proof that
+the edition is the correct work.** Reports identify the evidence as
+`paperback-attachment` with `independentlyVerified: false`. The importer does not
+fetch remote tracker metadata or detect a pilot/series mismatch absent from the
+archive and registry. Review known questionable attachments before applying;
+use provider audits separately when identity or coverage needs checking.
+
+## Apply and reporting
+
+```sh
+# Inspect the proposed links and extracted metadata.
+manifold registry import-pas5 --input ./Paperback-Archive.pas5 \
+  --report ./pas5-import.jsonl
+
+# Apply using a new report path after reviewing the dry run.
+manifold registry import-pas5 --input ./Paperback-Archive.pas5 --apply \
+  --report ./pas5-import-applied.jsonl
+```
+
+`--apply` adds only missing, nonconflicting links with `onConflict: reject`.
+It does not change list status, scores, progress, tabs or history, and never
+rewrites the original archive. Entries without an existing identity remain
+`unresolved`; use [registry import](/cli/registry/import/) first to populate the
+registry from AniList when needed.
+
+Reports include library/registry IDs, observed and missing links, titles and
+aliases, available author/artist names, share URLs, ignored source IDs and
+conflict/error reasons. Extracted strings remain in the local report; they do
+not overwrite registry metadata. Default reports are owner-only JSONL files in
+`~/.manifold/reports/pas5-import-<run>.jsonl`. Existing files are never overwritten.
+
+All library plans are checked before any writes. Each link write is independent,
+not a whole-archive transaction. A concurrent conflict can leave earlier links
+saved; successful writes are recorded immediately. Conflicts/errors return a
+nonzero exit status, while unresolved entries are skipped. Rerunning fills only
+what is still missing.
+
+`--api-origin` and `--api-token` use the normal Manifold API configuration and
+login resolution. Private exports and reports should not be committed.
