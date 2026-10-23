@@ -47,6 +47,7 @@ const run = (flags: string[] = [], scenario = "normal") => {
           {provider:'mangadex', externalId:'461f0cfa-cd72-4d70-bf26-a0279e0aa8fc', updatedAt:1}
         ]} : identityScenario ? {providers:[
           {provider:'anilist', externalId:'123', updatedAt:1},
+          ...(scenario === 'identity-audit' ? [{provider:'kagane', externalId:'series/two', updatedAt:1}] : []),
           ...(scenario === 'identity-shared-conflict' ? [] : [{provider:'mal', externalId:'456', updatedAt:1}])
         ]} : {}), row('missing', 'Nothing'),
         row('dead', 'Dead', {tombstoned:true}),
@@ -96,6 +97,17 @@ const run = (flags: string[] = [], scenario = "normal") => {
         }
         return Response.json({content:[book('series/one'), book('sequel', 'A Story 2')], last:true});
       }
+      if (url.pathname.includes('/books')) {
+        const second = url.pathname.includes('two');
+        const count = (scenario === 'identity-coverage' || scenario === 'identity-audit') && !second ? 5 : 3;
+        const items = Array.from({length:count}, (_, i) => ({book_id:'b'+i, chapter_no:i+1}));
+        if (scenario === 'identity-volumes' && second) for (const item of items) { item.volume_no = item.chapter_no; delete item.chapter_no; }
+        if (scenario === 'identity-unknown' && second) delete items[0].chapter_no;
+        if (scenario === 'identity-reset' && second) { items[0].volume_no=1; items[1].volume_no=2; items[1].chapter_no=1; }
+        if (url.pathname.endsWith('/index')) return Response.json({count, fields:['unused','book_id'], books:items.map(item => [null,item.book_id])});
+        const later = url.searchParams.has('before');
+        return Response.json({items:later ? (scenario === 'identity-incomplete' ? [] : items.slice(1)) : items.slice(0,1), next_cursor:later && scenario !== 'identity-loop' ? null : 'cursor'});
+      }
       if (url.pathname.startsWith('/api/v2/series/')) return Response.json({
         title:scenario === 'wrong-title' || scenario === 'identity-renamed' ? 'Different Story' : 'A Story',
         translated_language:scenario === 'wrong-language' ? 'ja' : scenario === 'missing-language' ? undefined : 'en',
@@ -142,7 +154,9 @@ describe("registry kagane", () => {
   it("previews unique exact matches, skips dead/linked/status-excluded rows and never writes", () => {
     const result = run();
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain("WOULD LINK target → kagane:series/one [Example Source]");
+    expect(result.stdout).toContain(
+      "WOULD LINK target → kagane:series/one [Example Source; 3 chapters]",
+    );
     expect(result.stdout).toContain("UNMATCHED missing");
     expect(result.stdout.match(/SEARCH .*$/gm)).toEqual([
       'SEARCH A Story ["en"]',
@@ -246,7 +260,7 @@ describe("registry kagane", () => {
     15_000,
   );
 
-  it("uses source priority only after verifying IDs, not chapter counts or result order", () => {
+  it("uses source priority to break equal coverage only after verifying IDs", () => {
     const result = run(["--apply", "--source-priority", "Kodansha Comics"], "identity-priority");
     expect(result.status, result.stderr).toBe(0);
     expect(result.report.find((entry) => entry.entryId === "target")).toMatchObject({
@@ -258,6 +272,48 @@ describe("registry kagane", () => {
     expect(
       result.report.find((entry) => entry.entryId === "target").candidates[0].matchedIds,
     ).toEqual(["anilist", "mal"]);
+  });
+
+  it("searches globally and chooses greater coverage before the preferred source", () => {
+    const result = run(["--apply", "--source-priority", "Kodansha Comics"], "identity-coverage");
+    expect(result.status, result.stderr).toBe(0);
+    const entry = result.report.find((item) => item.entryId === "target");
+    expect(entry.selectedId).toBe("series/one");
+    expect(entry.candidates.find((candidate) => candidate.id === "series/one").coverage).toEqual({
+      unit: "chapters",
+      count: 5,
+      numbers: [1, 2, 3, 4, 5],
+    });
+    expect(result.stdout).toContain('"externalId":"series/one"');
+  });
+
+  it.each([
+    "identity-volumes",
+    "identity-unknown",
+    "identity-reset",
+    "identity-incomplete",
+    "identity-loop",
+  ])("does not hide an incomparable or failed %s inventory behind a smaller winner", (scenario) => {
+    const result = run(["--apply", "--source-priority", "Kodansha Comics"], scenario);
+    expect(result.status, result.stderr).toBe(
+      scenario === "identity-incomplete" || scenario === "identity-loop" ? 1 : 0,
+    );
+    expect(result.report.find((item) => item.entryId === "target").selectedId).toBeNull();
+    expect(result.stdout).not.toContain("WRITE");
+  });
+
+  it("audits existing links without replacing them and reports actual chapter gains", () => {
+    const result = run(["--audit-existing", "--limit", "1"], "identity-audit");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.report.find((item) => item.entryId === "target")).toMatchObject({
+      currentId: "series/two",
+      selectedId: "series/one",
+      coverageDifference: { gained: [4, 5], lost: [] },
+    });
+    expect(result.stdout).not.toContain("WRITE");
+    const unsafe = run(["--audit-existing", "--apply"]);
+    expect(unsafe.status).toBe(1);
+    expect(unsafe.stdout).not.toContain("REGISTRY_PAGE");
   });
 
   it("defaults to non-MangaDex source priorities", () => {

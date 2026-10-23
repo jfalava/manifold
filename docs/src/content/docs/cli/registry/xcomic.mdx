@@ -1,0 +1,72 @@
+---
+title: xcomic
+description: Verify XComic edition identity and choose comparable chapter coverage.
+sidebar:
+  order: 7
+---
+
+```sh
+manifold registry xcomic [flags]
+manifold registry xcomic --audit-existing --status reading --report ./xcomic-audit.jsonl
+```
+
+Backfills missing `xcomic` registry links. Dry-run by default; `--apply` writes
+only missing links with conflict rejection. Existing links are never replaced.
+XComic is a registry/native Paperback attachment provider, not a canonical
+identity provider or a Manifold chapter reader. Kagane and MangaNato remain supported.
+
+## Identity before coverage
+
+Searches up to three known title aliases, follows every search page, and expands
+each exact-title group's editions. An edition must have a corroborating AniList
+or MyAnimeList ID and an exact known title/alias. Contradictory tracker IDs,
+spoofed tracker hosts, wrong languages, unsupported formats, merged/inconsistent
+groups and edition markers require rejection/review. Title-only candidates never
+auto-link. Metadata can be wrong: a pilot group may contain series chapters.
+
+The largest complete inventory of distinct normal numeric chapter positions
+wins among compatible editions of the same work and language. Every inventory
+page must load. Upload counters, source labels such as `Official`, highest
+chapter numbers and search order cannot choose the winner. Deleted records and
+duplicate positions do not increase coverage. The extension's `serial` fallback
+is not accepted as verified chapter numbering. Unknown numbering, failed
+inventories and equal-coverage editions remain unresolved.
+
+Coverage cannot prove image availability, translation quality, licensed access,
+or that an edition contains every chapter. Inspect reported gained/lost chapter
+positions and test reading/refresh on a device before replacing an existing edition.
+
+## Flags and reporting
+
+- `--audit-existing` includes existing bindings in a **read-only** audit. Cannot
+  combine with `--apply`. Reports propose, but do not perform, replacements.
+- `--status` uses the shared status filter; default `auto`.
+- `--limit` limits eligible rows after loading the full registry.
+- `--language` defaults to `en`. Use XComic IDs such as `pt_br` and `es_419`,
+  retaining underscores.
+- `--delay` defaults to `1500` milliseconds between sequential catalog requests.
+- `--max-pages` defaults to `200` per search/inventory. A cap or nonadvancing
+  pager is an error, never a partial match.
+- `--origin` defaults to `https://xcomic.me`. Explicit supported mirrors are
+  `https://xcomic.net`, `https://yona.to`, and `https://comik.to`. No automatic
+  failover, cross-mirror parity guarantee or browser bypass is provided.
+- `--report` creates an owner-only JSONL report; default
+  `~/.manifold/reports/xcomic-<run>.jsonl`. Existing reports are never overwritten.
+- `--anilist-token` optionally loads canonical aliases through the usual login
+  resolution. It is not an XComic credential.
+- `--api-origin` and `--api-token` use the usual Manifold API configuration.
+
+Reports include current/proposed edition IDs, group IDs, origin labels,
+corroborating tracker IDs, rejection reasons, inventories and gained/lost
+chapter positions. Per-row failures/conflicts return a nonzero exit status.
+Authentication challenges, HTTP 403 and HTTP 429 stop the sweep. No XComic
+account/API key is required for the anonymously available catalog; availability
+and anti-bot policy may change. This runner does not supply desktop Chrome.
+
+## Native Paperback identity
+
+The registry external ID is the opaque **comic/edition ID**, not the enclosing
+title-group ID. PAS5 uses exact source ID `XCOMIC` and that unmodified edition
+ID as `mangaId`. Reviewed registry links feed [PAS5 generation](/cli/pas5/);
+the generator does not search or pick editions. Existing conflicting backup
+attachments remain unchanged and are reported for manual review.

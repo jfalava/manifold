@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import { manifoldUserAgent } from "@manifold/json";
 
-import { manifoldOAuthCallbackUri } from "../http";
+import { manifoldOAuthCallbackUri, resolveRedirectBase } from "../http";
 import { platformFetch } from "../effect-host";
 import { readSecret } from "../read-secret";
 import { createPkceChallenge, createRandomValue } from "../oauth";
@@ -137,9 +137,14 @@ const startManifoldOAuthEffect = (host: SyncHost, input: ManifoldOAuthAuthorizat
     yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_GITHUB_CLIENT_SECRET, "MANIFOLD_GITHUB_CLIENT_SECRET"),
     );
-    const callback = manifoldOAuthCallbackUri(host.env);
+    const clientId = yield* fromPromise(() =>
+      readSecret(host.env.MANIFOLD_GITHUB_CLIENT_ID, "MANIFOLD_GITHUB_CLIENT_ID"),
+    );
+    const callback = manifoldOAuthCallbackUri(
+      yield* fromPromise(() => resolveRedirectBase(host.env)),
+    );
     const authorizationUrl = withQuery(GITHUB_AUTHORIZE_ENDPOINT, {
-      client_id: host.env.MANIFOLD_GITHUB_CLIENT_ID,
+      client_id: clientId,
       redirect_uri: callback,
       response_type: "code",
       scope: "read:user",
@@ -184,7 +189,15 @@ const completeGithubOAuthEffect = (host: SyncHost, state: string, code?: string,
     const clientSecret = yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_GITHUB_CLIENT_SECRET, "MANIFOLD_GITHUB_CLIENT_SECRET"),
     );
-    const callback = manifoldOAuthCallbackUri(host.env);
+    const clientId = yield* fromPromise(() =>
+      readSecret(host.env.MANIFOLD_GITHUB_CLIENT_ID, "MANIFOLD_GITHUB_CLIENT_ID"),
+    );
+    const allowedUserId = yield* fromPromise(() =>
+      readSecret(host.env.MANIFOLD_GITHUB_ALLOWED_USER_ID, "MANIFOLD_GITHUB_ALLOWED_USER_ID"),
+    );
+    const callback = manifoldOAuthCallbackUri(
+      yield* fromPromise(() => resolveRedirectBase(host.env)),
+    );
     const tokenResponse = yield* fromPromise(() =>
       platformFetch(GITHUB_TOKEN_ENDPOINT, {
         method: "POST",
@@ -194,7 +207,7 @@ const completeGithubOAuthEffect = (host: SyncHost, state: string, code?: string,
           "user-agent": manifoldUserAgent("api"),
         },
         body: new URLSearchParams({
-          client_id: host.env.MANIFOLD_GITHUB_CLIENT_ID,
+          client_id: clientId,
           client_secret: clientSecret,
           code,
           redirect_uri: callback,
@@ -222,7 +235,7 @@ const completeGithubOAuthEffect = (host: SyncHost, state: string, code?: string,
     }
     const userBody = yield* fromPromise(() => userResponse.json());
     const githubUser = yield* Schema.decodeUnknownEffect(GithubUserResponse)(userBody);
-    if (String(githubUser.id) !== host.env.MANIFOLD_GITHUB_ALLOWED_USER_ID) {
+    if (String(githubUser.id) !== allowedUserId) {
       const rejected = redirectWithError(
         request.redirect_uri,
         request.outer_state,

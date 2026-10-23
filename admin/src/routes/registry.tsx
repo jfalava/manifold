@@ -13,13 +13,13 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import {
   adminTableFeatures,
   DataTable,
-  FilterToggle,
   HoverCoverRow,
   TablePagination,
   useClientPagination,
   type ClientPagination,
   type FilterToggleVariant,
 } from "../components/data-table";
+import { RegistryFilterBar } from "../components/registry-filters";
 import { proxiedCoverUrl } from "../lib/mangadex";
 import { readMangaDexLibraryCache } from "../lib/mangadex-idb";
 import {
@@ -30,23 +30,19 @@ import {
   unlinkProvider,
   type RegistryEntry,
 } from "../lib/registry";
+import {
+  EMPTY_REGISTRY_FILTERS,
+  matchesRegistryFilters,
+  REGISTRY_PROVIDERS,
+  REGISTRY_STATUSES as STATUSES,
+  type RegistryFilters,
+} from "../lib/registry-filters";
 import { parseTablePaginationSearch } from "../lib/table-view-state";
 
 export const Route = createFileRoute("/registry")({
   validateSearch: parseTablePaginationSearch,
   component: RegistryPage,
 });
-
-const STATUSES = [
-  "reading",
-  "on_hold",
-  "plan_to_read",
-  "dropped",
-  "re_reading",
-  "completed",
-] as const;
-
-const PROVIDERS = ["anilist", "mal", "mangadex", "kagane"] as const;
 
 const STATUS_BADGES = {
   reading: "info",
@@ -264,11 +260,11 @@ function EntryEditor({
                 >
                   {link.externalId}
                 </span>
-                {link.provider === "kagane" && (
+                {(link.provider === "kagane" || link.provider === "xcomic") && (
                   <Badge variant="neutral" className="max-w-full">
                     <span
                       className="truncate"
-                      title={`Kagane source: ${link.sourceName ?? "unknown"}`}
+                      title={`${link.provider} source: ${link.sourceName ?? "unknown"}`}
                     >
                       {link.sourceName ?? "Source unknown"}
                     </span>
@@ -300,7 +296,7 @@ function EntryEditor({
         </div>
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
           <Select value={provider} onValueChange={(value) => setProvider(String(value))}>
-            {PROVIDERS.map((value) => (
+            {REGISTRY_PROVIDERS.map((value) => (
               <Select.Option key={value} value={value}>
                 {value}
               </Select.Option>
@@ -373,10 +369,7 @@ function EntriesTable({
 }): ReactNode {
   const search = useSearch({ from: "/registry" });
   const navigate = useNavigate({ from: "/registry" });
-  const [filter, setFilter] = useState("");
-  const [statusFilters, setStatusFilters] = useState<ReadonlySet<string>>(() => new Set());
-  // Empty set = no provider filtering (the "All" chip), matching the status filter.
-  const [providerFilters, setProviderFilters] = useState<ReadonlySet<string>>(() => new Set());
+  const [filters, setFilters] = useState<RegistryFilters>(EMPTY_REGISTRY_FILTERS);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [editingId, setEditingId] = useState<string>();
   const [editorOpen, setEditorOpen] = useState(false);
@@ -454,109 +447,42 @@ function EntriesTable({
     [entries, editingId],
   );
 
-  const byStatus = useMemo(() => {
-    const counts = new Map<string, number>();
+  const statuses = useMemo(() => {
+    const values = new Set<string>([...STATUSES, "tombstoned", "unset"]);
     for (const entry of entries) {
-      const key = entry.tombstoned === true ? "tombstoned" : (entry.state?.status ?? "unset");
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (entry.state?.status) {
+        values.add(entry.state.status);
+      }
     }
-    return counts;
+    return [...values];
   }, [entries]);
 
-  const statusChips = useMemo(() => {
-    const known = new Set<string>([...STATUSES, "tombstoned", "unset"]);
-    const present = [...byStatus.keys()].filter((value) => !known.has(value));
-    return [
-      ...STATUSES.filter((value) => byStatus.has(value)),
-      ...present,
-      ...(byStatus.has("tombstoned") ? ["tombstoned"] : []),
-      ...(byStatus.has("unset") ? ["unset"] : []),
-    ];
-  }, [byStatus]);
-
-  // Provider chips are gap-finders: each counts the entries *missing* that
-  // provider, and "unlinked" counts entries with no provider links at all.
-  const missingByProvider = useMemo(() => {
-    const providers = new Set<string>(PROVIDERS);
+  const providers = useMemo(() => {
+    const values = new Set<string>(REGISTRY_PROVIDERS);
     for (const entry of entries) {
       for (const link of entry.providers) {
-        providers.add(link.provider);
+        values.add(link.provider);
       }
     }
-    const counts = new Map<string, number>();
-    for (const provider of providers) {
-      counts.set(
-        provider,
-        entries.filter((entry) => !entry.providers.some((link) => link.provider === provider))
-          .length,
-      );
-    }
-    counts.set("unlinked", entries.filter((entry) => entry.providers.length === 0).length);
-    return counts;
+    return [...values];
   }, [entries]);
 
-  const providerChips = useMemo(() => {
-    const known = new Set<string>([...PROVIDERS, "unlinked"]);
-    const present = [...missingByProvider.keys()].filter((value) => !known.has(value));
-    return [...PROVIDERS, ...present, "unlinked"].filter(
-      (value) => (missingByProvider.get(value) ?? 0) > 0,
-    );
-  }, [missingByProvider]);
-
-  const filtered = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    return entries.filter((entry) => {
-      const statusKey = entry.tombstoned === true ? "tombstoned" : (entry.state?.status ?? "unset");
-      if (statusFilters.size !== 0 && !statusFilters.has(statusKey)) {
-        return false;
-      }
-      // Each active provider chip excludes entries that *have* that provider,
-      // showing entries still missing the selected binding.
-      for (const value of providerFilters) {
-        if (value === "unlinked") {
-          if (entry.providers.length !== 0) {
-            return false;
-          }
-        } else if (entry.providers.some((link) => link.provider === value)) {
-          return false;
-        }
-      }
-      if (needle === "") {
-        return true;
-      }
-      return (
-        entry.title.toLowerCase().includes(needle) ||
-        entry.id.toLowerCase().includes(needle) ||
-        entry.providers.some(
-          (link) =>
-            link.externalId.toLowerCase().includes(needle) ||
-            link.sourceName?.toLowerCase().includes(needle),
-        )
-      );
-    });
-  }, [entries, filter, statusFilters, providerFilters]);
+  const filtered = useMemo(
+    () => entries.filter((entry) => matchesRegistryFilters(entry, filters)),
+    [entries, filters],
+  );
 
   const pageIndex = safePageIndex(filtered.length);
 
-  const toggleStatusFilter = useCallback((value: string) => {
-    setStatusFilters((current) => {
-      const next = new Set(current);
-      if (!next.delete(value)) {
-        next.add(value);
+  const changeFilters = useCallback(
+    (next: RegistryFilters) => {
+      setFilters(next);
+      if (pagination.pageIndex !== 0) {
+        goToPage(1);
       }
-      return next;
-    });
-  }, []);
-
-  const toggleProviderFilter = useCallback((value: string) => {
-    setProviderFilters((current) => {
-      const next = new Set(current);
-      if (!next.delete(value)) {
-        next.add(value);
-      }
-      return next;
-    });
-  }, []);
+    },
+    [pagination.pageIndex, goToPage],
+  );
 
   const columns = useMemo<ColumnDef<typeof adminTableFeatures, RegistryEntry>[]>(
     () => [
@@ -586,17 +512,17 @@ function EntriesTable({
               <span
                 key={link.provider}
                 className="inline-flex max-w-56 items-baseline gap-1.5 rounded px-1.5 py-0.5 text-sm ring ring-kumo-line"
-                title={`${link.provider}: ${link.externalId}${link.provider === "kagane" ? `\nSource: ${link.sourceName ?? "unknown"}` : ""}`}
+                title={`${link.provider}: ${link.externalId}${link.provider === "kagane" || link.provider === "xcomic" ? `\nSource: ${link.sourceName ?? "unknown"}` : ""}`}
               >
                 <span className="font-medium">{link.provider}</span>
                 <span
                   className={
-                    link.provider === "kagane"
+                    link.provider === "kagane" || link.provider === "xcomic"
                       ? "truncate text-kumo-subtle"
                       : "truncate font-mono text-[0.85em] opacity-60"
                   }
                 >
-                  {link.provider === "kagane"
+                  {link.provider === "kagane" || link.provider === "xcomic"
                     ? (link.sourceName ?? "Source unknown")
                     : link.externalId}
                 </span>
@@ -720,67 +646,18 @@ function EntriesTable({
 
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          className="w-64"
-          aria-label="Filter registry entries"
-          placeholder="Filter by title or provider id"
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-        />
-        <div className="flex flex-wrap items-center gap-1.5">
-          <FilterToggle
-            active={statusFilters.size === 0}
-            variant="neutral"
-            onClick={() => setStatusFilters(new Set())}
-          >
-            All ({entries.length})
-          </FilterToggle>
-          {statusChips.map((value) => {
-            const active = statusFilters.has(value);
-            return (
-              <FilterToggle
-                key={value}
-                active={active}
-                variant={variantForStatus(value)}
-                onClick={() => toggleStatusFilter(value)}
-              >
-                {value} ({byStatus.get(value) ?? 0})
-              </FilterToggle>
-            );
-          })}
-        </div>
-        <span className="text-sm opacity-60">
-          Showing {filtered.length} of {entries.length}
-        </span>
+      <RegistryFilterBar
+        filters={filters}
+        statuses={statuses}
+        providers={providers}
+        onChange={changeFilters}
+      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <output className="text-sm text-kumo-subtle">
+          Showing {filtered.length} of {entries.length} entries
+        </output>
+        {pager}
       </div>
-
-      <fieldset className="m-0 flex flex-wrap items-center gap-1.5 border-0 p-0">
-        <legend className="sr-only">Missing provider filter</legend>
-        <span className="text-sm opacity-60">Missing binding:</span>
-        <FilterToggle
-          active={providerFilters.size === 0}
-          variant="neutral"
-          onClick={() => setProviderFilters(new Set())}
-        >
-          Off
-        </FilterToggle>
-        {providerChips.map((value) => {
-          const active = providerFilters.has(value);
-          return (
-            <FilterToggle
-              key={value}
-              active={active}
-              variant={value === "unlinked" ? "error" : "warning"}
-              onClick={() => toggleProviderFilter(value)}
-            >
-              {value} ({missingByProvider.get(value) ?? 0})
-            </FilterToggle>
-          );
-        })}
-      </fieldset>
-
-      {pager}
       <DataTable
         table={table}
         emptyText="No registry entries match."

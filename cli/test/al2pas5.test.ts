@@ -65,6 +65,16 @@ const registryRow: RegistryRow = {
   ],
 };
 
+const multiProviderRow: RegistryRow = {
+  ...registryRow,
+  providers: [
+    ...registryRow.providers,
+    { provider: "kagane", externalId: "019c3a01-3106-7c50-b441-987e27995a11", updatedAt: 1 },
+    { provider: "manganato", externalId: "villains-are-destined-to-die", updatedAt: 1 },
+    { provider: "xcomic", externalId: "5ovmw", updatedAt: 1 },
+  ],
+};
+
 const buildEntry = (
   entry: AniListRichEntry,
   registryRow: RegistryRow | undefined,
@@ -344,17 +354,33 @@ describe("al2pas5 source attachments", () => {
     expect(sourceFree(roundTrip, empty).entities).toEqual(roundTrip);
   });
 
-  it("adds every proven upstream provider to new library entries", () => {
-    const generated = buildEntry(entry, registryRow);
+  it("adds every proven upstream provider to new library entries", async () => {
+    const generated = buildEntry(entry, multiProviderRow);
 
     expect(generated.sources.map(({ sourceId, mangaId }) => ({ sourceId, mangaId }))).toEqual([
       { sourceId: "MangaDex", mangaId: "mangadex-id" },
+      { sourceId: "Kagane", mangaId: "019c3a01-3106-7c50-b441-987e27995a11" },
+      { sourceId: "MangaNato", mangaId: "villains-are-destined-to-die" },
+      { sourceId: "XCOMIC", mangaId: "5ovmw" },
       { sourceId: "MANIFOLD", mangaId: "canonical-id" },
     ]);
     expect(generated.library.attachedSources.map((source) => source.id)).toEqual(
       generated.sources.map((source) => source.id),
     );
-    expect(Object.keys(generated.infos)).toHaveLength(2);
+    expect(Object.keys(generated.infos)).toHaveLength(5);
+    for (const source of generated.sources) {
+      expect(generated.infos[source.mangaInfo.id]?.primaryTitle).toBe(entry.title);
+    }
+    const entities = entitiesFrom(generated);
+    expect(
+      await parsePas5(
+        buildPas5Zip(
+          Object.fromEntries(
+            Object.entries(entities).map(([name, records]) => [name, JSON.stringify(records)]),
+          ),
+        ),
+      ),
+    ).toEqual(entities);
   });
 
   it("generates from registry identity and list state without AniList metadata", () => {
@@ -424,11 +450,14 @@ describe("al2pas5 source attachments", () => {
     );
 
     expect(matches).toEqual([Object.keys(original.__LIBRARY_MANGA_V5)[0]]);
-    const result = migrate(original, matches[0]!, entry, registryRow);
+    const result = migrate(original, matches[0]!, entry, multiProviderRow);
     expect(result.sources.map(({ sourceId, mangaId }) => ({ sourceId, mangaId }))).toEqual([
       { sourceId: "MangaDex", mangaId: "mangadex-id" },
+      { sourceId: "Kagane", mangaId: "019c3a01-3106-7c50-b441-987e27995a11" },
+      { sourceId: "MangaNato", mangaId: "villains-are-destined-to-die" },
+      { sourceId: "XCOMIC", mangaId: "5ovmw" },
     ]);
-    expect(result.library.attachedSources).toHaveLength(2);
+    expect(result.library.attachedSources).toHaveLength(5);
     expect(result.conflicts).toBe(0);
 
     const enriched: Pas5Entities = {
@@ -442,7 +471,7 @@ describe("al2pas5 source attachments", () => {
         ...result.infos,
       },
     };
-    expect(migrate(enriched, matches[0]!, entry, registryRow).sources).toHaveLength(0);
+    expect(migrate(enriched, matches[0]!, entry, multiProviderRow).sources).toHaveLength(0);
   });
 
   it("replaces a stale tracker UUID and prunes its orphaned metadata", () => {
@@ -506,19 +535,23 @@ describe("al2pas5 source attachments", () => {
     expect(result.library.attachedSources).toHaveLength(2);
   });
 
-  it("does not replace a conflicting provider attachment", () => {
-    const generated = buildEntry(entry, registryRow);
-    const base = entitiesFrom(generated);
-    const mangaDex = generated.sources.find((source) => source.sourceId === "MangaDex")!;
-    base.__SOURCE_MANGA_V5[mangaDex.id] = {
-      ...mangaDex,
-      mangaId: "different-mangadex-id",
-    };
+  it.each(["MangaDex", "Kagane", "MangaNato", "XCOMIC"])(
+    "does not replace a conflicting %s attachment",
+    (sourceId) => {
+      const generated = buildEntry(entry, multiProviderRow);
+      const base = entitiesFrom(generated);
+      const source = generated.sources.find((source) => source.sourceId === sourceId)!;
+      base.__SOURCE_MANGA_V5[source.id] = {
+        ...source,
+        mangaId: "different-provider-id",
+      };
 
-    const result = migrate(base, generated.library.id, entry, registryRow);
-    expect(result.sources).toHaveLength(0);
-    expect(result.conflicts).toBe(1);
-  });
+      const result = migrate(base, generated.library.id, entry, multiProviderRow);
+      expect(result.sources).toHaveLength(0);
+      expect(result.conflicts).toBe(1);
+      expect(result.library.attachedSources).toEqual(generated.library.attachedSources);
+    },
+  );
 
   it("removes ManifoldSource and preserves tracker-only libraries", () => {
     const generated = buildEntry(entry, registryRow);
@@ -575,6 +608,38 @@ describe("al2pas5 source attachments", () => {
     ).toBe(false);
     expect(hasUpstreamProvider(undefined)).toBe(false);
   });
+
+  it.each([
+    ["kagane", "Kagane", "019c3a01-3106-7c50-b441-987e27995a11"],
+    ["manganato", "MangaNato", "villains-are-destined-to-die"],
+    ["xcomic", "XCOMIC", "5ovmw"],
+  ])(
+    "generates and finds %s-only entries without MangaDex or tracker evidence",
+    (provider, sourceId, externalId) => {
+      const row = { ...registryRow, providers: [{ provider, externalId, updatedAt: 1 }] };
+      expect(hasUpstreamProvider(row)).toBe(true);
+      const generated = buildEntry(entry, row);
+      expect(generated.sources.map(({ sourceId, mangaId }) => ({ sourceId, mangaId }))).toEqual([
+        { sourceId, mangaId: externalId },
+        { sourceId: "MANIFOLD", mangaId: row.id },
+      ]);
+      const native = generated.sources[0]!;
+      const base = entitiesFrom({
+        ...generated,
+        library: {
+          ...generated.library,
+          attachedSources: [{ id: native.id, type: "__SOURCE_MANGA_V5" }],
+        },
+        sources: [native],
+        infos: { [native.mangaInfo.id]: generated.infos[native.mangaInfo.id]! },
+      });
+      const matches = matchingBaseLibraryIds(base, pas5EntryFromAniList(entry, row), row);
+      expect(matches).toEqual([generated.library.id]);
+      const enriched = migrate(base, matches[0]!, entry, row);
+      expect(enriched.sources.map(({ sourceId }) => sourceId)).toEqual(["MANIFOLD"]);
+      expect(enriched.conflicts).toBe(0);
+    },
+  );
 
   it("does not match unrelated base metadata when the registry is unresolved", () => {
     const generated = buildEntry(entry, registryRow);

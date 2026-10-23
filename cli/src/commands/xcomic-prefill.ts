@@ -1,0 +1,249 @@
+/** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics nodeBuiltinImport:off */
+import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { Effect, Option } from "effect";
+import { Command, Flag } from "effect/cli";
+import { RegistryEntry } from "@manifold/contract";
+import { errorMessage, type JsonValue } from "@manifold/json";
+import { apiCall, apiConfig, listRegistryRows } from "@/commands/toolbox";
+import { coverageDifference } from "@/chapter-coverage";
+import {
+  cliError,
+  epochMillisNow,
+  jsonBodyString,
+  newId,
+  validateNonNegativeLimit,
+} from "@/effect-kit";
+import { loadRegistrySearchTitles } from "@/registry-titles";
+import { resolveAniListToken } from "@/login/anilist";
+import { matchesStatusFilter, parseStatusFilter, STATUS_FILTER_HINT } from "@/registry-status";
+import {
+  createXComicClient,
+  findXComicCandidates,
+  selectXComicCandidate,
+  XComicBlockedError,
+  XCOMIC_ORIGIN,
+  type XComicCandidate,
+} from "@/xcomic";
+import { closeFrame, frameDetail, openFrame } from "@/ui";
+
+export const xcomicPrefillCommand = Command.make("xcomic", {
+  apply: Flag.Boolean("apply").pipe(Flag.withDefault(false)),
+  auditExisting: Flag.Boolean("audit-existing").pipe(
+    Flag.withDefault(false),
+    Flag.withDescription(
+      "Read-only coverage audit including existing links; cannot combine with --apply.",
+    ),
+  ),
+  limit: Flag.Int("limit").pipe(Flag.optional),
+  status: Flag.String("status").pipe(
+    Flag.withDefault("auto"),
+    Flag.withDescription(STATUS_FILTER_HINT),
+  ),
+  language: Flag.String("language").pipe(
+    Flag.withDefault("en"),
+    Flag.withDescription("XComic language ID, e.g. en, pt_br or es_419."),
+  ),
+  origin: Flag.String("origin").pipe(
+    Flag.withDefault(XCOMIC_ORIGIN),
+    Flag.withDescription("Explicit XComic HTTPS mirror; no automatic failover."),
+  ),
+  delay: Flag.Int("delay").pipe(Flag.withDefault(1_500)),
+  maxPages: Flag.Int("max-pages").pipe(Flag.withDefault(200)),
+  report: Flag.String("report").pipe(Flag.optional),
+  apiOrigin: Flag.String("api-origin").pipe(Flag.optional),
+  apiToken: Flag.String("api-token").pipe(Flag.optional),
+  anilistToken: Flag.String("anilist-token").pipe(Flag.optional),
+}).pipe(
+  Command.withDescription(
+    "Backfill XComic edition links using tracker IDs and complete chapter coverage. Dry-run by default; never replaces existing links.",
+  ),
+  Command.withHandler(
+    ({
+      apply,
+      auditExisting,
+      limit,
+      status,
+      language,
+      origin,
+      delay,
+      maxPages,
+      report,
+      apiOrigin,
+      apiToken,
+      anilistToken,
+    }) =>
+      Effect.tryPromise({
+        try: async () => {
+          if (apply && auditExisting) {
+            throw cliError("--audit-existing is read-only; do not combine with --apply.");
+          }
+          const maximum = Option.getOrUndefined(limit);
+          validateNonNegativeLimit(maximum);
+          if (!Number.isSafeInteger(delay) || delay < 0) {
+            throw cliError("--delay must be a non-negative integer.");
+          }
+          if (!Number.isSafeInteger(maxPages) || maxPages < 1) {
+            throw cliError("--max-pages must be a positive integer.");
+          }
+          if (!/^[a-z]{2,3}(?:_[a-z0-9]{2,3})?$/.test(language)) {
+            throw cliError("--language must be an XComic language code such as en or pt_br.");
+          }
+          const config = await apiConfig(apiOrigin, apiToken);
+          const statuses = parseStatusFilter(status);
+          const token = await resolveAniListToken(Option.getOrUndefined(anilistToken));
+          const client = createXComicClient({
+            delay,
+            maxPages,
+            origin,
+            onProgress: (message) => frameDetail(message),
+          });
+          const path = resolve(
+            Option.getOrUndefined(report) ??
+              join(
+                homedir(),
+                ".manifold",
+                "reports",
+                `xcomic-${epochMillisNow()}-${newId()}.jsonl`,
+              ),
+          );
+          mkdirSync(dirname(path), { recursive: true });
+          const file = openSync(path, "wx", 0o600);
+          const record = (line: JsonValue) => writeSync(file, `${jsonBodyString(line)}\n`);
+          const counts = {
+            matched: 0,
+            ambiguous: 0,
+            unmatched: 0,
+            conflicts: 0,
+            errors: 0,
+            blocked: 0,
+          };
+          let failure: string | undefined;
+          openFrame(`XComic registry prefill → ${apply ? "apply" : "dry run"}`);
+          frameDetail(`Report: ${path}`);
+          try {
+            record({
+              event: "run",
+              apply,
+              auditExisting,
+              origin,
+              language,
+              status,
+              delay,
+              maxPages,
+            });
+            const rows = await listRegistryRows(config);
+            const eligible = rows.filter(
+              (row) =>
+                !row.tombstoned &&
+                (auditExisting || !row.providers.some((link) => link.provider === "xcomic")) &&
+                matchesStatusFilter(row.state?.status, statuses),
+            );
+            const selectedRows = maximum === undefined ? eligible : eligible.slice(0, maximum);
+            const owners = new Map(
+              rows.flatMap((row) =>
+                row.providers
+                  .filter((link) => link.provider === "xcomic")
+                  .map((link) => [link.externalId, row.id] as const),
+              ),
+            );
+            for (const row of selectedRows) {
+              const currentId = row.providers.find(
+                (link) => link.provider === "xcomic",
+              )?.externalId;
+              let candidates: readonly XComicCandidate[] = [];
+              let selected: XComicCandidate | undefined;
+              let outcome: keyof typeof counts = "unmatched";
+              let note = "";
+              try {
+                const titles = await loadRegistrySearchTitles(row, { anilistToken: token });
+                candidates = await findXComicCandidates(client, row, titles, language, currentId);
+                selected = selectXComicCandidate(candidates);
+                if (!candidates.length) {
+                  note = `UNMATCHED ${row.id} ${row.title}`;
+                } else if (!selected) {
+                  outcome = "ambiguous";
+                  note = `REVIEW ${row.id} ${row.title}: no unique identity-verified coverage winner`;
+                } else if (owners.has(selected.id) && owners.get(selected.id) !== row.id) {
+                  outcome = "conflicts";
+                  note = `CONFLICT ${row.id}: xcomic:${selected.id} already belongs to ${owners.get(selected.id)}`;
+                } else {
+                  if (apply) {
+                    await apiCall(
+                      config,
+                      `/v1/entries/${encodeURIComponent(row.id)}/providers`,
+                      "POST",
+                      {
+                        provider: "xcomic",
+                        externalId: selected.id,
+                        title: selected.title,
+                        sourceName: selected.source,
+                        onConflict: "reject",
+                      },
+                      RegistryEntry,
+                    );
+                  }
+                  owners.set(selected.id, row.id);
+                  outcome = "matched";
+                  note = `${apply ? "LINKED" : currentId ? "PROPOSED (existing link unchanged)" : "WOULD LINK"} ${row.id} → xcomic:${selected.id} [${selected.source}; ${selected.coverage?.count} chapters]`;
+                }
+              } catch (error) {
+                outcome =
+                  error instanceof XComicBlockedError
+                    ? "blocked"
+                    : /Provider link conflict:/.test(errorMessage(error))
+                      ? "conflicts"
+                      : "errors";
+                note = `${outcome.toUpperCase()} ${row.id} ${row.title}: ${errorMessage(error)}`;
+                if (error instanceof XComicBlockedError) {
+                  failure = errorMessage(error);
+                }
+              }
+              counts[outcome]++;
+              record({
+                event: "entry",
+                entryId: row.id,
+                title: row.title,
+                outcome,
+                currentId: currentId ?? null,
+                selectedId: selected?.id ?? null,
+                coverageDifference: coverageDifference(
+                  candidates.find((candidate) => candidate.id === currentId)?.coverage,
+                  selected?.coverage,
+                ),
+                candidates,
+                note,
+              });
+              frameDetail(note);
+              if (failure) {
+                throw cliError(failure);
+              }
+            }
+          } catch (error) {
+            failure = errorMessage(error);
+            throw error;
+          } finally {
+            try {
+              record({
+                event: "summary",
+                completed: failure === undefined,
+                counts,
+                ...(failure !== undefined && { error: failure }),
+              });
+            } finally {
+              closeSync(file);
+              closeFrame(
+                `${failure ? "Stopped" : counts.errors || counts.conflicts ? "Completed with errors" : apply ? "Applied" : "Dry run complete"}: ${jsonBodyString(counts)}. Report: ${path}`,
+              );
+            }
+          }
+          if (counts.errors || counts.conflicts || counts.blocked) {
+            throw cliError(`XComic completed with errors; inspect ${path}`);
+          }
+        },
+        catch: (cause) => cliError(errorMessage(cause)),
+      }),
+  ),
+);

@@ -7,7 +7,14 @@ export const ContentProvider = Schema.Literals(["mangadex"]);
 export type ContentProvider = Schema.Schema.Type<typeof ContentProvider>;
 
 /** Providers that appear in registry links. */
-export const RegistryProvider = Schema.Literals(["anilist", "mal", "mangadex", "kagane"]);
+export const RegistryProvider = Schema.Literals([
+  "anilist",
+  "mal",
+  "mangadex",
+  "kagane",
+  "manganato",
+  "xcomic",
+]);
 export type RegistryProvider = Schema.Schema.Type<typeof RegistryProvider>;
 
 export const ListStatus = Schema.Literals([

@@ -16,8 +16,10 @@ const mutatingCommands = [
   ["mangadex", "unfollow-dropped"],
   ["ops", "retry"],
   ["registry", "import"],
+  ["registry", "import-pas5"],
   ["registry", "mangadex"],
   ["registry", "kagane"],
+  ["registry", "manganato"],
 ] as const;
 
 describe("remote mutation safeguards", () => {

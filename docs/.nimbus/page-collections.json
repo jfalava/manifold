@@ -20,10 +20,13 @@
     "src/content/docs/cli/ops/retry.mdx",
     "src/content/docs/cli/pas5.mdx",
     "src/content/docs/cli/reconcile-diff.mdx",
+    "src/content/docs/cli/registry/import-pas5.mdx",
     "src/content/docs/cli/registry/import.mdx",
     "src/content/docs/cli/registry/kagane.mdx",
     "src/content/docs/cli/registry/mal.mdx",
     "src/content/docs/cli/registry/mangadex.mdx",
+    "src/content/docs/cli/registry/manganato.mdx",
+    "src/content/docs/cli/registry/xcomic.mdx",
     "src/content/docs/cli/upgrade.mdx",
     "src/content/partials/example.mdx"
   ]

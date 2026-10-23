@@ -10,6 +10,7 @@ import { RegistryEntry } from "@manifold/contract";
 import { errorMessage, type JsonValue } from "@manifold/json";
 import { apiCall, apiConfig, listRegistryRows, type RegistryRow } from "@/commands/toolbox";
 import { loadRegistrySearchTitles, searchTitlesFor } from "@/registry-titles";
+import { coverageDifference } from "@/chapter-coverage";
 import { classifyPage, openBunBrowserView, type BrowserView } from "@/browser-view";
 import { resolveValue } from "@/env-resolve";
 import {
@@ -50,6 +51,12 @@ interface KaganeCtx extends RunContext {
 
 export const kaganePrefillCommand = Command.make("kagane", {
   apply: Flag.Boolean("apply").pipe(Flag.withDefault(false)),
+  auditExisting: Flag.Boolean("audit-existing").pipe(
+    Flag.withDefault(false),
+    Flag.withDescription(
+      "Read-only coverage audit including existing links; cannot combine with --apply.",
+    ),
+  ),
   limit: Flag.Int("limit").pipe(Flag.optional),
   status: Flag.String("status").pipe(
     Flag.withDefault("auto"),
@@ -70,7 +77,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
   sourcePriority: Flag.String("source-priority").pipe(
     Flag.withDefault("Kodansha Comics,VIZ Media,Manga Up!,Comikey,Crunchyroll,Square Enix Manga"),
     Flag.withDescription(
-      "Comma-separated Kagane source names, preferred first; none disables preference. MangaDex is excluded.",
+      "Tie-break equal chapter coverage by source name; none disables preference. MangaDex is excluded.",
     ),
   ),
   report: Flag.String("report").pipe(
@@ -93,6 +100,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
   Command.withHandler(
     ({
       apply,
+      auditExisting,
       limit,
       status,
       language,
@@ -107,6 +115,9 @@ export const kaganePrefillCommand = Command.make("kagane", {
     }) =>
       Effect.tryPromise({
         try: async () => {
+          if (apply && auditExisting) {
+            throw cliError("--audit-existing is read-only; do not combine with --apply.");
+          }
           const maximum = Option.getOrUndefined(limit);
           validateNonNegativeLimit(maximum);
           if (!Number.isSafeInteger(delay) || delay < 0) {
@@ -170,7 +181,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
               const eligible = ctx.rows.filter(
                 (row) =>
                   !row.tombstoned &&
-                  !row.providers.some((link) => link.provider === "kagane") &&
+                  (auditExisting || !row.providers.some((link) => link.provider === "kagane")) &&
                   matchesStatusFilter(row.state?.status, statuses),
               );
               ctx.selected = maximum === undefined ? eligible : eligible.slice(0, maximum);
@@ -236,7 +247,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
               if (allowedSources.length === 0) {
                 throw cliError("No non-MangaDex Kagane sources are available.");
               }
-              const preferredSources = priority.map((name) => {
+              for (const name of priority) {
                 const ids = [...sources]
                   .filter(([, title]) => title.toLowerCase() === name.toLowerCase())
                   .map(([id]) => id);
@@ -245,8 +256,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
                     `Unknown Kagane source "${name}"; use a name from sources/list or --source-priority none.`,
                   );
                 }
-                return ids;
-              });
+              }
               const owners = new Map(
                 ctx.rows.flatMap((row) =>
                   row.providers
@@ -268,45 +278,51 @@ export const kaganePrefillCommand = Command.make("kagane", {
                     anilistToken: anilist,
                     onProgress: progress,
                   });
-                  // Narrow by preferred source first. Only a verified ID match can avoid the global search.
-                  for (const sourceIds of [...preferredSources, []]) {
-                    context = `${entryContext} [${sourceIds.length ? sources.get(sourceIds[0]!) : "all non-MangaDex sources"}]`;
-                    const candidates = new Map<string, KaganeBook>();
-                    for (const title of searchTitlesFor(titles)) {
-                      for (const book of await client.search(title, language, sourceIds)) {
-                        // Kagane caps source_id values; filter the full-catalog fallback locally.
-                        if (
-                          allowedSources.includes(book.source_id ?? "") &&
-                          hasExactKaganeTitle(titles, [
-                            book.title,
-                            ...(book.alternate_titles ?? []),
-                          ])
-                        ) {
-                          candidates.set(book.series_id, book);
-                        }
+                  // Discover globally before ranking: a preferred source may be incomplete.
+                  context = `${entryContext} [all non-MangaDex sources]`;
+                  const candidates = new Map<string, KaganeBook>();
+                  for (const title of searchTitlesFor(titles)) {
+                    for (const book of await client.search(title, language)) {
+                      // Kagane caps source_id values; filter the full-catalog fallback locally.
+                      if (
+                        allowedSources.includes(book.source_id ?? "") &&
+                        hasExactKaganeTitle(titles, [book.title, ...(book.alternate_titles ?? [])])
+                      ) {
+                        candidates.set(book.series_id, book);
                       }
-                    }
-                    for (const book of candidates.values()) {
-                      if (!checked.has(book.series_id)) {
-                        const details = await client.details(book.series_id);
-                        checked.set(
-                          book.series_id,
-                          verifyKaganeCandidate(
-                            book,
-                            details,
-                            row,
-                            titles,
-                            language,
-                            sources.get(book.source_id ?? ""),
-                          ),
-                        );
-                      }
-                    }
-                    selected = selectKaganeCandidate([...checked.values()], priority);
-                    if (sourceIds.length === 0 || selected?.matchedIds.length) {
-                      break;
                     }
                   }
+                  const currentId = row.providers.find(
+                    (link) => link.provider === "kagane",
+                  )?.externalId;
+                  if (currentId && !candidates.has(currentId)) {
+                    const details = await client.details(currentId);
+                    candidates.set(currentId, {
+                      series_id: currentId,
+                      title: details.title,
+                      source_id: details.source_id,
+                    });
+                  }
+                  for (const book of candidates.values()) {
+                    if (!checked.has(book.series_id)) {
+                      const details = await client.details(book.series_id);
+                      const candidate = verifyKaganeCandidate(
+                        book,
+                        details,
+                        row,
+                        titles,
+                        language,
+                        sources.get(book.source_id ?? ""),
+                      );
+                      checked.set(book.series_id, {
+                        ...candidate,
+                        ...(candidate.reasons.length === 0 && {
+                          coverage: await client.coverage(book.series_id),
+                        }),
+                      });
+                    }
+                  }
+                  selected = selectKaganeCandidate([...checked.values()], priority);
                   if (checked.size === 0) {
                     note = `UNMATCHED ${row.id} ${row.title}`;
                   } else if (!selected) {
@@ -334,7 +350,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
                     }
                     owners.set(selected.id, row.id);
                     outcome = "matched";
-                    note = `${apply ? "LINKED" : "WOULD LINK"} ${row.id} → kagane:${selected.id} [${selected.source}] IDs=${selected.matchedIds.join("+") || "title-only"}`;
+                    note = `${apply ? "LINKED" : currentId ? "PROPOSED (existing link unchanged)" : "WOULD LINK"} ${row.id} → kagane:${selected.id} [${selected.source}; ${selected.coverage?.count} ${selected.coverage?.unit}] IDs=${selected.matchedIds.join("+") || "title-only"}`;
                   }
                 } catch (error) {
                   const challenged =
@@ -369,6 +385,14 @@ export const kaganePrefillCommand = Command.make("kagane", {
                   title: row.title,
                   outcome,
                   selectedId: selected?.id ?? null,
+                  currentId:
+                    row.providers.find((link) => link.provider === "kagane")?.externalId ?? null,
+                  coverageDifference: coverageDifference(
+                    checked.get(
+                      row.providers.find((link) => link.provider === "kagane")?.externalId ?? "",
+                    )?.coverage,
+                    selected?.coverage,
+                  ),
                   note,
                   candidates: [...checked.values()],
                 });
@@ -382,6 +406,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
             record({
               event: "run",
               apply,
+              auditExisting,
               status,
               language,
               delay,

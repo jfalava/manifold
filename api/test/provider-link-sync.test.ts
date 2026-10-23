@@ -154,6 +154,25 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     });
   });
 
+  it.each([
+    ["manganato", "pseudo-harem"],
+    ["xcomic", "5ovmw"],
+  ])("persists, lists, conflict-checks and unlinks native %s IDs", async (provider, externalId) => {
+    const target = await create();
+    const other = await create();
+    const binding = { provider, externalId, sourceName: "Native origin", onConflict: "reject" };
+    await request(`/v1/entries/${target.id}/providers`, binding);
+    const registry = Schema.decodeUnknownSync(RegistryListResponse)(await request("/v1/registry"));
+    expect(registry.entries.find((row) => row.id === target.id)?.providers).toMatchObject([
+      { provider, externalId, sourceName: "Native origin" },
+    ]);
+    await request(`/v1/entries/${other.id}/providers`, binding, 500);
+    expect(await entry(other.id)).toMatchObject({ providers: [] });
+    expect(await request(`/v1/entries/${target.id}/unlink/${provider}`, {})).toMatchObject({
+      providers: [],
+    });
+  });
+
   it("preserves omitted source metadata only when the provider identity is unchanged", async () => {
     const target = await create();
     await link(target.id, "source-original");

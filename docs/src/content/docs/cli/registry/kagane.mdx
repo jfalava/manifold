@@ -84,11 +84,10 @@ Comma-separated Kagane source names, preferred first. The default order is
 Names are case-insensitive. Use `none` to disable source preference, but MangaDex
 remains excluded. Explicitly prioritizing MangaDex is an error.
 
-Each preferred source is searched before the remaining non-MangaDex catalog.
-Only an external-ID match can finish a source-scoped search early. A title-only
-match requires the full non-MangaDex search. Source preference never overrides
-contradictory IDs or chooses between multiple verified candidates within the
-same source.
+All searches cover the non-MangaDex catalog before selection. Among editions
+with corroborating external IDs, the largest comparable chapter inventory wins.
+Source preference only breaks equal-coverage ties. It never overrides
+contradictory IDs or chooses between tied editions within one source.
 
 ```sh
 manifold registry kagane --source-priority "Kodansha Comics,VIZ Media"
@@ -96,10 +95,10 @@ manifold registry kagane --source-priority "Kodansha Comics,VIZ Media"
 
 ### `--max-pages <n>`
 
-Maximum pages per title search, including source-scoped searches. Default:
-`200`, with 35 results per page. Every search must reach its final page before
-its candidates can be selected. Repeated pages and incomplete searches are
-errors, not catalog misses.
+Maximum pages per title search and chapter inventory. Default: `200`.
+Searches request 35 results per page; inventories request 200 books per page.
+Every search must reach its final page before its candidates can be selected.
+Repeated pages and incomplete searches are errors, not catalog misses.
 
 ```sh
 manifold registry kagane --max-pages 400
@@ -118,6 +117,17 @@ interrupted run. Reports are diagnostic records, not executable apply plans.
 
 ```sh
 manifold registry kagane --report ./kagane-dry-run.jsonl
+```
+
+### `--audit-existing`
+
+Include rows that already have Kagane links. Always read-only; combining this
+flag with `--apply` is an error. Reports include current/proposed IDs, complete
+inventories, and gained/lost chapter positions when comparable. A proposal does
+not change a registry binding or a backup attachment.
+
+```sh
+manifold registry kagane --audit-existing --status reading --report ./kagane-audit.jsonl
 ```
 
 ### `--chrome-cdp-url <url>`
@@ -153,10 +163,18 @@ rejects that candidate, even if another ID or the title matches. URL hosts and
 work paths must match the actual provider, not just the link's label.
 
 Externally verified candidates outrank title-only candidates. When multiple
-verified candidates identify the same work, source priority selects a unique
-candidate from the first available preferred source. Conflicting external IDs
-between verified candidates remain unresolved. The command never chooses by
-chapter count or search-result order.
+verified candidates identify the same work, distinct numeric chapter positions
+rank editions before source preference. Every cursor page is fetched and book
+IDs must reconcile exactly with `/books/index`. Upload counts, `current_books`,
+and the highest chapter number do not determine coverage. Conflicting external
+IDs between verified candidates remain unresolved.
+
+Volume-only books are not comparable with individual chapters. Missing/invalid
+chapter numbers, numbering that resets by volume, mixed packaging, failed
+inventories and unresolved ties require review rather than selecting a smaller,
+easier-to-fetch edition. A unique verified volume-only edition can still link;
+its volume count is never presented as a chapter count. Coverage describes the
+catalog inventory, not image readability or a guarantee that no chapters are missing.
 
 Without matching external IDs, only a single exact-title candidate from the
 full search can be linked. Language and source must agree, edition labels must

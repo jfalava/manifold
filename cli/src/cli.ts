@@ -8,11 +8,14 @@ import { malCommand } from "@/commands/mal";
 import { malPrefillCommand } from "@/commands/mal-prefill";
 import { mangadexCommand } from "@/commands/mangadex";
 import { mangadexPrefillCommand } from "@/commands/mangadex-prefill";
+import { manganatoPrefillCommand } from "@/commands/manganato-prefill";
+import { xcomicPrefillCommand } from "@/commands/xcomic-prefill";
 import { importCommand, opsCommand, reconcileCommand } from "@/commands/toolbox";
 import { al2malCommand } from "@/commands/al2mal";
 import { md2alCommand } from "@/commands/md2al";
 import { makeUpgradeCommand } from "@/commands/upgrade";
 import { pas5Command } from "@/commands/pas5";
+import { pas5ImportCommand } from "@/commands/pas5-import";
 
 const migrateCommand = Command.make("migrate").pipe(
   Command.withDescription("Cross-provider library migrations (AniList ↔ MangaDex, AniList → MAL)."),
@@ -28,9 +31,12 @@ const registryCommand = Command.make("registry").pipe(
   Command.withDescription("Registry maintenance: backfill and inspect canonical rows."),
   Command.withSubcommands([
     importCommand,
+    pas5ImportCommand,
     malPrefillCommand,
     mangadexPrefillCommand,
     kaganePrefillCommand,
+    manganatoPrefillCommand,
+    xcomicPrefillCommand,
   ]),
 );
 
