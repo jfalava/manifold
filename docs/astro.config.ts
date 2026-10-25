@@ -32,6 +32,7 @@ const nimbusConfig = defineNimbusConfig({
           { label: "registry", autogenerate: { directory: "cli/registry" } },
           "cli/reconcile-diff",
           "cli/upgrade",
+          "cli/debug-program-status",
         ],
       },
     ],

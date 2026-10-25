@@ -1,0 +1,189 @@
+---
+title: debug program-status
+description: Exercise OSC 7501 program status reports in Rex or another supporting terminal.
+sidebar:
+  order: 95
+---
+
+```sh
+manifold debug program-status
+```
+
+Runs a timed [OSC 7501](https://www.superlogical.com/rex/docs/build/program-status)
+tour without network requests, credentials, or changes to your library. Run it
+inside Rex, then switch to another tab or open the session picker. Rex shows
+some indicators only while the emitting tab is unfocused. Presentation depends
+on the terminal. Other CLI commands do not emit program status yet.
+
+## Tour
+
+Each step lasts five seconds. Change the delay with `--interval`, in seconds:
+
+```sh
+manifold debug program-status --interval 10
+```
+
+The tour covers idle, indeterminate work, progress at 0%, 37%, and 100%, removal
+of progress, blocked without a kind, all three blocked kinds with and without
+progress, done, and error. It also demonstrates concurrent nested records,
+app inheritance and overrides, Unicode text, complete record replacement,
+leaf clearing, and subtree clearing.
+
+The tour replaces the root record and uses `manifold-status-demo` for its
+children. It cannot restore a previous root status. On success it clears its
+subtree and leaves root `done`. Ctrl-C clears its subtree and reports root
+`idle`. It never clears all terminal records automatically.
+
+The tour updates the window title and root status label together for each
+step, for example `manifold: Working 37%` or
+`manifold: Waiting for permission 37%`. Completion shows `manifold: Done`;
+Ctrl-C shows `manifold: Cancelled`. Your shell or a later program may replace
+the window title afterward. Individual `--state` reports do not change the
+window title; use `--title` to set their record label.
+
+## Emit a single report
+
+Use `--state` to skip the tour. Add `--hold` to keep the process alive while
+you inspect working or blocked status in another tab:
+
+```sh
+manifold debug program-status --state blocked --kind permission --app manifold --message "Approve the simulated operation?" --hold
+```
+
+The report is simulated. No approval, answer, login, or credential is required.
+Ctrl-C replaces a held report with `idle` at the same id. Without `--hold`, the
+command emits one report and exits without replacing or clearing it.
+
+```sh
+manifold debug program-status --state working --progress 37 --hold
+manifold debug program-status --state done --app manifold --message "Demo result ready"
+manifold debug program-status --state error --message "Simulated failure"
+```
+
+`done` and `error` survive the next shell prompt under the protocol. Working
+and blocked records are removed on the next shell prompt when shell integration
+is active. The terminal decides when to stop displaying retained results.
+Simulating `error` exits with code 0, because emitting the report succeeded.
+
+## Flags
+
+Payload flags require `--state`. Titles and messages are base64-encoded for
+you, so text may contain `:`, `;`, `=`, and Unicode. Control characters,
+including newlines and tabs, are rejected. Each report replaces its record
+completely. Repeat any metadata you want to retain.
+
+### `--state`
+
+Emit `idle`, `working`, `blocked`, `done`, `error`, or `clear`. Default: omitted,
+which runs the tour.
+
+```sh
+manifold debug program-status --state idle
+```
+
+### `--kind`
+
+Use `permission`, `question`, or `auth` with `--state blocked`. Default: no kind.
+
+```sh
+manifold debug program-status --state blocked --kind question --hold
+```
+
+### `--progress`
+
+Integer from 0 to 100, with `working` or `blocked`. Default: omitted, meaning
+indeterminate progress.
+
+```sh
+manifold debug program-status --state working --progress 0 --hold
+```
+
+### `--id`
+
+Slash-separated record path. Default: root record. Maximum 128 bytes, eight
+segments, 32 bytes per segment. Segments use ASCII letters, digits, `_`, `.`,
+`+`, or `-`.
+
+```sh
+manifold debug program-status --state done --id demo/build
+```
+
+### `--app`
+
+Stable program identifier, up to 32 ASCII letters, digits, `_`, `.`, `+`, or
+`-`. Default: omitted. The record inherits from the nearest ancestor with an
+app, if one exists.
+
+```sh
+manifold debug program-status --state done --app manifold
+```
+
+### `--title`
+
+Single-line record label, at most 192 UTF-8 bytes. Default: omitted.
+
+```sh
+manifold debug program-status --state done --id demo/build --title "Demo build"
+```
+
+### `--message`
+
+Single-line status message, at most 2048 UTF-8 bytes. Default: omitted.
+
+```sh
+manifold debug program-status --state done --message "Demo: key=value; café"
+```
+
+### `--hold`
+
+Wait until Ctrl-C after emitting. Default: off. Requires `--state` and cannot
+be used with `clear`. Ctrl-C reports `idle` at the same id.
+
+```sh
+manifold debug program-status --state working --hold
+```
+
+### `--interval`
+
+Seconds per tour step, greater than 0 and at most 3600. Default: 5. Tour only.
+
+```sh
+manifold debug program-status --interval 10
+```
+
+### `--terminator`
+
+Use `st` for ESC backslash, the default, or `bel`. Applies to all emitted
+reports, including cleanup.
+
+```sh
+manifold debug program-status --terminator bel
+```
+
+### `--force`
+
+Allow protocol bytes on non-TTY stdout for capture or automated tests.
+Default: off. A capture file contains terminal escape sequences, not plain text.
+
+```sh
+manifold debug program-status --state done --force > status.osc
+```
+
+## Clear records
+
+Clear one record and all its descendants:
+
+```sh
+manifold debug program-status --state clear --id demo
+```
+
+**Omitting `--id` clears every program status record on the terminal**, including
+records emitted by other programs:
+
+```sh
+manifold debug program-status --state clear
+```
+
+`clear` accepts no metadata. Protocol bytes go to stdout; tour captions and
+warnings go to stderr. Redirecting or piping stdout requires `--force`.
+Feature detection is not implemented by this command.

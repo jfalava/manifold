@@ -2,6 +2,7 @@ import { Command } from "effect/cli";
 
 import { anilistCommand } from "@/commands/anilist";
 import { al2mdCommand } from "@/commands/al2md";
+import { debugCommand } from "@/commands/debug";
 import { kaganePrefillCommand } from "@/commands/kagane-prefill";
 import { loginCommand } from "@/commands/login";
 import { malCommand } from "@/commands/mal";
@@ -56,5 +57,6 @@ export const makeRootCommand = (version: string) =>
       reconcileGroup,
       registryCommand,
       makeUpgradeCommand(version),
+      debugCommand,
     ]),
   );

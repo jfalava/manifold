@@ -5,6 +5,7 @@
   ],
   "mdxFiles": [
     "src/content/docs/cli/anilist/wipe-manga.mdx",
+    "src/content/docs/cli/debug-program-status.mdx",
     "src/content/docs/cli/index.mdx",
     "src/content/docs/cli/login/anilist.mdx",
     "src/content/docs/cli/login/mal.mdx",
