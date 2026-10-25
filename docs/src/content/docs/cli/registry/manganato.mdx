@@ -14,6 +14,25 @@ is the native MangaNato manga slug. Runs are dry-run by default. `--apply` saves
 verified links using conflict rejection and never replaces an existing binding.
 Saved bindings can be attached by [PAS5 generation](/cli/pas5/).
 
+## Terminal status
+
+On a TTY, the command updates OSC 7501 program status and the window title together.
+Rex can show the current step while the tab is unfocused, for example
+`manifold: Checking MangaNato links 37%`. With `--apply`, the step becomes
+`Checking and linking MangaNato`. Loading the registry, connecting to Chrome and
+finalizing the report have no percentage. Row progress counts completed attempts
+after status filtering and `--limit`, not successful matches.
+
+Completion leaves `done`; errors, conflicts and challenges leave `error`.
+Ambiguous and unmatched rows are completed findings, not failures.
+Ctrl-C reports `idle` with the title `manifold: Cancelled`. This resets terminal
+status but does not guarantee pending browser requests or report cleanup finish.
+Challenges stop the command rather than leaving it waiting for input.
+
+Set `MANIFOLD_PROGRAM_STATUS=0` to disable both status reports and window-title
+updates. Both are also disabled when stdout is redirected or `TERM=dumb`.
+Terminal-status failures do not affect matching or registry writes.
+
 ## Use regular Chrome
 
 Start a separate Chrome profile with loopback-only debugging on the desktop
