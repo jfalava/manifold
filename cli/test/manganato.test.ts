@@ -11,6 +11,7 @@ import {
   ManganatoBlockedError,
   ManganatoPageBudgetError,
   manganatoMatchEvidence,
+  manganatoRescueQueries,
   manganatoSearchPlans,
   recommendManganatoCandidate,
   selectManganatoCandidate,
@@ -103,6 +104,7 @@ describe("MangaNato identity and complete search", () => {
         "Quasar Nebula",
         "Giji Harem",
       ]);
+      expect(identity.fallbackTitles).toEqual(["Original Romaji", "Quasar Nebula", "Giji Harem"]);
       expect(identity.titles).toContain("Original Romaji");
       expect(identity.titles).toContain("Une Autre Histoire");
       expect(identity.titles).toContain("日本語");
@@ -129,6 +131,21 @@ describe("MangaNato identity and complete search", () => {
     expect(
       manganatoSearchPlans(["Welcome Back Home", "Okaeri"]).map((plan) => plan.queries),
     ).toEqual([["okaeri"], ["welcome", "back"]]);
+  });
+
+  it("shares six rescue queries across overlapping canonical titles without retrying planned words", () => {
+    expect(
+      manganatoRescueQueries(
+        [
+          "Distinctive Exclusive Quasar Nebula Pulsar Meteor Galaxy",
+          "Distinctive Exclusive Quasar Nebula Pulsar Meteor Galaxy",
+          "Distinctive Exclusive Quasar Nebula Saturn Uranus Cosmos",
+          "Distinctive Exclusive Quasar Nebula Saturn Europa Oberon",
+          "日本語",
+        ],
+        ["distinctive", "exclusive"],
+      ),
+    ).toEqual(["quasar", "nebula", "saturn", "pulsar", "uranus", "europa"]);
   });
 
   it("saves validated pages and successful details without treating a partial search as complete", async () => {
@@ -475,7 +492,8 @@ describe("MangaNato identity and complete search", () => {
       expect(recommendManganatoCandidate(identity, pool)).toMatchObject({
         candidateId: "missing",
         basis: "missing-credit-inference",
-        reviewOnly: true,
+        requiresOptIn: true,
+        acceptEligible: true,
         inferred: [
           { candidateId: "missing", overlap: [{ anchorId: "anchor", shared: 20, fraction: 1 }] },
         ],
@@ -579,6 +597,82 @@ describe("MangaNato identity and complete search", () => {
       ])
         expect(recommendManganatoCandidate(identity, pool)).toBeUndefined();
     }
+  });
+
+  it("selects a newer advancing integer run and reports lost zero/fractional positions without weakening identity", () => {
+    const numbers = Array.from({ length: 20 }, (_, i) => i + 1);
+    const listing = (id: string, numbers: number[], date = 100) => ({
+      ...candidate,
+      id,
+      coverage: {
+        unit: "chapters" as const,
+        count: numbers.length,
+        numbers,
+        latestChapterUpdatedAt: date,
+      },
+    });
+    // The older listing has MORE positions, but the newer one advances the integer run.
+    const older = listing("older", [0, ...numbers, 1.5, 2.5]);
+    const advancing = listing("advancing", [...numbers, 21], 200);
+    for (const pool of [
+      [older, advancing],
+      [advancing, older],
+    ]) {
+      expect(selectManganatoCandidate(identity, pool)).toMatchObject({
+        id: "advancing",
+        selection: {
+          basis: "active-listing",
+          lostPositions: [{ candidateId: "older", numbers: [0, 1.5, 2.5] }],
+        },
+      });
+    }
+    for (const other of [
+      listing("same-integers", [...numbers, 3.5], 200),
+      listing("older-date", [...numbers, 21], 99),
+      listing("same-date", [...numbers, 21], 100),
+      listing("integer-gap", [...numbers.slice(1), 21], 200),
+      listing("outlier", [...numbers, 5000], 200),
+      { ...advancing, coverage: { ...advancing.coverage, unit: "unknown" as const } },
+      { ...advancing, coverage: { ...advancing.coverage, latestChapterUpdatedAt: undefined } },
+      { ...advancing, authors: [] },
+      { ...advancing, title: "Pseudo Harem Side–Stories", aliases: ["Pseudo Harem"] },
+    ]) {
+      expect(selectManganatoCandidate(identity, [older, other])).toBeUndefined();
+    }
+    const additionalInteger = listing("additional-integer", [...numbers, 22], 150);
+    expect(
+      selectManganatoCandidate(identity, [older, advancing, additionalInteger]),
+    ).toBeUndefined();
+    expect(
+      selectManganatoCandidate({ ...identity, manualReview: true }, [older, advancing]),
+    ).toBeUndefined();
+    expect(
+      selectManganatoCandidate({ ...identity, preferredCandidateId: "absent" }, [older, advancing]),
+    ).toBeUndefined();
+    expect(
+      selectManganatoCandidate(identity, [
+        { ...older, title: "Pseudo Harem One-shot", aliases: ["Pseudo Harem"] },
+        advancing,
+      ]),
+    ).toBeUndefined();
+
+    const inferred = { ...advancing, authors: [] };
+    expect(recommendManganatoCandidate(identity, [older, inferred])).toMatchObject({
+      candidateId: "advancing",
+      acceptEligible: true,
+      selection: {
+        basis: "active-listing",
+        lostPositions: [{ candidateId: "older", numbers: [0, 1.5, 2.5] }],
+      },
+    });
+    expect(manganatoMatchEvidence(identity, inferred, [older, inferred]).eligible).toBe(false);
+    // Strict hypothetical ranking may still suggest an outlier, but opt-in cannot accept it.
+    const sparse = { ...listing("sparse", [...older.coverage.numbers, 5000], 200), authors: [] };
+    expect(recommendManganatoCandidate(identity, [older, sparse])).toMatchObject({
+      candidateId: "sparse",
+      requiresOptIn: true,
+      acceptEligible: false,
+    });
   });
 
   it("never chains overlap rescues or silently confirms probable joined-name aliases", () => {
@@ -1165,6 +1259,26 @@ describe("MangaNato identity and complete search", () => {
     expect((await client.search("pseudo")).map((hit) => hit.id)).toEqual(["one", "two"]);
   });
 
+  it.each([
+    ["Akiba's Trip 2", "akiba%27s_trip_2"],
+    ["Oto Shite Kudasai! Megami-sama!!", "oto_shite_kudasai%21_megami-sama%21%21"],
+    ["Girls × Vampire (Pre-serialization)", "girls_%c3%97_vampire_%28pre-serialization%29"],
+    ["Kensei Shita.", "kensei_shita"],
+  ])(
+    "accepts provider-encoded full-title pagination and resumes its cached first page: %s",
+    async (query, encoded) => {
+      const catalog: JsonObject[] = [];
+      const firstPage = page(["one"], `https://www.manganato.gg/search/story/${encoded}?page=2`);
+      await expect(
+        clientFor([firstPage], 1, { onCache: (record) => catalog.push(record) }).search(query),
+      ).rejects.toBeInstanceOf(ManganatoPageBudgetError);
+      expect(catalog).toHaveLength(1);
+      expect(
+        (await clientFor([page(["two"])], 2, { catalog }).search(query)).map((hit) => hit.id),
+      ).toEqual(["one", "two"]);
+    },
+  );
+
   it("rejects incomplete, repeated, off-site and nonadvancing pagination", async () => {
     for (const next of [
       "/search/story/pseudo?page=1",
@@ -1172,8 +1286,24 @@ describe("MangaNato identity and complete search", () => {
       "/search/story/changed?page=2",
       "/search/story/pseudo?page=NaN",
       "/search/story/pseudo?page=3",
+      "/search/story/pseudo?page=02",
+      "/search/story/pseudo?page=2&page=2",
+      "/search/story/pseudo?page=2&extra=1",
+      "/search/story/pseudo?page=2#",
+      "/search/story/pseudo?page=2#fragment",
+      "/search/story/pseudo/?page=2",
+      "/search/story/pseudo/extra?page=2",
+      "/search/story/%2570seudo?page=2",
+      "/search/story/%broken?page=2",
+      "https://user:password@www.manganato.gg/search/story/pseudo?page=2",
     ]) {
-      await expect(clientFor([page(["one"], next)]).search("pseudo")).rejects.toThrow(/pagination/);
+      const catalog: JsonObject[] = [];
+      await expect(
+        clientFor([page(["one"], next)], 5, { onCache: (record) => catalog.push(record) }).search(
+          "pseudo",
+        ),
+      ).rejects.toThrow(/pagination/);
+      expect(catalog).toEqual([]);
     }
     await expect(
       clientFor([page(["one"], "/search/story/pseudo?page=2")], 1).search("pseudo"),

@@ -9,8 +9,8 @@ import { cliError, epochMillisNow, platformFetch, runHost, sleepPromise } from "
 import { providerIdOf } from "@/registry-titles";
 
 export const MANGANATO_ORIGIN = "https://www.manganato.gg";
-export const MANGANATO_SEARCH_POLICY = 5;
-export const MANGANATO_SELECTION_POLICY = 10;
+export const MANGANATO_SEARCH_POLICY = 7;
+export const MANGANATO_SELECTION_POLICY = 11;
 
 const SearchPage = Schema.Struct({
   title: Schema.String,
@@ -26,6 +26,15 @@ const Details = Schema.Struct({
 export type ManganatoDetails = Schema.Schema.Type<typeof Details>;
 export type ManganatoCandidate = ManganatoDetails & {
   readonly coverage?: ChapterCoverage & { readonly latestChapterUpdatedAt?: number };
+};
+export type ManganatoSelection = ManganatoCandidate & {
+  readonly selection?: {
+    readonly basis: "active-listing";
+    readonly lostPositions: readonly {
+      readonly candidateId: string;
+      readonly numbers: readonly number[];
+    }[];
+  };
 };
 type ManganatoCoverage = ChapterCoverage & {
   readonly latestChapterUpdatedAt?: number;
@@ -363,6 +372,27 @@ const chapterPositions = (candidate: ManganatoCandidate): ReadonlySet<number> =>
       : [],
   );
 
+// A maximum alone can be a bogus numbered upload. Require every integer from 1 through it.
+const denseChapterRun = (candidate: ManganatoCandidate): boolean => {
+  const positions = chapterPositions(candidate);
+  return positions.size > 0 && Math.max(...positions) === positions.size;
+};
+
+// Primary titles can expose editions that upstream aliases conflate.
+const editionKey = (title: string): string =>
+  (
+    title
+      .normalize("NFKD")
+      .replace(/\p{M}/gu, "")
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .match(
+        /\b(?:side\s*stor(?:y|ies)|spin\s*off|pre\s*serialization|one\s*shot|novel|anthology|sequel|remake|full\s*colou?r)\b/gi,
+      ) ?? []
+  )
+    .map(titleKey)
+    .sort()
+    .join("|");
+
 /** Evidence points are policy weights, not probabilities. Chapter support never subtracts points. */
 export const manganatoMatchEvidence = (
   identity: ManganatoIdentity,
@@ -482,7 +512,7 @@ export const manganatoMatchEvidence = (
 export const selectManganatoCandidate = (
   identity: ManganatoIdentity,
   candidates: readonly ManganatoCandidate[],
-): ManganatoCandidate | undefined => {
+): ManganatoSelection | undefined => {
   if (identity.manualReview) {
     return undefined;
   }
@@ -520,7 +550,50 @@ export const selectManganatoCandidate = (
   const positions = new Set(winners[0]!.coverage!.numbers);
   // A higher count must not hide chapters available only in a competing listing.
   if (plausible.some((item) => item.coverage!.numbers.some((number) => !positions.has(number)))) {
-    return undefined;
+    if (
+      plausible.some(
+        (item) =>
+          editionKey(item.title) !== editionKey(identity.titles[0] ?? "") ||
+          !Number.isFinite(item.coverage!.latestChapterUpdatedAt) ||
+          item.coverage!.latestChapterUpdatedAt! <= 0,
+      )
+    ) {
+      return undefined;
+    }
+    const active = plausible.find((item) => {
+      if (!denseChapterRun(item)) {
+        return false;
+      }
+      const integers = chapterPositions(item);
+      return plausible.every((other) => {
+        if (other.id === item.id) {
+          return true;
+        }
+        const otherIntegers = chapterPositions(other);
+        return (
+          integers.size > otherIntegers.size &&
+          [...otherIntegers].every((number) => integers.has(number)) &&
+          item.coverage!.latestChapterUpdatedAt! > other.coverage!.latestChapterUpdatedAt!
+        );
+      });
+    });
+    if (!active) {
+      return undefined;
+    }
+    const available = new Set(active.coverage!.numbers);
+    return {
+      ...active,
+      selection: {
+        basis: "active-listing",
+        lostPositions: plausible
+          .filter((item) => item.id !== active.id)
+          .map((item) => ({
+            candidateId: item.id,
+            numbers: item.coverage!.numbers.filter((number) => !available.has(number)),
+          }))
+          .filter((item) => item.numbers.length > 0),
+      },
+    };
   }
   if (winners.length === 1) {
     return winners[0];
@@ -539,7 +612,7 @@ export const selectManganatoCandidate = (
   return newest.length === 1 ? newest[0] : undefined;
 };
 
-/** Hypothetical duplicate inference for review only. Never use this result as a provider link. */
+/** Hypothetical identity evidence. Acceptance is explicit and never changes real eligibility. */
 export const recommendManganatoCandidate = (
   identity: ManganatoIdentity,
   candidates: readonly ManganatoCandidate[],
@@ -547,21 +620,6 @@ export const recommendManganatoCandidate = (
   if (identity.manualReview || identity.preferredCandidateId || candidates.length < 2) {
     return undefined;
   }
-  // Upstream aliases can conflate main series and side stories. Check primary titles,
-  // including the registry title, before allowing any inferred missing-credit identity.
-  const editionKey = (title: string): string =>
-    (
-      title
-        .normalize("NFKD")
-        .replace(/\p{M}/gu, "")
-        .replace(/[^\p{L}\p{N}]+/gu, " ")
-        .match(
-          /\b(?:side\s*stor(?:y|ies)|spin\s*off|pre\s*serialization|one\s*shot|novel|anthology|sequel|remake|full\s*colou?r)\b/gi,
-        ) ?? []
-    )
-      .map(titleKey)
-      .sort()
-      .join("|");
   const edition = editionKey(identity.titles[0] ?? "");
   if (candidates.some((candidate) => editionKey(candidate.title) !== edition)) {
     return undefined;
@@ -605,7 +663,9 @@ export const recommendManganatoCandidate = (
         ? "author-verified"
         : "missing-credit-inference",
     inferred,
-    reviewOnly: true,
+    requiresOptIn: true,
+    acceptEligible: denseChapterRun(winner),
+    selection: winner.selection ?? null,
   };
 };
 
@@ -623,6 +683,23 @@ const fallbackSearchWords = new Set(
 const compareSearchWords = (a: string, b: string): number =>
   Number(fallbackSearchWords.has(a)) - Number(fallbackSearchWords.has(b)) || b.length - a.length;
 
+const manganatoSearchWords = (title: string): readonly string[] => {
+  if (/[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u.test(title)) {
+    return [];
+  }
+  return [
+    ...new Set(
+      title
+        .normalize("NFKD")
+        .replace(/\p{M}/gu, "")
+        .toLowerCase()
+        .match(/[a-z0-9]+/g) ?? [],
+    ),
+  ]
+    .filter((word) => !broadSearchWords.has(word) && (word.length >= 3 || /^\d+$/.test(word)))
+    .sort(compareSearchWords);
+};
+
 /** Rank up to three Latin title variants by their most distinctive available word. */
 export const manganatoSearchPlans = (
   titles: readonly string[],
@@ -633,21 +710,7 @@ export const manganatoSearchPlans = (
   const seen = new Set<string>();
   return titles
     .flatMap((title) => {
-      if (/[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u.test(title)) {
-        return [];
-      }
-      const words = [
-        ...new Set(
-          title
-            .normalize("NFKD")
-            .replace(/\p{M}/gu, "")
-            .toLowerCase()
-            .match(/[a-z0-9]+/g) ?? [],
-        ),
-      ]
-        .filter((word) => !broadSearchWords.has(word) && (word.length >= 3 || /^\d+$/.test(word)))
-        .sort(compareSearchWords);
-      const queries = words.slice(0, 2);
+      const queries = manganatoSearchWords(title).slice(0, 2);
       // Near-identical romanizations often produce the same search; do not spend another alias slot.
       const key = [...queries].sort().join("|");
       if (!key || seen.has(key)) {
@@ -658,6 +721,44 @@ export const manganatoSearchPlans = (
     })
     .sort((a, b) => compareSearchWords(a.queries[0]!, b.queries[0]!))
     .slice(0, 3);
+};
+
+/** Try unsearched canonical words without letting one long title consume the rescue budget. */
+export const manganatoRescueQueries = (
+  titles: readonly string[],
+  plannedQueries: readonly string[],
+): readonly string[] => {
+  const seen = new Set(plannedQueries);
+  const seenTitles = new Set<string>();
+  const words = titles
+    .map((title) => manganatoSearchWords(title).filter((word) => !seen.has(word)))
+    .filter((titleWords) => {
+      const key = titleWords.join("|");
+      if (!key || seenTitles.has(key)) {
+        return false;
+      }
+      seenTitles.add(key);
+      return true;
+    });
+  const queries: string[] = [];
+  while (queries.length < 6) {
+    const previousCount = queries.length;
+    for (const titleWords of words) {
+      const query = titleWords.find((word) => !seen.has(word));
+      if (!query) {
+        continue;
+      }
+      seen.add(query);
+      queries.push(query);
+      if (queries.length === 6) {
+        return queries;
+      }
+    }
+    if (queries.length === previousCount) {
+      break;
+    }
+  }
+  return queries;
 };
 
 const MangaDexIdentity = Schema.Struct({
@@ -682,7 +783,12 @@ export const loadManganatoIdentity = async (
   },
   onProgress: (message: string) => void,
   onIncomplete?: () => void,
-): Promise<ManganatoIdentity & { readonly discoveryTitles: readonly string[] }> => {
+): Promise<
+  ManganatoIdentity & {
+    readonly discoveryTitles: readonly string[];
+    readonly fallbackTitles: readonly string[];
+  }
+> => {
   const anilistId = providerIdOf(row, "anilist");
   const confirmed = confirmedWorks.get(anilistId ?? "");
   const reviewed = {
@@ -697,7 +803,13 @@ export const loadManganatoIdentity = async (
   const id = providerIdOf(row, "mangadex");
   if (!id) {
     onProgress("No MangaDex author evidence; title-only candidates will need review");
-    return { ...reviewed, titles: knownTitles, discoveryTitles: knownTitles, authors: [] };
+    return {
+      ...reviewed,
+      titles: knownTitles,
+      discoveryTitles: knownTitles,
+      fallbackTitles: knownTitles,
+      authors: [],
+    };
   }
   onProgress("Loading MangaDex aliases and author/artist credits (20s timeout)");
   try {
@@ -739,6 +851,15 @@ export const loadManganatoIdentity = async (
       ...reviewed,
       titles,
       discoveryTitles,
+      // Keep canonical names independent of the ranked word-search alias cutoff.
+      fallbackTitles: [
+        row.title,
+        ...["en", "ja-ro", "ko-ro", "zh-ro"].flatMap((language) => {
+          const title =
+            data.attributes.title[language] ?? aliases.find(([tag]) => tag === language)?.[1];
+          return title ? [title] : [];
+        }),
+      ],
       authors: data.relationships.flatMap((link) =>
         ["author", "artist"].includes(link.type) && link.attributes?.name
           ? [link.attributes.name]
@@ -750,7 +871,13 @@ export const loadManganatoIdentity = async (
     onProgress(
       `MangaDex metadata unavailable: ${error instanceof Error ? error.message : String(error)}; no automatic title-only links`,
     );
-    return { ...reviewed, titles: knownTitles, discoveryTitles: knownTitles, authors: [] };
+    return {
+      ...reviewed,
+      titles: knownTitles,
+      discoveryTitles: knownTitles,
+      fallbackTitles: knownTitles,
+      authors: [],
+    };
   }
 };
 
@@ -1163,8 +1290,13 @@ export const createManganatoClient = (options: {
       throw cliError(`MangaNato ${id}: chapter inventory exceeded --max-pages; no link selected`);
     },
     // Yield each validated page so callers can stop at proven ambiguity, never at a lone match.
-    search: async function* (query: string): AsyncGenerator<readonly ManganatoDetails[]> {
-      const key = query.toLowerCase().replace(/\s+/g, "_");
+    search: async function* (
+      query: string,
+      maxPages = options.maxPages,
+    ): AsyncGenerator<readonly ManganatoDetails[]> {
+      // MangaNato returns HTTP 404 for search routes ending in a period, even when escaped.
+      // Strip only terminal periods from discovery; identity matching keeps the original title.
+      const key = query.toLowerCase().replace(/\s+/g, "_").replace(/\.+$/, "");
       // Older reports stored complete queries rather than individual pages.
       const saved = cached("search", key);
       if (saved) {
@@ -1177,9 +1309,9 @@ export const createManganatoClient = (options: {
       const fingerprints = new Set<string>();
       const found = new Set<string>();
       for (let page = 1; ; page++) {
-        if (page > options.maxPages) {
+        if (page > maxPages) {
           throw new ManganatoPageBudgetError({
-            message: `Incomplete MangaNato search for ${query}; page budget ${options.maxPages} exhausted`,
+            message: `Incomplete MangaNato search for ${query}; page budget ${maxPages} exhausted`,
           });
         }
         if (visited.has(path)) {
@@ -1222,9 +1354,25 @@ export const createManganatoClient = (options: {
         fingerprints.add(fingerprint);
         let nextPath: string | undefined;
         if (result.next) {
-          const next = new URL(result.next, `${MANGANATO_ORIGIN}${path}`);
+          let next: URL;
+          let nextQuery: string;
+          try {
+            next = new URL(result.next, `${MANGANATO_ORIGIN}${path}`);
+            const segment = /^\/search\/story\/([^/]+)$/.exec(next.pathname)?.[1];
+            nextQuery = segment === undefined ? "" : decodeURIComponent(segment);
+          } catch {
+            throw cliError(`Invalid MangaNato pagination for ${query}`);
+          }
           nextPath = `/search/story/${encodeURIComponent(key)}?page=${page + 1}`;
-          if (next.href !== `${MANGANATO_ORIGIN}${nextPath}`) {
+          // Provider links escape punctuation differently; compare the decoded query exactly once.
+          if (
+            next.origin !== MANGANATO_ORIGIN ||
+            next.username !== "" ||
+            next.password !== "" ||
+            nextQuery !== key ||
+            next.search !== `?page=${page + 1}` ||
+            next.href.includes("#")
+          ) {
             throw cliError(`Invalid MangaNato pagination for ${query}`);
           }
         }

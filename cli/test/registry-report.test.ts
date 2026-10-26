@@ -37,6 +37,45 @@ const row = (id = "a"): RegistryRow => ({
 });
 
 describe("registry report resume", () => {
+  it("reopens ambiguities for inference opt-in and preserves accepted decisions across two resumes", () => {
+    const [first, second, third] = paths();
+    const retryWhen = { selectionPolicy: 11, acceptRecommendations: false };
+    const decision = {
+      selectedId: "newer",
+      selection: {
+        basis: "active-listing",
+        lostPositions: [{ candidateId: "older", numbers: [0, 1.5] }],
+      },
+      acceptedRecommendation: true,
+      recommendation: { candidateId: "newer", requiresOptIn: true, acceptEligible: true },
+    };
+    const report = openRegistryReport("manganato", false, settings, first);
+    report.entry(row(), { outcome: "ambiguous", selectionPolicy: 11, retryWhen });
+    report.entry(row("legacy"), { outcome: "ambiguous", selectionPolicy: 11 });
+    report.entry(row("accepted"), { outcome: "matched", ...decision });
+    report.close();
+    const resumed = openRegistryReport("manganato", false, settings, second, first);
+    expect(resumed.skip(row(), retryWhen)).toBe(true);
+    expect(resumed.skip(row(), { ...retryWhen, acceptRecommendations: true })).toBe(false);
+    expect(resumed.skip(row("legacy"), { ...retryWhen, acceptRecommendations: true })).toBe(false);
+    resumed.entry(row(), {
+      outcome: "ambiguous",
+      selectionPolicy: 11,
+      retryWhen: { ...retryWhen, acceptRecommendations: true },
+    });
+    resumed.close();
+    const again = openRegistryReport("manganato", false, settings, third, second);
+    try {
+      expect(again.skip(row(), { ...retryWhen, acceptRecommendations: true })).toBe(true);
+      expect(again.skip(row(), retryWhen)).toBe(true);
+      expect(again.checkpoint(row("accepted"))).toMatchObject(decision);
+      expect(again.skip(row("accepted"), retryWhen)).toBe(true);
+      expect(again.candidateIds(row("accepted"))).toEqual([]);
+    } finally {
+      again.close();
+    }
+  });
+
   it("reopens old ambiguities for a new selection policy and carries competitors through resume chains", () => {
     const [first, second, third] = paths();
     const report = openRegistryReport("manganato", false, settings, first);

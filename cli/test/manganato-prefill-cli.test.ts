@@ -31,10 +31,31 @@ const run = (
     | "missingcapped"
     | "missinginventory"
     | "missingfallback"
+    | "missingsparse"
+    | "missingactive"
+    | "missingowned"
+    | "activeverified"
     | "detailfailure"
     | "priormissing"
     | "priorunreadable"
+    | "fulltitle"
+    | "fulltitleromanized"
+    | "fulltitlecapped"
+    | "fulltitleemptywords"
+    | "fulltitlemissing"
+    | "fulltitleknown"
+    | "fulltitleambiguous"
+    | "fulltitleinterrupted"
+    | "fulltitlerescue"
+    | "wordrescue"
+    | "continue"
+    | "continuecap"
+    | "continueerror"
+    | "continueempty"
+    | "continuemissing"
     | "capuseful",
+  acceptance: "none" | "dry-run" | "apply" | "resume" = "none",
+  maxPages?: number,
 ) => {
   const directory = mkdtempSync(join(tmpdir(), "manganato-resume-"));
   const first = join(directory, "first.jsonl");
@@ -56,6 +77,7 @@ const run = (
       for (const key of Object.keys(process.env)) if (key.startsWith('MANIFOLD_')) delete process.env[key];
       process.env.MANIFOLD_TOKEN = 'secret-fixture-token';
       const failure = ${JSON.stringify(failure)};
+      const acceptance = ${JSON.stringify(acceptance)};
       let recovered = false;
       const holding = failure.startsWith('hold');
       if (holding) {
@@ -75,10 +97,18 @@ const run = (
         if (failure === 'hold-timeout') throw new Error('Timeout after 30000ms');
         return {status:403,challenged:true,data:null};
       };
-      const bounded = ['budget','fallback','duplicate','pagechallenge','emptyfallback','unrelatedfallback','capuseful'].includes(failure);
+      const continuation = failure.startsWith('continue');
+      const bounded = continuation || ['budget','fallback','duplicate','pagechallenge','emptyfallback','unrelatedfallback','capuseful','wordrescue'].includes(failure);
       const chapterEvidence = ['chapterevidence','chapterfailure','chapterlater'].includes(failure);
       const missingCredits = failure.startsWith('missing');
-      const aliases = missingCredits || chapterEvidence || ['aliasduplicate','cachechallenge','coveragechallenge','oldambiguity','detailfailure','priormissing','priorunreadable'].includes(failure);
+      const active = ['missingactive','activeverified'].includes(failure);
+      const aliases = active || missingCredits || chapterEvidence || ['aliasduplicate','cachechallenge','coveragechallenge','oldambiguity','detailfailure','priormissing','priorunreadable'].includes(failure);
+      const fullTitle = failure.startsWith('fulltitle');
+      const fullTitleName = failure === 'fulltitleemptywords' ? 'Young Again' : 'The Summer You Were There';
+      const boundedTitle = failure === 'wordrescue' ? 'Reincarnated Quasar Nebula Pulsar' : 'Reincarnated Quasar Nebula';
+      const realNow = Date.now;
+      let expired = false;
+      if (failure === 'continueempty') Date.now = () => realNow() + (expired ? 90_000_000 : 0);
       let attempt = 0;
       const row = (id, title) => ({
         id, title, provider:'local', providerId:id, createdAt:1, updatedAt:1,
@@ -87,17 +117,25 @@ const run = (
       });
       globalThis.fetch = async (input, init = {}) => {
         const url = new URL(String(input));
-        if (url.pathname.endsWith('/registry')) return Response.json({entries:aliases ? [row('target','Giji Harem')] : bounded ? [row('target','Reincarnated Quasar Nebula')] : [row('done', 'Completed manga'), row('pending', 'Pending manga')]});
+        if (fullTitle && url.pathname.endsWith('/registry')) return Response.json({entries:[row('target',fullTitleName)]});
+        if (url.pathname.endsWith('/registry')) return Response.json({entries:aliases ? [row('target','Giji Harem'),...(failure === 'missingowned' ? [{...row('owner','Already linked'),providers:[{provider:'manganato',externalId:'two',updatedAt:1}]}] : [])] : bounded ? [row('target',boundedTitle)] : [row('done', 'Completed manga'), row('pending', 'Pending manga')]});
         if (url.hostname === 'graphql.anilist.co') {
           if (failure === 'chapterfailure' && attempt === 0) return new Response('unavailable',{status:503});
           return Response.json({data:{Media:{id:123,title:{romaji:'Giji Harem',english:'Pseudo Harem'},synonyms:[],chapters:20,status:'FINISHED'}}});
         }
         if (url.pathname.endsWith('/providers')) {
+          if (!fullTitle && !continuation && (acceptance !== 'none' || active)) {
+            const report = readFileSync(attempt === 0 ? ${JSON.stringify(first)} : ${JSON.stringify(second)}, 'utf8').trim().split('\\n').map(JSON.parse);
+            const decision = report.findLast(line => line.event === 'decision');
+            if (!decision || decision.candidateId !== JSON.parse(String(init.body)).externalId || !decision.candidates?.length) throw new Error('Missing persisted prewrite evidence');
+            console.log('PREWRITE_DECISION', JSON.stringify(decision));
+          }
           console.log('WRITE',init.body);
           return Response.json({...row('target','Giji Harem'),providers:[...row('target','Giji Harem').providers,{provider:'manganato',externalId:JSON.parse(String(init.body)).externalId,updatedAt:1}]});
         }
         if (url.hostname === 'api.mangadex.org') {
           if (failure === 'metadata' && attempt === 0) return new Response('unavailable', {status:503});
+          if (fullTitle) return Response.json({data:{attributes:{title:failure === 'fulltitleemptywords' ? {} : {'ja-ro':'Kimi to Tsuzuru Utakata'},altTitles:failure === 'fulltitleemptywords' ? [] : [{en:'The Summer You Were There'},{en:'Ephemeral Spelling With You'},{en:'Transient Spelling With You'},{en:'Kimitsuzu'}]},relationships:failure === 'fulltitlemissing' ? [] : [{type:'author',attributes:{name:'A Creator'}}]}});
           return Response.json({data:{attributes:{title:aliases ? {'ja-ro':'Giji Harem'} : {},altTitles:aliases ? [{en:'Pseudo Harem'}] : []},relationships:[{type:'author',attributes:{name:'A Creator'}}]}});
         }
         throw new Error('Unexpected request: '+url);
@@ -118,13 +156,36 @@ const run = (
             console.log('INVENTORY',attempt,id);
             if (failure === 'coveragechallenge' && attempt === 0 && id === 'two') return {status:403,challenged:true,data:null};
             if (failure === 'missinginventory' && id === 'two') return {status:503,challenged:false,data:null};
-            const count = missingCredits ? (id === 'one' ? 19 : id === 'three' ? 20 : 21) : chapterEvidence ? (id === 'one' ? 19 : id === 'three' ? 24 : 21) : id === 'legacy' ? 9 : failure === 'duplicate' ? (id === 'three' ? 9 : id === 'one' ? 5 : 3) : ['coveragechallenge','capuseful'].includes(failure) ? (id === 'one' ? 2 : 4) : 2;
-            const chapters = Array.from({length:count},(_,i)=>({chapter_slug:'chapter-'+(i+1),chapter_num:i+1}));
+            const count = active || missingCredits ? (id === 'one' ? 19 : id === 'three' ? 20 : 21) : chapterEvidence ? (id === 'one' ? 19 : id === 'three' ? 24 : 21) : id === 'legacy' ? 9 : failure === 'duplicate' ? (id === 'three' ? 9 : id === 'one' ? 5 : 3) : fullTitle || continuation || ['coveragechallenge','capuseful'].includes(failure) ? (id === 'one' ? 2 : 4) : 2;
+            const chapters = Array.from({length:count},(_,i)=>({chapter_slug:'chapter-'+(i+1),chapter_num:i+1,...(active || missingCredits ? {updated_at:id==='two'?'2026-09-01T00:00:00Z':'2026-08-01T00:00:00Z'} : {})}));
+            if (active && id === 'one') chapters.push({chapter_slug:'chapter-0',chapter_num:0,updated_at:'2026-08-01T00:00:00Z'}, {chapter_slug:'chapter-1.5',chapter_num:1.5,updated_at:'2026-08-01T00:00:00Z'});
+            if (failure === 'missingsparse' && id === 'two') chapters.push({chapter_slug:'chapter-5000',chapter_num:5000,updated_at:'2026-09-01T00:00:00Z'});
             if (failure === 'chapterevidence' && id === 'two') chapters.push({chapter_slug:'chapter-1',chapter_num:1},{chapter_slug:'chapter-1',chapter_num:-1});
             return {status:200,challenged:false,data:{success:true,data:{
               chapters,
               pagination:{total:chapters.length,offset:0,limit:9000,has_more:false},
             }}};
+          }
+          if (fullTitle) {
+            if (script.includes('/search/story/')) {
+              const key = script.match(/\\/search\\/story\\/([^?]+)\\?/)?.[1];
+              const page = Number(script.match(/\\?page=(\\d+)/)?.[1]);
+              console.log('SEARCH',attempt,key,page);
+              const fallback = (failure === 'fulltitlerescue' && key === 'tsuzuru') || ['the_summer_you_were_there','kimi_to_tsuzuru_utakata','young_again'].includes(key);
+              const remembered = ['fulltitleknown','fulltitleambiguous'].includes(failure);
+              if (!fallback || (failure === 'fulltitleromanized' && key === 'the_summer_you_were_there')) return {status:200,challenged:false,data:{title:'Search Results for '+key,next:null,items:[]}};
+              if ((remembered || failure === 'fulltitlerescue') && attempt === 0) return {status:403,challenged:true,data:null};
+              const capped = failure === 'fulltitlecapped';
+              const interrupted = failure === 'fulltitleinterrupted';
+              if (interrupted && page === 3 && attempt === 0) return {status:403,challenged:true,data:null};
+              return {status:200,challenged:false,data:{title:'Search Results for '+key,
+                next:capped || page === 1 || (interrupted && page === 2) ? '/search/story/'+key+'?page='+(page+1) : null,
+                items:interrupted && page === 3 ? [] : [{id:page === 1 ? 'one':'two',title:fullTitleName},...(capped ? [{id:'unrelated-'+page,title:'Another title'}] : [])]}};
+            }
+            if (script.includes('/manga/')) {
+              const id = script.includes('/one') ? 'one':'two';
+              return {status:200,challenged:false,data:{id,title:fullTitleName,aliases:[],authors:['A Creator']}};
+            }
           }
           if (aliases) {
             if (script.includes('/search/story/')) {
@@ -134,7 +195,7 @@ const run = (
                 if (pseudo) return {status:200,challenged:false,data:{title:'Search Results for pseudo',next:null,items:[]}};
                 if (attempt === 0) return {status:403,challenged:true,data:null};
               }
-              if (missingCredits) {
+              if (missingCredits || active) {
                 const page = Number(script.match(/\\?page=(\\d+)/)?.[1]);
                 const capped = failure === 'missingcapped' || (failure === 'missingfallback' && pseudo);
                 return {status:200,challenged:false,data:{title:'Search Results for manga',
@@ -159,9 +220,20 @@ const run = (
           }
           if (bounded) {
             if (script.includes('/search/story/')) {
-              const query = script.includes('/quasar?') ? 'quasar' : 'nebula';
+              const query = script.match(/\\/search\\/story\\/([^?]+)\\?/)?.[1];
               const page = Number(script.match(/\\?page=(\\d+)/)?.[1]);
               console.log('SEARCH', attempt, query, page);
+              if (continuation) {
+                if (failure === 'continueempty' && query === 'nebula') expired = true;
+                if (failure === 'continueempty' && query === 'quasar' && expired) return {status:200,challenged:false,data:{title:'Search Results for '+query,next:null,items:[]}};
+                if (failure === 'continueerror' && query === 'quasar' && page === 6) return {status:503,challenged:false,data:null};
+                const complete = query === 'quasar' && page === 6 && failure !== 'continuecap';
+                return {status:200,challenged:false,data:{title:'Search Results for '+query,
+                  next:complete ? null : '/search/story/'+query+'?page='+(page+1),
+                  items:[...((query === 'quasar' || failure === 'continuecap') && page === 1 ? [{id:'one',title:boundedTitle}] : []),...(complete ? [{id:'two',title:boundedTitle}] : []),{id:'unrelated-'+page,title:'Another title'}],
+                }};
+              }
+              if (failure === 'wordrescue') return {status:200,challenged:false,data:{title:'Search Results for '+query,next:null,items:query === 'pulsar' ? [{id:'one',title:boundedTitle}] : []}};
               if (failure === 'emptyfallback' && query === 'quasar') return {status:200,challenged:false,data:{title:'Search Results for quasar',next:null,items:[]}};
               if (failure === 'capuseful') return {status:200,challenged:false,data:{title:'Search Results for '+query,next:query === 'quasar' ? '/search/story/quasar?page='+(page+1) : null,items:[{id:query === 'quasar' ? 'one':'two',title:'Reincarnated Quasar Nebula'},{id:'unrelated-'+page,title:'Another title'}]}};
               if (failure === 'unrelatedfallback') return {status:200,challenged:false,data:{title:'Search Results for '+query,next:query === 'quasar' ? '/search/story/quasar?page='+(page+1) : null,items:[...(query === 'quasar' ? [{id:'one',title:'Reincarnated Quasar Nebula'}] : []),{id:'unrelated-'+page,title:'Another title'}]}};
@@ -181,7 +253,7 @@ const run = (
             if (script.includes('/manga/')) {
               const id = script.includes('/one') ? 'one' : script.includes('/three') ? 'three' : 'two';
               console.log('DETAILS',attempt,id);
-              return {status:200,challenged:false,data:{id,title:'Reincarnated Quasar Nebula',aliases:[],authors:['A Creator']}};
+              return {status:200,challenged:false,data:{id,title:boundedTitle,aliases:[],authors:failure === 'continuemissing' && id === 'two' ? [] : ['A Creator']}};
             }
           }
           const pending = script.includes('pending');
@@ -202,9 +274,10 @@ const run = (
       mock.module('./src/browser-view', () => ({...browser, openBunBrowserView: () => new FixtureView()}));
       const { makeRootCommand } = await import('./src/cli');
       const flags = ['registry','manganato','--delay','0','--status','reading,paused,planning','--chrome-cdp-url','ws://127.0.0.1:9224/devtools/browser/test'];
+      if (${maxPages !== undefined}) flags.push('--max-pages', ${JSON.stringify(String(maxPages))});
       for (const extra of [
-        ['--report',${JSON.stringify(first)},...(holding || missingCredits ? ['--apply'] : [])],
-        ['--report',${JSON.stringify(second)},'--resume',${JSON.stringify(first)},'--limit','1',...(chapterEvidence || missingCredits ? ['--apply'] : [])],
+        ['--report',${JSON.stringify(first)},...(acceptance !== 'dry-run' && (holding || missingCredits || active || (continuation && acceptance === 'apply')) ? ['--apply'] : []),...(['dry-run','apply'].includes(acceptance) ? ['--accept-recommendations'] : [])],
+        ['--report',${JSON.stringify(second)},'--resume',${JSON.stringify(first)},'--limit','1',...(acceptance !== 'dry-run' && (chapterEvidence || missingCredits || active || ((fullTitle || continuation) && acceptance === 'apply')) ? ['--apply'] : []),...(acceptance !== 'none' ? ['--accept-recommendations'] : [])],
         ...(failure === 'budget' ? [['--report',${JSON.stringify(third)},'--resume',${JSON.stringify(second)},'--max-pages','6']] : []),
       ]) {
         try { await Effect.runPromise(Command.runWith(makeRootCommand('test'), {version:'test'})([...flags,...extra]).pipe(Effect.provide(BunServices.layer))); }
@@ -215,6 +288,19 @@ const run = (
           for (const line of lines) if (line.event === 'entry') {
             line.selectionPolicy = 2;
             line.candidates.push({id:'legacy'});
+          }
+          writeFileSync(path,lines.map(line=>JSON.stringify(line)).join('\\n')+'\\n');
+        }
+        if (['fulltitleknown','fulltitleambiguous','fulltitlerescue'].includes(failure) && attempt === 0) {
+          const path = ${JSON.stringify(first)};
+          const lines = readFileSync(path,'utf8').trim().split('\\n').map(JSON.parse);
+          for (const line of lines) if (line.event === 'entry') {
+            line.outcome = failure === 'fulltitleambiguous' ? 'ambiguous' : 'deferred';
+            if (failure === 'fulltitleambiguous') line.selectionPolicy = 10;
+            line.deferredReason = 'no_useful_query';
+            line.searchPolicy = 5;
+            line.retryWhen.searchPolicy = 5;
+            line.candidateIds = failure === 'fulltitleambiguous' ? ['one','two'] : ['one'];
           }
           writeFileSync(path,lines.map(line=>JSON.stringify(line)).join('\\n')+'\\n');
         }
@@ -442,7 +528,7 @@ describe("registry manganato resume", () => {
             "rationalization-of-irregularities",
             "fuzoroi-no-renri",
           ],
-          selectionPolicy: 10,
+          selectionPolicy: 11,
           note: expect.stringContaining("user-selected listing"),
         });
         expect(
@@ -536,7 +622,7 @@ describe("registry manganato resume", () => {
     expect(result.second.find((line) => line.event === "entry")).toMatchObject({
       outcome: "matched",
       selectedId: "legacy",
-      selectionPolicy: 10,
+      selectionPolicy: 11,
     });
     expect(result.stdout).toContain("DETAILS 1 legacy");
     expect(result.stdout).toContain("INVENTORY 1 legacy");
@@ -583,7 +669,7 @@ describe("registry manganato resume", () => {
       discovery: {
         limitedCoverage: true,
         usefulQuery: "pseudo",
-        omittedQueries: ["giji"],
+        omittedQueries: ["giji", "giji harem", "pseudo harem"],
         attempts: [{ query: "pseudo", status: "complete", candidateIds: ["one"] }],
       },
     });
@@ -617,6 +703,135 @@ describe("registry manganato resume", () => {
     });
   });
 
+  it("discovers later-page competitors using the full registry title after word searches miss", () => {
+    const result = run("fulltitle");
+    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "matched",
+      selectedId: "two",
+      discovery: {
+        fullTitleQueries: ["the summer you were there", "kimi to tsuzuru utakata"],
+        usefulQuery: "the summer you were there",
+        attempts: [
+          { query: "ephemeral", status: "complete", candidateIds: [] },
+          { query: "spelling", status: "complete", candidateIds: [] },
+          { query: "transient", status: "complete", candidateIds: [] },
+          { query: "kimitsuzu", status: "complete", candidateIds: [] },
+          { query: "summer", status: "complete", candidateIds: [] },
+          { query: "tsuzuru", status: "complete", candidateIds: [] },
+          { query: "there", status: "complete", candidateIds: [] },
+          { query: "utakata", status: "complete", candidateIds: [] },
+          { query: "were", status: "complete", candidateIds: [] },
+          { query: "kimi", status: "complete", candidateIds: [] },
+          { query: "the summer you were there", status: "complete", candidateIds: ["one", "two"] },
+        ],
+        omittedQueries: ["kimi to tsuzuru utakata"],
+      },
+    });
+    expect(result.stdout).not.toContain("WRITE");
+  });
+
+  it("tries the canonical romanized full title when the complete registry-title search misses", () => {
+    const result = run("fulltitleromanized");
+    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "matched",
+      selectedId: "two",
+      discovery: {
+        usefulQuery: "kimi to tsuzuru utakata",
+        attempts: expect.arrayContaining([
+          expect.objectContaining({
+            query: "the summer you were there",
+            status: "complete",
+            candidateIds: [],
+          }),
+          expect.objectContaining({
+            query: "kimi to tsuzuru utakata",
+            status: "complete",
+            candidateIds: ["one", "two"],
+          }),
+        ]),
+      },
+    });
+  });
+
+  it.each([
+    ["fulltitle", "matched"],
+    ["fulltitleinterrupted", "challenged"],
+  ] as const)(
+    "revalidates multiple full-title candidates before applying a resumed %s run",
+    (mode, firstOutcome) => {
+      const result = run(mode, "apply");
+      expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+        outcome: firstOutcome,
+        candidateIds: ["one", "two"],
+      });
+      expect(result.second.find((line) => line.event === "entry")).toMatchObject({
+        outcome: "matched",
+        selectedId: "two",
+        discovery: { usefulQuery: "the summer you were there" },
+      });
+      expect(result.stdout.match(/^WRITE /gm)).toHaveLength(1);
+      expect(result.stdout).toContain('"externalId":"two"');
+    },
+  );
+
+  it("can search full titles made entirely of filtered words", () => {
+    const result = run("fulltitleemptywords");
+    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "matched",
+      selectedId: "two",
+      queries: ["young again"],
+      discovery: { usefulQuery: "young again" },
+    });
+  });
+
+  it("never treats a capped full-title search as complete or tries to resolve its duplicates", () => {
+    const result = run("fulltitlecapped");
+    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "deferred",
+      deferredReason: "page_budget",
+      selectedId: null,
+      candidateIds: ["one", "two"],
+      cappedQueries: ["the summer you were there"],
+      discovery: {
+        usefulQuery: null,
+        omittedQueries: ["kimi to tsuzuru utakata"],
+      },
+    });
+    expect(result.stdout).not.toContain("WRITE");
+  });
+
+  it("still requires identity evidence after a full-title hit", () => {
+    const result = run("fulltitlemissing");
+    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "ambiguous",
+      selectedId: null,
+      discovery: { usefulQuery: "the summer you were there" },
+    });
+    expect(result.stdout).not.toContain("WRITE");
+  });
+
+  it.each([
+    ["fulltitleknown", "matched", "two"],
+    ["fulltitleambiguous", "deferred", null],
+  ] as const)(
+    "reopens old discovery misses without resolving remembered ambiguity: %s",
+    (mode, outcome, selectedId) => {
+      const result = run(mode);
+      expect(result.second.find((line) => line.event === "entry")).toMatchObject({
+        outcome,
+        selectedId,
+        candidateIds: ["one", "two"],
+      });
+      if (mode === "fulltitleknown") {
+        expect(result.second.find((line) => line.event === "entry").discovery.usefulQuery).toBe(
+          "the summer you were there",
+        );
+      } else {
+        expect(result.stdout).not.toContain("SEARCH 1 the_summer_you_were_there");
+      }
+    },
+  );
+
   it("does not unlock a capped candidate using an unrelated completed query", () => {
     const result = run("unrelatedfallback");
     expect(result.first.find((line) => line.event === "entry")).toMatchObject({
@@ -642,7 +857,8 @@ describe("registry manganato resume", () => {
       recommendation: {
         candidateId: "two",
         basis: "missing-credit-inference",
-        reviewOnly: true,
+        requiresOptIn: true,
+        acceptEligible: true,
         inferred: [
           {
             candidateId: "two",
@@ -671,17 +887,155 @@ describe("registry manganato resume", () => {
     expect(result.second.find((line) => line.event === "checkpoint")).toMatchObject({
       outcome: "ambiguous",
       selectedId: null,
-      recommendation: { candidateId: "two", reviewOnly: true },
+      recommendation: { candidateId: "two", requiresOptIn: true },
     });
     expect(result.second.some((line) => line.event === "entry")).toBe(false);
     expect(result.stdout.match(/SEARCH 0 /g)).toHaveLength(2);
     expect(result.stdout).not.toContain("WRITE");
   });
 
+  it.each(["dry-run", "apply", "resume"] as const)(
+    "requires explicit opt-in and --apply independently for inferred links (%s)",
+    (acceptance) => {
+      const result = run("missingactive", acceptance);
+      const report = acceptance === "resume" ? result.second : result.first;
+      const entry = report.find((line) => line.event === "entry");
+      expect(entry).toMatchObject({
+        outcome: "matched",
+        selectedId: "two",
+        acceptedRecommendation: true,
+        applied: acceptance !== "dry-run",
+        selection: {
+          basis: "active-listing",
+          lostPositions: [{ candidateId: "one", numbers: [0, 1.5] }],
+        },
+        recommendation: { requiresOptIn: true, acceptEligible: true },
+      });
+      expect(entry.candidates.find((candidate) => candidate.id === "two").evidence).toMatchObject({
+        author: "missing",
+        eligible: false,
+        userConfirmed: false,
+      });
+      expect(report.find((line) => line.event === "decision")).toMatchObject({
+        candidateId: "two",
+        acceptedRecommendation: true,
+        selection: {
+          basis: "active-listing",
+          lostPositions: [{ candidateId: "one", numbers: [0, 1.5] }],
+        },
+        recommendation: {
+          inferred: [
+            {
+              candidateId: "two",
+              overlap: [
+                { anchorId: "one", shared: 19 },
+                { anchorId: "three", shared: 20 },
+              ],
+            },
+          ],
+        },
+        candidates: [
+          {
+            id: "one",
+            evidence: { author: "verified", eligible: true },
+            coverage: {
+              integerChapters: 19,
+              latestChapterUpdatedAt: Date.parse("2026-08-01T00:00:00Z"),
+            },
+          },
+          {
+            id: "two",
+            evidence: { author: "missing", eligible: false },
+            coverage: {
+              integerChapters: 21,
+              latestChapterUpdatedAt: Date.parse("2026-09-01T00:00:00Z"),
+            },
+          },
+          { id: "three", coverage: { integerChapters: 20 } },
+        ],
+      });
+      expect(report.findIndex((line) => line.event === "decision")).toBeGreaterThanOrEqual(0);
+      expect(report.findIndex((line) => line.event === "decision")).toBeLessThan(
+        report.findIndex((line) => line.event === "entry"),
+      );
+      expect(result.stdout).toContain("SELECTION");
+      if (acceptance === "dry-run") expect(result.stdout).not.toContain("WRITE");
+      else {
+        expect(result.stdout).toContain("PREWRITE_DECISION");
+        expect(result.stdout).toContain("WRITE");
+        expect(result.stdout.indexOf("SELECTION")).toBeLessThan(result.stdout.indexOf("WRITE"));
+      }
+      if (acceptance === "resume")
+        expect(result.first.find((line) => line.event === "entry").outcome).toBe("ambiguous");
+    },
+  );
+
+  it("keeps sparse recommendations review-only even with opt-in and apply", () => {
+    const result = run("missingsparse", "apply");
+    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "ambiguous",
+      selectedId: null,
+      acceptedRecommendation: false,
+      recommendation: { candidateId: "two", acceptEligible: false },
+    });
+    expect(result.stdout).not.toContain("WRITE");
+  });
+
+  it("rejects an owned recommendation even with opt-in and apply", () => {
+    const result = run("missingowned", "apply");
+    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "conflicts",
+      selectedId: "two",
+      acceptedRecommendation: true,
+      note: expect.stringContaining("already belongs to owner"),
+    });
+    expect(result.stdout).not.toContain("WRITE");
+  });
+
+  it("reports active-listing losses before writing verified duplicates without inference opt-in", () => {
+    const result = run("activeverified");
+    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "matched",
+      selectedId: "two",
+      acceptedRecommendation: false,
+      selection: {
+        basis: "active-listing",
+        lostPositions: [{ candidateId: "one", numbers: [0, 1.5] }],
+      },
+    });
+    expect(result.first.find((line) => line.event === "decision")).toMatchObject({
+      candidateId: "two",
+      acceptedRecommendation: false,
+      candidates: [
+        {
+          id: "one",
+          evidence: { author: "verified", eligible: true },
+          coverage: {
+            integerChapters: 19,
+            latestChapterUpdatedAt: Date.parse("2026-08-01T00:00:00Z"),
+          },
+        },
+        {
+          id: "two",
+          evidence: { author: "verified", eligible: true },
+          coverage: {
+            integerChapters: 21,
+            latestChapterUpdatedAt: Date.parse("2026-09-01T00:00:00Z"),
+          },
+        },
+        { id: "three", coverage: { integerChapters: 20 } },
+      ],
+    });
+    expect(result.stdout).toContain("SELECTION");
+    expect(result.stdout).toContain("PREWRITE_DECISION");
+    expect(result.stdout).toContain("WRITE");
+    expect(result.stdout.indexOf("SELECTION")).toBeLessThan(result.stdout.indexOf("WRITE"));
+  });
+
   it.each(["missingcapped", "missinginventory", "missingfallback"] as const)(
     "does not recommend or write with incomplete %s evidence",
     (failure) => {
-      const result = run(failure);
+      const result = run(failure, "apply");
       expect(result.first.find((line) => line.event === "entry")).toMatchObject({
         outcome:
           failure === "missingcapped"
@@ -715,15 +1069,123 @@ describe("registry manganato resume", () => {
     expect(result.first.find((line) => line.event === "entry")).toMatchObject({
       outcome: "deferred",
       deferredReason: "page_budget",
-      cappedQueries: ["quasar", "nebula"],
+      cappedQueries: ["quasar", "nebula", "reincarnated quasar nebula"],
     });
-    expect(result.stdout.match(/SEARCH 0 /g)).toHaveLength(10);
+    expect(result.stdout.match(/SEARCH 0 /g)).toHaveLength(15);
     expect(result.stdout).not.toContain("SEARCH 1 ");
     expect(result.second.filter((line) => line.event === "entry")).toEqual([]);
     expect(result.third.find((line) => line.event === "entry")).toMatchObject({
       outcome: "matched",
       selectedId: "one",
     });
+  });
+
+  it("rescues a canonical variant omitted by alias ranking while retaining remembered competitors", () => {
+    const result = run("fulltitlerescue");
+    expect(result.second.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "matched",
+      selectedId: "two",
+      candidateIds: ["one", "two"],
+      discovery: {
+        usefulQuery: "tsuzuru",
+        rescueQueries: ["summer", "tsuzuru", "there", "utakata", "were", "kimi"],
+      },
+    });
+    expect(result.stdout).not.toContain("SEARCH 1 the_summer_you_were_there");
+  });
+
+  it("tries an unsearched word beyond the first two before broad full-title searches", () => {
+    const result = run("wordrescue");
+    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "matched",
+      selectedId: "one",
+      queries: ["quasar", "nebula", "pulsar"],
+      discovery: { usefulQuery: "pulsar", rescueQueries: ["pulsar"] },
+    });
+  });
+
+  it("continues one candidate-bearing query and selects the stronger competitor after page five", () => {
+    const result = run("continue", "apply");
+    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "matched",
+      selectedId: "two",
+      candidateIds: ["one", "two"],
+      cappedQueries: ["nebula"],
+      discovery: {
+        usefulQuery: "quasar",
+        attempts: [
+          {
+            query: "quasar",
+            status: "complete",
+            maxPages: 20,
+            continued: true,
+            candidateIds: ["one", "two"],
+          },
+          { query: "nebula", status: "capped", maxPages: 5, candidateIds: [] },
+        ],
+      },
+    });
+    expect(result.stdout.match(/SEARCH 0 quasar 1$/gm)).toHaveLength(1);
+    expect(result.stdout).toContain('"externalId":"two"');
+  });
+
+  it("treats explicit --max-pages 5 as a hard ceiling, unlike the adaptive default", () => {
+    const result = run("continue", "apply", 5);
+    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "deferred",
+      deferredReason: "page_budget",
+      selectedId: null,
+      retryWhen: { maxPages: 5, continuationMaxPages: 5 },
+    });
+    expect(result.stdout).not.toContain("SEARCH 0 quasar 6");
+    expect(result.stdout).not.toContain("WRITE");
+  });
+
+  it("stops at page twenty with a next link and never extends a second candidate-bearing query", () => {
+    const result = run("continuecap", "apply");
+    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "deferred",
+      deferredReason: "page_budget",
+      selectedId: null,
+      cappedQueries: ["quasar", "nebula"],
+      discovery: {
+        attempts: [
+          { query: "quasar", status: "capped", maxPages: 20, continued: true },
+          { query: "nebula", status: "capped", maxPages: 5 },
+        ],
+      },
+    });
+    expect(result.stdout).toContain("SEARCH 0 quasar 20");
+    expect(result.stdout).not.toContain("SEARCH 0 quasar 21");
+    expect(result.stdout).not.toContain("SEARCH 0 nebula 6");
+    expect(result.stdout).not.toContain("WRITE");
+  });
+
+  it.each(["continueerror", "continueempty"] as const)(
+    "does not unlock remembered candidates after %s",
+    (mode) => {
+      const result = run(mode, "apply");
+      expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+        outcome: mode === "continueerror" ? "errors" : "deferred",
+        selectedId: null,
+        candidateIds: ["one"],
+        discovery: { usefulQuery: null },
+      });
+      expect(result.stdout).not.toContain("WRITE");
+    },
+  );
+
+  it("retains other caps after continuation and blocks missing-credit recommendations", () => {
+    const result = run("continuemissing", "apply");
+    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "ambiguous",
+      selectedId: null,
+      recommendation: null,
+      cappedQueries: ["nebula"],
+      candidateIds: ["one", "two"],
+      discovery: { usefulQuery: "quasar" },
+    });
+    expect(result.stdout).not.toContain("WRITE");
   });
 
   it("tries another word for a capped alias before giving up", () => {

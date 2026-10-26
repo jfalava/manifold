@@ -100,12 +100,43 @@ Discovery uses up to three distinct English or romanized MangaDex title variants
 Other translations remain available for identity checks but do not add searches.
 The registry title is a discovery fallback when tagged aliases are unavailable.
 Common title words such as `the`, `world`, `heroine` and `reincarnated` are excluded
-from queries, including fallback queries. Broader words such as `welcome`, `home`
+from individual-word queries. Broader words such as `welcome`, `home`
 and `boss` remain fallbacks but rank behind more distinctive words such as
 `okaeri` or `kenzokuka`, even across title variants. Queries use single words
 because MangaNato treats multiple words as alternatives, not a narrower search.
-Identical queries run only once per entry. Titles with no usable words are deferred.
+Identical queries run only once per entry.
 Empty, unrelated or capped searches try the next planned word or title variant.
+
+If those plans do not complete with a candidate, discovery tries up to six untried
+words from the registry and canonical English/romanized titles. This rescue pass
+is independent of the three-variant cutoff and includes words beyond each title's
+first two. It alternates between titles so one long name cannot consume all six
+queries. Reports record these queries in `discovery.rescueQueries`.
+
+If word searches find no exact-title candidate, discovery tries up to three
+deduplicated complete titles. The registry title comes first, followed by canonical
+English/romanized MangaDex names, independently of the three-variant word-search
+cutoff. Full-title searches retain common words, so titles such as `Young Again`
+can still be searched. MangaNato can rank the exact title first while also returning
+unrelated word matches; every page must still complete within the search budget.
+The fallback does not run when word searches already found a candidate, even in a
+capped query, or when remembered competitors have an ambiguous result. Matched dry
+runs and interrupted full-title searches can be revalidated on resume, retaining
+all competitors. Full-title hits do not bypass identity or chapter
+checks. Reports identify these planned fallbacks in `discovery.fullTitleQueries`.
+Search policy 7 lets `--resume` retry older unmatched/deferred rows while preserving
+completed ambiguity reviews. Titles with no usable word or full-title query remain
+deferred.
+
+If no useful query completes, the default policy continues **one** capped query
+that yielded a validated exact-title candidate, up to 20 total pages. It prefers
+single-word queries in plan order, then full titles. Cached pages retain their
+original age and count toward the ceiling. Only clean pagination exhaustion marks
+the query complete; a next link on page 20 still means deferred. All competitors
+and other capped-query evidence remain available to identity checks. The report
+updates the same attempt with its final `maxPages` and `continued: true`.
+This does not guarantee a short run: the six rescue queries can add up to 30 pages,
+and continuation can fetch another 15 when its first five pages are cached.
 
 Search results must match a complete known title or alias after punctuation,
 spacing, case and accent normalization.
@@ -133,7 +164,7 @@ do not stand in for integers. A chapter-supported candidate cannot anchor anothe
 candidate, and missing credits cannot be rescued. This is an exact-title plus
 verified-author-anchor heuristic, not verification of chapter content or author aliases.
 
-Missing-credit duplicates can receive a separate review-only recommendation.
+Missing-credit duplicates can receive a separate opt-in recommendation.
 Each must match an exact known title/alias and independently meet the same
 10-integer-chapter and 95% overlap thresholds against a directly author-verified
 anchor. Inferred candidates cannot anchor one another. Recognizable edition
@@ -141,11 +172,19 @@ markers in primary titles, such as side stories, one-shot, novel or remake, must
 agree with the registry title; a shared alias does not bypass this check.
 Recommendations require a useful completed query, no capped or incomplete queries,
 and complete comparable inventories. They use the same chapter-superset ranking
-and update-date tie-break below. Missing or conflicting evidence leaves no
-recommendation. The report records `recommendation` with the candidate ID, basis,
-inferred overlap evidence and `reviewOnly: true`. Actual eligibility and
-`selectedId` stay unchanged: **recommendations never write links, even with `--apply`**.
-Resume carries recommendations as report history, not user confirmation.
+and update-date tie-break below, including the active-listing fallback. Missing or
+conflicting evidence leaves no recommendation. The report records `recommendation`
+with the candidate ID, basis, inferred overlap evidence, `requiresOptIn: true` and
+`acceptEligible`. Acceptance requires continuous positive integer positions from
+chapter 1 through the last integer. Sparse recommendations, including numbered
+outliers, remain review-only.
+
+**`--apply` alone never accepts inference.** Add `--accept-recommendations` to
+preview accepted recommendations in a dry run, then combine both flags to save
+them. The command prints and records the inference evidence and any lost positions
+before a provider write. Reports record `acceptedRecommendation` separately;
+original `eligible` and `userConfirmed` evidence never changes. Resume carries
+decisions as history, not permanent identity confirmation.
 
 Probable joined/split author spellings such as `Kanalina` / `Lina Kana` appear as
 unconfirmed suggestions in the report. They never update the confirmed alias map.
@@ -177,7 +216,7 @@ query does not return them. Duplicate inventories come from `/api/manga/<slug>/c
 Every competitor must qualify through author evidence or chapter-supported
 identity, or a scoped user confirmation. Prefer the listing with the most distinct
 chapter positions only when it contains every competitor's positions. If each
-listing has chapters the other lacks, selection remains manual.
+listing has chapters the other lacks, strict selection cannot choose one.
 A smaller listing does not win merely because it is closer to the canonical total.
 Duplicate
 uploads of the same position count once; the highest chapter number is not a
@@ -186,6 +225,22 @@ capped, partial or failed, omitted queries/titles, and the useful completed quer
 They also retain candidate origins, canonical provenance, verified-anchor overlap
 counts and thresholds, evidence scores, author classification, unconfirmed alias
 suggestions, coverage and the selected listing across resume chains.
+
+When strict chapter-superset ranking fails, an active-listing fallback can select
+a newer listing despite lost zero or fractional positions. Every competitor must
+still pass identity checks and have a complete comparable inventory with a valid
+chapter-update date. Primary-title edition markers must agree with the registry
+title. The winner must contain a continuous integer run `1..N`, include every
+competitor's positive integer positions, advance beyond **each** competitor's
+integer set, and have a strictly newer chapter-update date than every competitor.
+Equal integer sets, missing dates, gaps and sparse numbered outliers cannot use
+this fallback. Explicit user-selected listings and manual publication conflicts
+keep their existing behavior.
+
+Reports record `selection.basis: "active-listing"` and `selection.lostPositions`
+by competing slug. The same losses appear before saving a link. Fractional positions
+may be split story chapters, not just bonus content; selection does not merge or
+verify content. The strict ranking remains the first choice.
 
 MangaNato coverage counting tolerates identical same-page chapter records: a repeated
 slug with the same normalized numeric position counts once. Negative chapter numbers
@@ -229,10 +284,13 @@ MangaNato's extension is an English source; the matcher
 does not detect the language of individual chapters.
 
 - `--delay <ms>` defaults to `4000` between catalog requests.
-- `--max-pages <n>` defaults to `5` per query. If searches cap and none completes
-  with an exact-title candidate, the entry becomes `deferred`, not `unmatched` or linked.
-  It also caps inventory requests, each requesting up to 9000 chapters. Malformed
-  pagination and repeated pages remain errors.
+- Without `--max-pages`, searches start at `5` pages and one candidate-bearing
+  capped query can continue to `20`. An explicit `--max-pages <n>` is a hard ceiling
+  and disables that automatic continuation, including explicit `--max-pages 5`.
+  If no query completes with an exact-title candidate, capped searches become
+  `deferred`, not `unmatched` or linked. Inventory requests retain the original
+  ceiling, default `5`, each requesting up to 9000 chapters. Malformed pagination
+  and repeated pages remain errors.
 - `--limit <n>` limits eligible rows after loading the complete registry.
 - `--status <statuses>` uses the shared registry status filter, default `auto`.
 - `--report <path>` creates a new JSONL report instead of overwriting a file.
@@ -271,17 +329,20 @@ their result was saved are retried. Failed author lookups remain retryable.
 Dry-run matches are rechecked when adding `--apply`; reports never replay writes.
 Successful existing bindings are skipped; removed bindings can be checked again.
 
-`deferred` entries are skipped on resume while their registry inputs, page budget
+`deferred` entries are skipped on resume while their registry inputs, page budgets
 and search-policy version are unchanged. Change `--max-pages`, correct the entry's
 identity links/title, or omit `--resume` to try them again. Entries with no usable
-Latin/numeric search words are also deferred. Older untyped page-limit errors
+Latin/numeric word or full-title queries are also deferred. Older untyped page-limit errors
 retry once under the new policy; they are not assumed to be catalog misses.
 Discovery-policy changes can recheck earlier unmatched results. A separate
 selection-policy version reopens old ambiguities once when author matching or
 chapter ranking changes.
-Selection policy 10 and search policy 5 recheck earlier findings to collect
-missing-credit duplicate evidence and review-only recommendations; saved provider
-bindings remain untouched.
+Selection policy 11 rechecks earlier ambiguities for the active-listing fallback;
+search policy 7 retries earlier discovery misses with canonical-word rescue and
+one bounded candidate-bearing continuation. Adding
+`--accept-recommendations` also reopens unchanged
+ambiguities previously checked without that flag. Accepted dry-run matches are
+revalidated when adding `--apply`. Saved provider bindings remain untouched.
 Known competing IDs survive resume chains and are revalidated even if the current
 queries no longer return them. After evaluation under the same selection policy,
 unchanged ambiguities are skipped again.

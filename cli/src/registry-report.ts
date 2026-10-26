@@ -172,6 +172,8 @@ export const openRegistryReport = (
         queries: entry.queries ?? null,
         cappedQueries: entry.cappedQueries ?? null,
         selectedId: entry.selectedId ?? null,
+        selection: entry.selection ?? null,
+        acceptedRecommendation: entry.acceptedRecommendation === true,
         recommendation: entry.recommendation ?? null,
         note: entry.note ?? null,
       });
@@ -224,6 +226,9 @@ export const openRegistryReport = (
         (entry.outcome !== "ambiguous" ||
           retryWhen.selectionPolicy === undefined ||
           entry.selectionPolicy === retryWhen.selectionPolicy) &&
+        (entry.outcome !== "ambiguous" ||
+          retryWhen.acceptRecommendations !== true ||
+          (isJsonObject(entry.retryWhen) && entry.retryWhen.acceptRecommendations === true)) &&
         // A new discovery policy can revisit old misses, while old proven ambiguities stay skipped.
         (entry.outcome === "ambiguous" ||
           retryWhen.searchPolicy === undefined ||
