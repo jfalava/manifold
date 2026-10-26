@@ -1,36 +1,38 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics nodeBuiltinImport:off */
-import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
 import { RegistryEntry } from "@manifold/contract";
-import { errorMessage, type JsonValue } from "@manifold/json";
+import { errorMessage } from "@manifold/json";
 import { apiCall, apiConfig, listRegistryRows, type RegistryRow } from "@/commands/toolbox";
 import { classifyPage, openBunBrowserView, type BrowserView } from "@/browser-view";
 import { resolveValue } from "@/env-resolve";
-import {
-  cliError,
-  epochMillisNow,
-  jsonBodyString,
-  newId,
-  sleepPromise,
-  validateNonNegativeLimit,
-} from "@/effect-kit";
+import { cliError, sleepPromise, validateNonNegativeLimit } from "@/effect-kit";
 import {
   createManganatoClient,
   hasManganatoAuthor,
   hasManganatoTitle,
+  loadManganatoChapterReference,
   loadManganatoIdentity,
   MANGANATO_ORIGIN,
+  MANGANATO_SEARCH_POLICY,
+  MANGANATO_SELECTION_POLICY,
   ManganatoBlockedError,
-  manganatoSearchTerms,
+  ManganatoPageBudgetError,
+  manganatoMatchEvidence,
+  manganatoSearchPlans,
+  recommendManganatoCandidate,
   selectManganatoCandidate,
-  type ManganatoDetails,
+  type ManganatoCandidate,
+  type ManganatoChapterReference,
+  type ManganatoIdentity,
 } from "@/manganato";
 import { withProgramStatus } from "@/program-status";
+import { openRegistryReport } from "@/registry-report";
 import { matchesStatusFilter, parseStatusFilter, STATUS_FILTER_HINT } from "@/registry-status";
 import {
   closeFrame,
@@ -58,14 +60,18 @@ export const manganatoPrefillCommand = Command.make("manganato", {
     Flag.withDescription("Milliseconds between MangaNato requests (default 4000)."),
   ),
   maxPages: Flag.Int("max-pages").pipe(
-    Flag.withDefault(20),
-    Flag.withDescription("Maximum pages per search; incomplete searches never link."),
+    Flag.withDefault(5),
+    Flag.withDescription("Maximum pages per query (default 5); capped searches are deferred."),
   ),
   report: Flag.String("report").pipe(
     Flag.optional,
     Flag.withDescription(
       "New JSONL report path; default ~/.manifold/reports/manganato-<run>.jsonl.",
     ),
+  ),
+  resume: Flag.String("resume").pipe(
+    Flag.optional,
+    Flag.withDescription("Resume a previous JSONL report; retry errors and challenges."),
   ),
   chromeCdpUrl: Flag.String("chrome-cdp-url").pipe(
     Flag.optional,
@@ -77,10 +83,21 @@ export const manganatoPrefillCommand = Command.make("manganato", {
   apiToken: Flag.String("api-token").pipe(Flag.optional),
 }).pipe(
   Command.withDescription(
-    "Backfill MangaNato links through Chrome using exact titles and author evidence. Dry-run by default; never replaces links.",
+    "Backfill MangaNato links through Chrome using exact titles and author/chapter evidence. Dry-run by default; never replaces links.",
   ),
   Command.withHandler(
-    ({ apply, limit, status, delay, maxPages, report, chromeCdpUrl, apiOrigin, apiToken }) =>
+    ({
+      apply,
+      limit,
+      status,
+      delay,
+      maxPages,
+      report,
+      resume,
+      chromeCdpUrl,
+      apiOrigin,
+      apiToken,
+    }) =>
       withProgramStatus((programStatus) =>
         Effect.tryPromise({
           try: async () => {
@@ -108,21 +125,22 @@ export const manganatoPrefillCommand = Command.make("manganato", {
               conflicts: 0,
               errors: 0,
               challenged: 0,
+              deferred: 0,
             };
-            const reportPath = resolve(
-              Option.getOrUndefined(report) ??
-                join(
-                  homedir(),
-                  ".manifold",
-                  "reports",
-                  `manganato-${epochMillisNow()}-${newId()}.jsonl`,
-                ),
+            const retryWhen = {
+              maxPages,
+              searchPolicy: MANGANATO_SEARCH_POLICY,
+              selectionPolicy: MANGANATO_SELECTION_POLICY,
+            };
+            const journal = openRegistryReport(
+              "manganato",
+              apply,
+              { apiOrigin: config.origin, language: "en" },
+              Option.getOrUndefined(report),
+              Option.getOrUndefined(resume),
             );
-            mkdirSync(dirname(reportPath), { recursive: true });
-            const file = openSync(reportPath, "wx", 0o600);
-            const record = (line: JsonValue): void => {
-              writeSync(file, `${jsonBodyString(line)}\n`);
-            };
+            const reportPath = journal.path;
+            const record = journal.record;
             let view: BrowserView | undefined;
             openFrame(`MangaNato registry prefill → ${apply ? "apply" : "dry run"}`);
             frameDetail(`Report: ${reportPath}`);
@@ -135,7 +153,8 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                   (row) =>
                     !row.tombstoned &&
                     !row.providers.some((link) => link.provider === "manganato") &&
-                    matchesStatusFilter(row.state?.status, statuses),
+                    matchesStatusFilter(row.state?.status, statuses) &&
+                    !journal.skip(row, retryWhen),
                 );
                 ctx.selected = maximum === undefined ? eligible : eligible.slice(0, maximum);
                 makePhaseReporter(task).note(
@@ -155,6 +174,41 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                   record({ event: "progress", message: `${context}: ${message}` });
                   reporter.detail(`${context}: ${message}`);
                 };
+                const onBlocked = async (error: ManganatoBlockedError): Promise<void> => {
+                  progress(error.message);
+                  if (!process.stdin.isTTY) {
+                    throw error;
+                  }
+                  programStatus.phase("Waiting for MangaNato in Chrome");
+                  progress(
+                    "PAUSED: inspect MangaNato in regular Chrome and resolve any challenge, then press Enter here to retry the same request. Ctrl-C stops the run.",
+                  );
+                  // Listr owns output. Read input without a second terminal renderer or prompt.
+                  const reader = createInterface({
+                    input: process.stdin,
+                    terminal: false,
+                    signal: task.signal,
+                  });
+                  try {
+                    for await (const _line of reader) {
+                      if (task.signal.aborted) {
+                        throw error;
+                      }
+                      progress("Retrying the paused MangaNato request");
+                      programStatus.phase(
+                        apply ? "Checking and linking MangaNato" : "Checking MangaNato links",
+                      );
+                      return;
+                    }
+                    throw error; // EOF or cancellation is not permission to retry.
+                  } catch {
+                    // Keep cancellation terminal instead of turning it into a skipped row.
+                    throw error;
+                  } finally {
+                    reader.close();
+                    process.stdin.pause();
+                  }
+                };
                 programStatus.phase("Connecting to Chrome");
                 progress("Connecting to regular Chrome");
                 view = openBunBrowserView({
@@ -167,13 +221,16 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                   const current = await view.evaluate<string>(
                     "location.origin + '|' + document.readyState + '|' + document.title",
                   );
+                  if (classifyPage(current, "") === "challenge") {
+                    await onBlocked(
+                      new ManganatoBlockedError({
+                        message: "MangaNato Cloudflare challenge; solve it in regular Chrome.",
+                      }),
+                    );
+                    attempt = -1;
+                    continue;
+                  }
                   if (current.startsWith(`${MANGANATO_ORIGIN}|complete|`)) {
-                    if (classifyPage(current, "") === "challenge") {
-                      throw new ManganatoBlockedError({
-                        message:
-                          "MangaNato Cloudflare challenge; solve it in regular Chrome and rerun.",
-                      });
-                    }
                     ready = true;
                     break;
                   }
@@ -189,6 +246,9 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                   delay,
                   maxPages,
                   onProgress: progress,
+                  catalog: journal.catalog,
+                  onCache: record,
+                  onBlocked,
                 });
                 // Include every row, including tombstones, when checking external-ID ownership.
                 const owners = new Map(
@@ -206,29 +266,217 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                   context = `${index + 1}/${ctx.selected.length} ${row.title}`;
                   let outcome: keyof typeof counts = "unmatched";
                   let note = "No exact title/alias candidates";
-                  let selected: ManganatoDetails | undefined;
-                  const candidates = new Map<string, ManganatoDetails>();
+                  let selected: ManganatoCandidate | undefined;
+                  let recommendation: ReturnType<typeof recommendManganatoCandidate>;
+                  const candidates = new Map<string, ManganatoCandidate>();
+                  const knownCandidateIds = new Set<string>();
+                  const priorCandidateIds = new Set<string>();
                   let titles: readonly string[] = [row.title];
                   let authors: readonly string[] = [];
-                  let queries: readonly string[] = [];
+                  let identity: ManganatoIdentity = { titles, authors };
+                  let chapterReference: ManganatoChapterReference | undefined;
+                  const queries: string[] = [];
+                  const cappedQueries: string[] = [];
+                  let plannedQueries: readonly string[] = [];
+                  let omittedTitles: readonly string[] = [];
+                  const attempts: { query: string; status: string; candidateIds: string[] }[] = [];
+                  let usefulQuery: string | null = null;
+                  let stopReason = "exhausted_plans";
+                  let deferredReason: string | undefined;
                   let blocked: ManganatoBlockedError | undefined;
+                  let retryable = false;
                   try {
-                    const identity = await loadManganatoIdentity(row, progress);
+                    const loadedIdentity = await loadManganatoIdentity(row, progress, () => {
+                      retryable = true;
+                    });
+                    identity = loadedIdentity;
                     titles = identity.titles;
                     authors = identity.authors;
-                    queries = manganatoSearchTerms(titles);
-                    for (const query of queries) {
-                      for (const hit of await client.search(query)) {
-                        if (!candidates.has(hit.id) && hasManganatoTitle(titles, [hit.title])) {
-                          candidates.set(hit.id, await client.details(hit.id));
+                    // Revisit known competitors even if the discovery queries changed since that report.
+                    for (const id of journal.candidateIds(row)) {
+                      knownCandidateIds.add(id);
+                      priorCandidateIds.add(id);
+                    }
+                    for (const id of identity.confirmedCandidateIds ?? []) {
+                      knownCandidateIds.add(id);
+                    }
+                    // Preserve other IDs as report history, but an explicit choice needs only
+                    // its own details. Rejected editions must not block it with failed reads.
+                    const requiredIds = identity.preferredCandidateId
+                      ? [identity.preferredCandidateId]
+                      : knownCandidateIds;
+                    for (const id of requiredIds) {
+                      const details = await client.details(id);
+                      if (!hasManganatoTitle(titles, [details.title, ...details.aliases])) {
+                        throw cliError(
+                          `Known competitor ${id} no longer matches the identity; review required`,
+                        );
+                      }
+                      candidates.set(details.id, details);
+                    }
+                    const manualDuplicate = (): boolean =>
+                      candidates.size > 1 &&
+                      [...candidates.values()].some((item) => {
+                        const evidence = manganatoMatchEvidence(identity, item);
+                        return evidence.author === "missing" && !evidence.userConfirmed;
+                      });
+                    const confirmed = (identity.confirmedCandidateIds?.length ?? 0) > 0;
+                    const plans =
+                      confirmed || identity.manualReview
+                        ? []
+                        : manganatoSearchPlans(loadedIdentity.discoveryTitles);
+                    plannedQueries = [...new Set(plans.flatMap((plan) => plan.queries))];
+                    omittedTitles = loadedIdentity.discoveryTitles.filter(
+                      (title) => !plans.some((plan) => plan.title === title),
+                    );
+                    if (identity.manualReview) {
+                      stopReason = "manual_publication_version";
+                    } else if (identity.preferredCandidateId) {
+                      stopReason = "user_selected_listing";
+                      progress("Revalidating user-selected listing");
+                    } else if (confirmed) {
+                      stopReason = "user_confirmed_candidates";
+                      progress("Revalidating user-confirmed listings and known competitors");
+                    } else if (!plans.length) {
+                      deferredReason = "no_query";
+                      stopReason = "no_query";
+                    }
+                    for (const query of plannedQueries) {
+                      queries.push(query);
+                      const attempt: (typeof attempts)[number] = {
+                        query,
+                        status: "failed",
+                        candidateIds: [],
+                      };
+                      attempts.push(attempt);
+                      try {
+                        for await (const hits of client.search(query)) {
+                          for (const hit of hits) {
+                            if (!hasManganatoTitle(titles, [hit.title])) {
+                              continue;
+                            }
+                            // Preserve the competitor even if its detail read is interrupted.
+                            knownCandidateIds.add(hit.id);
+                            const details =
+                              candidates.get(hit.id) ?? (await client.details(hit.id));
+                            if (hasManganatoTitle(titles, [details.title, ...details.aliases])) {
+                              candidates.set(hit.id, details);
+                              if (!attempt.candidateIds.includes(hit.id)) {
+                                attempt.candidateIds.push(hit.id);
+                              }
+                            }
+                          }
+                        }
+                        attempt.status = "complete";
+                      } catch (error) {
+                        if (!(error instanceof ManganatoPageBudgetError)) {
+                          stopReason = "failed_query";
+                          throw error;
+                        }
+                        attempt.status = "capped";
+                        cappedQueries.push(query);
+                        progress(`${error.message}; trying another title word`);
+                        continue;
+                      }
+                      if (attempt.candidateIds.length) {
+                        usefulQuery = query;
+                        stopReason = "useful_complete_query";
+                        progress(
+                          `Completed useful query ${query}; remaining title queries omitted (limited discovery)`,
+                        );
+                        break;
+                      }
+                    }
+                    if (!usefulQuery && cappedQueries.length) {
+                      deferredReason = "page_budget";
+                    }
+                    if (
+                      !confirmed &&
+                      !identity.manualReview &&
+                      !usefulQuery &&
+                      candidates.size &&
+                      !deferredReason
+                    ) {
+                      deferredReason = "no_useful_query";
+                    }
+                    if (!identity.manualReview && !deferredReason) {
+                      // Read duplicate inventories first: a verified-author anchor can avoid a canonical lookup.
+                      if (candidates.size > 1) {
+                        for (const [id, candidate] of candidates) {
+                          const coverage = await client.coverage(id);
+                          candidates.set(id, { ...candidate, coverage });
+                          progress(`${id}: ${coverage.count} distinct ${coverage.unit}`);
+                        }
+                      }
+                      if (
+                        [...candidates.values()].some((candidate) => {
+                          const evidence = manganatoMatchEvidence(identity, candidate, [
+                            ...candidates.values(),
+                          ]);
+                          return (
+                            !evidence.userConfirmed &&
+                            evidence.author === "different" &&
+                            !evidence.chapterSupport
+                          );
+                        })
+                      ) {
+                        chapterReference = await loadManganatoChapterReference(
+                          row,
+                          progress,
+                          () => {
+                            retryable = true;
+                          },
+                        );
+                      }
+                      if (
+                        chapterReference?.status === "FINISHED" &&
+                        (chapterReference.chapters ?? 0) >= 10
+                      ) {
+                        for (const [id, candidate] of candidates) {
+                          if (candidate.coverage) {
+                            continue;
+                          }
+                          const coverage = await client.coverage(id);
+                          candidates.set(id, { ...candidate, coverage });
+                          progress(`${id}: ${coverage.count} distinct ${coverage.unit}`);
                         }
                       }
                     }
-                    selected =
-                      candidates.size === 1
-                        ? selectManganatoCandidate(identity, [...candidates.values()])
-                        : undefined;
-                    if (selected) {
+                    const matchingIdentity = {
+                      ...identity,
+                      ...(chapterReference && { chapterReference }),
+                    };
+                    selected = !deferredReason
+                      ? selectManganatoCandidate(matchingIdentity, [...candidates.values()])
+                      : undefined;
+                    if (
+                      !selected &&
+                      !deferredReason &&
+                      !retryable &&
+                      usefulQuery &&
+                      !cappedQueries.length &&
+                      attempts.every((attempt) => attempt.status === "complete")
+                    ) {
+                      recommendation = recommendManganatoCandidate(matchingIdentity, [
+                        ...candidates.values(),
+                      ]);
+                    }
+                    if (identity.manualReview) {
+                      outcome = "ambiguous";
+                      note = "Publication title/version conflict; user requested manual selection";
+                    } else if (deferredReason) {
+                      outcome = "deferred";
+                      note =
+                        deferredReason === "no_query"
+                          ? "No usable English/romanized title words; not a catalog miss"
+                          : deferredReason === "no_useful_query"
+                            ? "No completed query returned an exact-title candidate; known competitors retained for review"
+                            : `Search page budget exhausted; no automatic link. Resume skips until --max-pages or search policy changes`;
+                    } else if (manualDuplicate()) {
+                      outcome = "ambiguous";
+                      note =
+                        "Duplicate titles with missing author evidence; manual review required";
+                    } else if (selected) {
                       if (owners.has(selected.id) && owners.get(selected.id) !== row.id) {
                         outcome = "conflicts";
                         note = `manganato:${selected.id} already belongs to ${owners.get(selected.id)}`;
@@ -250,18 +498,39 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                         }
                         owners.set(selected.id, row.id);
                         outcome = "matched";
-                        note = `${apply ? "LINKED" : "WOULD LINK"} manganato:${selected.id}; exact title + author/artist`;
+                        const evidence = manganatoMatchEvidence(matchingIdentity, selected, [
+                          ...candidates.values(),
+                        ]);
+                        const basis = identity.preferredCandidateId
+                          ? "user-selected listing"
+                          : evidence.userConfirmed
+                            ? "user-confirmed work/listing identity"
+                            : evidence.author === "verified"
+                              ? "author/artist"
+                              : evidence.overlap.length
+                                ? "chapter-number overlap with a verified-author listing despite different credits"
+                                : "canonical chapter support despite different author names";
+                        note = `${apply ? "LINKED" : "WOULD LINK"} manganato:${selected.id}; exact title + ${basis}; evidence score ${evidence.score}${selected.coverage ? `; coverage: ${selected.coverage.count} distinct chapters` : ""}`;
                       }
                     } else if (candidates.size) {
                       outcome = "ambiguous";
                       note =
-                        candidates.size > 1
-                          ? "Duplicate title candidates; no chapter-count tie-break"
-                          : "Author evidence missing or mismatched";
+                        candidates.size > 1 &&
+                        [...candidates.values()].every(
+                          (candidate) =>
+                            manganatoMatchEvidence(matchingIdentity, candidate, [
+                              ...candidates.values(),
+                            ]).eligible,
+                        )
+                          ? "Duplicate title candidates have tied, empty or incomparable chapter coverage"
+                          : "Title/author/chapter evidence is insufficient; missing credits require manual review";
+                    }
+                    if (recommendation) {
+                      note += `; REVIEW ONLY: recommend manganato:${recommendation.candidateId} (${recommendation.basis}); not linked`;
                     }
                   } catch (error) {
                     outcome =
-                      error instanceof ManganatoBlockedError
+                      error instanceof ManganatoBlockedError && error.reason !== "timeout"
                         ? "challenged"
                         : /Provider link conflict:/.test(errorMessage(error))
                           ? "conflicts"
@@ -272,23 +541,66 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                     note = errorMessage(error);
                   }
                   counts[outcome]++;
-                  record({
+                  journal.entry(row, {
                     event: "entry",
                     entryId: row.id,
                     title: row.title,
                     outcome,
+                    retryable,
+                    searchPolicy: MANGANATO_SEARCH_POLICY,
+                    selectionPolicy: MANGANATO_SELECTION_POLICY,
+                    retryWhen,
+                    deferredReason: deferredReason ?? null,
                     note,
                     titles: [...titles],
                     authors: [...authors],
+                    chapterReference: chapterReference
+                      ? { ...chapterReference, titles: [...chapterReference.titles] }
+                      : null,
                     queries: [...queries],
+                    cappedQueries,
+                    discovery: {
+                      limitedCoverage: true,
+                      plannedQueries: [...plannedQueries],
+                      attempts,
+                      omittedQueries: plannedQueries.filter((query) => !queries.includes(query)),
+                      omittedTitles: omittedTitles.map((title) => ({
+                        title,
+                        reason: manganatoSearchPlans([title]).length
+                          ? "plan_limit_or_duplicate"
+                          : "no_usable_latin_query",
+                      })),
+                      usefulQuery,
+                      stopReason,
+                    },
                     selectedId: selected?.id ?? null,
+                    recommendation: recommendation ?? null,
+                    candidateIds: [...new Set([...knownCandidateIds, ...candidates.keys()])],
                     candidates: [...candidates.values()].map((candidate) => ({
                       ...candidate,
+                      origin: {
+                        checkpoint: priorCandidateIds.has(candidate.id),
+                        userConfirmed:
+                          identity.confirmedCandidateIds?.includes(candidate.id) ?? false,
+                        queries: attempts
+                          .filter((attempt) => attempt.candidateIds.includes(candidate.id))
+                          .map((attempt) => attempt.query),
+                      },
                       exactTitle: hasManganatoTitle(titles, [
                         candidate.title,
                         ...candidate.aliases,
                       ]),
                       authorMatch: hasManganatoAuthor(authors, candidate.authors),
+                      evidence: manganatoMatchEvidence(
+                        {
+                          ...identity,
+                          titles,
+                          authors,
+                          ...(chapterReference && { chapterReference }),
+                        },
+                        candidate,
+                        [...candidates.values()],
+                      ),
                     })),
                   });
                   reporter.note(`${outcome.toUpperCase()} ${row.title}: ${note}`);
@@ -303,18 +615,23 @@ export const manganatoPrefillCommand = Command.make("manganato", {
             let failure: string | undefined;
             try {
               record({
-                event: "run",
+                event: "options",
                 apply,
                 status,
                 delay,
                 maxPages,
                 language: "en",
-                identity: "exact title + author/artist; duplicate slugs stay ambiguous",
+                identity:
+                  "exact title + author/artist or chapter support; duplicates ranked by distinct chapter coverage; limited discovery",
               });
               await createRun<ManganatoCtx>([load, sweep]).run({ rows: [], selected: [] });
             } catch (error) {
               failure = errorMessage(error);
-              if (error instanceof ManganatoBlockedError && counts.challenged === 0) {
+              if (
+                error instanceof ManganatoBlockedError &&
+                error.reason !== "timeout" &&
+                counts.challenged === 0
+              ) {
                 counts.challenged++;
               }
               throw error;
@@ -334,7 +651,7 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                   ...(failure && { error: failure }),
                 });
               } finally {
-                closeSync(file);
+                journal.close();
                 view?.close();
                 closeFrame(
                   `${failure ? "Stopped" : counts.errors + counts.conflicts ? "Completed with errors" : apply ? "Applied" : "Dry run"}: ${Object.entries(

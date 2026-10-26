@@ -23,11 +23,11 @@ Rex can show the current step while the tab is unfocused, for example
 finalizing the report have no percentage. Row progress counts completed attempts
 after status filtering and `--limit`, not successful matches.
 
-Completion leaves `done`; errors, conflicts and challenges leave `error`.
+Completion leaves `done`; errors, conflicts and unresolved challenges leave `error`.
 Ambiguous and unmatched rows are completed findings, not failures.
 Ctrl-C reports `idle` with the title `manifold: Cancelled`. This resets terminal
 status but does not guarantee pending browser requests or report cleanup finish.
-Challenges stop the command rather than leaving it waiting for input.
+Interactive runs show `Waiting for MangaNato in Chrome` while paused for recovery.
 
 Set `MANIFOLD_PROGRAM_STATUS=0` to disable both status reports and window-title
 updates. Both are also disabled when stdout is redirected or `TERM=dumb`.
@@ -64,24 +64,175 @@ manifold registry manganato --status reading,planning,on_hold --limit 10 \
 
 The matcher reads aliases and author/artist credits from an existing MangaDex
 binding. MangaDex supplies identity evidence, not MangaNato's chapter content.
-Missing or unavailable credits cannot produce automatic title-only links.
+Missing or unavailable credits cannot produce automatic title-only links, except
+for specifically user-confirmed work/listing pairs.
 
-It searches one long word from each of up to three distinct title variants,
-with Latin-script aliases preferred. Search results must match a complete known
-title or alias after punctuation, spacing, case and accent normalization.
-Numbers and edition suffixes remain significant. A unique candidate also needs
-an exact author/artist name match, allowing reversed name order and parenthetical
-credits. Fuzzy author spelling matches are not accepted.
+Reviewed MangaNato slugs are bound to exact AniList IDs for Kichiku Eiyuu / Savage
+Hero, Nigasanai yo? Fukuroji-kun, Yumemi ga Oka Wonderland, Marika's Love Meter
+Malfunction, Ii Fuufu no Hanashi / A Happy Couple, and Yuki Nee-chan no Kannou
+Gokko, plus Ore no Ichizu wo Jama Suru Aitsu, Dark Summoner to Dekiteiru,
+Himegoto Kakushigoto, Mada Kimi wo Miageteru, My Girlfriend Is a Colossal Cutie,
+Hotel Inhumans, The New Gate, Kuma to Usagi wa Tomodachi dewa Irarenai,
+Mikoto-chan wa Kirawaretakunai!, Haha no Ai wa Mama Naranai!, Assassin & Cinderella,
+Moto Azadarake no Kanojo ga Shinpai de, The Erotical Wizard and His Twelve Brides,
+Garbage Brave / Garbage Hero, Koisuru Futari wa Kiba wo Kakusu, Tatakai Shika
+Shiranai Onna Kishi wo Amayakashi Tsuzuketa, Otaku ni Tsumetai Gal, Mainichi Ie ni
+Kuru Gal ga Kyorikan Zero demo Yasashikunai, Cool na Doukyuusei no 10-nengo,
+and Demon X Angel Can't Get Along!. These confirmations supply identity evidence
+even when credits are missing or differ. They do not establish global author aliases.
+The command reads those listings directly instead of repeating broad searches;
+known competitors from the resume report remain included. Titles are still
+revalidated, and confirmations do not extend to unreviewed slugs or other works.
+Dorei wo Choukyoushite Harem Tsukuru remains manual because its publication-title
+change leaves an unresolved choice of updating version.
 
-Every search follows pagination to the end. Duplicate slugs remain ambiguous,
-even when only one has author credits. Chapter counts and chapter numbers never
-break ties. This is bounded candidate discovery, not a completeness guarantee
-for the entire catalog. MangaNato's extension is an English source; the matcher
+Two explicit listing choices override duplicate ranking for their bound AniList IDs:
+`153502` uses `quinpath-romance`, because the user reported broken images on
+`konsei-wa-goen-ga-arimasu-you-ni`; `130872` uses `fuzoroi-no-renri`, as selected
+by the user over the side-stories and alternate listings. Only the chosen listing
+requires a detail read; other remembered IDs remain in report history without
+blocking that choice. Its title and identity must still validate. Failure never
+falls back to another listing, and ownership conflicts still prevent writes.
+These choices do not confirm side stories as the same edition. The command does
+not test chapter images, and a recent update date does not prove they work.
+
+Discovery uses up to three distinct English or romanized MangaDex title variants.
+Other translations remain available for identity checks but do not add searches.
+The registry title is a discovery fallback when tagged aliases are unavailable.
+Common title words such as `the`, `world`, `heroine` and `reincarnated` are excluded
+from queries, including fallback queries. Broader words such as `welcome`, `home`
+and `boss` remain fallbacks but rank behind more distinctive words such as
+`okaeri` or `kenzokuka`, even across title variants. Queries use single words
+because MangaNato treats multiple words as alternatives, not a narrower search.
+Identical queries run only once per entry. Titles with no usable words are deferred.
+Empty, unrelated or capped searches try the next planned word or title variant.
+
+Search results must match a complete known title or alias after punctuation,
+spacing, case and accent normalization.
+Numbers and edition suffixes remain significant. Author/artist matching allows
+reversed name order and parenthetical credits.
+Confirmed full-author aliases also match, including `Sano Yuto` /
+`Yuuto Sano`, `Ohtsuki Ichika` / `Ootsuki Ichika` and `Necoco` / `Nekoko`.
+These equivalences do not apply to other authors with similar spellings.
+Unconfirmed fuzzy author matches are not accepted. Without an explicit listing
+confirmation, missing credits on either side still require manual review, even
+when chapter counts agree.
+
+Evidence scores use 60 points for an exact title/alias, 40 for a verified
+author/artist or user-confirmed listing, and 25 for chapter support from either
+basis below. A match needs at least 85 points, an exact title and either nonmissing
+credits on both sides or an explicit listing confirmation. These are policy
+weights, not confidence probabilities. Chapter agreement can support different
+credited names; disagreement never penalizes a verified-author match.
+
+For duplicates with different nonmissing names, the command first compares complete
+chapter inventories against an exact-title listing with directly verified author/artist
+credits. At least 10 shared positive integer chapter positions and 95% overlap
+with the smaller integer inventory supply chapter support. Fractional-only positions
+do not stand in for integers. A chapter-supported candidate cannot anchor another
+candidate, and missing credits cannot be rescued. This is an exact-title plus
+verified-author-anchor heuristic, not verification of chapter content or author aliases.
+
+Missing-credit duplicates can receive a separate review-only recommendation.
+Each must match an exact known title/alias and independently meet the same
+10-integer-chapter and 95% overlap thresholds against a directly author-verified
+anchor. Inferred candidates cannot anchor one another. Recognizable edition
+markers in primary titles, such as side stories, one-shot, novel or remake, must
+agree with the registry title; a shared alias does not bypass this check.
+Recommendations require a useful completed query, no capped or incomplete queries,
+and complete comparable inventories. They use the same chapter-superset ranking
+and update-date tie-break below. Missing or conflicting evidence leaves no
+recommendation. The report records `recommendation` with the candidate ID, basis,
+inferred overlap evidence and `reviewOnly: true`. Actual eligibility and
+`selectedId` stay unchanged: **recommendations never write links, even with `--apply`**.
+Resume carries recommendations as report history, not user confirmation.
+
+Probable joined/split author spellings such as `Kanalina` / `Lina Kana` appear as
+unconfirmed suggestions in the report. They never update the confirmed alias map.
+Chapter support adds 25 points once, even when multiple sources support it.
+
+For still-unresolved different names, the command reads the already-bound AniList work, or resolves
+an already-bound MAL ID through AniList. No token is required and no title search
+is used to obtain a convenient total. Returned IDs must agree with existing
+bindings. Only a `FINISHED` work with a positive integer total of at least 10
+chapters contributes support, and the candidate must also match a title/alias on
+that canonical record. Ongoing works, unknown totals and short works add no points.
+This uses AniList's total, not a direct MAL API total.
+
+Strong support requires a complete numbered MangaNato inventory starting at
+chapter 1. Fractional positions collapse to integer chapter buckets for this
+signal. Their count must be within 5% of the canonical total, at least 95% of
+positions through the last bucket must exist, and no bucket may exceed 105% of
+the total. Split uploads, sparse inventories and extreme numbered outliers cannot
+manufacture agreement. The normal distinct-position count still ranks duplicates.
+
+Discovery stops after the first fully paginated query that itself returns a
+detail-validated exact-title candidate. It consumes all pages of that query,
+including later-page competitors, but does not require the remaining aliases to
+finish. This trades search recall for fewer requests: unsearched aliases can hide
+other listings. It does not prove catalog-wide completeness. A capped query's
+candidates cannot link just because a later unrelated or empty query completes.
+Previously known competitors are retained and revalidated even when the useful
+query does not return them. Duplicate inventories come from `/api/manga/<slug>/chapters`.
+Every competitor must qualify through author evidence or chapter-supported
+identity, or a scoped user confirmation. Prefer the listing with the most distinct
+chapter positions only when it contains every competitor's positions. If each
+listing has chapters the other lacks, selection remains manual.
+A smaller listing does not win merely because it is closer to the canonical total.
+Duplicate
+uploads of the same position count once; the highest chapter number is not a
+count. Reports record limited discovery coverage, attempted queries as complete,
+capped, partial or failed, omitted queries/titles, and the useful completed query.
+They also retain candidate origins, canonical provenance, verified-anchor overlap
+counts and thresholds, evidence scores, author classification, unconfirmed alias
+suggestions, coverage and the selected listing across resume chains.
+
+MangaNato coverage counting tolerates identical same-page chapter records: a repeated
+slug with the same normalized numeric position counts once. Negative chapter numbers
+are excluded from scoring and reported, including the observed case where Chapter 1
+and Chapter -1 share `chapter-1`. This does not remove source content or verify that
+the negative chapter is readable. Pagination still uses every raw record.
+Other conflicting numbers for one slug, repeated unknown numbers, and slugs repeated
+across pages remain errors. An unknown number still makes coverage incomparable.
+
+Floating-point noise such as `58.300000000000004` normalizes to `58.3` for scoring
+only. The shortest decimal within two relative machine-epsilon units, capped at
+an absolute difference of `0.000000000001`, is used when it needs at most 12 decimal
+places. Other values remain unchanged. Real multipart positions such as `58.1`,
+`58.2` and `58.31` remain distinct. Source slugs and displayed chapter labels do not
+change. Reports include `coverage.inventory` with raw record, duplicate record,
+excluded negative record and normalized record counts. Normalization counts raw
+nonnegative records before deduplication, so these diagnostics are not disjoint;
+`coverage.count` is the distinct normalized position count.
+
+When leading listings have identical nonempty chapter-position sets, prefer the
+one with the latest valid chapter `updated_at`. This is a provider chapter-update
+time, not necessarily original publication or upload time. Every chapter in each
+tied listing must have a valid timestamp; missing, invalid, future or tied dates
+leave selection ambiguous. Reports retain `coverage.latestChapterUpdatedAt` as
+epoch milliseconds. Cache fetch time never breaks a tie. Old version-1 chapter
+inventory caches are refetched once because they discarded these timestamps;
+search and detail caches remain reusable.
+
+All-empty or unnumbered duplicate inventories and insufficient identity evidence
+remain ambiguous. An unconfirmed unknown-author competitor is not discarded in favor
+of a verified listing. Missing credits do not stop query pagination or prevent
+duplicate inventory reads, so review reports retain chapter evidence even when
+automatic selection is impossible. Failed or inconsistent inventory reads remain
+retryable errors; a challenge pauses an interactive run. Existing bindings are never replaced.
+Incomplete discovery is never recorded as a completed query.
+Unavailable canonical lookups leave unresolved candidates retryable on resume.
+These are catalog counts, not verification of chapter images. Ads labelled as
+numbered chapters can contribute one position, and split/combined releases can
+affect counts. A larger count does not guarantee a superset of the other listing.
+MangaNato's extension is an English source; the matcher
 does not detect the language of individual chapters.
 
 - `--delay <ms>` defaults to `4000` between catalog requests.
-- `--max-pages <n>` defaults to `20` per query. Reaching the cap, malformed
-  pagination or repeated pages produces an error, never a partial match.
+- `--max-pages <n>` defaults to `5` per query. If searches cap and none completes
+  with an exact-title candidate, the entry becomes `deferred`, not `unmatched` or linked.
+  It also caps inventory requests, each requesting up to 9000 chapters. Malformed
+  pagination and repeated pages remain errors.
 - `--limit <n>` limits eligible rows after loading the complete registry.
 - `--status <statuses>` uses the shared registry status filter, default `auto`.
 - `--report <path>` creates a new JSONL report instead of overwriting a file.
@@ -89,6 +240,68 @@ does not detect the language of individual chapters.
 - `--api-origin` and `--api-token` override the usual Manifold API configuration.
 
 Reports persist progress, candidates, title/author evidence and each row's
-outcome as the run proceeds. HTTP 403, HTTP 429 and Cloudflare challenges stop
-the sweep without automatic retries. Earlier successful applied links remain
-saved. Inspect the report before applying a larger run.
+outcome as the run proceeds. In an interactive terminal, Cloudflare challenges,
+HTTP 403/429 and catalog request timeouts pause the sweep on the current request.
+Inspect MangaNato in regular Chrome, resolve any challenge or connection problem,
+then press Enter in the CLI to retry. No catalog requests run while waiting.
+Repeated restrictions pause again. A timeout alone is not treated as proof of a
+Cloudflare challenge. The same recovery applies to a challenge during startup.
+
+Successful recovery continues the same row without repeating completed searches,
+details or inventory pages. The report records the pause as progress, not a
+completed row outcome. Without interactive stdin, or if stdin closes while
+waiting, the sweep stops and leaves that row retryable. Ctrl-C stops the run.
+Earlier successful applied links remain saved. Inspect the report before applying
+a larger run.
+
+## Resume after an interruption
+
+If the run stopped rather than recovered in place, rerun with the same options and add
+`--resume <report.jsonl>`. Use the current browser WebSocket URL if Chrome restarted.
+
+```sh
+manifold registry manganato --status reading,paused,planning --delay 4000 --apply \
+  --resume "$HOME/.manifold/reports/manganato-<previous-run>.jsonl" \
+  --chrome-cdp-url 'ws://127.0.0.1:9224/devtools/browser/<current-id>'
+```
+
+Completed unchanged checks, including ambiguous and unmatched results, are skipped
+before `--limit`. Errors, conflicts, challenged rows and rows interrupted before
+their result was saved are retried. Failed author lookups remain retryable.
+Dry-run matches are rechecked when adding `--apply`; reports never replay writes.
+Successful existing bindings are skipped; removed bindings can be checked again.
+
+`deferred` entries are skipped on resume while their registry inputs, page budget
+and search-policy version are unchanged. Change `--max-pages`, correct the entry's
+identity links/title, or omit `--resume` to try them again. Entries with no usable
+Latin/numeric search words are also deferred. Older untyped page-limit errors
+retry once under the new policy; they are not assumed to be catalog misses.
+Discovery-policy changes can recheck earlier unmatched results. A separate
+selection-policy version reopens old ambiguities once when author matching or
+chapter ranking changes.
+Selection policy 10 and search policy 5 recheck earlier findings to collect
+missing-credit duplicate evidence and review-only recommendations; saved provider
+bindings remain untouched.
+Known competing IDs survive resume chains and are revalidated even if the current
+queries no longer return them. After evaluation under the same selection policy,
+unchanged ambiguities are skipped again.
+
+Validated search pages, inventory pages and successful candidate details are saved immediately
+as `catalog` events. Resumes reuse those reads for up to 24 hours from each original
+fetch time. If page 3 is challenged, a resume can reuse pages 1 and 2 and fetch
+page 3 again. Cached pages still count toward `--max-pages`; partial searches never
+become complete results. Finishing a query does not renew its earlier pages' age.
+Older reports' complete-query caches remain readable, but they cannot recover
+uncached pages from an interrupted query. Inventory caches are separate from old
+detail records, which do not contain chapter data. Missing inventories are fetched,
+never interpreted as zero chapters.
+Matching and current ownership checks still run before any write. Cached reads
+can miss catalog changes during that window; omit `--resume` to fetch fresh data.
+
+Every resumed run creates a new report, carries earlier checkpoints forward, and
+leaves its input untouched. Resume from the newest report after another stop.
+`--report` can choose the new output path but cannot name an existing file.
+Reports from new runs validate the API origin and changed title/provider inputs.
+Older MangaNato reports are supported using entry ID and title only: use them
+only for the same registry with unchanged identity links. They cannot detect old
+metadata failures or changes to provider IDs; omit `--resume` for a fresh check.
