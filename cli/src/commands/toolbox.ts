@@ -139,13 +139,37 @@ const apiCallEffect = <A>(
       });
 
     const refresh = () =>
-      fromPromise(() =>
-        refreshManifoldSession(config.origin, {
+      Effect.gen(function* () {
+        const snapshot: ManifoldSession = {
           accessToken: config.token,
           refreshToken: config.refreshToken!,
           expiresAt: config.accessExpiresAt ?? 0,
-        } satisfies ManifoldSession),
-      );
+        };
+        // Another CLI process can rotate the single-use refresh token during a long sweep.
+        const stored = yield* fromPromise(() => loadManifoldSession());
+        const session = stored && stored.refreshToken !== snapshot.refreshToken ? stored : snapshot;
+        if (session !== snapshot && session.expiresAt > epochMillisNow() + 30_000) {
+          return session;
+        }
+        return yield* fromPromise(() => refreshManifoldSession(config.origin, session)).pipe(
+          Effect.catch((error) =>
+            Effect.gen(function* () {
+              // Cover rotation between the storage read and refresh, without retrying a used token.
+              const latest = yield* fromPromise(() => loadManifoldSession()).pipe(
+                Effect.orElseSucceed(() => undefined),
+              );
+              if (
+                latest &&
+                latest.refreshToken !== session.refreshToken &&
+                latest.expiresAt > epochMillisNow() + 30_000
+              ) {
+                return latest;
+              }
+              return yield* error;
+            }),
+          ),
+        );
+      });
     if (
       config.refreshToken &&
       config.accessExpiresAt !== undefined &&
