@@ -23,3 +23,8 @@ SPDX-FileCopyrightText = [
   "2026 Jorge Fernando Álava",
 ]
 SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = "cli/src/login/fonts/ibm-plex-sans-latin-wght-normal.json"
+SPDX-FileCopyrightText = "2019 IBM Corp."
+SPDX-License-Identifier = "OFL-1.1"

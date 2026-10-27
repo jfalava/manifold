@@ -19,6 +19,7 @@ import { errorMessage } from "@manifold/json";
 import { cliError, envString } from "@/effect-kit";
 import { frameDetail, frameUrl } from "@/ui";
 import { terminalSession } from "@/terminal-alert";
+import { renderCallbackPage, type CallbackPageState } from "@/login/oauth-pages";
 
 const asError = (cause: unknown): Error =>
   cause instanceof Error ? cause : cliError(errorMessage(cause));
@@ -156,6 +157,62 @@ export type AwaitOAuthAuthorizationCodeOptions = {
   /** Skip binding the loopback port; paste only (headless / port busy). */
   readonly pasteOnly?: boolean;
   readonly timeoutMs?: number;
+};
+
+type LoopbackRequestOptions = {
+  readonly pathname: string;
+  readonly expectedState: string;
+  readonly providerLabel: string;
+  readonly onCode: (code: string) => void;
+  readonly onError: (error: Error) => void;
+};
+
+/** Browser callbacks require state; bare codes remain supported by the paste flow. */
+export const handleLoopbackRequest = (
+  request: Request,
+  options: LoopbackRequestOptions,
+): Response => {
+  const url = new URL(request.url);
+  if (request.method !== "GET" || url.pathname !== options.pathname) {
+    return new Response("Not found", {
+      status: 404,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
+
+  const page = (state: CallbackPageState, status = 200): Response =>
+    new Response(renderCallbackPage(state, options.providerLabel), {
+      status,
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+        "x-content-type-options": "nosniff",
+        "content-security-policy":
+          "default-src 'none'; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      },
+    });
+
+  if (url.searchParams.get("state") !== options.expectedState) {
+    return page("state-mismatch", 400);
+  }
+  if (url.searchParams.has("error")) {
+    const denied = url.searchParams.get("error") === "access_denied";
+    options.onError(
+      cliError(
+        denied
+          ? `${options.providerLabel} authorization denied.`
+          : `${options.providerLabel} authorization failed. Start login again.`,
+      ),
+    );
+    return page(denied ? "declined" : "provider-error");
+  }
+  const code = url.searchParams.get("code");
+  if (!code) {
+    return page("missing-code", 400);
+  }
+  options.onCode(code);
+  return page("received");
 };
 
 const readPasteLine = async (signal: AbortSignal): Promise<string> => {
@@ -389,19 +446,22 @@ export const awaitOAuthAuthorizationCode = async (
 
   const codeGate = Promise.withResolvers<string>();
   let settled = false;
-  const settleResolve = (code: string): void => {
+  let settledByCallback = false;
+  const settleResolve = (code: string, fromCallback = false): void => {
     if (settled) {
       return;
     }
     settled = true;
+    settledByCallback = fromCallback;
     ac.abort();
     codeGate.resolve(code);
   };
-  const settleReject = (cause: Error): void => {
+  const settleReject = (cause: Error, fromCallback = false): void => {
     if (settled) {
       return;
     }
     settled = true;
+    settledByCallback = fromCallback;
     ac.abort();
     codeGate.reject(cause);
   };
@@ -415,29 +475,13 @@ export const awaitOAuthAuthorizationCode = async (
         hostname,
         port,
         fetch(request: Request) {
-          const url = new URL(request.url);
-          const headers = { "content-type": "text/plain", "cache-control": "no-store" };
-          if (request.method !== "GET" || url.pathname !== pathname) {
-            return new Response("Not found", { status: 404, headers });
-          }
-          try {
-            const code = resolveOAuthAuthorizationCode(
-              url.href,
-              options.expectedState,
-              options.providerLabel,
-            );
-            settleResolve(code);
-            return new Response("Authorization received. Return to the CLI to check the result.", {
-              headers,
-            });
-          } catch (cause) {
-            const failure = asError(cause);
-            if (failure.message.includes("denied")) {
-              settleReject(failure);
-              return new Response("Authorization denied. Return to the CLI.", { headers });
-            }
-            return new Response(failure.message, { status: 400, headers });
-          }
+          return handleLoopbackRequest(request, {
+            pathname,
+            expectedState: options.expectedState,
+            providerLabel: options.providerLabel,
+            onCode: (code) => settleResolve(code, true),
+            onError: (error) => settleReject(error, true),
+          });
         },
       });
     } catch (cause) {
@@ -506,6 +550,7 @@ export const awaitOAuthAuthorizationCode = async (
     if (!signal.aborted) {
       ac.abort();
     }
-    await server?.stop(true);
+    // Drain terminal callbacks; paste and timeout still close active connections immediately.
+    await server?.stop(!settledByCallback);
   }
 };
