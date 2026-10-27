@@ -22,6 +22,7 @@ import {
   type RunContext,
 } from "@/ui";
 import { cliError } from "@/effect-kit";
+import { terminalSession } from "@/terminal-alert";
 
 interface WipeCtx extends RunContext {
   entries: WipeListEntry[];
@@ -146,6 +147,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
             ),
           );
       if (!confirmed) {
+        terminalSession()?.cancel();
         closeFrame("Cancelled.");
         return;
       }

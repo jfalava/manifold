@@ -153,7 +153,7 @@ export const unfollowDroppedCommand = Command.make(
                 .map(([id]) => id);
               ctx.droppedIds = droppedIds;
               makePhaseReporter(task).note(
-                `❖ ${Object.keys(statuses).length} library entries · ${droppedIds.length} with status ${targetStatuses.join(", ")}.`,
+                `${Object.keys(statuses).length} library entries · ${droppedIds.length} with status ${targetStatuses.join(", ")}.`,
               );
             },
             rendererOptions: { outputBar: Infinity },
@@ -191,7 +191,7 @@ export const unfollowDroppedCommand = Command.make(
               const followedDroppedIds = ctx.droppedIds.filter((id) => followed.has(id));
               ctx.followedDroppedIds = followedDroppedIds;
               reporter.note(
-                `❖ ${followedDroppedIds.length} followed of ${ctx.droppedIds.length} ${targetStatuses.join(", ")} entries.` +
+                `${followedDroppedIds.length} followed of ${ctx.droppedIds.length} ${targetStatuses.join(", ")} entries.` +
                   (followedDroppedIds.length === 0 ? " Nothing to unfollow." : ""),
               );
 
@@ -278,7 +278,7 @@ export const unfollowDroppedCommand = Command.make(
                       if (failures.length > DETAIL_LINE_CAP) {
                         reporter.problem(`…and ${failures.length - DETAIL_LINE_CAP} more failures`);
                       }
-                      reporter.note(`❖ ${done - failures.length}/${done} unfollowed.`);
+                      reporter.note(`${done - failures.length}/${done} unfollowed.`);
                       if (failures.length > 0) {
                         process.exitCode = 1;
                       }
@@ -294,15 +294,15 @@ export const unfollowDroppedCommand = Command.make(
                     task: async (ctx, task) => {
                       const reporter = makePhaseReporter(task);
                       for (const mangaId of ctx.followedDroppedIds.slice(0, DETAIL_LINE_CAP)) {
-                        reporter.detail(`❖ ${ctx.titles[mangaId] ?? "(untitled)"} [${mangaId}]`);
+                        reporter.note(`${ctx.titles[mangaId] ?? "(untitled)"} [${mangaId}]`);
                       }
                       if (ctx.followedDroppedIds.length > DETAIL_LINE_CAP) {
-                        reporter.detail(
-                          `❖ …and ${ctx.followedDroppedIds.length - DETAIL_LINE_CAP} more`,
+                        reporter.note(
+                          `…and ${ctx.followedDroppedIds.length - DETAIL_LINE_CAP} more`,
                         );
                       }
                       reporter.note(
-                        `❖ Dry run: would unfollow ${ctx.followedDroppedIds.length} entries (${targetStatuses.join(", ")}). Re-run with --apply.`,
+                        `Dry run: would unfollow ${ctx.followedDroppedIds.length} entries (${targetStatuses.join(", ")}). Re-run with --apply.`,
                       );
                     },
                     rendererOptions: { outputBar: Infinity, persistentOutput: true },

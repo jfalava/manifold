@@ -1,11 +1,12 @@
 /** @effect-diagnostics nodeBuiltinImport:off — Set the tour's terminal title synchronously. */
+/** @effect-diagnostics asyncFunction:off — Listr callbacks are Promise host boundaries. */
 import { writeSync } from "node:fs";
 
 import { errorMessage } from "@manifold/json";
 import { Duration, Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 
-import { cliError } from "@/effect-kit";
+import { cliError, fromPromise, sleepPromise } from "@/effect-kit";
 import {
   BLOCKED_KINDS,
   emitProgramStatus,
@@ -13,6 +14,16 @@ import {
   type ProgramStatus,
   type StatusTerminator,
 } from "@/program-status";
+import { terminalSession } from "@/terminal-alert";
+import {
+  closeFrame,
+  createRun,
+  frameDetail,
+  makePhaseReporter,
+  openFrame,
+  ui,
+  writeOutput,
+} from "@/ui";
 
 const TOUR_ID = "manifold-status-demo";
 const ROOT = { app: "manifold" } as const;
@@ -304,7 +315,111 @@ const programStatusCommand = Command.make(
   ),
 );
 
+const uiCommand = Command.make(
+  "ui",
+  {
+    interval: Flag.Finite("interval").pipe(
+      Flag.withDefault(1),
+      Flag.withDescription("Seconds per sample state. Default: 1. No network or writes."),
+    ),
+    state: Flag.Literals("state", ["all", "running", "paused", "error", "nested"]).pipe(
+      Flag.withDefault("all"),
+      Flag.withDescription("Choose a sample state, or exercise the whole gallery."),
+    ),
+  },
+  ({ interval, state }) =>
+    Effect.gen(function* () {
+      if (interval <= 0 || interval > 3600) {
+        return yield* cliError("--interval must be greater than 0 and at most 3600.");
+      }
+      openFrame("manifold · output gallery");
+      frameDetail("Fixed sample data · no network, credentials, or registry writes");
+      const wait = () => sleepPromise(interval * 1000);
+      const run = createRun([
+        {
+          title: "Load registry rows",
+          task: async (_ctx, task) => {
+            makePhaseReporter(task).note("104 eligible; 104 to check");
+            await wait();
+          },
+        },
+        {
+          title: "Search MangaNato and verify titles/authors",
+          enabled: () => state !== "nested",
+          task: async (_ctx, task) => {
+            const reporter = makePhaseReporter(task);
+            reporter.item("35/104 Shoujotachi wa Kouya wo Mezasu: Yukidoke no Oto");
+            reporter.detail("/search/story/shoujotachi_wa_kouya_wo_mezasu?page=3");
+            reporter.progress(34, 104, [
+              ["matched", 28],
+              ["review", 6],
+            ]);
+            await wait();
+            // Stress the same three rows: none of these intermediate labels may enter scrollback.
+            for (let index = 0; index < 200; index++) {
+              reporter.detail(`Searching catalog · update ${index + 1}`);
+            }
+            reporter.item("40/104 Uchi no Maid ga Class no Suki na Ko ni Niteiru");
+            reporter.progress(39, 104, [
+              ["matched", 32],
+              ["review", 7],
+            ]);
+            if (state === "all" || state === "paused") {
+              terminalSession()?.blocked("auth", "Solve MangaNato challenge in Chrome");
+              reporter.detail(
+                "PAUSED · solve challenge in Chrome · Enter retries · Ctrl-C cancels",
+              );
+              await wait();
+              terminalSession()?.resume();
+            }
+            reporter.detail("Retrying the paused MangaNato request");
+            await wait();
+            if (state === "all" || state === "error") {
+              reporter.problem("Sample provider timeout. No real request was made.");
+              await wait();
+            }
+            reporter.note("SELECTION sample-entry → manganato:sample · author verified");
+            reporter.progress(40, 104, [
+              ["matched", 33],
+              ["review", 7],
+            ]);
+            await wait();
+          },
+        },
+        {
+          title: "Push to AniList (sample dry run)",
+          enabled: () => state === "all" || state === "nested",
+          task: (_ctx, task) =>
+            task.newListr([
+              {
+                title: "Fetch MangaDex read markers",
+                task: async (_subCtx, subTask) => {
+                  const reporter = makePhaseReporter(subTask);
+                  reporter.item(
+                    "3/7 Español 日本語 · A very long title that must stay on one terminal row",
+                  );
+                  reporter.detail("GET /manga/sample/read · retry 2/3");
+                  reporter.progress(2, 7);
+                  await wait();
+                },
+              },
+            ]),
+        },
+      ]);
+      yield* fromPromise(() => run.run());
+      writeOutput(
+        `${ui.warning("Sample warning with a retained diagnostic\nContinuation stays indented.")}\n`,
+        process.stderr,
+      );
+      closeFrame("Preview finished · no changes made");
+    }),
+).pipe(
+  Command.withDescription(
+    "Preview the real CLI printers, nested progress, challenge pause and retained reports offline.",
+  ),
+);
+
 export const debugCommand = Command.make("debug").pipe(
   Command.withDescription("Local diagnostic commands."),
-  Command.withSubcommands([programStatusCommand]),
+  Command.withSubcommands([uiCommand, programStatusCommand]),
 );

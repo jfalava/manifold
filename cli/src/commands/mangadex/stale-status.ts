@@ -335,7 +335,7 @@ export const staleStatusCommand = Command.make(
             task: async (ctx, task) => {
               ctx.statuses = await runHost(client.readingStatuses());
               makePhaseReporter(task).note(
-                `❖ ${Object.keys(ctx.statuses).length} library entries with a status.`,
+                `${Object.keys(ctx.statuses).length} library entries with a status.`,
               );
             },
             rendererOptions: { outputBar: Infinity },
@@ -473,7 +473,7 @@ export const staleStatusCommand = Command.make(
 
               ctx.staleIds = staleIds;
               reporter.note(
-                `❖ ${staleIds.length} stale of ${candidates.length} candidates ` +
+                `${staleIds.length} stale of ${candidates.length} candidates ` +
                   `(${requests} requests scanned${cached.usable ? `, cache from ${cached.savedAt}` : ""}).`,
               );
 
@@ -529,7 +529,7 @@ export const staleStatusCommand = Command.make(
               }
               ctx.staleIds = plan.staleIds;
               ctx.titles = plan.titles;
-              reporter.note(`❖ ${plan.staleIds.length} entries from plan saved ${plan.savedAt}.`);
+              reporter.note(`${plan.staleIds.length} entries from plan saved ${plan.savedAt}.`);
             },
             rendererOptions: { outputBar: Infinity, persistentOutput: true },
           };
@@ -587,7 +587,7 @@ export const staleStatusCommand = Command.make(
                     if (failures.length > DETAIL_LINE_CAP) {
                       reporter.problem(`…and ${failures.length - DETAIL_LINE_CAP} more failures`);
                     }
-                    reporter.note(`❖ ${done - failures.length}/${done} updated.`);
+                    reporter.note(`${done - failures.length}/${done} updated.`);
                     if (failures.length > 0) {
                       process.exitCode = 1;
                     }
@@ -599,13 +599,13 @@ export const staleStatusCommand = Command.make(
                   task: async (ctx, task) => {
                     const reporter = makePhaseReporter(task);
                     for (const mangaId of ctx.staleIds.slice(0, DETAIL_LINE_CAP)) {
-                      reporter.detail(`❖ ${ctx.titles[mangaId] ?? "(untitled)"} [${mangaId}]`);
+                      reporter.note(`${ctx.titles[mangaId] ?? "(untitled)"} [${mangaId}]`);
                     }
                     if (ctx.staleIds.length > DETAIL_LINE_CAP) {
-                      reporter.detail(`❖ …and ${ctx.staleIds.length - DETAIL_LINE_CAP} more`);
+                      reporter.note(`…and ${ctx.staleIds.length - DETAIL_LINE_CAP} more`);
                     }
                     reporter.note(
-                      `❖ Dry run: would set ${ctx.staleIds.length} entries to ${targetStatus}. Re-run with --apply.`,
+                      `Dry run: would set ${ctx.staleIds.length} entries to ${targetStatus}. Re-run with --apply.`,
                     );
                   },
                   rendererOptions: { outputBar: Infinity, persistentOutput: true },

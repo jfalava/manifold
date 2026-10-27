@@ -222,7 +222,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
                   if (entry.error) {
                     reporter.problem(`${entry.title} → mal:${entry.malId} [${fields}]`);
                   } else {
-                    reporter.detail(
+                    reporter.note(
                       `${entry.title} → mal:${entry.malId} (${entry.matchedTitle}) [${fields}]`,
                     );
                   }

@@ -201,7 +201,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
               const progress = (message: string): void => {
                 const detail = `${context}: ${message}`;
                 record({ event: "progress", message: detail });
-                reporter.detail(detail);
+                reporter.detail(message);
               };
               if (chromeUrl) {
                 progress("Connecting to Chrome");
@@ -273,6 +273,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
                 try {
                   const entryContext = `${index + 1}/${ctx.selected.length} ${row.title}`;
                   context = entryContext;
+                  reporter.item(context);
                   progress("Loading search titles");
                   const titles = await loadRegistrySearchTitles(row, {
                     anilistToken: anilist,
@@ -445,6 +446,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
                   .join(
                     "; ",
                   )}\nReport: ${reportPath}${apply && (failure || counts.errors + counts.conflicts > 0) ? "\nSuccessful links remain saved." : ""}`,
+                failure !== undefined || counts.errors + counts.conflicts > 0,
               );
             }
           }

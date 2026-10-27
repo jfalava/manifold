@@ -145,7 +145,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                 ? ""
                 : ` · ${statusMatched.length}/${withoutMangadex.length} match --status`;
             makePhaseReporter(task).note(
-              `❖ ${all.length} active rows (paged, limit=${PAGE_SIZE}) · ${withoutMangadex.length} without a mangadex link${statusNote} → ${ctx.unmatched.length} to resolve` +
+              `${all.length} active rows (paged, limit=${PAGE_SIZE}) · ${withoutMangadex.length} without a mangadex link${statusNote} → ${ctx.unmatched.length} to resolve` +
                 (limitValue !== undefined ? ` (showing first ${ctx.unmatched.length})` : ""),
             );
           },
@@ -182,11 +182,11 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
             }
 
             for (const row of ctx.unmatched) {
-              task.title = `${baseTitle} — ${formatTitle(row.title)}`;
+              reporter.item(formatTitle(row.title));
               const resolved = providerIdFor(row);
               if (!resolved) {
                 ctx.skipped += 1;
-                task.title = `${baseTitle} — ${formatTitle(row.title, " — skipped")}`;
+                reporter.item(formatTitle(row.title, " — skipped"));
                 reporter.progress(done(), total, counts());
                 continue;
               }
@@ -221,7 +221,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                 );
               } catch {
                 ctx.errors += 1;
-                task.title = `${baseTitle} — ${formatTitle(row.title, " — error")}`;
+                reporter.item(formatTitle(row.title, " — error"));
                 reporter.progress(done(), total, counts());
                 await sleep(delayMs);
                 continue;
@@ -240,20 +240,22 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                 }
                 const method = result.method ? ` ${result.method}` : "";
                 const score = result.score !== undefined ? ` ${result.score.toFixed(3)}` : "";
-                task.title = `${baseTitle} — ${formatTitle(row.title, ` → ${result.externalId.slice(0, 8)}…${method}${score}`)}`;
+                reporter.item(
+                  formatTitle(row.title, ` → ${result.externalId.slice(0, 8)}…${method}${score}`),
+                );
               } else if (result.status === "ambiguous") {
                 ctx.ambiguous += 1;
-                task.title = `${baseTitle} — ${formatTitle(row.title, " — ambiguous")}`;
+                reporter.item(formatTitle(row.title, " — ambiguous"));
               } else {
                 ctx.notFound += 1;
-                task.title = `${baseTitle} — ${formatTitle(row.title, " — not_found")}`;
+                reporter.item(formatTitle(row.title, " — not_found"));
               }
               reporter.progress(done(), total, counts());
               await sleep(delayMs);
             }
-            task.title = baseTitle;
+            reporter.item("");
             reporter.note(
-              `❖ ${apply ? "Applied" : "Dry run"}: ${ctx.linked} linked · ${ctx.ambiguous} ambiguous · ${ctx.notFound} not_found · ${ctx.skipped} skipped · ${ctx.errors} errors. ${apply ? "" : "Re-run with --apply to write."}`,
+              `${apply ? "Applied" : "Dry run"}: ${ctx.linked} linked · ${ctx.ambiguous} ambiguous · ${ctx.notFound} not_found · ${ctx.skipped} skipped · ${ctx.errors} errors. ${apply ? "" : "Re-run with --apply to write."}`,
             );
           },
           rendererOptions: { outputBar: 1, persistentOutput: true },
@@ -281,6 +283,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
             apply
               ? `MangaDex prefill applied — ${summary}`
               : `MangaDex prefill dry run — ${summary}`,
+            ctx.errors > 0,
           );
         } catch (error) {
           abortFrame();

@@ -3,13 +3,12 @@ import { Effect } from "effect";
 import { Command, Flag } from "effect/cli";
 import { errorMessage } from "@manifold/json";
 import { AuthConnection } from "@manifold/contract";
-import cliProgress from "cli-progress";
 
 import { apiCall, apiConfig } from "@/commands/toolbox";
 import { loadMalSession, saveMalSession } from "@/login/mal-session";
 import { resolveValue } from "@/env-resolve";
 import { createMalClient, wipeMalManga } from "@/mal";
-import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
+import { abortFrame, closeFrame, createProgress, frameDetail, openFrame } from "@/ui";
 import { cliError, envString } from "@/effect-kit";
 
 export const wipeMalMangaCommand = Command.make("manga", {
@@ -86,16 +85,7 @@ export const wipeMalMangaCommand = Command.make("manga", {
           clientSecret: envString("MANIFOLD_MAL_CLIENT_SECRET"),
           saveSession: saveMalSession,
         });
-        const progress = new cliProgress.SingleBar({
-          stream: process.stdout,
-          format:
-            "│  {bar} {percentage}% · {value}/{total} manga · elapsed {duration_formatted} · ETA {eta_formatted}",
-          barsize: 24,
-          barCompleteChar: "█",
-          barIncompleteChar: "░",
-          hideCursor: true,
-        });
-        let progressStarted = false;
+        const progress = createProgress("Delete MAL manga");
         const result = await wipeMalManga({
           client,
           apply,
@@ -103,14 +93,9 @@ export const wipeMalMangaCommand = Command.make("manga", {
             frameDetail(`Signed in as ${account}. Scanned ${entries.length} manga entries.`);
           },
           progress: (deleted, total) => {
-            if (!progressStarted) {
-              progress.start(total, deleted);
-              progressStarted = true;
-            } else {
-              progress.update(deleted);
-            }
+            progress.update(deleted, total, "Deleting manga entries");
           },
-        }).finally(() => progress.stop());
+        }).finally(progress.finish);
         const account = `${result.account} (${result.accountId})`;
         if (!apply) {
           closeFrame(

@@ -36,6 +36,7 @@ import {
 import { withProgramStatus } from "@/program-status";
 import { openRegistryReport } from "@/registry-report";
 import { matchesStatusFilter, parseStatusFilter, STATUS_FILTER_HINT } from "@/registry-status";
+import { terminalSession } from "@/terminal-alert";
 import {
   closeFrame,
   createRun,
@@ -187,17 +188,15 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                 let context = "MangaNato catalog";
                 const progress = (message: string): void => {
                   record({ event: "progress", message: `${context}: ${message}` });
-                  reporter.detail(`${context}: ${message}`);
+                  reporter.detail(message);
                 };
                 const onBlocked = async (error: ManganatoBlockedError): Promise<void> => {
                   progress(error.message);
                   if (!process.stdin.isTTY) {
                     throw error;
                   }
-                  programStatus.phase("Waiting for MangaNato in Chrome");
-                  progress(
-                    "PAUSED: inspect MangaNato in regular Chrome and resolve any challenge, then press Enter here to retry the same request. Ctrl-C stops the run.",
-                  );
+                  terminalSession()?.blocked("auth", "Solve MangaNato challenge in Chrome");
+                  progress("PAUSED · solve challenge in Chrome · Enter retries · Ctrl-C cancels");
                   // Listr owns output. Read input without a second terminal renderer or prompt.
                   const reader = createInterface({
                     input: process.stdin,
@@ -222,6 +221,7 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                   } finally {
                     reader.close();
                     process.stdin.pause();
+                    terminalSession()?.resume();
                   }
                 };
                 programStatus.phase("Connecting to Chrome");
@@ -279,6 +279,7 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                 programStatus.progress(0, ctx.selected.length);
                 for (const [index, row] of ctx.selected.entries()) {
                   context = `${index + 1}/${ctx.selected.length} ${row.title}`;
+                  reporter.item(context);
                   let outcome: keyof typeof counts = "unmatched";
                   let note = "No exact title/alias candidates";
                   let selected: ManganatoSelection | undefined;
@@ -823,6 +824,7 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                     .join(
                       "; ",
                     )}\nReport: ${reportPath}${apply && (failure || counts.errors + counts.conflicts) ? "\nSuccessful links remain saved." : ""}`,
+                  failure !== undefined || counts.errors + counts.conflicts + counts.challenged > 0,
                 );
               }
             }

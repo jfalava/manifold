@@ -74,10 +74,10 @@ describe("registry mal CLI", () => {
     expect(result.stdout).not.toContain("WRITE");
     expect(result.stdout.match(/LOOKUP \d+/g)).toEqual(["LOOKUP 42", "LOOKUP 43"]);
     expect(Number(result.stdout.match(/LOOKUP_GAP (\d+)/)?.[1])).toBeGreaterThanOrEqual(2_400);
-    expect(result.stdout).toContain("Load registry rows");
-    expect(result.stdout).toContain("Check MAL links");
-    expect(result.stdout).toContain("eta=");
-    expect(result.stdout).toContain("│");
+    expect(result.stderr).toContain("Load registry rows");
+    expect(result.stderr).toContain("Check MAL links");
+    expect(result.stdout + result.stderr).not.toContain("eta=");
+    expect(result.stdout).not.toContain("│");
   });
 
   it("does not expose a configurable AniList lookup delay", () => {

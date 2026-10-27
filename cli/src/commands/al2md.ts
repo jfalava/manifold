@@ -147,7 +147,7 @@ export const al2mdCommand = Command.make(
                     entry.progress !== undefined && entry.chaptersToMark > 0
                       ? `, ${entry.chaptersToMark} chapters`
                       : "";
-                  makePhaseReporter(task).detail(
+                  makePhaseReporter(task).note(
                     `${entry.title} → ${target} [${status}]` +
                       (entry.progress !== undefined
                         ? ` progress=${entry.progress}${progress}`

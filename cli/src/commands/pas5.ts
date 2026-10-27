@@ -496,12 +496,13 @@ export const pas5FilterCommand = Command.make("filter", {
         const original = await parsePas5(readFileSync(input));
         const filtered = filterPas5Providers(original, excluded);
         const count = Object.keys(filtered.__LIBRARY_MANGA_V5).length;
-        console.info(
+        openFrame("pas5 filter");
+        frameDetail(
           `Libraries retained: ${count}; omitted without remaining attachments: ${Object.keys(original.__LIBRARY_MANGA_V5).length - count}`,
         );
-        console.info(`Excluded providers: ${[...excluded].join(", ")}`);
+        frameDetail(`Excluded providers: ${[...excluded].join(", ")}`);
         if (!apply) {
-          console.info(`Dry-run complete. Re-run with --apply to write ${out}`);
+          closeFrame(`Dry-run complete. Re-run with --apply to write ${out}`);
           return;
         }
         const files = Object.fromEntries(
@@ -509,8 +510,8 @@ export const pas5FilterCommand = Command.make("filter", {
         );
         mkdirSync(dirname(out), { recursive: true });
         writeFileSync(out, buildPas5Zip(files));
-        console.info(`Wrote ${out}`);
-        console.info(
+        closeFrame(`Wrote ${out}`);
+        frameDetail(
           "After restoring, run Paperback database repair and verify a title stays categorized after reopening.",
         );
       },

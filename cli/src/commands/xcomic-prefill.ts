@@ -27,7 +27,7 @@ import {
   XCOMIC_ORIGIN,
   type XComicCandidate,
 } from "@/xcomic";
-import { closeFrame, frameDetail, openFrame } from "@/ui";
+import { closeFrame, createProgress, frameDetail, openFrame } from "@/ui";
 
 export const xcomicPrefillCommand = Command.make("xcomic", {
   apply: Flag.Boolean("apply").pipe(Flag.withDefault(false)),
@@ -98,7 +98,7 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
             delay,
             maxPages,
             origin,
-            onProgress: (message) => frameDetail(message),
+            onProgress: (message) => progress.detail(message),
           });
           const path = resolve(
             Option.getOrUndefined(report) ??
@@ -123,6 +123,7 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
           let failure: string | undefined;
           openFrame(`XComic registry prefill → ${apply ? "apply" : "dry run"}`);
           frameDetail(`Report: ${path}`);
+          const progress = createProgress("Search XComic and verify titles/coverage");
           try {
             record({
               event: "run",
@@ -149,7 +150,8 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
                   .map((link) => [link.externalId, row.id] as const),
               ),
             );
-            for (const row of selectedRows) {
+            for (const [index, row] of selectedRows.entries()) {
+              progress.item(`${index + 1}/${selectedRows.length} ${row.title}`);
               const currentId = row.providers.find(
                 (link) => link.provider === "xcomic",
               )?.externalId;
@@ -217,6 +219,7 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
                 note,
               });
               frameDetail(note);
+              progress.update(index + 1, selectedRows.length, "Checked");
               if (failure) {
                 throw cliError(failure);
               }
@@ -225,6 +228,7 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
             failure = errorMessage(error);
             throw error;
           } finally {
+            progress.finish();
             try {
               record({
                 event: "summary",
@@ -236,6 +240,7 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
               closeSync(file);
               closeFrame(
                 `${failure ? "Stopped" : counts.errors || counts.conflicts ? "Completed with errors" : apply ? "Applied" : "Dry run complete"}: ${jsonBodyString(counts)}. Report: ${path}`,
+                failure !== undefined || counts.errors + counts.conflicts + counts.blocked > 0,
               );
             }
           }

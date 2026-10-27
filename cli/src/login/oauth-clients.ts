@@ -177,7 +177,7 @@ const resolveOAuthClientEffect = (
   Effect.gen(function* () {
     const names = envNames(input.kind);
     const store = input.store ?? defaultStore();
-    const isTty = input.isTty ?? Boolean(process.stdin.isTTY && process.stdout.isTTY);
+    const isTty = input.isTty ?? Boolean(process.stdin.isTTY && process.stderr.isTTY);
     const promptWithDefault = input.promptWithDefault ?? promptInFrameWithDefault;
     const promptSecret = input.promptSecret ?? promptSecretInFrame;
     const wizard = input.wizard === true;
@@ -294,7 +294,7 @@ export const resolvePasteOnlyWizard = async (
   if (!wizard) {
     return current;
   }
-  const isTty = options?.isTty ?? Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  const isTty = options?.isTty ?? Boolean(process.stdin.isTTY && process.stderr.isTTY);
   if (!isTty) {
     return current;
   }

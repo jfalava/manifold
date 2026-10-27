@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 
 import { cliError, fromPromise, type CliEffectError } from "@/effect-kit";
-import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
+import { abortFrame, closeFrame, openFrame, withActivity } from "@/ui";
 import { installRelease } from "@/upgrade/install";
 import { assetNameFor, executableNameFor, executablePath } from "@/upgrade/platform";
 import { latestCliRelease } from "@/upgrade/release";
@@ -28,15 +28,20 @@ export const upgradeEffect = (currentVersion: string): Effect.Effect<void, CliEf
       try: () => executableNameFor(),
       catch: (cause) => cliError(cause instanceof Error ? cause.message : String(cause)),
     });
-    const release = yield* fromPromise(() => latestCliRelease(assetName, executableName));
+    const release = yield* withActivity(
+      "Checking for a CLI release",
+      fromPromise(() => latestCliRelease(assetName, executableName)),
+    );
 
     if (!isNewerVersion(release.version, currentVersion)) {
       closeFrame(`manifold ${currentVersion} is already up to date.`);
       return;
     }
 
-    frameDetail(`Updating manifold ${currentVersion} → ${release.version}…`);
-    yield* fromPromise(() => installRelease(release, targetPath));
+    yield* withActivity(
+      `Updating manifold ${currentVersion} → ${release.version}`,
+      fromPromise(() => installRelease(release, targetPath)),
+    );
     const suffix = process.platform === "win32" ? " and will be active on the next run" : "";
     closeFrame(`Installed manifold ${release.version}${suffix}.`);
   }).pipe(Effect.onError(() => Effect.sync(abortFrame)));

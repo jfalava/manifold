@@ -43,13 +43,16 @@
     "@manifold/json": "workspace:*",
     "@manifold/mangadex": "workspace:*",
     "cli-progress": "3.12.0",
+    "cli-truncate": "6.1.1",
     "effect": "catalog:effect",
     "listr2": "11.4.0",
-    "picocolors": "1.1.1"
+    "picocolors": "1.1.1",
+    "string-width": "8.3.0"
   },
   "devDependencies": {
     "@types/cli-progress": "3.11.6",
     "@types/node": "catalog:types",
+    "@xterm/headless": "6.0.0",
     "bun-types": "catalog:types",
     "oxfmt": "catalog:build",
     "oxlint": "catalog:build",

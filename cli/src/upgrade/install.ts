@@ -7,6 +7,7 @@
 import { spawn } from "node:child_process";
 import { chmod, rename, writeFile } from "node:fs/promises";
 
+import { ui, writeOutput } from "@/ui";
 import { extractZipBinary } from "@/upgrade/archive";
 import type { CliRelease } from "@/upgrade/release";
 
@@ -163,13 +164,19 @@ export const installRelease = async (release: CliRelease, targetPath: string): P
       });
       await proc.exited;
       if (proc.exitCode !== 0) {
-        console.warn(
-          `Warning: codesign failed for ${targetPath} (exit ${proc.exitCode}). The binary may be killed on keychain access (exit 137). Run 'codesign --force --sign - ${targetPath}' manually.`,
+        writeOutput(
+          `${ui.warning(
+            `codesign failed for ${targetPath} (exit ${proc.exitCode}). The binary may be killed on keychain access (exit 137). Run 'codesign --force --sign - ${targetPath}' manually.`,
+          )}\n`,
+          process.stderr,
         );
       }
     } catch (cause) {
-      console.warn(
-        `Warning: Could not codesign ${targetPath}: ${errorMessage(cause)}. The binary may be killed on keychain access.`,
+      writeOutput(
+        `${ui.warning(
+          `Could not codesign ${targetPath}: ${errorMessage(cause)}. The binary may be killed on keychain access.`,
+        )}\n`,
+        process.stderr,
       );
     }
   }

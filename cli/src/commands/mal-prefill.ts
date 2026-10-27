@@ -92,7 +92,7 @@ export const malPrefillCommand = Command.make("mal", {
             ctx.rows = rows;
             ctx.selected = selected;
             makePhaseReporter(task).note(
-              `❖ ${rows.length} active; ${rows.length - missing.length} MAL-linked; ${missing.length} missing; ${missing.length - eligible.length} without AniList; ${selected.length} to check` +
+              `${rows.length} active; ${rows.length - missing.length} MAL-linked; ${missing.length} missing; ${missing.length - eligible.length} without AniList; ${selected.length} to check` +
                 (maximum !== undefined ? ` (showing first ${selected.length})` : ""),
             );
           },
@@ -136,7 +136,7 @@ export const malPrefillCommand = Command.make("mal", {
               if (index > 0) {
                 await sleepPromise(ANILIST_LOOKUP_INTERVAL_MS);
               }
-              task.title = `${baseTitle} — ${formatTitle(row.title)}`;
+              reporter.item(formatTitle(row.title));
               const anilistId = row.providers.find(
                 (link) => link.provider === "anilist",
               )?.externalId;
@@ -149,7 +149,7 @@ export const malPrefillCommand = Command.make("mal", {
                 if (!malId) {
                   ctx.unmatched += 1;
                   ctx.details.push(`UNMAPPED ${row.id} anilist:${anilistId}`);
-                  task.title = `${baseTitle} — ${formatTitle(row.title, " — unmapped")}`;
+                  reporter.item(formatTitle(row.title, " — unmapped"));
                   reporter.progress(done(), total, counts());
                   continue;
                 }
@@ -180,18 +180,18 @@ export const malPrefillCommand = Command.make("mal", {
                 ctx.details.push(
                   `${apply ? "LINKED" : "WOULD LINK"} ${row.id} anilist:${anilistId} → mal:${malId}`,
                 );
-                task.title = `${baseTitle} — ${formatTitle(row.title, ` → mal:${malId}`)}`;
+                reporter.item(formatTitle(row.title, ` → mal:${malId}`));
               } catch (error) {
                 ctx.errors += 1;
                 ctx.details.push(`ERROR ${row.id}: ${errorMessage(error)}`);
-                task.title = `${baseTitle} — ${formatTitle(row.title, " — error")}`;
+                reporter.item(formatTitle(row.title, " — error"));
               }
               reporter.progress(done(), total, counts());
             }
-            task.title = baseTitle;
+            reporter.item("");
             reporter.note(
               [
-                `❖ ${apply ? "Applied" : "Dry run"}: ${ctx.linked} ${apply ? "linked" : "verified"} · ${ctx.unmatched} unmapped · ${ctx.errors} errors.`,
+                `${apply ? "Applied" : "Dry run"}: ${ctx.linked} ${apply ? "linked" : "verified"} · ${ctx.unmatched} unmapped · ${ctx.errors} errors.`,
                 ...(ctx.details.length > 0 ? ctx.details : []),
                 ...(apply ? [] : ["Re-run with --apply to write."]),
               ].join("\n"),
@@ -213,6 +213,7 @@ export const malPrefillCommand = Command.make("mal", {
           await run.run(ctx);
           closeFrame(
             `${ctx.linked} ${apply ? "linked" : "verified"}; ${ctx.unmatched} unmapped; ${ctx.errors} errors`,
+            ctx.errors > 0,
           );
           if (ctx.errors > 0) {
             throw cliError(`${ctx.errors} MAL link checks failed; inspect the report and rerun`);

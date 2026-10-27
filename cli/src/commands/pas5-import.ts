@@ -343,7 +343,10 @@ export const pas5ImportCommand = Command.make("import-pas5", {
           record({ event: "summary", counts, linksWritten: written.size });
         } finally {
           closeSync(file);
-          closeFrame(`${jsonBodyString(counts)}; ${written.size} links written. Report: ${path}`);
+          closeFrame(
+            `${jsonBodyString(counts)}; ${written.size} links written. Report: ${path}`,
+            counts.error + counts.conflict > 0,
+          );
         }
         if (counts.error || counts.conflict) {
           throw cliError(

@@ -33,7 +33,15 @@ import {
   type ManifoldSession,
 } from "@/login/manifold";
 import { resolveValue } from "@/env-resolve";
-import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
+import {
+  abortFrame,
+  closeFrame,
+  createProgress,
+  frameDetail,
+  openFrame,
+  ui,
+  writeOutput,
+} from "@/ui";
 import {
   cliError,
   decodeJsonOption,
@@ -309,20 +317,16 @@ const drainApiClient = (config: ApiConfig): DrainApiClient => ({
           undefined,
           OpsListResponse,
         );
-        return body.ops.map(
-          (op): PendingAniListOp => ({
-            opId: op.opId,
-            kind: op.kind,
-            payload: op.payload,
-            attempts: op.attempts,
-          }),
-        );
+        return body.ops.map((op): PendingAniListOp => ({
+          opId: op.opId,
+          kind: op.kind,
+          payload: op.payload,
+          attempts: op.attempts,
+        }));
       }),
     ),
   completeOps: (results) =>
-    runHost(
-      apiCallEffect(config, "/v1/ops/complete", "POST", { results }, UpdatedCountResponse),
-    ),
+    runHost(apiCallEffect(config, "/v1/ops/complete", "POST", { results }, UpdatedCountResponse)),
 });
 
 const DEFAULT_DRAIN_INTERVAL_SEC = 30;
@@ -450,43 +454,57 @@ export const opsCommand = Command.make("ops").pipe(
 
           const api = drainApiClient(config);
           let passes = 0;
+          const progress = createProgress("Drain AniList operations", undefined, {
+            announceNonTTY: false,
+          });
 
-          const onePass = (): Effect.Effect<void, CliEffectError> =>
-            Effect.gen(function* () {
-              const summary = yield* drainAniListOpsPassEffect(api, token, { limit });
-              passes += 1;
-              if (summary.fetched === 0) {
-                frameDetail(`pass ${passes}: idle (no pending anilist ops)`);
-              } else {
-                frameDetail(
-                  `pass ${passes}: fetched=${summary.fetched} ok=${summary.ok} failed=${summary.failed} reported=${summary.reported}`,
-                );
-              }
-            });
+          return yield* Effect.gen(function* () {
+            const onePass = (): Effect.Effect<void, CliEffectError> =>
+              Effect.gen(function* () {
+                progress.detail("Fetching pending AniList operations");
+                const summary = yield* drainAniListOpsPassEffect(api, token, { limit });
+                passes += 1;
+                if (summary.fetched === 0) {
+                  const idle = `pass ${passes}: idle (no pending anilist ops)`;
+                  if (once) {
+                    frameDetail(idle);
+                  }
+                  progress.detail(`${idle} · next check in ${interval}s`);
+                } else {
+                  frameDetail(
+                    `pass ${passes}: fetched=${summary.fetched} ok=${summary.ok} failed=${summary.failed} reported=${summary.reported}`,
+                  );
+                }
+              });
 
-          if (once) {
-            yield* onePass();
-            closeFrame(`drain-anilist once complete (${passes} pass)`);
-            return;
-          }
+            if (once) {
+              yield* onePass();
+              closeFrame(`drain-anilist once complete (${passes} pass)`);
+              return;
+            }
 
-          frameDetail(
-            `looping every ${interval}s (Ctrl+C to stop). AniList stays on this host's egress IP.`,
-          );
-          // Long-running unit: never close the frame; journald captures stdout.
-          for (;;) {
-            const passResult = yield* onePass().pipe(
-              Effect.map(() => ({ ok: true as const })),
-              Effect.catch((cause) =>
-                Effect.sync(() => {
-                  frameDetail(`pass error: ${errorMessage(cause)}`);
-                  return { ok: false as const };
-                }),
-              ),
+            frameDetail(
+              `looping every ${interval}s (Ctrl+C to stop). AniList stays on this host's egress IP.`,
             );
-            void passResult;
-            yield* sleep(interval * 1000);
-          }
+            // Long-running unit: never close the frame; journald captures stdout.
+            for (;;) {
+              const passResult = yield* onePass().pipe(
+                Effect.map(() => ({ ok: true as const })),
+                Effect.catch((cause) =>
+                  Effect.sync(() => {
+                    writeOutput(
+                      `${ui.error(`pass error: ${errorMessage(cause)}`)}\n`,
+                      process.stderr,
+                    );
+                    progress.detail(`Retrying in ${interval}s`);
+                    return { ok: false as const };
+                  }),
+                ),
+              );
+              void passResult;
+              yield* sleep(interval * 1000);
+            }
+          }).pipe(Effect.ensuring(Effect.sync(progress.finish)));
         }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
       ),
     ),

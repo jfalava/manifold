@@ -5,6 +5,7 @@ import { errorMessage } from "@manifold/json";
 import { Cause, Effect, Exit, Schema } from "effect";
 
 import { cliError, envString } from "@/effect-kit";
+import { terminalSession } from "@/terminal-alert";
 
 export const PROGRAM_STATES = ["idle", "working", "blocked", "done", "error", "clear"] as const;
 export const BLOCKED_KINDS = ["permission", "question", "auth"] as const;
@@ -104,6 +105,11 @@ export interface ProgramStatusReporter {
 export const withProgramStatus = Effect.fnUntraced(function* <A, E, R>(
   run: (status: ProgramStatusReporter) => Effect.Effect<A, E, R>,
 ) {
+  // The executable owns one session for every command; embedders retain the legacy boundary.
+  const session = terminalSession();
+  if (session !== undefined) {
+    return yield* run(session);
+  }
   const services = yield* Effect.context<R>();
   let enabled =
     Boolean(process.stdout.isTTY) &&

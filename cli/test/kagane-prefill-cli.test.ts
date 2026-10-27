@@ -400,9 +400,10 @@ describe("registry kagane", () => {
     );
     expect(progress).toBeGreaterThan(0);
     expect(progress).toBeLessThan(complete.report.findIndex((entry) => entry.entryId === "target"));
-    expect(complete.stdout).toContain(
+    expect(complete.report[progress].message).toContain(
       '1/2 A Story [all non-MangaDex sources]: Search "A Story" page 21/21',
     );
+    expect(complete.stdout + complete.stderr).not.toContain('Search "A Story" page 21/21');
     for (const scenario of ["long-search", "stuck-search"]) {
       const incomplete = run(["--apply", "--max-pages", "20"], scenario);
       expect(incomplete.status).toBe(1);

@@ -19,6 +19,7 @@ const run = (scenario = "matched", flags: string[] = [], terminal = "tty") => {
       for (const key of Object.keys(process.env)) if (key.startsWith('MANIFOLD_')) delete process.env[key];
       process.env.TERM = ${JSON.stringify(terminal === "dumb" ? "dumb" : "xterm-256color")};
       Object.defineProperty(process.stdout, 'isTTY', {value:${terminal !== "pipe"}});
+      Object.defineProperty(process.stderr, 'isTTY', {value:${terminal !== "pipe"}});
       if (${terminal === "off"}) process.env.MANIFOLD_PROGRAM_STATUS = '0';
       const scenario = ${JSON.stringify(scenario)};
       const title = id => ['Quasar Aurora','Nebula Comet','Starlight Cosmos'][id-1];
@@ -66,8 +67,8 @@ const run = (scenario = "matched", flags: string[] = [], terminal = "tty") => {
         .trim()
         .split("\n")
         .map((line) => JSON.parse(line)),
-      titles: [...result.stdout.matchAll(/\x1b\]2;([^\x1b]*)\x1b\\/gu)].map((match) => match[1]),
-      reports: [...result.stdout.matchAll(/\x1b\]7501;([^\x1b]*)\x1b\\/gu)].map((match) =>
+      titles: [...result.stderr.matchAll(/\x1b\]2;([^\x1b]*)\x1b\\/gu)].map((match) => match[1]),
+      reports: [...result.stderr.matchAll(/\x1b\]7501;([^\x1b]*)\x1b\\/gu)].map((match) =>
         Object.fromEntries(
           match[1]!.split(":").map((field) => {
             const separator = field.indexOf("=");
@@ -115,6 +116,7 @@ describe("registry manganato program status", () => {
       result.journal.filter((line) => line.event === "entry").map((line) => line.outcome),
     ).toEqual(["matched", "matched", "matched"]);
     expect(result.stdout.match(/WRITE /g) ?? []).toHaveLength(apply ? 3 : 0);
+    expect(result.stdout).not.toContain("\x1b]7501;");
     if (apply) expect(result.stdout).toContain('"onConflict":"reject"');
   });
 
@@ -152,6 +154,8 @@ describe("registry manganato program status", () => {
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).not.toContain("\x1b]7501;");
     expect(result.stdout).not.toContain("\x1b]2;");
+    expect(result.stderr).not.toContain("\x1b]7501;");
+    expect(result.stderr).not.toContain("\x1b]2;");
     expect(result.journal.find((line) => line.event === "entry")?.outcome).toBe("matched");
   });
 });

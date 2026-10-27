@@ -11,13 +11,14 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics newPromise:off */
 /** @effect-diagnostics globalTimers:off */
-import { stdin, stdout } from "node:process";
+import { stdin, stderr } from "node:process";
 import { createInterface } from "node:readline/promises";
 
 import { errorMessage } from "@manifold/json";
 
 import { cliError, envString } from "@/effect-kit";
-import { frameDetail, frameUrl, muted } from "@/ui";
+import { frameDetail, frameUrl } from "@/ui";
+import { terminalSession } from "@/terminal-alert";
 
 const asError = (cause: unknown): Error =>
   cause instanceof Error ? cause : cliError(errorMessage(cause));
@@ -91,7 +92,7 @@ export const resolveOAuthAuthorizationCode = (
 
 /** OSC 52 clipboard write (works over SSH when the client allows it). */
 const writeOsc52Clipboard = (text: string): boolean => {
-  if (!stdout.isTTY) {
+  if (!stderr.isTTY) {
     return false;
   }
   try {
@@ -101,7 +102,7 @@ const writeOsc52Clipboard = (text: string): boolean => {
     if (envString("TMUX") !== undefined) {
       sequence = `\u001bPtmux;\u001b${sequence.replaceAll("\u001b", "\u001b\u001b")}\u001b\\`;
     }
-    stdout.write(sequence);
+    stderr.write(sequence);
     return true;
   } catch {
     return false;
@@ -161,8 +162,8 @@ const readPasteLine = async (signal: AbortSignal): Promise<string> => {
   if (signal.aborted) {
     throw cliError("Login cancelled.");
   }
-  stdout.write(`${muted("│")}\n${muted("│")}  Paste authorization code or callback URL: `);
-  const reader = createInterface({ input: stdin, output: stdout });
+  stderr.write("  󰌗 Paste authorization code or callback URL: ");
+  const reader = createInterface({ input: stdin, output: stderr });
   const onAbort = (): void => {
     reader.close();
   };
@@ -220,10 +221,7 @@ export const isBulkPasteChunk = (text: string): boolean => {
  * Multi-byte pastes must not be interpreted key-by-key (every `c` in an OAuth
  * code used to fire the copy bind).
  */
-const waitForPasteOrKey = async (
-  authorizeUrl: string,
-  signal: AbortSignal,
-): Promise<string> => {
+const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Promise<string> => {
   const rawStdin = asRawStdin(stdin);
   if (!rawStdin) {
     return readPasteLine(signal);
@@ -245,7 +243,7 @@ const waitForPasteOrKey = async (
       rawStdin.removeListener("data", onData);
       signal.removeEventListener("abort", onAbort);
       try {
-        stdout.write(BRACKETED_PASTE_DISABLE);
+        stderr.write(BRACKETED_PASTE_DISABLE);
       } catch {
         // ignore
       }
@@ -326,6 +324,7 @@ const waitForPasteOrKey = async (
         buffer = buffer.slice(1);
 
         if (ch === "\u0003") {
+          terminalSession()?.cancel();
           fail(cliError("Login cancelled."));
           return;
         }
@@ -360,7 +359,7 @@ const waitForPasteOrKey = async (
     rawStdin.setRawMode(true);
     rawStdin.resume();
     try {
-      stdout.write(BRACKETED_PASTE_ENABLE);
+      stderr.write(BRACKETED_PASTE_ENABLE);
     } catch {
       // ignore
     }
@@ -381,11 +380,7 @@ export const awaitOAuthAuthorizationCode = async (
 ): Promise<string> => {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const redirect = new URL(options.redirectUri);
-  const port = redirect.port
-    ? Number(redirect.port)
-    : redirect.protocol === "https:"
-      ? 443
-      : 80;
+  const port = redirect.port ? Number(redirect.port) : redirect.protocol === "https:" ? 443 : 80;
   const hostname = redirect.hostname || "127.0.0.1";
   const pathname = redirect.pathname || "/callback";
 
@@ -432,10 +427,9 @@ export const awaitOAuthAuthorizationCode = async (
               options.providerLabel,
             );
             settleResolve(code);
-            return new Response(
-              "Authorization received. Return to the CLI to check the result.",
-              { headers },
-            );
+            return new Response("Authorization received. Return to the CLI to check the result.", {
+              headers,
+            });
           } catch (cause) {
             const failure = asError(cause);
             if (failure.message.includes("denied")) {
@@ -480,9 +474,7 @@ export const awaitOAuthAuthorizationCode = async (
 
   const minutes = Math.round(timeoutMs / 60_000);
   const timeoutId = setTimeout(() => {
-    settleReject(
-      cliError(`${options.providerLabel} login timed out after ${minutes} minutes.`),
-    );
+    settleReject(cliError(`${options.providerLabel} login timed out after ${minutes} minutes.`));
   }, timeoutMs);
   // Do not keep the process alive solely for the timer once login finishes.
   timeoutId.unref?.();
@@ -504,9 +496,11 @@ export const awaitOAuthAuthorizationCode = async (
       });
   }
 
+  terminalSession()?.blocked("auth", `Authorize ${options.providerLabel} in your browser`);
   try {
     return await codeGate.promise;
   } finally {
+    terminalSession()?.resume();
     // Always cancel the timer first — awaiting a live 5‑minute sleep hung paste login.
     clearTimeout(timeoutId);
     if (!signal.aborted) {
