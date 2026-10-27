@@ -1,26 +1,16 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics nodeBuiltinImport:off */
-import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
 import { RegistryEntry } from "@manifold/contract";
-import { errorMessage, type JsonValue } from "@manifold/json";
+import { errorMessage } from "@manifold/json";
 import { apiCall, apiConfig, listRegistryRows, type RegistryRow } from "@/commands/toolbox";
 import { loadRegistrySearchTitles, searchTitlesFor } from "@/registry-titles";
 import { coverageDifference } from "@/chapter-coverage";
 import { classifyPage, openBunBrowserView, type BrowserView } from "@/browser-view";
 import { resolveValue } from "@/env-resolve";
-import {
-  cliError,
-  epochMillisNow,
-  jsonBodyString,
-  newId,
-  sleepPromise,
-  validateNonNegativeLimit,
-} from "@/effect-kit";
+import { cliError, sleepPromise, validateNonNegativeLimit } from "@/effect-kit";
 import {
   createKaganeClient,
   hasExactKaganeTitle,
@@ -34,6 +24,7 @@ import {
   type KaganeCandidate,
 } from "@/kagane";
 import { resolveAniListToken } from "@/login/anilist";
+import { openRegistryReport } from "@/registry-report";
 import { matchesStatusFilter, parseStatusFilter, STATUS_FILTER_HINT } from "@/registry-status";
 import {
   closeFrame,
@@ -84,6 +75,10 @@ export const kaganePrefillCommand = Command.make("kagane", {
     Flag.optional,
     Flag.withDescription("New JSONL report path; default ~/.manifold/reports/kagane-<run>.jsonl."),
   ),
+  resume: Flag.String("resume").pipe(
+    Flag.optional,
+    Flag.withDescription("Resume a previous JSONL report; retry errors and challenges."),
+  ),
   chromeCdpUrl: Flag.String("chrome-cdp-url").pipe(
     Flag.optional,
     Flag.withDescription(
@@ -108,6 +103,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
       maxPages,
       sourcePriority,
       report,
+      resume,
       chromeCdpUrl,
       apiOrigin,
       apiToken,
@@ -157,21 +153,22 @@ export const kaganePrefillCommand = Command.make("kagane", {
             challenged: 0,
           };
           let view: BrowserView | undefined;
-          const reportPath = resolve(
-            Option.getOrUndefined(report) ??
-              join(
-                homedir(),
-                ".manifold",
-                "reports",
-                `kagane-${epochMillisNow()}-${newId()}.jsonl`,
-              ),
+          const journal = openRegistryReport(
+            "kagane",
+            apply,
+            {
+              apiOrigin: config.origin,
+              language,
+              auditExisting,
+              sourcePriority: priority,
+              excludedSources: ["MangaDex"],
+              anilistAliases: Boolean(anilist),
+            },
+            Option.getOrUndefined(report),
+            Option.getOrUndefined(resume),
           );
-          mkdirSync(dirname(reportPath), { recursive: true });
-          // Refuse to truncate an earlier report. Persist each row before processing the next.
-          const reportFile = openSync(reportPath, "wx", 0o600);
-          const record = (line: JsonValue): void => {
-            writeSync(reportFile, `${jsonBodyString(line)}\n`);
-          };
+          const reportPath = journal.path;
+          const record = journal.record;
           openFrame(`Kagane registry prefill → ${apply ? "apply" : "dry run"}`);
           frameDetail(`Report: ${reportPath}`);
           const load: ListrTask<KaganeCtx> = {
@@ -182,7 +179,8 @@ export const kaganePrefillCommand = Command.make("kagane", {
                 (row) =>
                   !row.tombstoned &&
                   (auditExisting || !row.providers.some((link) => link.provider === "kagane")) &&
-                  matchesStatusFilter(row.state?.status, statuses),
+                  matchesStatusFilter(row.state?.status, statuses) &&
+                  !journal.skip(row),
               );
               ctx.selected = maximum === undefined ? eligible : eligible.slice(0, maximum);
               makePhaseReporter(task).note(
@@ -270,6 +268,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
                 let outcome: "matched" | "ambiguous" | "unmatched" | "conflicts" | "errors" =
                   "unmatched";
                 let note = "";
+                let retryable = false;
                 try {
                   const entryContext = `${index + 1}/${ctx.selected.length} ${row.title}`;
                   context = entryContext;
@@ -278,6 +277,9 @@ export const kaganePrefillCommand = Command.make("kagane", {
                   const titles = await loadRegistrySearchTitles(row, {
                     anilistToken: anilist,
                     onProgress: progress,
+                    onIncomplete: () => {
+                      retryable = true;
+                    },
                   });
                   // Discover globally before ranking: a preferred source may be incomplete.
                   context = `${entryContext} [all non-MangaDex sources]`;
@@ -380,11 +382,12 @@ export const kaganePrefillCommand = Command.make("kagane", {
                   }
                 }
                 counts[outcome]++;
-                record({
+                journal.entry(row, {
                   event: "entry",
                   entryId: row.id,
                   title: row.title,
                   outcome,
+                  retryable,
                   selectedId: selected?.id ?? null,
                   currentId:
                     row.providers.find((link) => link.provider === "kagane")?.externalId ?? null,
@@ -405,7 +408,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
           let failure: string | undefined;
           try {
             record({
-              event: "run",
+              event: "options",
               apply,
               auditExisting,
               status,
@@ -431,7 +434,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
                 ...(failure !== undefined && { error: failure }),
               });
             } finally {
-              closeSync(reportFile);
+              journal.close();
               view?.close();
               const label = failure
                 ? "Stopped"

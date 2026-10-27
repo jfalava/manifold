@@ -63,6 +63,25 @@ Authentication challenges, HTTP 403 and HTTP 429 stop the sweep. No XComic
 account/API key is required for the anonymously available catalog; availability
 and anti-bot policy may change. This runner does not supply desktop Chrome.
 
+## Resume a sweep
+
+```sh
+manifold registry xcomic --status reading,paused,planning --apply --resume ./xcomic-previous.jsonl
+```
+
+`--resume <path>` skips completed unchanged checks, including ambiguous/unmatched
+results, before `--limit`. Errors, conflicts, blocks, incomplete alias lookups and
+interrupted rows retry. Adding `--apply` rechecks dry-run matches; reports never
+replay writes. Keep the API origin, mirror, language, alias-login mode and audit
+mode unchanged. Delay, pagination budget, status filter and limit may change.
+
+The input stays untouched. Each resume creates a new owner-only report containing
+inherited checkpoints; use that newest report for the next resume. `--report`
+chooses its output path and never overwrites a file. New reports detect changed
+title/provider inputs. Older XComic reports compare only entry ID and title:
+use them only for the same registry with unchanged identity links. Omit `--resume`
+to recheck all unresolved results or refresh old evidence.
+
 ## Native Paperback identity
 
 The registry external ID is the opaque **comic/edition ID**, not the enclosing

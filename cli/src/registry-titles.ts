@@ -37,6 +37,7 @@ const loadRegistrySearchTitlesEffect = (
     ) => Promise<readonly string[]>;
     readonly mangaDexTitles?: (id: string, signal: AbortSignal) => Promise<readonly string[]>;
     readonly onProgress?: (message: string) => void;
+    readonly onIncomplete?: () => void;
   } = {},
 ): Effect.Effect<readonly string[]> =>
   Effect.gen(function* () {
@@ -57,6 +58,7 @@ const loadRegistrySearchTitlesEffect = (
           }),
           Effect.catch(() =>
             Effect.sync(() => {
+              options.onIncomplete?.();
               options.onProgress?.(
                 "AniList aliases unavailable or timed out; continuing with known titles",
               );
@@ -92,6 +94,7 @@ const loadRegistrySearchTitlesEffect = (
       Effect.timeout("20 seconds"),
       Effect.map((extra) => uniqueTitles([...unique, ...extra])),
       Effect.orElseSucceed(() => {
+        options.onIncomplete?.();
         options.onProgress?.(
           "MangaDex aliases unavailable or timed out; continuing with known titles",
         );
@@ -114,5 +117,6 @@ export const loadRegistrySearchTitles = (
     ) => Promise<readonly string[]>;
     readonly mangaDexTitles?: (id: string, signal: AbortSignal) => Promise<readonly string[]>;
     readonly onProgress?: (message: string) => void;
+    readonly onIncomplete?: () => void;
   } = {},
 ): Promise<readonly string[]> => runHost(loadRegistrySearchTitlesEffect(row, options));

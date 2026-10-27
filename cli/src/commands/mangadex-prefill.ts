@@ -4,6 +4,7 @@ import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
 import { errorMessage } from "@manifold/json";
 import { resolveAniListToken } from "@/login/anilist";
+import { openRegistryReport } from "@/registry-report";
 import { loadRegistrySearchTitles } from "@/registry-titles";
 import { matchesStatusFilter, parseStatusFilter, STATUS_FILTER_HINT } from "@/registry-status";
 import {
@@ -75,6 +76,8 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
   ),
   apiOrigin: Flag.String("api-origin").pipe(Flag.optional),
   apiToken: Flag.String("api-token").pipe(Flag.optional),
+  report: Flag.String("report").pipe(Flag.optional),
+  resume: Flag.String("resume").pipe(Flag.optional),
   anilistToken: Flag.String("anilist-token").pipe(
     Flag.optional,
     Flag.withDescription(
@@ -85,9 +88,20 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
   Command.withDescription(
     "Backfill mangadex provider links for registry rows. Delegates matching to the Worker's vector + live-search resolver (no local MangaDex secrets needed).",
   ),
-  Command.withHandler(({ apply, limit, status, delay, apiOrigin, apiToken, anilistToken }) =>
+  Command.withHandler((options) =>
     Effect.tryPromise({
       try: async () => {
+        const {
+          apply,
+          limit,
+          status,
+          delay,
+          apiOrigin,
+          apiToken,
+          anilistToken,
+          report: reportFlag,
+          resume,
+        } = options;
         const limitValue = Option.getOrUndefined(limit);
         validateNonNegativeLimit(limitValue);
         if (!Number.isSafeInteger(delay) || delay < 0) {
@@ -96,7 +110,15 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
         const config: ApiConfig = await apiConfig(apiOrigin, apiToken);
         const statusFilter = parseStatusFilter(status);
         const anilist = await resolveAniListToken(Option.getOrUndefined(anilistToken));
+        const report = openRegistryReport(
+          "mangadex",
+          apply,
+          { apiOrigin: config.origin, anilistAliases: Boolean(anilist) },
+          Option.getOrUndefined(reportFlag),
+          Option.getOrUndefined(resume),
+        );
         openFrame(`MangaDex registry prefill → ${apply ? "apply" : "dry run"}`);
+        frameDetail(`report: ${report.path}`);
         if (statusFilter) {
           frameDetail(`status filter: ${[...statusFilter].join(", ")}`);
         }
@@ -136,7 +158,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
             const statusMatched = withoutMangadex.filter((row) =>
               matchesStatusFilter(row.state?.status, statusFilter),
             );
-            ctx.unmatched = statusMatched;
+            ctx.unmatched = statusMatched.filter((row) => !report.skip(row));
             if (limitValue !== undefined && limitValue >= 0) {
               ctx.unmatched = ctx.unmatched.slice(0, limitValue);
             }
@@ -188,12 +210,19 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                 ctx.skipped += 1;
                 reporter.item(formatTitle(row.title, " — skipped"));
                 reporter.progress(done(), total, counts());
+                report.entry(row, { outcome: "skipped", reason: "Missing AniList/MAL identity" });
                 continue;
               }
 
               let result: MangaDexMatchResultBody;
+              let incompleteAliases = false;
               try {
-                const titles = await loadRegistrySearchTitles(row, { anilistToken: anilist });
+                const titles = await loadRegistrySearchTitles(row, {
+                  anilistToken: anilist,
+                  onIncomplete: () => {
+                    incompleteAliases = true;
+                  },
+                });
                 const [primary, ...aliases] = titles;
                 result = await apiCall(
                   config,
@@ -219,36 +248,51 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                   },
                   MangaDexMatchResult,
                 );
-              } catch {
+              } catch (error) {
                 ctx.errors += 1;
                 reporter.item(formatTitle(row.title, " — error"));
                 reporter.progress(done(), total, counts());
+                report.entry(row, { outcome: "errors", error: errorMessage(error) });
                 await sleep(delayMs);
                 continue;
               }
 
               if (result.status === "matched" && result.externalId) {
-                ctx.linked += 1;
                 if (apply) {
-                  await apiCall(
-                    config,
-                    `/v1/entries/${encodeURIComponent(row.id)}/providers`,
-                    "POST",
-                    { provider: "mangadex", externalId: result.externalId, title: row.title },
-                    RegistryEntry,
-                  );
+                  try {
+                    await apiCall(
+                      config,
+                      `/v1/entries/${encodeURIComponent(row.id)}/providers`,
+                      "POST",
+                      {
+                        provider: "mangadex",
+                        externalId: result.externalId,
+                        title: row.title,
+                        onConflict: "reject",
+                      },
+                      RegistryEntry,
+                    );
+                  } catch (error) {
+                    ctx.errors += 1;
+                    report.entry(row, { outcome: "errors", result, error: errorMessage(error) });
+                    throw error;
+                  }
                 }
+                ctx.linked += 1;
                 const method = result.method ? ` ${result.method}` : "";
                 const score = result.score !== undefined ? ` ${result.score.toFixed(3)}` : "";
                 reporter.item(
                   formatTitle(row.title, ` → ${result.externalId.slice(0, 8)}…${method}${score}`),
                 );
+                report.entry(row, { outcome: "matched", result, retryable: incompleteAliases });
               } else if (result.status === "ambiguous") {
                 ctx.ambiguous += 1;
                 reporter.item(formatTitle(row.title, " — ambiguous"));
+                report.entry(row, { outcome: "ambiguous", result, retryable: incompleteAliases });
               } else {
                 ctx.notFound += 1;
                 reporter.item(formatTitle(row.title, " — not_found"));
+                report.entry(row, { outcome: "unmatched", result, retryable: incompleteAliases });
               }
               reporter.progress(done(), total, counts());
               await sleep(delayMs);
@@ -270,8 +314,10 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
           skipped: 0,
           errors: 0,
         };
+        let completed = false;
         try {
           await run.run(ctx);
+          completed = true;
           const summary =
             `${ctx.linked} linked · ${ctx.ambiguous} ambiguous · ${ctx.notFound} not_found` +
             (ctx.skipped ? ` · ${ctx.skipped} skipped` : "") +
@@ -288,6 +334,20 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
         } catch (error) {
           abortFrame();
           throw error;
+        } finally {
+          try {
+            report.record({
+              event: "summary",
+              completed,
+              matched: ctx.linked,
+              ambiguous: ctx.ambiguous,
+              unmatched: ctx.notFound,
+              skipped: ctx.skipped,
+              errors: ctx.errors,
+            });
+          } finally {
+            report.close();
+          }
         }
       },
       catch: (cause) => cliError(errorMessage(cause)),

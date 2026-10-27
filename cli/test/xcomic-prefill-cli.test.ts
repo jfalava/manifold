@@ -1,14 +1,25 @@
 /** @effect-diagnostics nodeBuiltinImport:off */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const run = (flags: string[] = [], scenario = "normal") => {
+const run = (flags: string[] = [], scenario = "normal", checkpoint?: string) => {
   const directory = mkdtempSync(join(tmpdir(), "manifold-xcomic-"));
   const report = join(directory, "report.jsonl");
+  const resume = join(directory, "resume.jsonl");
   try {
+    if (checkpoint)
+      writeFileSync(
+        resume,
+        [
+          { event: "run", apply: false, language: "en", origin: "https://xcomic.me" },
+          { event: "entry", entryId: "target", title: "A Story", outcome: checkpoint },
+        ]
+          .map((line) => JSON.stringify(line))
+          .join("\n") + "\n",
+      );
     const result = spawnSync(
       "bun",
       [
@@ -56,7 +67,7 @@ const run = (flags: string[] = [], scenario = "normal") => {
         }
         throw new Error('Unexpected query '+query);
       };
-      try { await Effect.runPromise(Command.runWith(makeRootCommand('test'), {version:'test'})(${JSON.stringify(["registry", "xcomic", "--report", report, "--delay", "0", "--status", "reading", ...flags])}).pipe(Effect.provide(BunServices.layer))); }
+      try { await Effect.runPromise(Command.runWith(makeRootCommand('test'), {version:'test'})(${JSON.stringify(["registry", "xcomic", "--report", report, ...(checkpoint ? ["--resume", resume] : []), "--delay", "0", "--status", "reading", ...flags])}).pipe(Effect.provide(BunServices.layer))); }
       catch (error) {console.error(error); process.exitCode=1;}
     `,
       ],
@@ -77,6 +88,15 @@ const run = (flags: string[] = [], scenario = "normal") => {
 };
 
 describe("registry xcomic", () => {
+  it("resumes legacy checks but retries dry-run matches when applying", () => {
+    const resumed = run([], "normal", "matched");
+    expect(resumed.status, resumed.stderr).toBe(0);
+    expect(resumed.stdout).not.toContain("SEARCH");
+    const apply = run(["--apply"], "normal", "matched");
+    expect(apply.status, apply.stderr).toBe(0);
+    expect(apply.stdout).toContain("WRITE");
+  });
+
   it("chooses complete distinct normal chapter coverage, not advertised counts, badges or the pilot's larger count", () => {
     const result = run();
     expect(result.status, result.stderr).toBe(0);

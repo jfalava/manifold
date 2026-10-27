@@ -119,6 +119,25 @@ interrupted run. Reports are diagnostic records, not executable apply plans.
 manifold registry kagane --report ./kagane-dry-run.jsonl
 ```
 
+### `--resume <path>`
+
+Continue a previous JSONL report. Completed unchanged checks, including ambiguous
+and unmatched results, are skipped before `--limit`. Errors, conflicts, challenges,
+incomplete alias lookups and interrupted rows retry. Dry-run matches are rechecked
+when adding `--apply`; no writes are replayed from the report.
+
+```sh
+manifold registry kagane --status reading,paused,planning --apply --resume ./kagane-dry-run.jsonl
+```
+
+Each resume creates a new report with inherited checkpoints; the input remains
+unchanged. Resume from the newest report after another stop. Keep the API origin,
+language, source priority, alias-login mode and audit mode unchanged. Delay,
+pagination budget, status filter, limit and Chrome connection may change.
+New reports detect changed title/provider inputs. Older Kagane reports compare
+only entry ID and title: resume them only against the same registry with unchanged
+identity links. Omit `--resume` to recheck all unresolved results or refresh old evidence.
+
 ### `--audit-existing`
 
 Include rows that already have Kagane links. Always read-only; combining this

@@ -2,18 +2,30 @@
 /** @effect-diagnostics nodeBuiltinImport:off */
 /** @effect-diagnostics schemaSync:off */
 import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const run = (flags: string[], scenario = "normal") =>
-  spawnSync(
-    "bun",
-    [
-      "-e",
-      `
+const run = (
+  flags: string[],
+  scenario = "normal",
+  checkpoint?: { outcome: string; apply: boolean },
+) => {
+  const directory = mkdtempSync(join(tmpdir(), "mal-prefill-cli-"));
+  const reportPath = join(directory, "report.jsonl");
+  const resumePath = join(directory, "resume.jsonl");
+  try {
+    const result = spawnSync(
+      "bun",
+      [
+        "-e",
+        `
   import { BunServices } from '@effect/platform-bun';
   import { Effect } from 'effect';
   import { Command } from 'effect/cli';
   import { makeRootCommand } from './src/cli';
+  import { openRegistryReport } from './src/registry-report';
   for (const key of Object.keys(process.env)) if (key.startsWith('MANIFOLD_')) delete process.env[key];
   process.env.MANIFOLD_TOKEN = 'fake';
   const row = (id, providers, tombstoned = false) => ({
@@ -22,6 +34,12 @@ const run = (flags: string[], scenario = "normal") =>
     createdAt: 1, updatedAt: 1, tombstoned,
   });
   const scenario = ${JSON.stringify(scenario)};
+  const checkpoint = ${JSON.stringify(checkpoint) ?? "undefined"};
+  if (checkpoint) {
+    const fixture = openRegistryReport('mal', checkpoint.apply, {apiOrigin: 'https://registry.test'}, ${JSON.stringify(resumePath)});
+    fixture.entry(row(42, [['anilist', '42']]), {outcome: checkpoint.outcome});
+    fixture.close();
+  }
   let lastLookupAt;
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
@@ -57,13 +75,18 @@ const run = (flags: string[], scenario = "normal") =>
   };
   try {
     await Effect.runPromise(Command.runWith(makeRootCommand("test"), { version: 'test' })(
-      ${JSON.stringify(["registry", "mal", ...flags])}
+      ${JSON.stringify(["registry", "mal", "--api-origin", "https://registry.test", "--report", reportPath, ...(checkpoint ? ["--resume", resumePath] : []), ...flags])}
     ).pipe(Effect.provide(BunServices.layer)));
   } catch (error) { console.error(error); process.exitCode = 1; }
 `,
-    ],
-    { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 20_000 },
-  );
+      ],
+      { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 20_000 },
+    );
+    return { ...result, report: existsSync(reportPath) ? readFileSync(reportPath, "utf8") : "" };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+};
 
 describe("registry mal CLI", () => {
   it("audits without writes, skips linked/tombstoned rows and reports missing mappings", () => {
@@ -118,5 +141,31 @@ describe("registry mal CLI", () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("2 errors");
     expect(result.stdout).not.toContain("WRITE");
+    expect(result.report).toContain('"outcome":"errors"');
+    expect(result.report).not.toContain('"outcome":"matched"');
+    expect(result.report).toContain('"event":"summary"');
+  });
+
+  it("resumes unchanged completed rows before applying --limit", () => {
+    const result = run(["--limit", "1"], "normal", { outcome: "matched", apply: false });
+    expect(result.status).toBe(0);
+    expect(result.stdout.match(/LOOKUP \d+/g)).toEqual(["LOOKUP 43"]);
+    expect(result.report).toContain('"event":"checkpoint"');
+    expect(result.report).toContain('"outcome":"unmatched"');
+  });
+
+  it("retries errors from the resume report", () => {
+    const result = run(["--limit", "1"], "normal", { outcome: "errors", apply: false });
+    expect(result.status).toBe(0);
+    expect(result.stdout.match(/LOOKUP \d+/g)).toEqual(["LOOKUP 42"]);
+    expect(result.report).toContain('"outcome":"matched"');
+  });
+
+  it("rechecks dry-run matches when resuming with --apply", () => {
+    const result = run(["--apply", "--limit", "1"], "normal", { outcome: "matched", apply: false });
+    expect(result.status).toBe(0);
+    expect(result.stdout.match(/LOOKUP \d+/g)).toEqual(["LOOKUP 42"]);
+    expect(result.stdout).toContain("WRITE");
+    expect(result.report).toContain('"applied":true');
   });
 });

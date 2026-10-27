@@ -100,6 +100,24 @@ Example:
 manifold registry mangadex --anilist-token "$MANIFOLD_ANILIST_TOKEN"
 ```
 
+### `--report <path>` and `--resume <path>`
+
+Every run saves an owner-only JSONL report under `~/.manifold/reports/mangadex-<run>.jsonl`.
+`--report` chooses a new output file; existing files are never overwritten.
+`--resume` skips completed unchanged checks, including ambiguous/not-found results,
+before `--limit`. Errors, conflicts, incomplete alias lookups and interrupted rows
+retry. Adding `--apply` rechecks dry-run matches; report data never replays writes.
+
+```sh
+manifold registry mangadex --apply --resume ./mangadex-previous.jsonl
+```
+
+Keep the API origin and alias-login mode unchanged. Delay, status filter and limit
+may change. Each resume creates a new report containing inherited checkpoints and
+leaves its input untouched; use the newest report for the next resume. Changed
+title/provider inputs retry. Omit `--resume` to recheck all unresolved results or
+refresh old evidence.
+
 `--status` filters `row.state.status` before `--limit`. `reading` expands to `reading,re_reading`. `auto` includes every status.
 
 ## Usage

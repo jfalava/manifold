@@ -41,6 +41,23 @@ Example:
 manifold registry mal --limit 50
 ```
 
+### `--report <path>` and `--resume <path>`
+
+Every run saves an owner-only JSONL report under `~/.manifold/reports/mal-<run>.jsonl`.
+`--report` chooses a new output file; existing files are never overwritten.
+`--resume` reads a previous report, skips completed unchanged checks before
+`--limit`, and retries errors, conflicts and interrupted rows. Unmapped results
+remain skipped until matching inputs change or you omit `--resume` for a fresh check.
+Adding `--apply` rechecks dry-run matches rather than replaying report writes.
+
+```sh
+manifold registry mal --apply --resume ./mal-previous.jsonl
+```
+
+Keep the API origin unchanged. Every resumed run creates a new report with
+inherited checkpoints and leaves its input untouched. Resume from the newest
+report after another stop. Reports detect changed title/provider inputs.
+
 ### AniList rate limiting
 
 The command waits a fixed **2.5 seconds** between AniList lookups. This is

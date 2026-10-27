@@ -1,14 +1,31 @@
 /** @effect-diagnostics nodeBuiltinImport:off */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const run = (flags: string[] = [], scenario = "normal") => {
+const run = (flags: string[] = [], scenario = "normal", checkpoint?: string) => {
   const directory = mkdtempSync(join(tmpdir(), "manifold-kagane-"));
   const report = join(directory, "report.jsonl");
+  const resume = join(directory, "resume.jsonl");
   try {
+    if (checkpoint)
+      writeFileSync(
+        resume,
+        [
+          {
+            event: "run",
+            apply: false,
+            language: "en",
+            sourcePriority: [],
+            excludedSources: ["MangaDex"],
+          },
+          { event: "entry", entryId: "target", title: "A Story", outcome: checkpoint },
+        ]
+          .map((line) => JSON.stringify(line))
+          .join("\n") + "\n",
+      );
     const result = spawnSync(
       "bun",
       [
@@ -129,7 +146,7 @@ const run = (flags: string[] = [], scenario = "normal") => {
   };
   try {
     await Effect.runPromise(Command.runWith(makeRootCommand('test'), {version:'test'})(
-      ${JSON.stringify(["registry", "kagane", "--report", report, ...(flags.includes("--source-priority") || scenario === "identity-default" ? [] : ["--source-priority", "none"]), ...(flags.includes("--delay") ? [] : ["--delay", "0"]), "--status", "reading", ...flags])}
+      ${JSON.stringify(["registry", "kagane", "--report", report, ...(checkpoint ? ["--resume", resume] : []), ...(flags.includes("--source-priority") || scenario === "identity-default" ? [] : ["--source-priority", "none"]), ...(flags.includes("--delay") ? [] : ["--delay", "0"]), "--status", "reading", ...flags])}
     ).pipe(Effect.provide(BunServices.layer)));
   } catch (error) { console.error(error); process.exitCode = 1; }
 `,
@@ -151,6 +168,15 @@ const run = (flags: string[] = [], scenario = "normal") => {
 };
 
 describe("registry kagane", () => {
+  it("skips legacy completed checks before --limit but retries challenged rows", () => {
+    const resumed = run(["--limit", "1"], "normal", "ambiguous");
+    expect(resumed.status, resumed.stderr).toBe(0);
+    expect(resumed.stdout.match(/SEARCH .*$/gm)).toEqual(['SEARCH Nothing ["en"]']);
+    const retry = run(["--limit", "1"], "normal", "challenged");
+    expect(retry.status, retry.stderr).toBe(0);
+    expect(retry.stdout.match(/SEARCH .*$/gm)).toEqual(['SEARCH A Story ["en"]']);
+  });
+
   it("previews unique exact matches, skips dead/linked/status-excluded rows and never writes", () => {
     const result = run();
     expect(result.status, result.stderr).toBe(0);

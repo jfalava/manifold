@@ -1,23 +1,15 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics nodeBuiltinImport:off */
-import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 import { RegistryEntry } from "@manifold/contract";
-import { errorMessage, type JsonValue } from "@manifold/json";
+import { errorMessage } from "@manifold/json";
 import { apiCall, apiConfig, listRegistryRows } from "@/commands/toolbox";
 import { coverageDifference } from "@/chapter-coverage";
-import {
-  cliError,
-  epochMillisNow,
-  jsonBodyString,
-  newId,
-  validateNonNegativeLimit,
-} from "@/effect-kit";
+import { cliError, jsonBodyString, validateNonNegativeLimit } from "@/effect-kit";
 import { loadRegistrySearchTitles } from "@/registry-titles";
 import { resolveAniListToken } from "@/login/anilist";
+import { openRegistryReport } from "@/registry-report";
 import { matchesStatusFilter, parseStatusFilter, STATUS_FILTER_HINT } from "@/registry-status";
 import {
   createXComicClient,
@@ -53,6 +45,10 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
   delay: Flag.Int("delay").pipe(Flag.withDefault(1_500)),
   maxPages: Flag.Int("max-pages").pipe(Flag.withDefault(200)),
   report: Flag.String("report").pipe(Flag.optional),
+  resume: Flag.String("resume").pipe(
+    Flag.optional,
+    Flag.withDescription("Resume a previous JSONL report; retry errors and challenges."),
+  ),
   apiOrigin: Flag.String("api-origin").pipe(Flag.optional),
   apiToken: Flag.String("api-token").pipe(Flag.optional),
   anilistToken: Flag.String("anilist-token").pipe(Flag.optional),
@@ -71,6 +67,7 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
       delay,
       maxPages,
       report,
+      resume,
       apiOrigin,
       apiToken,
       anilistToken,
@@ -100,18 +97,21 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
             origin,
             onProgress: (message) => progress.detail(message),
           });
-          const path = resolve(
-            Option.getOrUndefined(report) ??
-              join(
-                homedir(),
-                ".manifold",
-                "reports",
-                `xcomic-${epochMillisNow()}-${newId()}.jsonl`,
-              ),
+          const journal = openRegistryReport(
+            "xcomic",
+            apply,
+            {
+              apiOrigin: config.origin,
+              language,
+              auditExisting,
+              origin,
+              anilistAliases: Boolean(token),
+            },
+            Option.getOrUndefined(report),
+            Option.getOrUndefined(resume),
           );
-          mkdirSync(dirname(path), { recursive: true });
-          const file = openSync(path, "wx", 0o600);
-          const record = (line: JsonValue) => writeSync(file, `${jsonBodyString(line)}\n`);
+          const path = journal.path;
+          const record = journal.record;
           const counts = {
             matched: 0,
             ambiguous: 0,
@@ -126,7 +126,7 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
           const progress = createProgress("Search XComic and verify titles/coverage");
           try {
             record({
-              event: "run",
+              event: "options",
               apply,
               auditExisting,
               origin,
@@ -140,7 +140,8 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
               (row) =>
                 !row.tombstoned &&
                 (auditExisting || !row.providers.some((link) => link.provider === "xcomic")) &&
-                matchesStatusFilter(row.state?.status, statuses),
+                matchesStatusFilter(row.state?.status, statuses) &&
+                !journal.skip(row),
             );
             const selectedRows = maximum === undefined ? eligible : eligible.slice(0, maximum);
             const owners = new Map(
@@ -159,8 +160,14 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
               let selected: XComicCandidate | undefined;
               let outcome: keyof typeof counts = "unmatched";
               let note = "";
+              let retryable = false;
               try {
-                const titles = await loadRegistrySearchTitles(row, { anilistToken: token });
+                const titles = await loadRegistrySearchTitles(row, {
+                  anilistToken: token,
+                  onIncomplete: () => {
+                    retryable = true;
+                  },
+                });
                 candidates = await findXComicCandidates(client, row, titles, language, currentId);
                 selected = selectXComicCandidate(candidates);
                 if (!candidates.length) {
@@ -204,11 +211,12 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
                 }
               }
               counts[outcome]++;
-              record({
+              journal.entry(row, {
                 event: "entry",
                 entryId: row.id,
                 title: row.title,
                 outcome,
+                retryable,
                 currentId: currentId ?? null,
                 selectedId: selected?.id ?? null,
                 coverageDifference: coverageDifference(
@@ -237,7 +245,7 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
                 ...(failure !== undefined && { error: failure }),
               });
             } finally {
-              closeSync(file);
+              journal.close();
               closeFrame(
                 `${failure ? "Stopped" : counts.errors || counts.conflicts ? "Completed with errors" : apply ? "Applied" : "Dry run complete"}: ${jsonBodyString(counts)}. Report: ${path}`,
                 failure !== undefined || counts.errors + counts.conflicts + counts.blocked > 0,
