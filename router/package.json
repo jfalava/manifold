@@ -8,7 +8,7 @@
     "format": "oxfmt",
     "lint": "oxlint",
     "test": "bun test test/router.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "dependencies": {
     "hono": "catalog:cloudflare"
@@ -19,6 +19,7 @@
     "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
+    "tsrs": "catalog:build",
     "typescript": "catalog:build"
   }
 }

@@ -11,7 +11,7 @@
     "format": "oxfmt",
     "lint": "oxlint",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "dependencies": {
     "@manifold/json": "workspace:*",
@@ -21,6 +21,7 @@
     "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
+    "tsrs": "catalog:build",
     "typescript": "catalog:build",
     "vitest": "catalog:build"
   }

@@ -13,7 +13,7 @@
     "preview": "vp preview",
     "serve": "vp preview",
     "test": "bun test tests",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "dependencies": {
     "@cloudflare/kumo": "2.16.0",
@@ -43,6 +43,7 @@
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
     "tailwindcss": "catalog:styling",
+    "tsrs": "catalog:build",
     "typescript": "catalog:build",
     "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
     "vite-plus": "1.4.0",

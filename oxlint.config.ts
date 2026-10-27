@@ -195,7 +195,6 @@ export const baseConfig: OxlintConfig = {
   },
   options: {
     typeAware: true,
-    typeCheck: true,
   },
 };
 

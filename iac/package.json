@@ -11,7 +11,7 @@
     "format": "oxfmt",
     "lint": "oxlint",
     "plan": "alchemy plan",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "dependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.84",
@@ -27,6 +27,7 @@
     "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
+    "tsrs": "catalog:build",
     "typescript": "catalog:build"
   }
 }

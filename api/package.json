@@ -9,7 +9,7 @@
     "lint": "oxlint",
     "test": "vitest run",
     "test:oauth": "vitest run test/oauth.test.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsrs --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
@@ -32,6 +32,7 @@
     "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
+    "tsrs": "catalog:build",
     "typescript": "catalog:build",
     "vitest": "catalog:build"
   }
