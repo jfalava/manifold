@@ -4,7 +4,7 @@ import { Data, DateTime, Effect, Option, Schema } from "effect";
 import { createAniListSource } from "@manifold/canonical/sources";
 import { errorMessage, manifoldUserAgent, type JsonObject, type JsonValue } from "@manifold/json";
 import { isChallengeText, type BrowserView } from "@/browser-view";
-import { mostCovered, type ChapterCoverage } from "@/chapter-coverage";
+import type { ChapterCoverage } from "@/chapter-coverage";
 import { cliError, epochMillisNow, platformFetch, runHost, sleepPromise } from "@/effect-kit";
 import { providerIdOf } from "@/registry-titles";
 
@@ -543,7 +543,12 @@ export const selectManganatoCandidate = (
   if (plausible.length === 1) {
     return plausible[0];
   }
-  const winners = mostCovered(plausible);
+  // MangaNato checks containment below, with its own reviewed active-listing exception.
+  if (plausible.some((item) => item.coverage?.unit !== "chapters")) {
+    return undefined;
+  }
+  const maximum = Math.max(...plausible.map((item) => item.coverage!.count));
+  const winners = plausible.filter((item) => item.coverage!.count === maximum);
   if (!winners.length || !winners[0]!.coverage!.count) {
     return undefined;
   }

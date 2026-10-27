@@ -5,11 +5,12 @@ import { Command, Flag } from "effect/cli";
 import { RegistryEntry } from "@manifold/contract";
 import { errorMessage } from "@manifold/json";
 import { apiCall, apiConfig, listRegistryRows } from "@/commands/toolbox";
-import { coverageDifference } from "@/chapter-coverage";
+import { coverageComparisons, coverageDifference } from "@/chapter-coverage";
 import { cliError, jsonBodyString, validateNonNegativeLimit } from "@/effect-kit";
 import { loadRegistrySearchTitles } from "@/registry-titles";
 import { resolveAniListToken } from "@/login/anilist";
 import { openRegistryReport } from "@/registry-report";
+import { RegistryPageBudgetError } from "@/registry-catalog";
 import { matchesStatusFilter, parseStatusFilter, STATUS_FILTER_HINT } from "@/registry-status";
 import {
   createXComicClient,
@@ -20,6 +21,11 @@ import {
   type XComicCandidate,
 } from "@/xcomic";
 import { closeFrame, createProgress, frameDetail, openFrame } from "@/ui";
+
+const XCOMIC_RESUME_POLICY = {
+  searchPolicy: "xcomic-aliases-v1",
+  selectionPolicy: "xcomic-no-loss-v2",
+};
 
 export const xcomicPrefillCommand = Command.make("xcomic", {
   apply: Flag.Boolean("apply").pipe(Flag.withDefault(false)),
@@ -91,12 +97,7 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
           const config = await apiConfig(apiOrigin, apiToken);
           const statuses = parseStatusFilter(status);
           const token = await resolveAniListToken(Option.getOrUndefined(anilistToken));
-          const client = createXComicClient({
-            delay,
-            maxPages,
-            origin,
-            onProgress: (message) => progress.detail(message),
-          });
+          const retryWhen = { ...XCOMIC_RESUME_POLICY, maxPages };
           const journal = openRegistryReport(
             "xcomic",
             apply,
@@ -112,6 +113,14 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
           );
           const path = journal.path;
           const record = journal.record;
+          const client = createXComicClient({
+            delay,
+            maxPages,
+            origin,
+            onProgress: (message) => progress.detail(message),
+            catalog: journal.catalog,
+            onCache: record,
+          });
           const counts = {
             matched: 0,
             ambiguous: 0,
@@ -119,6 +128,7 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
             conflicts: 0,
             errors: 0,
             blocked: 0,
+            deferred: 0,
           };
           let failure: string | undefined;
           openFrame(`XComic registry prefill → ${apply ? "apply" : "dry run"}`);
@@ -141,7 +151,7 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
                 !row.tombstoned &&
                 (auditExisting || !row.providers.some((link) => link.provider === "xcomic")) &&
                 matchesStatusFilter(row.state?.status, statuses) &&
-                !journal.skip(row),
+                !journal.skip(row, retryWhen),
             );
             const selectedRows = maximum === undefined ? eligible : eligible.slice(0, maximum);
             const owners = new Map(
@@ -156,7 +166,8 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
               const currentId = row.providers.find(
                 (link) => link.provider === "xcomic",
               )?.externalId;
-              let candidates: readonly XComicCandidate[] = [];
+              const checked = new Map<string, XComicCandidate>();
+              const knownIds = new Set(journal.candidateIds(row));
               let selected: XComicCandidate | undefined;
               let outcome: keyof typeof counts = "unmatched";
               let note = "";
@@ -167,9 +178,49 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
                   onIncomplete: () => {
                     retryable = true;
                   },
+                  onProgress: (message) => progress.detail(message),
                 });
-                candidates = await findXComicCandidates(client, row, titles, language, currentId);
+                const candidates = await findXComicCandidates(
+                  client,
+                  row,
+                  titles,
+                  language,
+                  currentId,
+                  {
+                    knownIds: [...knownIds],
+                    onCandidateId: (id) => {
+                      if (knownIds.has(id)) {
+                        return;
+                      }
+                      knownIds.add(id);
+                      record({
+                        event: "catalog",
+                        kind: "candidates",
+                        key: row.id,
+                        data: [...knownIds],
+                      });
+                    },
+                    onCandidate: (candidate) => checked.set(candidate.id, candidate),
+                  },
+                );
                 selected = selectXComicCandidate(candidates);
+                record({
+                  event: "selection",
+                  key: row.id,
+                  selectedId: selected?.id ?? null,
+                  comparisons: coverageComparisons(candidates),
+                  candidates,
+                });
+                if (candidates.length) {
+                  frameDetail(
+                    `${selected ? "SELECTION" : "REVIEW"} ${row.id}: ${selected?.id ?? "no safe coverage winner"}`,
+                  );
+                  for (const candidate of candidates) {
+                    frameDetail(
+                      `  ${candidate.id} [${candidate.coverage?.count ?? "?"} chapters; IDs=${candidate.matchedIds.join("+") || "none"}; ${candidate.reasons.join(", ") || "eligible"}]`,
+                    );
+                  }
+                }
                 if (!candidates.length) {
                   note = `UNMATCHED ${row.id} ${row.title}`;
                 } else if (!selected) {
@@ -202,9 +253,11 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
                 outcome =
                   error instanceof XComicBlockedError
                     ? "blocked"
-                    : /Provider link conflict:/.test(errorMessage(error))
-                      ? "conflicts"
-                      : "errors";
+                    : error instanceof RegistryPageBudgetError
+                      ? "deferred"
+                      : /Provider link conflict:/.test(errorMessage(error))
+                        ? "conflicts"
+                        : "errors";
                 note = `${outcome.toUpperCase()} ${row.id} ${row.title}: ${errorMessage(error)}`;
                 if (error instanceof XComicBlockedError) {
                   failure = errorMessage(error);
@@ -217,13 +270,21 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
                 title: row.title,
                 outcome,
                 retryable,
+                ...XCOMIC_RESUME_POLICY,
+                retryWhen,
+                deferredReason: outcome === "deferred" ? "page_budget" : null,
+                candidateIds: [...knownIds],
+                selection: {
+                  selectedId: selected?.id ?? null,
+                  comparisons: coverageComparisons([...checked.values()]),
+                },
                 currentId: currentId ?? null,
                 selectedId: selected?.id ?? null,
                 coverageDifference: coverageDifference(
-                  candidates.find((candidate) => candidate.id === currentId)?.coverage,
+                  checked.get(currentId ?? "")?.coverage,
                   selected?.coverage,
                 ),
-                candidates,
+                candidates: [...checked.values()],
                 note,
               });
               frameDetail(note);

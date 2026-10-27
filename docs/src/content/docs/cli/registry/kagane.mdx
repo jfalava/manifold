@@ -85,8 +85,9 @@ Names are case-insensitive. Use `none` to disable source preference, but MangaDe
 remains excluded. Explicitly prioritizing MangaDex is an error.
 
 All searches cover the non-MangaDex catalog before selection. Among editions
-with corroborating external IDs, the largest comparable chapter inventory wins.
-Source preference only breaks equal-coverage ties. It never overrides
+with corroborating external IDs, a winner must contain every known competitor's
+chapter positions. A higher count that loses chapters remains unresolved.
+Source preference only breaks ties between identical inventories. It never overrides
 contradictory IDs or chooses between tied editions within one source.
 
 ```sh
@@ -98,7 +99,9 @@ manifold registry kagane --source-priority "Kodansha Comics,VIZ Media"
 Maximum pages per title search and chapter inventory. Default: `200`.
 Searches request 35 results per page; inventories request 200 books per page.
 Every search must reach its final page before its candidates can be selected.
-Repeated pages and incomplete searches are errors, not catalog misses.
+Page-budget exhaustion is reported as `deferred`, not a catalog miss or a transport
+error. Increasing `--max-pages` reopens that row on resume. Repeated pages and
+invalid inventories remain errors. Cached pages count toward the ceiling.
 
 ```sh
 manifold registry kagane --max-pages 400
@@ -111,7 +114,8 @@ Write a new JSONL report at this path. Default:
 Reports are created with owner-only permissions and do not contain tokens.
 
 Records include run options, retries, each entry's outcome, inspected candidate
-sources and external IDs, rejection reasons, and the final counts. Each entry
+sources and external IDs, rejection reasons, pairwise gained/lost positions, and
+the final counts. Selection evidence is saved and printed before writes. Each entry
 is written before the next entry starts, so completed results survive an
 interrupted run. Reports are diagnostic records, not executable apply plans.
 
@@ -123,8 +127,9 @@ manifold registry kagane --report ./kagane-dry-run.jsonl
 
 Continue a previous JSONL report. Completed unchanged checks, including ambiguous
 and unmatched results, are skipped before `--limit`. Errors, conflicts, challenges,
-incomplete alias lookups and interrupted rows retry. Dry-run matches are rechecked
-when adding `--apply`; no writes are replayed from the report.
+incomplete alias lookups and interrupted rows retry. Adding `--apply` rechecks all
+dry-run outcomes; no writes are replayed from the report. Discovery-policy changes
+reopen misses, and selection-policy changes reopen ambiguities.
 
 ```sh
 manifold registry kagane --status reading,paused,planning --apply --resume ./kagane-dry-run.jsonl
@@ -137,6 +142,13 @@ pagination budget, status filter, limit and Chrome connection may change.
 New reports detect changed title/provider inputs. Older Kagane reports compare
 only entry ID and title: resume them only against the same registry with unchanged
 identity links. Omit `--resume` to recheck all unresolved results or refresh old evidence.
+
+Validated catalog response bodies are saved immediately and reused for 24 hours
+from their original fetch time. Completing a search does not renew earlier pages.
+Invalid cached pages are refetched; failed or incomplete inventories cannot win.
+Known candidate IDs survive interruptions and expired caches, and are revalidated
+even when a later search omits them. Cached evidence can miss catalog changes;
+omit `--resume` for fresh reads.
 
 ### `--audit-existing`
 
@@ -160,6 +172,10 @@ manifold registry kagane --chrome-cdp-url "ws://127.0.0.1:9222/devtools/browser/
 ```
 
 The CLI uses a dedicated `~/.manifold/kagane-chrome` profile.
+If a challenge appears in the connected browser during an interactive run, the
+CLI pauses the current request. Solve it in Chrome, then press Enter to retry.
+EOF or cancellation does not retry. Without interactive input or a Chrome
+connection, challenges stop the sweep. Rate-limit cooldowns remain separate.
 
 ### `--anilist-token <token>`
 

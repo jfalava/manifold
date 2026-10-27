@@ -123,6 +123,8 @@ export const openRegistryReport = (
     entry.retryable !== true &&
     isString(entry.outcome) &&
     completedOutcomes.has(entry.outcome) &&
+    // Applying a preview rechecks all findings, not just its proposed links.
+    (!apply || entry.applied === true) &&
     // Existing bindings are filtered by the commands. A removed applied binding must retry.
     (!["matched", "linked"].includes(entry.outcome) || (!apply && entry.applied === false));
 
@@ -204,6 +206,12 @@ export const openRegistryReport = (
     candidateIds: (row: RegistryRow): readonly string[] => {
       const entry = previous.get(row.id);
       const ids = new Set<string>();
+      const hints = catalog.get(jsonBodyString([null, "candidates", row.id]));
+      for (const id of Array.isArray(hints?.data) ? hints.data : []) {
+        if (isString(id)) {
+          ids.add(id);
+        }
+      }
       for (const id of Array.isArray(entry?.candidateIds) ? entry.candidateIds : []) {
         if (isString(id)) {
           ids.add(id);

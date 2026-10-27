@@ -10,7 +10,15 @@ import { describe, expect, it } from "vitest";
 const run = (
   flags: string[],
   scenario = "normal",
-  checkpoint?: { outcome: string; apply: boolean; retryable?: boolean; anilistAliases?: boolean },
+  checkpoint?: {
+    outcome: string;
+    apply: boolean;
+    retryable?: boolean;
+    anilistAliases?: boolean;
+    searchPolicy?: string;
+    selectionPolicy?: string;
+    report?: string;
+  },
 ) => {
   const directory = mkdtempSync(join(tmpdir(), "mangadex-prefill-cli-"));
   const reportPath = join(directory, "report.jsonl");
@@ -26,7 +34,7 @@ const run = (
       import { Command } from 'effect/cli';
       import { makeRootCommand } from './src/cli';
       import { openRegistryReport } from './src/registry-report';
-      import { readFileSync } from 'node:fs';
+      import { readFileSync, writeFileSync } from 'node:fs';
       for (const key of Object.keys(process.env)) if (key.startsWith('MANIFOLD_')) delete process.env[key];
       process.env.MANIFOLD_TOKEN = 'fake-api-token';
       const row = (id, providers = [['anilist', String(id)]], tombstoned = false) => ({
@@ -38,9 +46,14 @@ const run = (
       const checkpoint = ${JSON.stringify(checkpoint) ?? "undefined"};
       let original;
       if (checkpoint) {
-        const fixture = openRegistryReport('mangadex', checkpoint.apply, {apiOrigin: 'https://registry.test', anilistAliases: checkpoint.anilistAliases ?? true}, ${JSON.stringify(resumePath)});
-        fixture.entry(row(42), {outcome: checkpoint.outcome, retryable: checkpoint.retryable ?? false});
-        fixture.close();
+        if (checkpoint.report) writeFileSync(${JSON.stringify(resumePath)}, checkpoint.report);
+        else {
+          const fixture = openRegistryReport('mangadex', checkpoint.apply, {apiOrigin: 'https://registry.test', anilistAliases: checkpoint.anilistAliases ?? true}, ${JSON.stringify(resumePath)});
+          fixture.entry(row(42), {outcome: checkpoint.outcome, retryable: checkpoint.retryable ?? false,
+            ...(checkpoint.searchPolicy && {searchPolicy: checkpoint.searchPolicy}),
+            ...(checkpoint.selectionPolicy && {selectionPolicy: checkpoint.selectionPolicy})});
+          fixture.close();
+        }
         original = readFileSync(${JSON.stringify(resumePath)}, 'utf8');
       }
       globalThis.fetch = async (input, init = {}) => {
@@ -56,6 +69,7 @@ const run = (
           const body = JSON.parse(String(init.body));
           console.log('RESOLVE', body.id);
           if (scenario === 'resolve-error') return new Response('unavailable', {status: 403});
+          if (scenario === 'unmatched' || scenario === 'ambiguous') return Response.json({canonicalId: body.id, candidates: [], status: scenario === 'unmatched' ? 'not_found' : 'ambiguous'});
           return Response.json({canonicalId: body.id, candidates: [], status: body.id === 'entry-43' ? 'not_found' : body.id === 'entry-44' ? 'ambiguous' : 'matched',
             ...(body.id === 'entry-42' ? {externalId: 'md-42'} : {})});
         }
@@ -116,6 +130,61 @@ describe("registry mangadex CLI", () => {
     expect(result.report).toContain('"outcome":"matched"');
   });
 
+  it.each(["unmatched", "ambiguous"])(
+    "retries old %s policy once, then skips the refreshed checkpoint",
+    (outcome) => {
+      const refreshed = run(["--limit", "1"], outcome, {
+        outcome,
+        apply: false,
+        searchPolicy: outcome === "unmatched" ? "old-search" : "mangadex-external-id-aliases-v1",
+        selectionPolicy: outcome === "ambiguous" ? "old-selection" : "mangadex-worker-resolver-v1",
+      });
+      expect(refreshed.status).toBe(0);
+      expect(refreshed.stdout.match(/RESOLVE entry-\d+/g)).toEqual(["RESOLVE entry-42"]);
+      expect(refreshed.report).toContain('"searchPolicy":"mangadex-external-id-aliases-v1"');
+      expect(refreshed.report).toContain('"selectionPolicy":"mangadex-worker-resolver-v1"');
+      const resumed = run(["--limit", "1"], outcome, {
+        outcome,
+        apply: false,
+        report: refreshed.report,
+      });
+      expect(resumed.status).toBe(0);
+      expect(resumed.stdout.match(/RESOLVE entry-\d+/g)).toEqual(["RESOLVE entry-43"]);
+      expect(resumed.stdout).toContain("RESUME_UNCHANGED true");
+    },
+    10_000,
+  );
+
+  it.each(["unmatched", "ambiguous"])("retries %s without policy metadata", (outcome) => {
+    const result = run(["--limit", "1"], outcome, { outcome, apply: false });
+    expect(result.status).toBe(0);
+    expect(result.stdout.match(/RESOLVE entry-\d+/g)).toEqual(["RESOLVE entry-42"]);
+  });
+
+  it("keeps proven ambiguities skipped when only discovery changes", () => {
+    const result = run(["--limit", "1"], "ambiguous", {
+      outcome: "ambiguous",
+      apply: false,
+      searchPolicy: "old-search",
+      selectionPolicy: "mangadex-worker-resolver-v1",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout.match(/RESOLVE entry-\d+/g)).toEqual(["RESOLVE entry-43"]);
+  });
+
+  it.each(["unmatched", "ambiguous"])("revalidates dry-run %s when applying", (outcome) => {
+    const result = run(["--apply", "--limit", "1"], outcome, {
+      outcome,
+      apply: false,
+      searchPolicy: "mangadex-external-id-aliases-v1",
+      selectionPolicy: "mangadex-worker-resolver-v1",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout.match(/RESOLVE entry-\d+/g)).toEqual(["RESOLVE entry-42"]);
+    expect(result.stdout).not.toContain("WRITE");
+    expect(result.report).toContain(`"outcome":"${outcome}"`);
+  });
+
   it("keeps incomplete alias misses and ambiguities retryable", () => {
     const result = run([], "alias-error");
     expect(result.status).toBe(0);
@@ -129,6 +198,8 @@ describe("registry mangadex CLI", () => {
       outcome: "unmatched",
       apply: false,
       retryable: true,
+      searchPolicy: "mangadex-external-id-aliases-v1",
+      selectionPolicy: "mangadex-worker-resolver-v1",
     });
     expect(result.status).toBe(0);
     expect(result.stdout.match(/RESOLVE entry-\d+/g)).toEqual(["RESOLVE entry-42"]);

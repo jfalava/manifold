@@ -106,7 +106,9 @@ Every run saves an owner-only JSONL report under `~/.manifold/reports/mangadex-<
 `--report` chooses a new output file; existing files are never overwritten.
 `--resume` skips completed unchanged checks, including ambiguous/not-found results,
 before `--limit`. Errors, conflicts, incomplete alias lookups and interrupted rows
-retry. Adding `--apply` rechecks dry-run matches; report data never replays writes.
+retry. Adding `--apply` rechecks all dry-run outcomes; report data never replays writes.
+Discovery-policy changes reopen misses, and selection-policy changes reopen
+ambiguities. Matching still runs through the server-side MangaDex resolver.
 
 ```sh
 manifold registry mangadex --apply --resume ./mangadex-previous.jsonl

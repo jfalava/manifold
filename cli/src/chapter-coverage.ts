@@ -61,7 +61,14 @@ export const mostCovered = <T extends { readonly coverage?: ChapterCoverage }>(
     return [];
   }
   const maximum = Math.max(...candidates.map((candidate) => candidate.coverage!.count));
-  return candidates.filter((candidate) => candidate.coverage!.count === maximum);
+  const required = new Set(candidates.flatMap((candidate) => candidate.coverage!.numbers));
+  return candidates.filter((candidate) => {
+    if (candidate.coverage!.count !== maximum) {
+      return false;
+    }
+    const positions = new Set(candidate.coverage!.numbers);
+    return [...required].every((position) => positions.has(position));
+  });
 };
 
 export const coverageDifference = (current?: ChapterCoverage, proposed?: ChapterCoverage) => {
@@ -73,3 +80,15 @@ export const coverageDifference = (current?: ChapterCoverage, proposed?: Chapter
     lost: current.numbers.filter((number) => !proposed.numbers.includes(number)),
   };
 };
+
+/** Pairwise evidence also explains why incomparable editions were left for review. */
+export const coverageComparisons = (
+  candidates: readonly { readonly id: string; readonly coverage?: ChapterCoverage }[],
+) =>
+  candidates.flatMap((current, index) =>
+    candidates.slice(index + 1).map((proposed) => ({
+      from: current.id,
+      to: proposed.id,
+      difference: coverageDifference(current.coverage, proposed.coverage),
+    })),
+  );

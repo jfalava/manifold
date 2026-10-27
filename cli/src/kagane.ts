@@ -8,6 +8,7 @@ import { manifoldUserAgent, type JsonObject, type JsonValue } from "@manifold/js
 import { cliError, epochMillisNow, platformFetch, runHost, sleepPromise } from "@/effect-kit";
 import type { BrowserView } from "@/browser-view";
 import { chapterCoverage, mostCovered, type ChapterCoverage } from "@/chapter-coverage";
+import { registryCatalog, RegistryPageBudgetError } from "@/registry-catalog";
 
 export const KAGANE_ORIGIN = "https://kagane.org";
 
@@ -98,9 +99,13 @@ export const createKaganeClient = (options: {
   readonly maxPages?: number;
   readonly onRetry?: (message: string) => void;
   readonly onProgress?: (message: string) => void;
+  readonly catalog?: readonly JsonObject[];
+  readonly onCache?: (record: JsonObject) => void;
+  readonly onBlocked?: (error: KaganeChallengeError) => Promise<void>;
 }) => {
   let requested = false;
   const maxPages = options.maxPages ?? 200;
+  const catalog = registryCatalog({ ...options, origin: KAGANE_ORIGIN });
   const detailCache = new Map<string, KaganeDetails>();
   const coverageCache = new Map<string, ChapterCoverage>();
   const searchCache = new Map<string, readonly KaganeBook[]>();
@@ -156,7 +161,27 @@ export const createKaganeClient = (options: {
     schema: Schema.ConstraintDecoder<A>,
     body?: JsonObject,
     description = path,
+    validate?: (result: A) => void,
   ): Promise<A> => {
+    const key = JSON.stringify([path, body ?? null]);
+    const decode = (text: string) =>
+      runHost(
+        Schema.decodeEffect(Schema.fromJsonString(schema))(text).pipe(
+          Effect.mapError(() => cliError(`Kagane ${path}: unexpected response schema`)),
+        ),
+      );
+    const cached = catalog.read(key);
+    if (cached !== undefined) {
+      try {
+        const result = await decode(cached);
+        validate?.(result);
+        options.onProgress?.(`Cached ${description}`);
+        return result;
+      } catch {
+        // Reports are untrusted input; invalid cached data is fetched again.
+        catalog.forget(key);
+      }
+    }
     // Catalog requests are read-only, including search POSTs. Never retry registry writes here.
     for (let attempt = 0; ; attempt++) {
       let response: Awaited<ReturnType<typeof send>>;
@@ -183,7 +208,13 @@ export const createKaganeClient = (options: {
         response.challenged ||
         /<title>Just a moment|cf-chl-|challenge-platform/i.test(response.text)
       ) {
-        throw new KaganeChallengeError();
+        const error = new KaganeChallengeError();
+        if (!options.view || !options.onBlocked) {
+          throw error;
+        }
+        await options.onBlocked(error);
+        attempt = -1;
+        continue;
       }
       if (response.status === 429 || [500, 502, 503, 504].includes(response.status)) {
         if (attempt >= 3) {
@@ -216,11 +247,10 @@ export const createKaganeClient = (options: {
       if (response.status !== 200) {
         throw cliError(`Kagane ${path}: HTTP ${response.status}`);
       }
-      return runHost(
-        Schema.decodeEffect(Schema.fromJsonString(schema))(response.text).pipe(
-          Effect.mapError(() => cliError(`Kagane ${path}: unexpected response schema`)),
-        ),
-      );
+      const result = await decode(response.text);
+      validate?.(result);
+      catalog.remember(key, response.text);
+      return result;
     }
   };
 
@@ -232,60 +262,82 @@ export const createKaganeClient = (options: {
         return cached;
       }
       const base = `/api/v2/series/${encodeURIComponent(id)}/books`;
-      const index = await request(`${base}/index`, ChapterIndex);
+      const index = await request(
+        `${base}/index`,
+        ChapterIndex,
+        undefined,
+        `${id} chapter index`,
+        (result) => {
+          const column = result.fields.indexOf("book_id");
+          const expected = new Set(result.books.map((row) => row[column]));
+          if (
+            column < 0 ||
+            result.count < 0 ||
+            result.count !== result.books.length ||
+            expected.size !== result.count ||
+            [...expected].some((value) => !Schema.is(Schema.NonEmptyString)(value))
+          ) {
+            throw cliError(`Kagane ${id}: invalid chapter index`);
+          }
+        },
+      );
       const column = index.fields.indexOf("book_id");
       const expected = new Set(index.books.map((row) => row[column]));
-      if (
-        column < 0 ||
-        index.count < 0 ||
-        index.count !== index.books.length ||
-        expected.size !== index.count ||
-        [...expected].some((value) => !Schema.is(Schema.NonEmptyString)(value))
-      ) {
-        throw cliError(`Kagane ${id}: invalid chapter index`);
-      }
       const books: Schema.Schema.Type<typeof ChapterPage>["items"][number][] = [];
       const seen = new Set<string>();
       const cursors = new Set<string>();
       let before: string | undefined;
       for (let page = 0; page < maxPages; page++) {
-        const result = await request(
+        const pageResult = await request(
           `${base}?limit=200${before ? `&before=${encodeURIComponent(before)}` : ""}`,
           ChapterPage,
+          undefined,
+          `${id} chapter page ${page + 1}`,
+          (result) => {
+            const added = new Set<string>();
+            for (const book of result.items) {
+              if (
+                seen.has(book.book_id) ||
+                added.has(book.book_id) ||
+                !expected.has(book.book_id) ||
+                (book.series_id && book.series_id !== id)
+              ) {
+                catalog.forget(JSON.stringify([`${base}/index`, null]));
+                throw cliError(`Kagane ${id}: chapter inventory disagrees with its index`);
+              }
+              added.add(book.book_id);
+            }
+            if (result.next_cursor === null) {
+              if (seen.size + added.size !== expected.size) {
+                throw cliError(`Kagane ${id}: incomplete chapter inventory`);
+              }
+            } else if (
+              !result.next_cursor.trim() ||
+              cursors.has(result.next_cursor) ||
+              !result.items.length ||
+              seen.size + added.size >= expected.size
+            ) {
+              throw cliError(`Kagane ${id}: chapter pagination did not advance`);
+            }
+          },
         );
-        for (const book of result.items) {
-          if (
-            seen.has(book.book_id) ||
-            !expected.has(book.book_id) ||
-            (book.series_id && book.series_id !== id)
-          ) {
-            throw cliError(`Kagane ${id}: chapter inventory disagrees with its index`);
-          }
+        for (const book of pageResult.items) {
           seen.add(book.book_id);
           books.push(book);
         }
-        if (result.next_cursor === null) {
-          if (seen.size !== expected.size) {
-            throw cliError(`Kagane ${id}: incomplete chapter inventory`);
-          }
+        if (pageResult.next_cursor === null) {
           const coverage = chapterCoverage(
             books.map((book) => ({ chapter: book.chapter_no, volume: book.volume_no })),
           );
           coverageCache.set(id, coverage);
           return coverage;
         }
-        if (
-          !result.next_cursor.trim() ||
-          cursors.has(result.next_cursor) ||
-          !result.items.length ||
-          seen.size >= expected.size
-        ) {
-          throw cliError(`Kagane ${id}: chapter pagination did not advance`);
-        }
-        before = result.next_cursor;
+        before = pageResult.next_cursor;
         cursors.add(before);
       }
-      throw cliError(`Kagane ${id}: chapter inventory exceeded ${maxPages} pages`);
+      throw new RegistryPageBudgetError(
+        `Kagane ${id}: chapter inventory exceeded ${maxPages} pages`,
+      );
     },
     details: async (id: string) => {
       const cached = detailCache.get(id);
@@ -296,10 +348,16 @@ export const createKaganeClient = (options: {
       detailCache.set(id, details);
       return details;
     },
-    search: async (title: string, language: string, sourceIds: readonly string[] = []) => {
+    search: async (
+      title: string,
+      language: string,
+      sourceIds: readonly string[] = [],
+      onCandidate?: (book: KaganeBook) => void,
+    ) => {
       const key = JSON.stringify([title, language, sourceIds]);
       const cached = searchCache.get(key);
       if (cached) {
+        cached.forEach((book) => onCandidate?.(book));
         return cached;
       }
       const books = new Map<string, KaganeBook>();
@@ -307,7 +365,7 @@ export const createKaganeClient = (options: {
       let totalPages: number | undefined;
       // Never accept a unique match from a truncated result set. Preserve cooldown/challenge errors.
       for (let page = 0; page < maxPages; page++) {
-        const result = await request(
+        const pageResult = await request(
           `/api/v2/search/series?page=${page}&size=35`,
           SearchPage,
           {
@@ -317,24 +375,30 @@ export const createKaganeClient = (options: {
             ...(sourceIds.length > 0 && { source_id: [...sourceIds] }),
           },
           `Search "${title}" page ${page + 1}/${totalPages ?? "?"} (cap ${maxPages})`,
+          (result) => {
+            if (
+              pages.has(JSON.stringify(result.content.map((book) => book.series_id))) &&
+              result.content.length > 0
+            ) {
+              throw cliError("Kagane search pagination did not advance");
+            }
+          },
         );
-        totalPages = result.total_pages;
-        const fingerprint = JSON.stringify(result.content.map((book) => book.series_id));
-        if (pages.has(fingerprint) && result.content.length > 0) {
-          throw cliError("Kagane search pagination did not advance");
-        }
+        totalPages = pageResult.total_pages;
+        const fingerprint = JSON.stringify(pageResult.content.map((book) => book.series_id));
         pages.add(fingerprint);
-        for (const book of result.content) {
+        for (const book of pageResult.content) {
           books.set(book.series_id, book);
+          onCandidate?.(book);
         }
-        if (result.last) {
+        if (pageResult.last) {
           const found = [...books.values()];
           searchCache.set(key, found);
           return found;
         }
       }
-      throw cliError(
-        `Kagane search exceeded ${maxPages} pages; no link selected. Increase --max-pages.`,
+      throw new RegistryPageBudgetError(
+        `Kagane search exceeded ${maxPages} pages; no link selected`,
       );
     },
   };

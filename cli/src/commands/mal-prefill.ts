@@ -27,6 +27,9 @@ import {
 /** AniList is currently degraded to 30 requests/minute; keep a safety margin. */
 const ANILIST_LOOKUP_INTERVAL_MS = 2_500;
 
+// MAL discovery remains exclusively AniList's explicit idMal mapping.
+const MAL_SEARCH_POLICY = "anilist-idmal-v1";
+
 interface MalPrefillCtx extends RunContext {
   rows: RegistryListEntry[];
   selected: RegistryListEntry[];
@@ -100,7 +103,9 @@ export const malPrefillCommand = Command.make("mal", {
             const eligible = missing.filter((row) =>
               row.providers.some((link) => link.provider === "anilist"),
             );
-            const pending = eligible.filter((row) => !report.skip(row));
+            const pending = eligible.filter(
+              (row) => !report.skip(row, { searchPolicy: MAL_SEARCH_POLICY }),
+            );
             const selected = maximum === undefined ? pending : pending.slice(0, maximum);
             ctx.rows = rows;
             ctx.selected = selected;
@@ -165,7 +170,11 @@ export const malPrefillCommand = Command.make("mal", {
                   ctx.details.push(`UNMAPPED ${row.id} anilist:${anilistId}`);
                   reporter.item(formatTitle(row.title, " — unmapped"));
                   reporter.progress(done(), total, counts());
-                  report.entry(row, { outcome: "unmatched", anilistId });
+                  report.entry(row, {
+                    outcome: "unmatched",
+                    anilistId,
+                    searchPolicy: MAL_SEARCH_POLICY,
+                  });
                   continue;
                 }
                 if (canonical?.providerId !== anilistId || !/^[1-9]\d*$/.test(malId)) {
@@ -196,7 +205,12 @@ export const malPrefillCommand = Command.make("mal", {
                   `${apply ? "LINKED" : "WOULD LINK"} ${row.id} anilist:${anilistId} → mal:${malId}`,
                 );
                 reporter.item(formatTitle(row.title, ` → mal:${malId}`));
-                report.entry(row, { outcome: "matched", anilistId, externalId: malId });
+                report.entry(row, {
+                  outcome: "matched",
+                  anilistId,
+                  externalId: malId,
+                  searchPolicy: MAL_SEARCH_POLICY,
+                });
               } catch (error) {
                 ctx.errors += 1;
                 ctx.details.push(`ERROR ${row.id}: ${errorMessage(error)}`);

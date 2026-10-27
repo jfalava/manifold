@@ -6,6 +6,7 @@ import { cliError, platformFetch, runHost, sleepPromise } from "@/effect-kit";
 import { chapterCoverage, mostCovered, type ChapterCoverage } from "@/chapter-coverage";
 import { hasExactKaganeTitle, identityFromUrl, type ProviderIdentity } from "@/kagane";
 import { searchTitlesFor } from "@/registry-titles";
+import { registryCatalog, RegistryPageBudgetError } from "@/registry-catalog";
 
 export const XCOMIC_ORIGIN = "https://xcomic.me";
 export const XCOMIC_ORIGINS = [
@@ -72,12 +73,15 @@ export const createXComicClient = (options: {
   readonly maxPages?: number;
   readonly origin?: string;
   readonly onProgress?: (message: string) => void;
+  readonly catalog?: readonly JsonObject[];
+  readonly onCache?: (record: JsonObject) => void;
 }) => {
   const origin = options.origin ?? XCOMIC_ORIGIN;
   if (!XCOMIC_ORIGINS.includes(origin)) {
     throw cliError("Unknown XComic origin; use an explicitly supported HTTPS mirror.");
   }
   const maxPages = options.maxPages ?? 200;
+  const catalog = registryCatalog({ ...options, origin });
   let requested = false;
   const details = new Map<string, XComicDetails>();
   const groups = new Map<string, Schema.Schema.Type<typeof Group>>();
@@ -86,7 +90,37 @@ export const createXComicClient = (options: {
     query: string,
     variables: JsonObject,
     schema: Schema.ConstraintDecoder<A>,
+    validate?: (result: A) => void,
   ): Promise<A> => {
+    const key = JSON.stringify([query, variables]);
+    const decode = async (text: string): Promise<A> => {
+      // HTTP 200 with GraphQL errors is still incomplete evidence.
+      const envelope = await runHost(
+        Schema.decodeEffect(
+          Schema.fromJsonString(
+            Schema.Struct({
+              data: Schema.optional(Schema.NullOr(schema)),
+              errors: Schema.optional(Schema.Array(Schema.Unknown)),
+            }),
+          ),
+        )(text),
+      );
+      if (envelope.errors?.length || envelope.data == null) {
+        throw cliError("XComic GraphQL errors; refusing partial results");
+      }
+      return envelope.data;
+    };
+    const cached = catalog.read(key);
+    if (cached !== undefined) {
+      try {
+        const result = await decode(cached);
+        validate?.(result);
+        return result;
+      } catch {
+        // Invalid cached envelopes are fetched again, never accepted as partial data.
+        catalog.forget(key);
+      }
+    }
     if (requested) {
       await sleepPromise(options.delay);
     }
@@ -118,21 +152,10 @@ export const createXComicClient = (options: {
     if (response.status !== 200) {
       throw cliError(`XComic HTTP ${response.status}`);
     }
-    // GraphQL may return HTTP 200 with partial data and errors; partial results must never win.
-    const envelope = await runHost(
-      Schema.decodeEffect(
-        Schema.fromJsonString(
-          Schema.Struct({
-            data: Schema.optional(Schema.NullOr(schema)),
-            errors: Schema.optional(Schema.Array(Schema.Unknown)),
-          }),
-        ),
-      )(text),
-    );
-    if (envelope.errors?.length || envelope.data == null) {
-      throw cliError("XComic GraphQL errors; refusing partial results");
-    }
-    return envelope.data;
+    const result = await decode(text);
+    validate?.(result);
+    catalog.remember(key, text);
+    return result;
   };
   const client = {
     details: async (id: string): Promise<XComicDetails> => {
@@ -141,34 +164,42 @@ export const createXComicClient = (options: {
         return cached;
       }
       options.onProgress?.(`XComic edition ${id}`);
-      const result = await request(
+      const response = await request(
         `query($id:ID!){get_comicNode(id:$id){data{${EDITION_FIELDS} altNames type title_id trackingSites{anilist myanimelist} title_titleNode{data{${GROUP_FIELDS}}}}}}`,
         { id },
         Schema.Struct({ get_comicNode: Schema.Struct({ data: Detail }) }),
+        (result) => {
+          if (result.get_comicNode.data.id !== id) {
+            throw cliError(`XComic ${id}: inconsistent edition ID`);
+          }
+        },
       );
-      if (result.get_comicNode.data.id !== id) {
-        throw cliError(`XComic ${id}: inconsistent edition ID`);
-      }
-      details.set(id, result.get_comicNode.data);
-      return result.get_comicNode.data;
+      details.set(id, response.get_comicNode.data);
+      return response.get_comicNode.data;
     },
     group: async (id: string) => {
       const cached = groups.get(id);
       if (cached) {
         return cached;
       }
-      const result = await request(
+      const response = await request(
         `query($id:ID!){get_title_titleNode(id:$id){data{${GROUP_FIELDS}} comicNodes{data{${EDITION_FIELDS}}}}}`,
         { id },
         Schema.Struct({ get_title_titleNode: Group }),
+        (result) => {
+          if (result.get_title_titleNode.data.id !== id) {
+            throw cliError(`XComic ${id}: inconsistent title group ID`);
+          }
+        },
       );
-      if (result.get_title_titleNode.data.id !== id) {
-        throw cliError(`XComic ${id}: inconsistent title group ID`);
-      }
-      groups.set(id, result.get_title_titleNode);
-      return result.get_title_titleNode;
+      groups.set(id, response.get_title_titleNode);
+      return response.get_title_titleNode;
     },
-    search: async (word: string, language: string): Promise<readonly string[]> => {
+    search: async (
+      word: string,
+      language: string,
+      onCandidateId?: (id: string) => void,
+    ): Promise<readonly string[]> => {
       const ids = new Set<string>();
       const fingerprints = new Set<string>();
       let page = 1;
@@ -197,7 +228,7 @@ export const createXComicClient = (options: {
           ignoreGlobalGenres: false,
           ignoreGlobalBlocks: false,
         };
-        const result = await request(
+        const pageResult = await request(
           "query($select:Title_Browse_Select){get_title_browse_items(select:$select){data{id name:title altNames:alt_titles} comicNodes{data{id name}}}}",
           { select },
           Schema.Struct({
@@ -216,21 +247,22 @@ export const createXComicClient = (options: {
               }),
             ),
           }),
-        );
-        // XComic rejects multiple root fields; the pager must be a separate request.
-        const pager = await request(
-          "query($select:Title_Browse_Select){get_title_browse_pager(select:$select){next}}",
-          { select },
-          Schema.Struct({ get_title_browse_pager: Schema.Struct({ next: Schema.Int }) }),
+          (result) => {
+            if (
+              fingerprints.has(
+                JSON.stringify(result.get_title_browse_items.map((item) => item.data.id)),
+              ) &&
+              result.get_title_browse_items.length
+            ) {
+              throw cliError("XComic search pagination did not advance");
+            }
+          },
         );
         const fingerprint = JSON.stringify(
-          result.get_title_browse_items.map((item) => item.data.id),
+          pageResult.get_title_browse_items.map((item) => item.data.id),
         );
-        if (fingerprints.has(fingerprint) && result.get_title_browse_items.length) {
-          throw cliError("XComic search pagination did not advance");
-        }
         fingerprints.add(fingerprint);
-        for (const item of result.get_title_browse_items) {
+        for (const item of pageResult.get_title_browse_items) {
           if (
             hasExactKaganeTitle(
               [word],
@@ -242,18 +274,32 @@ export const createXComicClient = (options: {
             )
           ) {
             ids.add(item.data.id);
+            for (const node of item.comicNodes) {
+              onCandidateId?.(node.data.id);
+            }
           }
         }
+        // Retain discovered editions before the separately requested pager can fail.
+        const pager = await request(
+          "query($select:Title_Browse_Select){get_title_browse_pager(select:$select){next}}",
+          { select },
+          Schema.Struct({ get_title_browse_pager: Schema.Struct({ next: Schema.Int }) }),
+          (result) => {
+            const next = result.get_title_browse_pager.next;
+            if (next !== 0 && next <= page) {
+              throw cliError("XComic invalid search pager; refusing incomplete results");
+            }
+          },
+        );
         const next = pager.get_title_browse_pager.next;
         if (next === 0) {
           return [...ids];
         }
-        if (next <= page) {
-          throw cliError("XComic invalid search pager; refusing incomplete results");
-        }
         page = next;
       }
-      throw cliError(`XComic search exceeded ${maxPages} pages; no link selected`);
+      throw new RegistryPageBudgetError(
+        `XComic search exceeded ${maxPages} pages; no link selected`,
+      );
     },
     coverage: async (id: string): Promise<ChapterCoverage> => {
       const cached = inventories.get(id);
@@ -265,34 +311,46 @@ export const createXComicClient = (options: {
       let pages: number | undefined;
       for (let page = 1; page <= (pages ?? 1); page++) {
         options.onProgress?.(`XComic chapters ${id} page ${page}/${pages ?? "?"}`);
-        const result = (
+        const pageResult = (
           await request(
             "query($select:Select_Comic_ChapterList_UniqList){get_comic_chapterList_uniqList(select:$select){paging{pages} items{data{id dbStatus chaNum}}}}",
             { select: { comic_id: id, page, size: 1000, sortby: "chapter_desc" } },
             Schema.Struct({ get_comic_chapterList_uniqList: Chapters }),
+            (value) => {
+              const result = value.get_comic_chapterList_uniqList;
+              if (
+                result.paging.pages < 0 ||
+                (pages !== undefined && pages !== result.paging.pages)
+              ) {
+                throw cliError(`XComic ${id}: inconsistent chapter page count`);
+              }
+              const ids = result.items.map(({ data }) => data.id);
+              if (
+                new Set(ids).size !== ids.length ||
+                ids.some((chapterId) => seen.has(chapterId))
+              ) {
+                throw cliError(`XComic ${id}: duplicate chapter ID/incomplete pagination`);
+              }
+              if (
+                (result.paging.pages > 0 && !result.items.length) ||
+                (result.paging.pages === 0 && result.items.length)
+              ) {
+                throw cliError(`XComic ${id}: incomplete chapter inventory`);
+              }
+            },
           )
         ).get_comic_chapterList_uniqList;
-        if (
-          result.paging.pages < 0 ||
-          result.paging.pages > maxPages ||
-          (pages !== undefined && pages !== result.paging.pages)
-        ) {
-          throw cliError(`XComic ${id}: inconsistent or excessive chapter page count`);
+        if (pageResult.paging.pages > maxPages) {
+          throw new RegistryPageBudgetError(
+            `XComic ${id}: chapter inventory exceeds ${maxPages} pages`,
+          );
         }
-        pages = result.paging.pages;
-        let added = 0;
-        for (const { data } of result.items) {
-          if (seen.has(data.id)) {
-            throw cliError(`XComic ${id}: duplicate chapter ID/incomplete pagination`);
-          }
+        pages = pageResult.paging.pages;
+        for (const { data } of pageResult.items) {
           seen.add(data.id);
-          added++;
           if (data.dbStatus === "normal") {
             numbers.push({ chapter: data.chaNum });
           }
-        }
-        if ((pages > 0 && added === 0) || (pages === 0 && result.items.length)) {
-          throw cliError(`XComic ${id}: incomplete chapter inventory`);
         }
       }
       const coverage = chapterCoverage(numbers);
@@ -433,21 +491,36 @@ export const findXComicCandidates = async (
   titles: readonly string[],
   language: string,
   currentId?: string,
+  options: {
+    readonly knownIds?: readonly string[];
+    readonly onCandidateId?: (id: string) => void;
+    readonly onCandidate?: (candidate: XComicCandidate) => void;
+  } = {},
 ): Promise<readonly XComicCandidate[]> => {
   const groupIds = new Set<string>();
+  const retainedIds = new Set([...(options.knownIds ?? []), ...(currentId ? [currentId] : [])]);
+  const retain = (id: string): void => {
+    retainedIds.add(id);
+    options.onCandidateId?.(id);
+  };
+  for (const id of retainedIds) {
+    groupIds.add((await client.details(id)).title_id);
+  }
   for (const title of searchTitlesFor(titles)) {
-    for (const id of await client.search(title, language)) {
+    for (const id of await client.search(title, language, retain)) {
       groupIds.add(id);
     }
-  }
-  if (currentId) {
-    groupIds.add((await client.details(currentId)).title_id);
   }
   const candidates = new Map<string, XComicCandidate>();
   for (const groupId of groupIds) {
     const group = await client.group(groupId);
     for (const { data: edition } of group.comicNodes) {
-      if (edition.translatedLanguage !== language && edition.id !== currentId) {
+      if (edition.translatedLanguage === language || retainedIds.has(edition.id)) {
+        retain(edition.id);
+      }
+    }
+    for (const { data: edition } of group.comicNodes) {
+      if (edition.translatedLanguage !== language && !retainedIds.has(edition.id)) {
         continue;
       }
       const details = await client.details(edition.id);
@@ -456,15 +529,20 @@ export const findXComicCandidates = async (
       if (group.data.is_merged || group.data.merged_to) {
         reasons.push("merged discovery group requires review");
       }
-      candidates.set(edition.id, {
+      options.onCandidate?.({ ...verified, reasons });
+      const candidate = {
         ...verified,
         reasons,
         ...(reasons.length === 0 && { coverage: await client.coverage(edition.id) }),
-      });
+      };
+      candidates.set(edition.id, candidate);
+      options.onCandidate?.(candidate);
     }
   }
-  if (currentId && !candidates.has(currentId)) {
-    throw cliError(`XComic ${currentId}: existing edition missing from its title group`);
+  for (const id of retainedIds) {
+    if (!candidates.has(id)) {
+      throw cliError(`XComic ${id}: known edition missing from its title group; review required`);
+    }
   }
   return [...candidates.values()];
 };

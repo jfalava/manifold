@@ -326,7 +326,7 @@ manifold registry manganato --status reading,paused,planning --delay 4000 --appl
 Completed unchanged checks, including ambiguous and unmatched results, are skipped
 before `--limit`. Errors, conflicts, challenged rows and rows interrupted before
 their result was saved are retried. Failed author lookups remain retryable.
-Dry-run matches are rechecked when adding `--apply`; reports never replay writes.
+All dry-run outcomes are rechecked when adding `--apply`; reports never replay writes.
 Successful existing bindings are skipped; removed bindings can be checked again.
 
 `deferred` entries are skipped on resume while their registry inputs, page budgets

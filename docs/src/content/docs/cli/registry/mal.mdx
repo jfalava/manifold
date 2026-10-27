@@ -47,8 +47,10 @@ Every run saves an owner-only JSONL report under `~/.manifold/reports/mal-<run>.
 `--report` chooses a new output file; existing files are never overwritten.
 `--resume` reads a previous report, skips completed unchanged checks before
 `--limit`, and retries errors, conflicts and interrupted rows. Unmapped results
-remain skipped until matching inputs change or you omit `--resume` for a fresh check.
-Adding `--apply` rechecks dry-run matches rather than replaying report writes.
+remain skipped until matching inputs or the mapping-policy version changes, or
+you omit `--resume` for a fresh check. Adding `--apply` rechecks every dry-run
+outcome rather than replaying report writes. Discovery still uses AniList's
+explicit `idMal` mapping only.
 
 ```sh
 manifold registry mal --apply --resume ./mal-previous.jsonl

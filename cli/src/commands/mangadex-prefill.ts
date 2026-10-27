@@ -27,6 +27,12 @@ import { cliError, sleepPromise, validateNonNegativeLimit } from "@/effect-kit";
 
 const sleep = sleepPromise;
 
+// Bump discovery for changed resolver inputs, selection for changed match acceptance.
+const MANGADEX_RESUME_POLICY = {
+  searchPolicy: "mangadex-external-id-aliases-v1",
+  selectionPolicy: "mangadex-worker-resolver-v1",
+};
+
 type FullRegistryRow = RegistryRow;
 
 interface MangadexCtx extends RunContext {
@@ -158,7 +164,9 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
             const statusMatched = withoutMangadex.filter((row) =>
               matchesStatusFilter(row.state?.status, statusFilter),
             );
-            ctx.unmatched = statusMatched.filter((row) => !report.skip(row));
+            ctx.unmatched = statusMatched.filter(
+              (row) => !report.skip(row, MANGADEX_RESUME_POLICY),
+            );
             if (limitValue !== undefined && limitValue >= 0) {
               ctx.unmatched = ctx.unmatched.slice(0, limitValue);
             }
@@ -284,15 +292,30 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                 reporter.item(
                   formatTitle(row.title, ` → ${result.externalId.slice(0, 8)}…${method}${score}`),
                 );
-                report.entry(row, { outcome: "matched", result, retryable: incompleteAliases });
+                report.entry(row, {
+                  ...MANGADEX_RESUME_POLICY,
+                  outcome: "matched",
+                  result,
+                  retryable: incompleteAliases,
+                });
               } else if (result.status === "ambiguous") {
                 ctx.ambiguous += 1;
                 reporter.item(formatTitle(row.title, " — ambiguous"));
-                report.entry(row, { outcome: "ambiguous", result, retryable: incompleteAliases });
+                report.entry(row, {
+                  ...MANGADEX_RESUME_POLICY,
+                  outcome: "ambiguous",
+                  result,
+                  retryable: incompleteAliases,
+                });
               } else {
                 ctx.notFound += 1;
                 reporter.item(formatTitle(row.title, " — not_found"));
-                report.entry(row, { outcome: "unmatched", result, retryable: incompleteAliases });
+                report.entry(row, {
+                  ...MANGADEX_RESUME_POLICY,
+                  outcome: "unmatched",
+                  result,
+                  retryable: incompleteAliases,
+                });
               }
               reporter.progress(done(), total, counts());
               await sleep(delayMs);

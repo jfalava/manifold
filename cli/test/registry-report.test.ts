@@ -210,7 +210,7 @@ describe("registry report resume", () => {
       const resumed = openRegistryReport("manganato", true, settings, second, first);
       try {
         expect(resumed.skip(row())).toBe(false);
-        expect(resumed.skip(row("b"))).toBe(true);
+        expect(resumed.skip(row("b"))).toBe(applied);
       } finally {
         resumed.close();
       }

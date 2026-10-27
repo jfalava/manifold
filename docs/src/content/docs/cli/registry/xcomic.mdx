@@ -25,7 +25,8 @@ groups and edition markers require rejection/review. Title-only candidates never
 auto-link. Metadata can be wrong: a pilot group may contain series chapters.
 
 The largest complete inventory of distinct normal numeric chapter positions
-wins among compatible editions of the same work and language. Every inventory
+can win only if it contains every compatible competitor's chapter positions.
+A larger count that loses chapters remains unresolved. Every inventory
 page must load. Upload counters, source labels such as `Official`, highest
 chapter numbers and search order cannot choose the winner. Deleted records and
 duplicate positions do not increase coverage. The extension's `serial` fallback
@@ -45,8 +46,9 @@ positions and test reading/refresh on a device before replacing an existing edit
 - `--language` defaults to `en`. Use XComic IDs such as `pt_br` and `es_419`,
   retaining underscores.
 - `--delay` defaults to `1500` milliseconds between sequential catalog requests.
-- `--max-pages` defaults to `200` per search/inventory. A cap or nonadvancing
-  pager is an error, never a partial match.
+- `--max-pages` defaults to `200` per search/inventory. A cap produces `deferred`;
+  increasing the ceiling reopens that row on resume. Nonadvancing pagers remain
+  errors. Cached pages count toward the ceiling; partial results never select a link.
 - `--origin` defaults to `https://xcomic.me`. Explicit supported mirrors are
   `https://xcomic.net`, `https://yona.to`, and `https://comik.to`. No automatic
   failover, cross-mirror parity guarantee or browser bypass is provided.
@@ -58,7 +60,8 @@ positions and test reading/refresh on a device before replacing an existing edit
 
 Reports include current/proposed edition IDs, group IDs, origin labels,
 corroborating tracker IDs, rejection reasons, inventories and gained/lost
-chapter positions. Per-row failures/conflicts return a nonzero exit status.
+chapter positions between candidates. Selection evidence is saved and printed
+before writes. Per-row failures/conflicts return a nonzero exit status.
 Authentication challenges, HTTP 403 and HTTP 429 stop the sweep. No XComic
 account/API key is required for the anonymously available catalog; availability
 and anti-bot policy may change. This runner does not supply desktop Chrome.
@@ -71,8 +74,9 @@ manifold registry xcomic --status reading,paused,planning --apply --resume ./xco
 
 `--resume <path>` skips completed unchanged checks, including ambiguous/unmatched
 results, before `--limit`. Errors, conflicts, blocks, incomplete alias lookups and
-interrupted rows retry. Adding `--apply` rechecks dry-run matches; reports never
-replay writes. Keep the API origin, mirror, language, alias-login mode and audit
+interrupted rows retry. Adding `--apply` rechecks all dry-run outcomes; reports never
+replay writes. Discovery-policy changes reopen misses, and selection-policy changes
+reopen ambiguities. Keep the API origin, mirror, language, alias-login mode and audit
 mode unchanged. Delay, pagination budget, status filter and limit may change.
 
 The input stays untouched. Each resume creates a new owner-only report containing
@@ -81,6 +85,13 @@ chooses its output path and never overwrites a file. New reports detect changed
 title/provider inputs. Older XComic reports compare only entry ID and title:
 use them only for the same registry with unchanged identity links. Omit `--resume`
 to recheck all unresolved results or refresh old evidence.
+
+Validated catalog responses are saved as they arrive, including individual search
+and chapter pages. Resumes reuse them for 24 hours from the original fetch time;
+completing a query does not renew earlier pages. Invalid cached bodies are refetched.
+Known edition IDs survive interruptions and expired caches, and are revalidated
+even when a fresh search omits their group. Cached reads can miss catalog changes;
+omit `--resume` to fetch fresh evidence.
 
 ## Native Paperback identity
 

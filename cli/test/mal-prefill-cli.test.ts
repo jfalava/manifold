@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 const run = (
   flags: string[],
   scenario = "normal",
-  checkpoint?: { outcome: string; apply: boolean },
+  checkpoint?: { outcome: string; apply: boolean; searchPolicy?: string; report?: string },
 ) => {
   const directory = mkdtempSync(join(tmpdir(), "mal-prefill-cli-"));
   const reportPath = join(directory, "report.jsonl");
@@ -26,6 +26,7 @@ const run = (
   import { Command } from 'effect/cli';
   import { makeRootCommand } from './src/cli';
   import { openRegistryReport } from './src/registry-report';
+  import { writeFileSync } from 'node:fs';
   for (const key of Object.keys(process.env)) if (key.startsWith('MANIFOLD_')) delete process.env[key];
   process.env.MANIFOLD_TOKEN = 'fake';
   const row = (id, providers, tombstoned = false) => ({
@@ -36,9 +37,13 @@ const run = (
   const scenario = ${JSON.stringify(scenario)};
   const checkpoint = ${JSON.stringify(checkpoint) ?? "undefined"};
   if (checkpoint) {
-    const fixture = openRegistryReport('mal', checkpoint.apply, {apiOrigin: 'https://registry.test'}, ${JSON.stringify(resumePath)});
-    fixture.entry(row(42, [['anilist', '42']]), {outcome: checkpoint.outcome});
-    fixture.close();
+    if (checkpoint.report) writeFileSync(${JSON.stringify(resumePath)}, checkpoint.report);
+    else {
+      const fixture = openRegistryReport('mal', checkpoint.apply, {apiOrigin: 'https://registry.test'}, ${JSON.stringify(resumePath)});
+      fixture.entry(row(42, [['anilist', '42']]), {outcome: checkpoint.outcome,
+        ...(checkpoint.searchPolicy && {searchPolicy: checkpoint.searchPolicy})});
+      fixture.close();
+    }
   }
   let lastLookupAt;
   globalThis.fetch = async (input, init = {}) => {
@@ -64,7 +69,7 @@ const run = (
       console.log('LOOKUP', id);
       if (scenario === 'unavailable') return new Response('Blocked', {status: 403});
       return Response.json({ data: { Media: {
-        id, idMal: id === 42 || scenario === 'duplicate' ? 77 : null, title: { romaji: 'Provider title' },
+        id, idMal: scenario !== 'unmapped' && (id === 42 || scenario === 'duplicate') ? 77 : null, title: { romaji: 'Provider title' },
       } } });
     }
     if (url.pathname.endsWith('/registry/ingest')) {
@@ -159,6 +164,43 @@ describe("registry mal CLI", () => {
     expect(result.status).toBe(0);
     expect(result.stdout.match(/LOOKUP \d+/g)).toEqual(["LOOKUP 42"]);
     expect(result.report).toContain('"outcome":"matched"');
+  });
+
+  it.each([undefined, "old-idmal"])(
+    "retries an unmapped checkpoint with policy %s once and skips its refreshed result",
+    (searchPolicy) => {
+      const refreshed = run(["--limit", "1"], "unmapped", {
+        outcome: "unmatched",
+        apply: false,
+        searchPolicy,
+      });
+      expect(refreshed.status).toBe(0);
+      expect(refreshed.stdout.match(/LOOKUP \d+/g)).toEqual(["LOOKUP 42"]);
+      expect(refreshed.report).toContain('"searchPolicy":"anilist-idmal-v1"');
+      expect(refreshed.report).toContain('"outcome":"unmatched"');
+      const resumed = run(["--limit", "1"], "unmapped", {
+        outcome: "unmatched",
+        apply: false,
+        report: refreshed.report,
+      });
+      expect(resumed.status).toBe(0);
+      expect(resumed.stdout.match(/LOOKUP \d+/g)).toEqual(["LOOKUP 43"]);
+      expect(resumed.stdout).not.toContain("WRITE");
+    },
+    10_000,
+  );
+
+  it("rechecks a current-policy dry-run miss when applying", () => {
+    const result = run(["--apply", "--limit", "1"], "normal", {
+      outcome: "unmatched",
+      apply: false,
+      searchPolicy: "anilist-idmal-v1",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout.match(/LOOKUP \d+/g)).toEqual(["LOOKUP 42"]);
+    expect(result.stdout).toContain('"externalId":"77"');
+    expect(result.stdout).toContain("WRITE");
+    expect(result.report).toContain('"applied":true');
   });
 
   it("rechecks dry-run matches when resuming with --apply", () => {
