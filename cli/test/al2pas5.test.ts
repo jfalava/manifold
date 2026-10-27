@@ -383,6 +383,57 @@ describe("al2pas5 source attachments", () => {
     ).toEqual(entities);
   });
 
+  it.each([
+    [undefined, "https://manifold.jfa.dev/android-chrome-512x512.png"],
+    ["", "https://manifold.jfa.dev/android-chrome-512x512.png"],
+    ["  ", "https://manifold.jfa.dev/android-chrome-512x512.png"],
+    ["cover.jpg", "https://manifold.jfa.dev/android-chrome-512x512.png"],
+    ["https://", "https://manifold.jfa.dev/android-chrome-512x512.png"],
+    ["data:image/png;base64,AAAA", "https://manifold.jfa.dev/android-chrome-512x512.png"],
+    ["https://example.test/cover.jpg?size=large", "https://example.test/cover.jpg?size=large"],
+    [" http://example.test/cover.jpg ", "http://example.test/cover.jpg"],
+  ])("writes decodable thumbnails for cover %j", async (coverUrl, expected) => {
+    const generated = entitiesFrom(buildEntry({ ...entry, coverUrl }, multiProviderRow));
+    const archive = await parsePas5(
+      buildPas5Zip(
+        Object.fromEntries(
+          Object.entries(generated).map(([name, records]) => [name, JSON.stringify(records)]),
+        ),
+      ),
+    );
+    expect(Object.values(archive.__MANGA_INFO_V5).map((info) => info.thumbnailUrl)).toEqual([
+      expected,
+      expected,
+      expected,
+      expected,
+      expected,
+    ]);
+  });
+
+  it("repairs empty base thumbnails without changing valid covers or other metadata", () => {
+    const base = entitiesFrom(
+      buildEntry({ ...entry, coverUrl: "https://example.test/cover.jpg" }, registryRow),
+    );
+    const infoId = Object.keys(base.__MANGA_INFO_V5)[0]!;
+    base.__MANGA_INFO_V5[infoId] = { ...base.__MANGA_INFO_V5[infoId]!, thumbnailUrl: "" };
+    const result = sourceFree(base, {
+      __LIBRARY_MANGA_V5: {},
+      __SOURCE_MANGA_V5: {},
+      __MANGA_INFO_V5: {},
+    }).entities;
+    expect(result).toEqual({
+      ...base,
+      __MANGA_INFO_V5: {
+        ...base.__MANGA_INFO_V5,
+        [infoId]: {
+          ...base.__MANGA_INFO_V5[infoId],
+          thumbnailUrl: "https://manifold.jfa.dev/android-chrome-512x512.png",
+        },
+      },
+    });
+    expect(base.__MANGA_INFO_V5[infoId]?.thumbnailUrl).toBe("");
+  });
+
   it("generates from registry identity and list state without AniList metadata", () => {
     const row: RegistryRow = {
       ...registryRow,

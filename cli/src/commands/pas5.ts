@@ -136,6 +136,15 @@ export const pas5EntryFromRegistry = (
   canonicalProviderId: canonical.providerId,
 });
 
+const thumbnailUrlFor = (value: string | undefined): string => {
+  const coverUrl = value?.trim() ?? "";
+  const cover = URL.parse(coverUrl);
+  // Paperback decodes this as a URL; an empty string rejects the entire backup.
+  return cover?.protocol === "https:" || cover?.protocol === "http:"
+    ? coverUrl
+    : "https://manifold.jfa.dev/android-chrome-512x512.png";
+};
+
 const buildMangaInfo = (entry: Pas5Entry, additionalInfo: Record<string, string>): MangaInfo => {
   const secondary = new Set<string>();
   if (entry.romajiTitle && entry.romajiTitle !== entry.title) {
@@ -158,7 +167,7 @@ const buildMangaInfo = (entry: Pas5Entry, additionalInfo: Record<string, string>
     schemaVersion: 1,
     primaryTitle: entry.title,
     artworkUrls: [],
-    thumbnailUrl: entry.coverUrl ?? "",
+    thumbnailUrl: thumbnailUrlFor(entry.coverUrl),
     contentRating: "SAFE",
     rating: isFiniteNumber(entry.averageScore) ? entry.averageScore / 100 : 0,
     secondaryTitles: [...secondary],
@@ -439,7 +448,9 @@ export const sourceFreeEntities = (
     Object.values(retainedSources).map((source) => String(source.mangaInfo.id)),
   );
   const retainedInfos = Object.fromEntries(
-    Object.entries(allInfos).filter(([id]) => usedInfoIds.has(id)),
+    Object.entries(allInfos)
+      .filter(([id]) => usedInfoIds.has(id))
+      .map(([id, info]) => [id, { ...info, thumbnailUrl: thumbnailUrlFor(info.thumbnailUrl) }]),
   );
 
   return {
