@@ -193,9 +193,6 @@ export const baseConfig: OxlintConfig = {
     ...builtinRules,
     ...antiSlopRules,
   },
-  options: {
-    typeAware: true,
-  },
 };
 
 export default defineConfig({

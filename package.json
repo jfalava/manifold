@@ -73,7 +73,7 @@
     "manifold": "bun run --cwd cli manifold",
     "plan": "bun run build:catalog && bun run --cwd iac plan",
     "plan:api": "bun run plan",
-    "prepare": "effect-tsgo patch --typescript --oxlint",
+    "prepare": "effect-tsgo patch --typescript --tsrs --oxlint",
     "test": "bun run test:contract && bun run test:json && bun run test:router && bun run test:canonical && bun run test:mangadex && bun run --cwd admin test && bun run --cwd api test && bun run --cwd cli test && bun run test:paperback",
     "test:canonical": "bun run --cwd packages/canonical test",
     "test:contract": "reuse lint",
@@ -93,6 +93,7 @@
     "oxlint": "1.89.0",
     "oxlint-tsgolint": "7.0.2005",
     "realm": "catalog:paperback",
+    "tsrs": "catalog:build",
     "typescript": "7.0.2"
   }
 }
