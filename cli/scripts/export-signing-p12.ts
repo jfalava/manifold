@@ -16,7 +16,7 @@
 /** @effect-diagnostics nodeBuiltinImport:off */
 /** @effect-diagnostics globalConsole:off */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 

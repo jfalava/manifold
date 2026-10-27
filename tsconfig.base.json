@@ -12,7 +12,7 @@
       {
         "name": "@effect/language-service",
         "ignoreEffectWarningsInTscExitCode": false,
-        "allowedUnstableApis": ["effect/cli", "effect/http"],
+        "allowedUnstableApis": ["effect/cli", "effect/http", "effect/Terminal", "@effect/platform-bun/BunRuntime", "@effect/platform-bun/BunServices"],
         "diagnosticSeverity": {
           "abortControllerInEffect": "error",
           "asyncFunction": "error",
