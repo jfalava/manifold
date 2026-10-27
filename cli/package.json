@@ -1,6 +1,6 @@
 {
   "name": "@manifold/cli",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "manifold CLI: migrations, op-log triage, drift reconciliation, registry backfill.",
   "license": "MIT",
@@ -18,8 +18,6 @@
     "build:linux-arm64": "mkdir -p dist && bun build --compile --target=bun-linux-arm64 index.ts --outfile dist/manifold-cli-linux-arm64",
     "build:linux-x64": "mkdir -p dist && bun build --compile --target=bun-linux-x64 index.ts --outfile dist/manifold-cli-linux-x64",
     "build:windows-x64": "mkdir -p dist && bun build --compile --target=bun-windows-x64 index.ts --outfile dist/manifold-cli-windows-x64.exe",
-    "signing:provision": "bun scripts/provision-signing-cert.ts",
-    "signing:export": "bun scripts/export-signing-p12.ts",
     "check": "oxlint --fix",
     "format": "oxfmt",
     "lint": "oxlint",
@@ -34,6 +32,8 @@
     "reconcile:diff": "bun index.ts reconcile diff",
     "registry:import": "bun index.ts registry import",
     "registry:mangadex": "bun index.ts registry mangadex",
+    "signing:export": "bun scripts/export-signing-p12.ts",
+    "signing:provision": "bun scripts/provision-signing-cert.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "upgrade": "bun index.ts upgrade"
