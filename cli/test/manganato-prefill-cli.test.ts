@@ -910,7 +910,9 @@ describe("registry manganato resume", () => {
         },
         recommendation: { requiresOptIn: true, acceptEligible: true },
       });
-      expect(entry.candidates.find((candidate) => candidate.id === "two").evidence).toMatchObject({
+      expect(
+        entry.candidates.find((candidate: { id: string }) => candidate.id === "two").evidence,
+      ).toMatchObject({
         author: "missing",
         eligible: false,
         userConfirmed: false,

@@ -24,6 +24,7 @@ import {
   jsonFromResponseEffect,
   runHost,
   type CliEffectError,
+  type FetchFn,
 } from "@/effect-kit";
 
 interface TokenResponse {
@@ -56,7 +57,7 @@ const decodeTokenResponse = (value: JsonValue): TokenResponse | undefined => {
 
 export interface MangaDexTokenManagerOptions {
   readonly credentials: MangaDexPersonalClientCredentials;
-  readonly fetcher?: typeof fetch;
+  readonly fetcher?: FetchFn;
   /**
    * When set, tokens are persisted here and reused across runs: a stored
    * refresh token avoids re-minting password grants, which is what trips
@@ -80,7 +81,6 @@ const loadPersistedTokensEffect = (cachePath: string | undefined): Effect.Effect
     }
 
     const outcome = yield* fromPromise(async () => {
-      // SAFETY: token cache JSON is decoded via isJsonObject / field guards below
       const raw: unknown = JSON.parse(await readFile(cachePath, "utf8"));
 
       if (!isJsonObject(raw)) {

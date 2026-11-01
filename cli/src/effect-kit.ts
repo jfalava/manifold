@@ -97,8 +97,10 @@ export const parseJsonValue = (text: string, label = "json"): JsonValue => {
  * Fetch entry used by the CLI. Reads `globalThis.fetch` on each call so tests
  * can `vi.stubGlobal("fetch", …)` without rebinding a frozen reference.
  */
-export const platformFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
-  globalThis.fetch(input, init);
+/** The fetch call signature, without Bun's extra `fetch` statics, so tests can pass plain functions. */
+export type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+export const platformFetch: FetchFn = (input, init) => globalThis.fetch(input, init);
 
 /** UUID for OAuth state / PKCE (sync host). */
 export const newId = (): string => {

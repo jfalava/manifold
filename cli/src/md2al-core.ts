@@ -13,7 +13,8 @@ import {
   stringField,
   type JsonObject,
 } from "@manifold/json";
-import { Effect } from "effect";
+import { ListStatus } from "@manifold/contract";
+import { Effect, Option, Schema } from "effect";
 
 import type { PhaseReporter } from "@/ui";
 import {
@@ -25,6 +26,7 @@ import {
   sleepPromise,
   type CliEffectError,
 } from "@/effect-kit";
+import { aniListGraphqlEffect } from "@/anilist-request";
 
 /**
  * MangaDex → AniList migration phases, ported from
@@ -33,22 +35,14 @@ import {
  */
 
 const MD_API = "https://api.mangadex.org";
-const ANILIST_ENDPOINT = "https://graphql.anilist.co";
 const USER_AGENT = manifoldUserAgent("cli");
-const REQUEST_INTERVAL_MS = 2_500; // 30/min ÷ 1.25 safety margin → ≤24 req/min
 const MD_REQUEST_INTERVAL_MS = 250; // MangaDex global ~5 req/s
 const BATCH = 100;
 
 /** Promise sleep for callers that still take a Promise delay. */
 export const sleep = sleepPromise;
 
-export type MdStatus =
-  | "reading"
-  | "on_hold"
-  | "plan_to_read"
-  | "dropped"
-  | "re_reading"
-  | "completed";
+export type MdStatus = ListStatus;
 
 export const STATUS_TO_ANILIST: Record<MdStatus, string> = {
   reading: "CURRENT",
@@ -75,68 +69,32 @@ export interface MatchResult {
   method?: "links-al" | "mal-link" | "title-exact" | "title-partial";
 }
 
+const MdLibraryEntrySchema = Schema.Struct({
+  mangaDexId: Schema.String,
+  status: ListStatus,
+  title: Schema.String,
+  altTitles: Schema.mutable(Schema.Array(Schema.String)),
+  anilistId: Schema.optional(Schema.String),
+  malId: Schema.optional(Schema.String),
+});
+
+const MatchResultSchema = Schema.Struct({
+  mangaDexId: Schema.String,
+  status: ListStatus,
+  anilistId: Schema.optional(Schema.String),
+  method: Schema.optional(
+    Schema.Literals(["links-al", "mal-link", "title-exact", "title-partial"]),
+  ),
+});
+
+const readJsonFile = <A>(file: string, schema: Schema.Codec<A, A>): A | undefined =>
+  existsSync(file)
+    ? Option.getOrUndefined(
+        Schema.decodeOption(Schema.fromJsonString(schema))(readFileSync(file, "utf8")),
+      )
+    : undefined;
+
 // ---------- shared HTTP helpers ----------
-
-const gqlEffect = (
-  token: string,
-  query: string,
-  variables: JsonObject = {},
-): Effect.Effect<JsonObject, CliEffectError> =>
-  Effect.gen(function* () {
-    const response = yield* fromPromise(() =>
-      platformFetch(ANILIST_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          accept: "application/json",
-          authorization: `Bearer ${token}`,
-          "user-agent": USER_AGENT,
-        },
-        body: JSON.stringify({ query, variables }),
-      }),
-    ).pipe(Effect.mapError((cause) => cliError(errorMessage(cause))));
-
-    if (response.status === 429) {
-      const retryAfter = Number(response.headers.get("retry-after") ?? "5");
-      yield* sleepEffect(Math.max(retryAfter, 5) * 1000);
-
-      return yield* gqlEffect(token, query, variables);
-    }
-
-    const raw: unknown = yield* fromPromise(() => response.json()).pipe(
-      Effect.mapError((cause) => cliError(errorMessage(cause))),
-    );
-
-    if (!isJsonObject(raw)) {
-      return yield* cliError("AniList returned an invalid GraphQL response");
-    }
-
-    const errors = raw.errors;
-
-    if (errors !== undefined && !isJsonArray(errors)) {
-      return yield* cliError("AniList returned an invalid GraphQL errors envelope");
-    }
-
-    if (isJsonArray(errors) && errors.length > 0) {
-      const messages = errors.map((error) =>
-        isJsonObject(error) ? (stringField(error, "message") ?? "?") : "?",
-      );
-
-      return yield* cliError(messages.join("; "));
-    }
-
-    if (!response.ok) {
-      return yield* cliError(`AniList HTTP ${response.status}`);
-    }
-
-    const data = objectField(raw, "data");
-
-    if (!data) {
-      return yield* cliError("AniList response missing data");
-    }
-
-    return data;
-  });
 
 /**
  * Resolves the current MangaDex access token lazily so long-running phases
@@ -200,37 +158,16 @@ const paths = (tmpDir: string) => ({
   progress: `${tmpDir}/md-progress.json`,
 });
 
-export const loadSnapshot = (tmpDir: string): MdLibraryEntry[] | undefined => {
-  const file = paths(tmpDir).snapshot;
+export const loadSnapshot = (tmpDir: string): MdLibraryEntry[] | undefined =>
+  readJsonFile(paths(tmpDir).snapshot, Schema.mutable(Schema.Array(MdLibraryEntrySchema)));
 
-  if (!existsSync(file)) {
-    return undefined;
-  }
-
-  try {
-    // SAFETY: parsed JSON matches MdLibraryEntry[]
-    return JSON.parse(readFileSync(file, "utf8")) as MdLibraryEntry[];
-  } catch {
-    return undefined;
-  }
-};
-
-export const loadMatches = (tmpDir: string): Map<string, MatchResult> => {
-  const file = paths(tmpDir).matches;
-
-  if (!existsSync(file)) {
-    return new Map();
-  }
-
-  try {
-    // SAFETY: parsed JSON matches MatchResult[]
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as MatchResult[];
-
-    return new Map(parsed.map((m) => [m.mangaDexId, m]));
-  } catch {
-    return new Map();
-  }
-};
+export const loadMatches = (tmpDir: string): Map<string, MatchResult> =>
+  new Map(
+    (readJsonFile(paths(tmpDir).matches, Schema.Array(MatchResultSchema)) ?? []).map((match) => [
+      match.mangaDexId,
+      match,
+    ]),
+  );
 
 const phaseExportEffect = (
   getMdToken: MdTokenProvider,
@@ -270,24 +207,13 @@ const phaseExportEffect = (
       return yield* cliError(`MangaDex HTTP ${statusResponse.status} for /manga/status`);
     }
 
-    // SAFETY: MangaDex /manga/status JSON is decoded via isJsonObject / isMdStatus below
     const statusBody: unknown = yield* fromPromise(() => statusResponse.json()).pipe(
       Effect.mapError((cause) => cliError(errorMessage(cause))),
     );
 
     const statuses = isJsonObject(statusBody) ? (objectField(statusBody, "statuses") ?? {}) : {};
 
-    const validStatuses = new Set<string>([
-      "reading",
-      "on_hold",
-      "plan_to_read",
-      "dropped",
-      "re_reading",
-      "completed",
-    ]);
-
-    const isMdStatus = (value: unknown): value is MdStatus =>
-      isString(value) && validStatuses.has(value);
+    const isMdStatus = Schema.is(ListStatus);
 
     const entries: MdLibraryEntry[] = [];
 
@@ -373,20 +299,12 @@ export const phaseExport = (
 ): Promise<MdLibraryEntry[]> => runHost(phaseExportEffect(getMdToken, tmpDir, report));
 
 export const loadProgress = (tmpDir: string): Map<string, number> | undefined => {
-  const file = paths(tmpDir).progress;
+  const progress = readJsonFile(
+    paths(tmpDir).progress,
+    Schema.Record(Schema.String, Schema.Finite),
+  );
 
-  if (!existsSync(file)) {
-    return undefined;
-  }
-
-  try {
-    // SAFETY: parsed JSON matches Record<string, number>
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<string, number>;
-
-    return new Map(Object.entries(parsed));
-  } catch {
-    return undefined;
-  }
+  return progress === undefined ? undefined : new Map(Object.entries(progress));
 };
 
 const saveProgress = (tmpDir: string, progress: Map<string, number>): void => {
@@ -401,7 +319,8 @@ const searchAniListByTitleEffect = (
   search: string,
 ): Effect.Effect<readonly { id: number; titles: readonly string[] }[], CliEffectError> =>
   Effect.gen(function* () {
-    const data = yield* gqlEffect(
+    const data = yield* aniListGraphqlEffect(
+      "cli",
       token,
       `query ($search: String) {
       Page(perPage: 10) {
@@ -498,7 +417,8 @@ const phaseMatchEffect = (
 
       // 2) MAL link
       if (!result.anilistId && entry.malId) {
-        const malResult = yield* gqlEffect(
+        const malResult = yield* aniListGraphqlEffect(
+          "cli",
           anilistToken,
           `query ($idMal: Int) {
             Media(idMal: $idMal, type: MANGA) { id }
@@ -523,10 +443,6 @@ const phaseMatchEffect = (
         );
 
         result = malResult;
-
-        if (result.method === "mal-link") {
-          yield* sleepEffect(REQUEST_INTERVAL_MS);
-        }
       }
 
       // 3) Title search across title + alt titles
@@ -544,7 +460,7 @@ const phaseMatchEffect = (
               const normalizedCandidate = normalizeTitle(candidate);
 
               if (!normalizedCandidate) {
-                return { result, foundExact: false, slept: false };
+                return { result, foundExact: false };
               }
 
               for (const item of media) {
@@ -557,23 +473,18 @@ const phaseMatchEffect = (
                         method: "title-exact" as const,
                       } satisfies MatchResult,
                       foundExact: true,
-                      slept: false,
                     };
                   }
                 }
               }
 
-              return { result, foundExact: false, slept: true };
+              return { result, foundExact: false };
             }),
-            Effect.orElseSucceed(() => ({ result, foundExact: false, slept: false })),
+            Effect.orElseSucceed(() => ({ result, foundExact: false })),
           );
 
           result = titleResult.result;
           foundExact = titleResult.foundExact;
-
-          if (titleResult.slept && !foundExact) {
-            yield* sleepEffect(REQUEST_INTERVAL_MS);
-          }
         }
       }
 
@@ -640,12 +551,10 @@ const collectProgressEffect = (
         continue;
       }
 
-      if (cachedProgress?.has(entry.mangaDexId)) {
-        progressByMdId.set(
-          entry.mangaDexId,
-          // SAFETY: value matches number at this call site
-          cachedProgress.get(entry.mangaDexId) as number,
-        );
+      const cached = cachedProgress?.get(entry.mangaDexId);
+
+      if (cached !== undefined) {
+        progressByMdId.set(entry.mangaDexId, cached);
       } else {
         yield* Effect.gen(function* () {
           const mdToken = yield* fromPromise(getMdToken).pipe(
@@ -745,7 +654,7 @@ const fetchExistingProgressEffect = (
   anilistToken: string,
 ): Effect.Effect<Map<string, number>, CliEffectError> =>
   Effect.gen(function* () {
-    const viewer = yield* gqlEffect(anilistToken, `query { Viewer { id } }`);
+    const viewer = yield* aniListGraphqlEffect("cli", anilistToken, `query { Viewer { id } }`);
     const viewerObject = objectField(viewer, "Viewer");
     const viewerId = viewerObject?.id;
 
@@ -753,7 +662,8 @@ const fetchExistingProgressEffect = (
       return yield* cliError("Could not resolve AniList viewer id.");
     }
 
-    const data = yield* gqlEffect(
+    const data = yield* aniListGraphqlEffect(
+      "cli",
       anilistToken,
       `query ($userId: Int) {
       MediaListCollection(userId: $userId, type: MANGA) {
@@ -847,7 +757,8 @@ const saveMatchesEffect = (
 
       const pushResult = yield* Effect.gen(function* () {
         if (!options.dryRun) {
-          yield* gqlEffect(
+          yield* aniListGraphqlEffect(
+            "cli",
             anilistToken,
             `mutation ($mediaId: Int!, $status: MediaListStatus${progress !== undefined ? ", $progress: Int" : ""}) {
             SaveMediaListEntry(mediaId: $mediaId, status: $status, private: true${progress !== undefined ? ", progress: $progress" : ""}) { id status private progress }
@@ -887,10 +798,6 @@ const saveMatchesEffect = (
           ["fail", failed],
           ["prog", withProgress],
         ]);
-      }
-
-      if (!options.dryRun) {
-        yield* sleepEffect(REQUEST_INTERVAL_MS);
       }
     }
 

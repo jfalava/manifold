@@ -216,16 +216,15 @@ const chapterIdsUpToEffect = (
     const chapters = yield* getChapters(mangaId);
 
     const numbered = chapters
-      .filter((chapter) => chapter.chapterNumber !== undefined)
-      .sort((a, b) => (a.chapterNumber ?? 0) - (b.chapterNumber ?? 0));
+      .flatMap(({ id, chapterNumber }) =>
+        chapterNumber === undefined ? [] : [{ id, chapterNumber }],
+      )
+      .sort((a, b) => a.chapterNumber - b.chapterNumber);
 
     const ids: string[] = [];
 
     for (const chapter of numbered) {
-      // SAFETY: value matches number at this call site
-      const number = chapter.chapterNumber as number;
-
-      if (number > progress) {
+      if (chapter.chapterNumber > progress) {
         break;
       }
 

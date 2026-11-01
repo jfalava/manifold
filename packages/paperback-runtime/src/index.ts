@@ -45,7 +45,6 @@ export {
   aniListRequest,
   decodeAniListViewer,
   viewerQuery,
-  toAniListStatus,
   normalizeAniListStatus,
   fetchAniListLibrary,
   fetchAniListMediaListEntryIds,
@@ -55,7 +54,6 @@ export {
   deleteAniListEntry,
   type AniListLibraryItem,
   type AniListViewer,
-  type AniListFieldChange,
   type FuzzyDateInput,
 } from "./anilist-graphql.js";
 

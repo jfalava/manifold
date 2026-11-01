@@ -13,7 +13,7 @@ import {
   saveAniListStatus,
 } from "./anilist-graphql.js";
 import type { PendingSyncOp } from "./api.js";
-import { parsePendingAniListOp } from "./op-payload.js";
+import { parsePendingAniListOp } from "@manifold/contract";
 import { configuredPersonalApi } from "./runtime.js";
 
 // Remote mutations (admin panel, CLI, migration) land as pending anilist:*

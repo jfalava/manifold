@@ -13,3 +13,5 @@ export {
   encodeResponseEffect,
   ResponseDecodeError,
 } from "./codec";
+
+export * from "./anilist-op";

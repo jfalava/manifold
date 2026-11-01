@@ -139,7 +139,12 @@ describe("registry xcomic", () => {
       if (line.kind !== "read") return line;
       const body = JSON.parse(line.data);
       const inventory = body.data?.get_comic_chapterList_uniqList;
-      if (!inventory?.items.some((item) => item.data.id.startsWith("large-2-"))) return line;
+      if (
+        !inventory?.items.some((item: { data: { id: string } }) =>
+          item.data.id.startsWith("large-2-"),
+        )
+      )
+        return line;
       inventory.items = [];
       return { ...line, data: JSON.stringify(body) };
     });
@@ -289,18 +294,22 @@ describe("registry xcomic", () => {
     expect(result.status, result.stderr).toBe(0);
     const entry = result.report.find((item) => item.entryId === "target");
     expect(entry).toMatchObject({ outcome: "matched", selectedId: "large" });
-    expect(entry.candidates.find((candidate) => candidate.id === "large").coverage).toEqual({
+    expect(
+      entry.candidates.find((candidate: { id: string }) => candidate.id === "large").coverage,
+    ).toEqual({
       unit: "chapters",
       count: 5,
       numbers: [1, 2, 3, 4, 5],
     });
-    expect(entry.candidates.find((candidate) => candidate.id === "empty")).toMatchObject({
+    expect(
+      entry.candidates.find((candidate: { id: string }) => candidate.id === "empty"),
+    ).toMatchObject({
       advertisedChapters: null,
       coverage: { unit: "chapters", count: 0, numbers: [] },
     });
-    expect(entry.candidates.find((candidate) => candidate.id === "pilot").reasons).toContain(
-      "contradictory anilist ID",
-    );
+    expect(
+      entry.candidates.find((candidate: { id: string }) => candidate.id === "pilot").reasons,
+    ).toContain("contradictory anilist ID");
     expect(result.stdout).not.toContain("WRITE");
   });
 

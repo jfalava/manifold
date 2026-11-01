@@ -121,9 +121,9 @@ export const apiConfig = (
 const apiCallEffect = <A>(
   config: ApiConfig,
   path: string,
-  method = "GET",
-  body?: JsonValue,
-  schema?: Schema.ConstraintDecoder<A>,
+  method: string,
+  body: JsonValue | undefined,
+  schema: Schema.ConstraintDecoder<A>,
 ): Effect.Effect<A, CliEffectError> =>
   Effect.gen(function* () {
     const request = (token: string) =>
@@ -224,29 +224,24 @@ const apiCallEffect = <A>(
       return yield* cliError(message);
     }
 
-    if (schema !== undefined) {
-      if (raw !== undefined && !isJsonValue(raw)) {
-        return yield* cliError(`Personal API response is not JSON (${path})`);
-      }
-
-      const decoded: JsonValue = raw === undefined ? null : raw;
-
-      return yield* Effect.try({
-        try: () => decodeResponse(schema, decoded, path),
-        catch: (cause) => cliError(errorMessage(cause)),
-      });
+    if (raw !== undefined && !isJsonValue(raw)) {
+      return yield* cliError(`Personal API response is not JSON (${path})`);
     }
 
-    // SAFETY: untyped call sites trust wire until migrated
-    return raw as A;
+    const decoded: JsonValue = raw === undefined ? null : raw;
+
+    return yield* Effect.try({
+      try: () => decodeResponse(schema, decoded, path),
+      catch: (cause) => cliError(errorMessage(cause)),
+    });
   });
 
 export const apiCall = <A>(
   config: ApiConfig,
   path: string,
-  method = "GET",
-  body?: JsonValue,
-  schema?: Schema.ConstraintDecoder<A>,
+  method: string,
+  body: JsonValue | undefined,
+  schema: Schema.ConstraintDecoder<A>,
 ): Promise<A> => runHost(apiCallEffect(config, path, method, body, schema));
 
 /** Registry list row (compat alias for contract RegistryListEntry). */

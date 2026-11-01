@@ -260,7 +260,7 @@ describe("registry report resume", () => {
           ...original,
           providers: [{ provider: "anilist" as const, externalId: "other", updatedAt: 1 }],
         },
-        { ...original, state: { ...original.state!, status: "planning" as const } },
+        { ...original, state: { ...original.state!, status: "plan_to_read" as const } },
       ])
         expect(resumed.skip(changed)).toBe(false);
     } finally {

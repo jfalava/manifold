@@ -764,8 +764,8 @@ describe("MangaNato identity and complete search", () => {
   it("loads chapter evidence by bound MAL ID and rejects contradictory or unavailable canonical records", async () => {
     let idMal = 456;
     let failed = false;
-    vi.stubGlobal("fetch", async (_input, init) => {
-      const { variables } = JSON.parse(String(init.body));
+    vi.stubGlobal("fetch", async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const { variables } = JSON.parse(String(init?.body));
       if (failed) return new Response("unavailable", { status: 503 });
       if (variables.idMal !== 456) return Response.json({ data: { Media: null } });
       return Response.json({
@@ -1369,7 +1369,7 @@ describe("MangaNato identity and complete search", () => {
     expect(onBlocked).not.toHaveBeenCalled();
   });
 
-  it.each([
+  it.each<{ status: number; headers: Record<string, string> }>([
     { status: 200, headers: { "cf-mitigated": "challenge" } },
     { status: 403, headers: {} },
     { status: 429, headers: {} },

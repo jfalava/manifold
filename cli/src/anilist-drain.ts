@@ -7,15 +7,12 @@
  * Runs on a non-Cloudflare egress IP (prefer IPv6). Does not import the
  * GPL paperback-runtime package; mutations mirror its semantics.
  */
-import { ANILIST_GRAPHQL_ENDPOINT } from "@manifold/canonical/sources";
 import {
   isFiniteNumber,
   isJsonArray,
   isJsonObject,
   isString,
-  manifoldUserAgent,
   objectField,
-  stringField,
   type JsonObject,
 } from "@manifold/json";
 import { Effect } from "effect";
@@ -25,26 +22,18 @@ import {
   toAniListGraphqlStatus,
   type AniListFieldChange,
   type PendingAniListOp,
-} from "@/anilist-op-payload";
+} from "@manifold/contract";
 
 export type { PendingAniListOp };
 
 import {
   cliError,
-  epochMillisNow,
   fromPromise,
-  jsonFromResponseEffect,
-  platformFetch,
   runHost,
-  sleep,
   type CliEffectError,
 } from "@/effect-kit";
+import { __aniListRequestTest, aniListGraphqlEffect } from "@/anilist-request";
 
-const USER_AGENT = manifoldUserAgent("cli-drain");
-
-/** Stay under AniList ~30 req/min IP cap. */
-const DEFAULT_REQUEST_INTERVAL_MS = 2_500;
-let requestIntervalMs = DEFAULT_REQUEST_INTERVAL_MS;
 const DRAIN_BATCH_LIMIT = 25;
 const FMI_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -81,19 +70,6 @@ type FuzzyDateInput = {
   readonly day: number;
 };
 
-let lastRequestAt = 0;
-
-const throttleEffect = (): Effect.Effect<void> =>
-  Effect.gen(function* () {
-    const wait = requestIntervalMs - (epochMillisNow() - lastRequestAt);
-
-    if (wait > 0) {
-      yield* sleep(wait);
-    }
-
-    lastRequestAt = epochMillisNow();
-  });
-
 const errorText = (cause: unknown): string => {
   if (cause instanceof Error) {
     return cause.message;
@@ -105,68 +81,6 @@ const errorText = (cause: unknown): string => {
 
   return "unknown error";
 };
-
-const gqlEffect = (
-  token: string,
-  query: string,
-  variables: JsonObject = {},
-  attempt = 0,
-): Effect.Effect<JsonObject, CliEffectError> =>
-  Effect.gen(function* () {
-    yield* throttleEffect();
-
-    const response = yield* fromPromise(() =>
-      platformFetch(ANILIST_GRAPHQL_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          accept: "application/json",
-          authorization: `Bearer ${token}`,
-          "user-agent": USER_AGENT,
-        },
-        body: JSON.stringify({ query, variables }),
-      }),
-    ).pipe(Effect.mapError((cause) => cliError(`AniList fetch failed: ${cause.message}`)));
-
-    if (response.status === 429 && attempt < 5) {
-      const retryAfter = Number(response.headers.get("retry-after") ?? "5");
-      yield* sleep(Math.max(retryAfter, 5) * 1000);
-
-      return yield* gqlEffect(token, query, variables, attempt + 1);
-    }
-
-    const raw = yield* jsonFromResponseEffect(response, "anilist.drain.gql");
-
-    if (!isJsonObject(raw)) {
-      return yield* cliError("AniList returned an invalid GraphQL response");
-    }
-
-    const errors = raw.errors;
-
-    if (errors !== undefined && !isJsonArray(errors)) {
-      return yield* cliError("AniList returned an invalid GraphQL errors envelope");
-    }
-
-    if (isJsonArray(errors) && errors.length > 0) {
-      const messages = errors.map((error) =>
-        isJsonObject(error) ? (stringField(error, "message") ?? "?") : "?",
-      );
-
-      return yield* cliError(messages.join("; "));
-    }
-
-    if (!response.ok) {
-      return yield* cliError(`AniList HTTP ${response.status}`);
-    }
-
-    const data = objectField(raw, "data");
-
-    if (!data) {
-      return yield* cliError("AniList response missing data");
-    }
-
-    return data;
-  });
 
 const mediaIdOf = (anilistId: string): number => {
   if (!/^[1-9]\d*$/.test(anilistId)) {
@@ -226,7 +140,8 @@ const saveStatusEffect = (
   Effect.gen(function* () {
     const mediaId = yield* mediaIdEffect(anilistId);
 
-    const data = yield* gqlEffect(
+    const data = yield* aniListGraphqlEffect(
+      "cli-drain",
       token,
       `mutation ($mediaId: Int!, $status: MediaListStatus) {
         SaveMediaListEntry(mediaId: $mediaId, status: $status, private: true) {
@@ -256,7 +171,8 @@ const saveProgressEffect = (
     }
 
     // Status is never touched — collections own status transitions.
-    yield* gqlEffect(
+    yield* aniListGraphqlEffect(
+      "cli-drain",
       token,
       `mutation ($mediaId: Int!, $progress: Int) {
         SaveMediaListEntry(mediaId: $mediaId, progress: $progress, private: true) {
@@ -290,7 +206,8 @@ const saveFieldsEffect = (
       catch: (cause) => cliError(errorText(cause)),
     });
 
-    yield* gqlEffect(
+    yield* aniListGraphqlEffect(
+      "cli-drain",
       token,
       `mutation (
         $mediaId: Int!, $status: MediaListStatus, $score: Float, $notes: String,
@@ -315,7 +232,8 @@ const deleteEntryEffect = (
       return yield* cliError(`Invalid AniList list entry id: ${mediaListEntryId}`);
     }
 
-    const data = yield* gqlEffect(
+    const data = yield* aniListGraphqlEffect(
+      "cli-drain",
       token,
       `mutation ($id: Int) {
         DeleteMediaListEntry(id: $id) { deleted }
@@ -337,7 +255,8 @@ const fetchMediaListEntryIdsEffect = (
   userId: number,
 ): Effect.Effect<Readonly<Record<string, number>>, CliEffectError> =>
   Effect.gen(function* () {
-    const data = yield* gqlEffect(
+    const data = yield* aniListGraphqlEffect(
+      "cli-drain",
       token,
       `query ($userId: Int!) {
         MediaListCollection(userId: $userId, type: MANGA) {
@@ -385,7 +304,7 @@ const fetchMediaListEntryIdsEffect = (
 
 const fetchViewerIdEffect = (token: string): Effect.Effect<number, CliEffectError> =>
   Effect.gen(function* () {
-    const data = yield* gqlEffect(token, `query { Viewer { id } }`);
+    const data = yield* aniListGraphqlEffect("cli-drain", token, `query { Viewer { id } }`);
     const viewer = objectField(data, "Viewer");
     const id = viewer?.id;
 
@@ -528,14 +447,8 @@ export const drainAniListOpsPass = (
 
 /** @internal test helper — expose gql throttling state reset if needed later */
 export const __drainTest = {
-  resetThrottle: (): void => {
-    lastRequestAt = 0;
-    requestIntervalMs = 0;
-  },
-  restoreThrottle: (): void => {
-    lastRequestAt = 0;
-    requestIntervalMs = DEFAULT_REQUEST_INTERVAL_MS;
-  },
+  resetThrottle: __aniListRequestTest.disableThrottle,
+  restoreThrottle: __aniListRequestTest.restoreThrottle,
   parseOnly: parsePendingAniListOp,
   mediaIdOf,
   fmiDate: (value: string | null): FuzzyDateInput | null => fmiDate(value),

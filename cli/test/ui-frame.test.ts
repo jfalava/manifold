@@ -39,6 +39,7 @@ describe("hierarchical terminal output", () => {
         reflowCursorLine,
       });
       let raw = "";
+      const initialColumns: number = columns;
       const stream = Object.assign(
         new Writable({
           write(chunk, _encoding, callback) {
@@ -47,7 +48,7 @@ describe("hierarchical terminal output", () => {
             callback();
           },
         }),
-        { isTTY: true, columns, rows: 24 },
+        { isTTY: true, columns: initialColumns, rows: 24 },
       );
       const read = async () => {
         await new Promise<void>((resolve) => terminal.write("", resolve));

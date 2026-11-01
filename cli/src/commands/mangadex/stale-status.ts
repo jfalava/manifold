@@ -6,7 +6,7 @@
 /** @effect-diagnostics tryCatchInEffectGen:off */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
-import { Effect, Option } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
 import {
@@ -31,7 +31,7 @@ import {
 import {
   createMangaDexClient,
   MANGADEX_CONTENT_RATINGS,
-  type MangaDexReadingStatus,
+  MangaDexReadingStatus,
 } from "@manifold/mangadex";
 import {
   cliError,
@@ -84,7 +84,6 @@ const loadStaleCache = (): Promise<{
       let raw: unknown;
 
       try {
-        // SAFETY: stale-cache JSON is decoded via isJsonObject / field helpers below
         raw = JSON.parse(text);
       } catch {
         return { usable: false, savedAt: undefined, entries: {} };
@@ -140,15 +139,19 @@ const saveStaleCache = (entries: Record<string, number>): Promise<void> =>
     }),
   );
 
-interface StalePlanFile {
-  version: 1;
-  savedAt: string;
-  olderThan: string;
-  from: string[];
-  to: string;
-  staleIds: string[];
-  titles: Record<string, string>;
-}
+const StalePlanFile = Schema.Struct({
+  version: Schema.Literal(1),
+  savedAt: Schema.String,
+  olderThan: Schema.String,
+  from: Schema.Array(Schema.String),
+  to: Schema.String,
+  staleIds: Schema.Array(Schema.String),
+  titles: Schema.Record(Schema.String, Schema.String),
+});
+
+type StalePlanFile = typeof StalePlanFile.Type;
+
+const decodeStalePlan = Schema.decodeOption(Schema.fromJsonString(StalePlanFile));
 
 const saveStalePlan = (plan: StalePlanFile): Promise<void> =>
   runHost(
@@ -169,25 +172,12 @@ const loadStalePlan = (): Promise<StalePlanFile | undefined> =>
         return undefined;
       }
 
-      try {
-        // SAFETY: parsed JSON matches StalePlanFile; for this trusted/test payload
-        const raw = JSON.parse(text) as StalePlanFile;
-
-        return raw.version === 1 && Array.isArray(raw.staleIds) ? raw : undefined;
-      } catch {
-        return undefined;
-      }
+      return Option.getOrUndefined(decodeStalePlan(text));
     }),
   );
 
-const VALID_STATUSES: readonly MangaDexReadingStatus[] = [
-  "reading",
-  "on_hold",
-  "plan_to_read",
-  "dropped",
-  "re_reading",
-  "completed",
-];
+const VALID_STATUSES = MangaDexReadingStatus.literals;
+const isReadingStatus = Schema.is(MangaDexReadingStatus);
 
 const DURATION_UNIT_MS = {
   d: 86_400_000,
@@ -317,8 +307,7 @@ export const staleStatusCommand = Command.make(
         );
       }
 
-      // SAFETY: value matches MangaDexReadingStatus)) at this call site
-      if (!VALID_STATUSES.includes(to as MangaDexReadingStatus)) {
+      if (!isReadingStatus(to)) {
         return yield* cliError(
           `Invalid --to "${to}". Choose one of: ${VALID_STATUSES.join(", ")}.`,
         );
@@ -326,10 +315,7 @@ export const staleStatusCommand = Command.make(
 
       const fromStatuses = parseList(from);
 
-      const invalidFrom = fromStatuses.filter(
-        // SAFETY: value matches MangaDexReadingStatus), at this call site
-        (status) => !VALID_STATUSES.includes(status as MangaDexReadingStatus),
-      );
+      const invalidFrom = fromStatuses.filter((status) => !isReadingStatus(status));
 
       if (invalidFrom.length > 0) {
         return yield* cliError(
@@ -338,8 +324,7 @@ export const staleStatusCommand = Command.make(
       }
 
       const cutoffIso = new Date(epochMillisNow() - olderThanMs).toISOString();
-      // SAFETY: value matches MangaDexReadingStatus; at this call site
-      const targetStatus = to as MangaDexReadingStatus;
+      const targetStatus = to;
 
       yield* Effect.tryPromise({
         try: async () => {

@@ -1,6 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
 import { cliError, envString, runHost, sleepPromise } from "@/effect-kit";
-import { Effect, Option } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
 import { errorMessage, isJsonObject, manifoldUserAgent, numberField } from "@manifold/json";
@@ -18,7 +18,7 @@ import {
 import {
   createMangaDexClient,
   MANGADEX_CONTENT_RATINGS,
-  type MangaDexReadingStatus,
+  MangaDexReadingStatus,
 } from "@manifold/mangadex";
 
 interface UnfollowCtx extends RunContext {
@@ -33,14 +33,8 @@ const TITLE_BATCH_SIZE = 100;
 const DETAIL_LINE_CAP = 40;
 const TOKEN_CACHE_PATH = ".tmp/mangadex-token.json";
 
-const VALID_STATUSES: readonly MangaDexReadingStatus[] = [
-  "reading",
-  "on_hold",
-  "plan_to_read",
-  "dropped",
-  "re_reading",
-  "completed",
-];
+const VALID_STATUSES = MangaDexReadingStatus.literals;
+const isReadingStatus = Schema.is(MangaDexReadingStatus);
 
 const optional = (name: string, description: string) =>
   Flag.String(name).pipe(Flag.optional, Flag.withDescription(description));
@@ -116,10 +110,7 @@ export const unfollowDroppedCommand = Command.make(
 
       const targetStatuses = parseList(status);
 
-      const invalid = targetStatuses.filter(
-        // SAFETY: value matches MangaDexReadingStatus at this call site
-        (s) => !VALID_STATUSES.includes(s as MangaDexReadingStatus),
-      );
+      const invalid = targetStatuses.filter((s) => !isReadingStatus(s));
 
       if (invalid.length > 0) {
         return yield* cliError(

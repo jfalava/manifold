@@ -1,14 +1,12 @@
-/** Registry list statuses (AniList vocabulary projected into the registry). */
-export const REGISTRY_STATUSES = [
-  "reading",
-  "on_hold",
-  "plan_to_read",
-  "dropped",
-  "re_reading",
-  "completed",
-] as const;
+import { ListStatus } from "@manifold/contract";
+import { Schema } from "effect";
 
-export type RegistryStatus = (typeof REGISTRY_STATUSES)[number];
+/** Registry list statuses (AniList vocabulary projected into the registry). */
+export const REGISTRY_STATUSES = ListStatus.literals;
+
+export type RegistryStatus = ListStatus;
+
+const isRegistryStatus = Schema.is(ListStatus);
 
 /**
  * Prefill --status accepts the same short names as pas5 create --tabs, then expands
@@ -77,6 +75,5 @@ export const matchesStatusFilter = (
     return false;
   }
 
-  // SAFETY: value matches RegistryStatus at this call site
-  return filter.has(status as RegistryStatus);
+  return isRegistryStatus(status) && filter.has(status);
 };

@@ -11,7 +11,13 @@ import { dirname, resolve } from "node:path";
 
 import { fetchAniListRichEntries, type AniListRichEntry } from "@/anilist";
 import { resolveAniListToken } from "@/login/anilist";
-import { buildPas5Zip, filterPas5Providers, parsePas5, type Pas5Entities } from "@/pas5";
+import {
+  buildPas5Zip,
+  filterPas5Providers,
+  parsePas5,
+  pas5ArchiveFiles,
+  type Pas5Entities,
+} from "@/pas5";
 import {
   coreDataFromUnix,
   coreDataNow,
@@ -84,14 +90,19 @@ const parseTabsFlag = (value: string): readonly string[] | "none" | undefined =>
     throw cliError(`--tabs: no valid tab names in "${value}"`);
   }
 
+  const tabs = new Set<string>();
+
   for (const name of names) {
-    if (!allowed.has(name)) {
+    const tab = allowed.get(name);
+
+    if (tab === undefined) {
       throw cliError(`--tabs: unknown tab "${name}" (allowed: ${[...allowed.keys()].join(", ")})`);
     }
+
+    tabs.add(tab);
   }
 
-  // SAFETY: value matches string); at this call site
-  return [...new Set(names)].map((name) => allowed.get(name) as string);
+  return [...tabs];
 };
 
 export interface GeneratedEntry {
@@ -249,13 +260,8 @@ export const buildEntitiesForEntry = (
   ];
 
   const tabName = tabForStatus(entry.status ?? "");
-
-  // SAFETY: value is LibraryTab] at this site
-  const libraryTabs =
-    tabName !== undefined && sharedTabs.has(tabName)
-      ? // SAFETY: value matches LibraryTab] at this call site
-        [sharedTabs.get(tabName) as LibraryTab]
-      : [];
+  const tab = tabName === undefined ? undefined : sharedTabs.get(tabName);
+  const libraryTabs = tab ? [tab] : [];
 
   // Match the uppercase LibraryManga UUID representation in native device exports.
   const libraryId = newId().toUpperCase();
@@ -459,6 +465,8 @@ export const sourceFreeEntities = (
     new Set(["Comix"]),
   );
 
+  // Like unreferenced valid sources below, unreferenced malformed leftovers are not carried forward.
+  const { unvalidated: _unreferenced, ...kept } = filtered;
   const libraries = filtered.__LIBRARY_MANGA_V5;
   const allSources = filtered.__SOURCE_MANGA_V5;
   const allInfos = filtered.__MANGA_INFO_V5;
@@ -505,7 +513,7 @@ export const sourceFreeEntities = (
 
   return {
     entities: {
-      ...filtered,
+      ...kept,
       __LIBRARY_MANGA_V5: retainedLibraries,
       __SOURCE_MANGA_V5: retainedSources,
       __MANGA_INFO_V5: retainedInfos,
@@ -572,12 +580,8 @@ export const pas5FilterCommand = Command.make("filter", {
           return;
         }
 
-        const files = Object.fromEntries(
-          Object.entries(filtered).map(([name, records]) => [name, JSON.stringify(records)]),
-        );
-
         mkdirSync(dirname(out), { recursive: true });
-        writeFileSync(out, buildPas5Zip(files));
+        writeFileSync(out, buildPas5Zip(pas5ArchiveFiles(filtered)));
         closeFrame(`Wrote ${out}`);
         frameDetail(
           "After restoring, run Paperback database repair and verify a title stays categorized after reopening.",
@@ -727,15 +731,9 @@ export const pas5CreateCommand = Command.make("create", {
                   title: "Read base archive",
                   task: async (_, task) => {
                     const parsed = await parsePas5(readFileSync(basePath));
-                    // SAFETY: parsePas5 plus empty-map defaults is a complete Pas5Entities.
-                    baseEntities = {
-                      ...parsed,
-                      __LIBRARY_MANGA_V5: parsed.__LIBRARY_MANGA_V5 ?? {},
-                      __SOURCE_MANGA_V5: parsed.__SOURCE_MANGA_V5 ?? {},
-                      __MANGA_INFO_V5: parsed.__MANGA_INFO_V5 ?? {},
-                    } as Pas5Entities;
+                    baseEntities = parsed;
                     makePhaseReporter(task).note(
-                      `${Object.keys(parsed.__LIBRARY_MANGA_V5 ?? {}).length} existing library entries.`,
+                      `${Object.keys(parsed.__LIBRARY_MANGA_V5).length} existing library entries.`,
                     );
                   },
                 },
@@ -778,7 +776,7 @@ export const pas5CreateCommand = Command.make("create", {
 
         if (scan.base) {
           for (const lib of Object.values(scan.base.__LIBRARY_MANGA_V5)) {
-            for (const tab of lib.libraryTabs ?? []) {
+            for (const tab of lib.libraryTabs) {
               if (!baseTabs.has(tab.name)) {
                 baseTabs.set(tab.name, tab);
               }
@@ -828,24 +826,22 @@ export const pas5CreateCommand = Command.make("create", {
                 ? undefined
                 : scan.registry.get(String(entry.mediaId));
 
-          const matchingLibraries = scan.base
-            ? matchingBaseLibraryIds(scan.base, entry, registryRow)
+          const baseEntities = scan.base;
+
+          const [libraryId, ...otherLibraries] = baseEntities
+            ? matchingBaseLibraryIds(baseEntities, entry, registryRow)
             : [];
 
-          if (matchingLibraries.length > 0) {
+          if (baseEntities && libraryId !== undefined) {
             skippedExisting++;
 
-            if (matchingLibraries.length > 1) {
+            if (otherLibraries.length > 0) {
               ambiguousBaseEntries++;
               continue;
             }
 
-            // SAFETY: length is exactly one in this branch.
-            const libraryId = matchingLibraries[0] as string;
-
-            // SAFETY: scan.base exists when matchingLibraries is non-empty.
             const enriched = migrateLibrarySources(
-              scan.base as Pas5Entities,
+              baseEntities,
               libraryId,
               entry,
               registryRow,
@@ -861,8 +857,9 @@ export const pas5CreateCommand = Command.make("create", {
             if (
               enriched.sources.length > 0 ||
               enriched.library.attachedSources.length !==
-                scan.base?.__LIBRARY_MANGA_V5[libraryId]?.attachedSources.length ||
-              enriched.library.libraryTabs !== scan.base?.__LIBRARY_MANGA_V5[libraryId]?.libraryTabs
+                baseEntities.__LIBRARY_MANGA_V5[libraryId]?.attachedSources.length ||
+              enriched.library.libraryTabs !==
+                baseEntities.__LIBRARY_MANGA_V5[libraryId]?.libraryTabs
             ) {
               entities.__LIBRARY_MANGA_V5[libraryId] = enriched.library;
 
@@ -952,11 +949,7 @@ export const pas5CreateCommand = Command.make("create", {
           return;
         }
 
-        const merged: Record<string, string> = {};
-
-        for (const [name, records] of Object.entries(sourceFree.entities)) {
-          merged[name] = JSON.stringify(records);
-        }
+        const merged = pas5ArchiveFiles(sourceFree.entities);
 
         for (const line of lines) {
           frameDetail(line);

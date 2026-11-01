@@ -392,7 +392,6 @@ const fetchActivitiesPageEffect = (
       return yield* cliError(`Activity page fetch failed: HTTP ${response.status}`);
     }
 
-    // SAFETY: AniList activity page JSON is decoded via isJsonObject / field helpers below
     const data: unknown = yield* jsonFromResponseEffect(response, "anilist.activities");
     const envelope = isJsonObject(data) ? objectField(data, "data") : undefined;
     const pageRecord = envelope === undefined ? undefined : objectField(envelope, "Page");

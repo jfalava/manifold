@@ -1,23 +1,11 @@
-/**
- * Parses pending anilist:* outbox ops for the CLI drain path.
- *
- * Mirrors packages/paperback-runtime/src/op-payload.ts semantics without
- * importing that GPL package (CLI stays MIT). Keep in lockstep when op kinds
- * or payload fields change.
- */
+/** Parses pending anilist.* outbox ops. Shared by the CLI and Paperback drains. */
 import { isFiniteNumber, isString, type JsonObject, type JsonValue } from "@manifold/json";
+import { Schema } from "effect";
 
-/** Registry vocabulary used in list_state / outbox payloads. */
-export type AniListReadingStatus =
-  | "reading"
-  | "on_hold"
-  | "plan_to_read"
-  | "dropped"
-  | "re_reading"
-  | "completed";
+import { ListStatus } from "./literals";
 
 export type AniListFieldChange = {
-  readonly status?: AniListReadingStatus | null;
+  readonly status?: ListStatus | null;
   readonly score?: number | null;
   readonly notes?: string | null;
   readonly startedAt?: string | null;
@@ -37,7 +25,7 @@ export type ParsedAniListOp =
       readonly kind: "anilist.status";
       readonly opId: string;
       readonly anilistId: string;
-      readonly status: AniListReadingStatus | null;
+      readonly status: ListStatus | null;
     }
   | {
       readonly kind: "anilist.progress";
@@ -59,23 +47,14 @@ export type ParsedAniListOp =
       readonly mediaListEntryId?: number;
     };
 
-export const parseAniListReadingStatus = (value: string): AniListReadingStatus | undefined => {
-  switch (value) {
-    case "reading":
-    case "on_hold":
-    case "plan_to_read":
-    case "dropped":
-    case "re_reading":
-    case "completed":
-      return value;
-    default:
-      return undefined;
-  }
-};
+const isListStatus = Schema.is(ListStatus);
 
-/** Registry list status → AniList MediaListStatus enum. */
+export const parseListStatus = (value: string): ListStatus | undefined =>
+  isListStatus(value) ? value : undefined;
+
+/** Registry list status → AniList MediaListStatus enum. Only dropped/completed match by case; reading is CURRENT, on_hold PAUSED, plan_to_read PLANNING, re_reading REPEATING. */
 export const toAniListGraphqlStatus = (
-  status: AniListReadingStatus,
+  status: ListStatus,
 ): "CURRENT" | "PLANNING" | "COMPLETED" | "DROPPED" | "PAUSED" | "REPEATING" => {
   switch (status) {
     case "reading":
@@ -162,7 +141,7 @@ const optionalListEntryId = (payload: JsonObject, opId: string): number | undefi
 const statusOrNull = (
   value: JsonValue | undefined,
   opId: string,
-): AniListReadingStatus | null | undefined => {
+): ListStatus | null | undefined => {
   if (value === undefined || value === null) {
     return value;
   }
@@ -171,7 +150,7 @@ const statusOrNull = (
     throw new Error(`op ${opId} has invalid status`);
   }
 
-  const status = parseAniListReadingStatus(value);
+  const status = parseListStatus(value);
 
   if (status === undefined) {
     throw new Error(`op ${opId} has invalid status`);

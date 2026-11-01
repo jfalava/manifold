@@ -11,7 +11,7 @@ import {
   sourceFreeEntities,
 } from "../src/commands/pas5";
 import type { RegistryRow } from "../src/commands/toolbox";
-import { buildPas5Zip, filterPas5Providers, parsePas5 } from "../src/pas5";
+import { buildPas5Zip, filterPas5Providers, parsePas5, pas5ArchiveFiles } from "../src/pas5";
 import type {
   LibraryManga,
   LibraryTab,
@@ -59,7 +59,6 @@ const registryRow: RegistryRow = {
   providers: [
     { provider: "anilist", externalId: "123", updatedAt: 1 },
     { provider: "mangadex", externalId: "mangadex-id", updatedAt: 1 },
-    { provider: "comix", externalId: "comix-id", updatedAt: 1 },
   ],
 };
 
@@ -185,7 +184,7 @@ describe("al2pas5 source attachments", () => {
           .map((source) => source.sourceId)
           .sort(),
       ).toEqual(["MANIFOLD", "MangaDex", "OtherSource"]);
-      expect(result.__MANGA_INFO_V5).not.toHaveProperty(comix!.mangaInfo.id);
+      expect(result.__MANGA_INFO_V5).not.toHaveProperty(String(comix!.mangaInfo.id));
       expect(result.__LIBRARY_MANGA_V5).not.toHaveProperty("COMIX-ONLY");
       expect(result.__LIBRARY_MANGA_V5["TRACKER-ONLY"]!.attachedSources).toEqual([
         { id: tracker!.id, type: "__SOURCE_MANGA_V5" },
@@ -550,8 +549,8 @@ describe("al2pas5 source attachments", () => {
     ).toEqual([registryRow.id]);
     expect(
       Object.values(cleaned.__MANGA_INFO_V5)
-        .filter((info) => info.additionalInfo["Canonical ID"])
-        .map((info) => info.additionalInfo["Canonical ID"]),
+        .filter((info) => info.additionalInfo?.["Canonical ID"])
+        .map((info) => info.additionalInfo?.["Canonical ID"]),
     ).toEqual([registryRow.id]);
     expect(migrate(cleaned, generated.library.id, entry, registryRow).sources).toHaveLength(0);
   });
@@ -662,7 +661,7 @@ describe("al2pas5 source attachments", () => {
     ["kagane", "Kagane", "019c3a01-3106-7c50-b441-987e27995a11"],
     ["manganato", "MangaNato", "villains-are-destined-to-die"],
     ["xcomic", "XCOMIC", "5ovmw"],
-  ])(
+  ] as const)(
     "generates and finds %s-only entries without MangaDex or tracker evidence",
     (provider, sourceId, externalId) => {
       const row = { ...registryRow, providers: [{ provider, externalId, updatedAt: 1 }] };
@@ -702,5 +701,160 @@ describe("al2pas5 source attachments", () => {
     expect(
       matchingBaseLibraryIds(base, pas5EntryFromAniList(unrelated, undefined), undefined),
     ).toEqual([]);
+  });
+});
+
+describe("parsePas5 validation", () => {
+  const zip = (files: Record<string, object>): Buffer =>
+    buildPas5Zip(
+      Object.fromEntries(
+        Object.entries(files).map(([name, value]) => [name, JSON.stringify(value)]),
+      ),
+    );
+
+  const nativeArchive = {
+    __LIBRARY_MANGA_V5: {
+      "NATIVE-LIB": {
+        id: "NATIVE-LIB",
+        schemaVersion: 1,
+        attachedSources: [{ id: "NATIVE-SRC", type: "__SOURCE_MANGA_V5" }],
+        libraryTabs: [{ id: "TAB", name: "Reading", sortOrder: 0 }],
+        lastUpdated: 800_000_000.5,
+        dateBookmarked: 799_000_000,
+        lastRead: -63_114_076_800,
+        deviceOnlyField: { nested: [1, 2] },
+      },
+    },
+    __SOURCE_MANGA_V5: {
+      "NATIVE-SRC": {
+        id: "NATIVE-SRC",
+        sourceId: "MangaDex",
+        mangaId: "native-md-id",
+        schemaVersion: 1,
+        mangaInfo: { id: 4242, type: "__MANGA_INFO_V5" },
+        lastSync: 12,
+      },
+    },
+    __MANGA_INFO_V5: {
+      "4242": {
+        primaryTitle: "Native Title",
+        secondaryTitles: ["Alt"],
+        author: "Author",
+        shareUrl: "https://example.test/native",
+        additionalInfo: { "Canonical ID": "canonical-id", views: 7 },
+        tagGroups: [{ id: "genres", tags: [{ id: "action", title: "Action" }] }],
+      },
+    },
+    "__CHAPTER_V5-1": { c1: { id: "c1", sourceManga: { id: "NATIVE-SRC" }, chapNum: 1 } },
+    "__CHAPTER_PROGRESS_MARKER_V5-1": { m1: { chapter: { id: "c1" }, completed: true } },
+    __UNKNOWN_FUTURE_V5: { anything: { kept: true } },
+  };
+
+  it("keeps numeric manga-info ids, unknown fields and unknown entity files across round trips", async () => {
+    const parsed = await parsePas5(zip(nativeArchive));
+    expect(parsed).toEqual(nativeArchive);
+
+    const filtered = filterPas5Providers(parsed, new Set());
+    expect(await parsePas5(buildPas5Zip(pas5ArchiveFiles(filtered)))).toEqual(nativeArchive);
+
+    expect(
+      matchingBaseLibraryIds(parsed, pas5EntryFromAniList(entry, registryRow), registryRow),
+    ).toEqual(["NATIVE-LIB"]);
+  });
+
+  it("tolerates malformed records nothing references and writes them back unchanged", async () => {
+    const archive = {
+      ...nativeArchive,
+      __SOURCE_MANGA_V5: {
+        ...nativeArchive.__SOURCE_MANGA_V5,
+        cached: null,
+        orphan: {
+          id: "orphan",
+          sourceId: "Kagane",
+          mangaInfo: { id: 77, type: "__MANGA_INFO_V5" },
+        },
+        excluded: { sourceId: "Comix" },
+      },
+      __MANGA_INFO_V5: { ...nativeArchive.__MANGA_INFO_V5, "77": { primaryTitle: 7 }, stale: 1 },
+      "__CHAPTER_V5-1": {
+        ...nativeArchive["__CHAPTER_V5-1"],
+        c2: { id: "c2", sourceManga: { id: "orphan" } },
+      },
+    };
+    const parsed = await parsePas5(zip(archive));
+    expect(parsed.__SOURCE_MANGA_V5).toEqual(nativeArchive.__SOURCE_MANGA_V5);
+    expect(parsed.__MANGA_INFO_V5).toEqual(nativeArchive.__MANGA_INFO_V5);
+    expect(parsed.unvalidated).toEqual({
+      __SOURCE_MANGA_V5: {
+        cached: null,
+        orphan: archive.__SOURCE_MANGA_V5.orphan,
+        excluded: archive.__SOURCE_MANGA_V5.excluded,
+      },
+      __MANGA_INFO_V5: { "77": { primaryTitle: 7 }, stale: 1 },
+    });
+
+    expect(await parsePas5(buildPas5Zip(pas5ArchiveFiles(parsed)))).toEqual(parsed);
+
+    // Filtering keeps leftovers (and their chapters) except excluded providers and orphaned infos.
+    const filtered = await parsePas5(
+      buildPas5Zip(pas5ArchiveFiles(filterPas5Providers(parsed, new Set(["Comix"])))),
+    );
+    expect(filtered.unvalidated).toEqual({
+      __SOURCE_MANGA_V5: { cached: null, orphan: archive.__SOURCE_MANGA_V5.orphan },
+      __MANGA_INFO_V5: { "77": { primaryTitle: 7 } },
+    });
+    expect(filtered).toMatchObject({ "__CHAPTER_V5-1": archive["__CHAPTER_V5-1"] });
+
+    // --base output keeps only library-referenced records, as before.
+    expect(
+      sourceFree(parsed, { __LIBRARY_MANGA_V5: {}, __SOURCE_MANGA_V5: {}, __MANGA_INFO_V5: {} })
+        .entities.unvalidated,
+    ).toBeUndefined();
+  });
+
+  it("defaults absent library, source and manga-info files to empty maps", async () => {
+    const chapters = { "__CHAPTER_V5-1": nativeArchive["__CHAPTER_V5-1"] };
+    expect(await parsePas5(zip(chapters))).toEqual({
+      ...chapters,
+      __LIBRARY_MANGA_V5: {},
+      __SOURCE_MANGA_V5: {},
+      __MANGA_INFO_V5: {},
+    });
+  });
+
+  it.each([
+    [
+      "a library without attachedSources",
+      {
+        ...nativeArchive,
+        __LIBRARY_MANGA_V5: { BROKEN: { id: "BROKEN", libraryTabs: [] } },
+      },
+      /Malformed PAS5 __LIBRARY_MANGA_V5 record "BROKEN": expected id, attachedSources/,
+    ],
+    [
+      "a source whose manga-info reference has no type",
+      {
+        ...nativeArchive,
+        __SOURCE_MANGA_V5: {
+          "NATIVE-SRC": {
+            ...nativeArchive.__SOURCE_MANGA_V5["NATIVE-SRC"],
+            mangaInfo: { id: 4242 },
+          },
+        },
+      },
+      /Malformed PAS5 __SOURCE_MANGA_V5 record "NATIVE-SRC"/,
+    ],
+    [
+      "manga info referenced by a valid source",
+      { ...nativeArchive, __MANGA_INFO_V5: { "4242": { primaryTitle: 42 } } },
+      /Malformed PAS5 __MANGA_INFO_V5 record "4242"/,
+    ],
+    [
+      "a non-object entity file",
+      { ...nativeArchive, __MANGA_INFO_V5: [] },
+      /PAS5 entity file __MANGA_INFO_V5 must be a JSON object/,
+    ],
+  ])("rejects %s with a named error", async (_, archive, message) => {
+    await expect(parsePas5(zip(archive))).rejects.toThrow(message);
   });
 });

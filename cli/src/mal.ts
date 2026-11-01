@@ -11,6 +11,7 @@ import {
   sleep,
   sleepPromise,
   type CliEffectError,
+  type FetchFn,
 } from "@/effect-kit";
 
 const API = "https://api.myanimelist.net/v2";
@@ -83,7 +84,7 @@ const requestMalTokensEffect = (
   clientId: string,
   clientSecret: string | undefined,
   grant: URLSearchParams,
-  fetcher: typeof fetch = fetch,
+  fetcher: FetchFn = fetch,
 ): Effect.Effect<MalSession, CliEffectError> =>
   Effect.gen(function* () {
     grant.set("client_id", clientId);
@@ -138,7 +139,7 @@ export const requestMalTokens = (
   clientId: string,
   clientSecret: string | undefined,
   grant: URLSearchParams,
-  fetcher: typeof fetch = fetch,
+  fetcher: FetchFn = fetch,
 ): Promise<MalSession> => runHost(requestMalTokensEffect(clientId, clientSecret, grant, fetcher));
 
 /** One instance is used sequentially by each CLI operation. */
@@ -147,7 +148,7 @@ export const createMalClient = (options: {
   readonly session?: MalSession;
   readonly clientSecret?: string;
   readonly saveSession?: (session: MalSession) => Promise<void>;
-  readonly fetcher?: typeof fetch;
+  readonly fetcher?: FetchFn;
   readonly sleep?: (ms: number) => Promise<void>;
 }) => {
   const fetcher = options.fetcher ?? fetch;

@@ -178,7 +178,7 @@ describe("registry import-pas5", () => {
   it("can resolve an untracked library through an existing exact native link", () => {
     const result = run(["--apply"], "native-anchor");
     expect(result.status, result.stderr).toBe(0);
-    expect(result.registry.writes.map((write) => write.provider)).toEqual([
+    expect(result.registry.writes.map((write: { provider: string }) => write.provider)).toEqual([
       "kagane",
       "manganato",
       "xcomic",
@@ -232,7 +232,7 @@ describe("registry import-pas5", () => {
   it("reports partial success if the server rejects a later binding race", () => {
     const result = run(["--apply"], "race");
     expect(result.status).toBe(1);
-    expect(result.registry.writes.map((write) => write.provider)).toEqual(["mangadex"]);
+    expect(result.registry.writes.map((write: { provider: string }) => write.provider)).toEqual(["mangadex"]);
     expect(result.report.find((item) => item.event === "entry")).toMatchObject({
       outcome: "error",
       error: "Provider link conflict: raced",

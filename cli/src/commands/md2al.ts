@@ -153,9 +153,10 @@ export const md2alCommand = Command.make(
         );
       }
 
+      const staticMdToken = mdToken;
+
       const getMdToken = async (): Promise<string> =>
-        // SAFETY: value is a string after the preceding runtime check
-        mdTokenManager ? mdTokenManager.current() : (mdToken as string);
+        mdTokenManager ? mdTokenManager.current() : staticMdToken;
 
       const tmpDir = ".tmp";
 

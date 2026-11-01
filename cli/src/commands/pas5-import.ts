@@ -6,16 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 import { RegistryEntry, type LinkProviderInput, type RegistryProvider } from "@manifold/contract";
-import {
-  arrayField,
-  errorMessage,
-  isFiniteNumber,
-  isJsonObject,
-  isString,
-  objectField,
-  stringField,
-  type JsonValue,
-} from "@manifold/json";
+import { errorMessage, isString, stringField, type JsonValue } from "@manifold/json";
 import { UPSTREAM_SOURCES } from "@/commands/pas5";
 import { apiCall, apiConfig, listRegistryRows, type RegistryRow } from "@/commands/toolbox";
 import { cliError, epochMillisNow, jsonBodyString, newId } from "@/effect-kit";
@@ -56,15 +47,6 @@ export const planPas5Import = (
   archive: Pas5Entities,
   rows: readonly RegistryRow[],
 ): Pas5ImportPlan[] => {
-  if (
-    !isJsonObject(archive) ||
-    !isJsonObject(archive.__LIBRARY_MANGA_V5) ||
-    !isJsonObject(archive.__SOURCE_MANGA_V5) ||
-    !isJsonObject(archive.__MANGA_INFO_V5)
-  ) {
-    throw cliError("PAS5 requires library, source and manga-info entity dictionaries.");
-  }
-
   const byId = new Map(rows.map((row) => [row.id, row]));
   const owners = new Map<string, Set<string>>();
 
@@ -84,7 +66,7 @@ export const planPas5Import = (
     }
   }
 
-  const plans = Object.entries(archive.__LIBRARY_MANGA_V5).map(([libraryId, raw]) => {
+  const plans = Object.entries(archive.__LIBRARY_MANGA_V5).map(([libraryId, library]) => {
     const plan: Pas5ImportPlan = {
       libraryId,
       outcome: "unresolved",
@@ -100,14 +82,8 @@ export const planPas5Import = (
     };
 
     try {
-      if (!isJsonObject(raw) || stringField(raw, "id") !== libraryId) {
+      if (library.id !== libraryId) {
         throw cliError("Malformed library identity.");
-      }
-
-      const refs = arrayField(raw, "attachedSources");
-
-      if (!refs) {
-        throw cliError("Missing library attachedSources.");
       }
 
       const observe = (provider: RegistryProvider, externalId: string, title?: string): void => {
@@ -120,21 +96,10 @@ export const planPas5Import = (
         }
       };
 
-      for (const ref of refs) {
-        if (!isJsonObject(ref) || !stringField(ref, "id") || ref.type !== "__SOURCE_MANGA_V5") {
-          throw cliError("Malformed source reference.");
-        }
-
-        const sourceId = stringField(ref, "id")!;
+      for (const { id: sourceId } of library.attachedSources) {
         const source = archive.__SOURCE_MANGA_V5[sourceId];
 
-        if (
-          !isJsonObject(source) ||
-          source.id !== sourceId ||
-          !stringField(source, "sourceId") ||
-          !stringField(source, "mangaId") ||
-          stringField(source, "mangaId") !== source.mangaId
-        ) {
+        if (source?.id !== sourceId) {
           throw cliError(`Missing or malformed attached source ${sourceId}.`);
         }
 
@@ -146,17 +111,9 @@ export const planPas5Import = (
           continue;
         }
 
-        if (
-          !isJsonObject(source.mangaInfo) ||
-          source.mangaInfo.type !== "__MANGA_INFO_V5" ||
-          !(isString(source.mangaInfo.id) || isFiniteNumber(source.mangaInfo.id))
-        ) {
-          throw cliError(`Malformed manga-info reference for ${source.sourceId}.`);
-        }
-
         const info = archive.__MANGA_INFO_V5[String(source.mangaInfo.id)];
 
-        if (!isJsonObject(info)) {
+        if (!info) {
           throw cliError(`Missing manga info for ${source.sourceId}.`);
         }
 
@@ -169,11 +126,11 @@ export const planPas5Import = (
         appendStrings(plan.shareUrls, strings(info.shareUrl));
 
         if (native) {
-          observe(native.provider, source.mangaId, stringField(info, "primaryTitle"));
+          observe(native.provider, source.mangaId, info.primaryTitle?.trim());
           continue;
         }
 
-        const metadata = objectField(info, "additionalInfo") ?? {};
+        const metadata = info.additionalInfo ?? {};
         const canonicalId = stringField(metadata, "Canonical ID");
         appendStrings(plan.canonicalIds, [source.mangaId]);
 

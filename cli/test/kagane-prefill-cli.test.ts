@@ -493,7 +493,9 @@ describe("registry kagane", () => {
         expect(entry).toMatchObject({ outcome: "unmatched", selectedId: null });
         expect(result.stdout).not.toContain("WRITE");
       }
-      expect(entry.candidates.map((candidate) => candidate.id)).not.toContain("mangadex-series");
+      expect(entry.candidates.map((candidate: { id: string }) => candidate.id)).not.toContain(
+        "mangadex-series",
+      );
     },
   );
 
@@ -577,7 +579,9 @@ describe("registry kagane", () => {
     expect(result.status, result.stderr).toBe(0);
     const entry = result.report.find((item) => item.entryId === "target");
     expect(entry.selectedId).toBe("series/one");
-    expect(entry.candidates.find((candidate) => candidate.id === "series/one").coverage).toEqual({
+    expect(
+      entry.candidates.find((candidate: { id: string }) => candidate.id === "series/one").coverage,
+    ).toEqual({
       unit: "chapters",
       count: 5,
       numbers: [1, 2, 3, 4, 5],
@@ -642,9 +646,9 @@ describe("registry kagane", () => {
     expect(result.status, result.stderr).toBe(0);
     const entry = result.report.find((item) => item.entryId === "target");
     expect(entry.selectedId).toBe("series/one");
-    expect(entry.candidates.find((candidate) => candidate.id === "series/two").reasons).toContain(
-      "contradictory mal ID",
-    );
+    expect(
+      entry.candidates.find((candidate: { id: string }) => candidate.id === "series/two").reasons,
+    ).toContain("contradictory mal ID");
   });
 
   it.each([
@@ -683,9 +687,9 @@ describe("registry kagane", () => {
     expect(result.status, result.stderr).toBe(0);
     const entry = result.report.find((item) => item.entryId === "target");
     expect(entry.selectedId).toBe("series/two");
-    expect(entry.candidates.find((candidate) => candidate.id === "series/one").reasons).toContain(
-      "contradictory mangadex ID",
-    );
+    expect(
+      entry.candidates.find((candidate: { id: string }) => candidate.id === "series/one").reasons,
+    ).toContain("contradictory mangadex ID");
   });
 
   it("completes searches beyond page 20 but refuses a truncated result or repeated page", () => {

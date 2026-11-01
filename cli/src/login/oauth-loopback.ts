@@ -269,23 +269,11 @@ type RawStdin = NodeJS.ReadStream & {
   setRawMode: (mode: boolean) => NodeJS.ReadStream;
 };
 
-const asRawStdin = (stream: NodeJS.ReadStream): RawStdin | undefined => {
-  if (!stream.isTTY) {
-    return undefined;
-  }
+const isRawStdin = (stream: NodeJS.ReadStream): stream is RawStdin =>
+  stream.isTTY && stream.setRawMode !== undefined;
 
-  // SAFETY: Node TTY streams expose setRawMode; non-TTY already returned above.
-  const candidate: NodeJS.ReadStream & {
-    setRawMode?: (mode: boolean) => NodeJS.ReadStream;
-  } = stream;
-
-  if (candidate.setRawMode === undefined) {
-    return undefined;
-  }
-
-  // SAFETY: setRawMode presence checked above; RawStdin requires that method.
-  return candidate as RawStdin;
-};
+const asRawStdin = (stream: NodeJS.ReadStream): RawStdin | undefined =>
+  isRawStdin(stream) ? stream : undefined;
 
 const BRACKETED_PASTE_ENABLE = "\u001b[?2004h";
 const BRACKETED_PASTE_DISABLE = "\u001b[?2004l";

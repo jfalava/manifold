@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { requestHref, requestInitText } from "@manifold/json";
-import { Option } from "effect";
+import { Option, Schema } from "effect";
 
 import { apiCall, apiConfig } from "../../src/commands/toolbox";
 import {
@@ -118,22 +118,30 @@ describe("Manifold API session recovery", () => {
       const first = await config();
       const stale = await config();
       await expect(
-        apiCall(first, "/v1/registry/target/providers", "POST", {
-          provider: "manganato",
-          externalId: "senpai-kanojo",
-        }),
+        apiCall(
+          first,
+          "/v1/registry/target/providers",
+          "POST",
+          { provider: "manganato", externalId: "senpai-kanojo" },
+          Schema.Unknown,
+        ),
       ).resolves.toEqual({ linked: "senpai-kanojo" });
       await expect(
-        apiCall(stale, "/v1/registry/target/providers", "POST", {
-          provider: "manganato",
-          externalId: "senpai-kanojo",
-        }),
+        apiCall(
+          stale,
+          "/v1/registry/target/providers",
+          "POST",
+          { provider: "manganato", externalId: "senpai-kanojo" },
+          Schema.Unknown,
+        ),
       ).resolves.toEqual({ linked: "senpai-kanojo" });
       expect(generation).toBe(1);
 
       // The adopted refresh token must also survive the next rotation.
       stale.accessExpiresAt = 0;
-      await expect(apiCall(stale, "/v1/registry")).resolves.toEqual({ linked: "senpai-kanojo" });
+      await expect(
+        apiCall(stale, "/v1/registry", "GET", undefined, Schema.Unknown),
+      ).resolves.toEqual({ linked: "senpai-kanojo" });
       expect(generation).toBe(2);
     },
   );
@@ -169,7 +177,9 @@ describe("Manifold API session recovery", () => {
         ? Response.json({ recovered: true })
         : new Response(null, { status: 401 });
     });
-    await expect(apiCall(stale, "/v1/registry")).resolves.toEqual({ recovered: true });
+    await expect(apiCall(stale, "/v1/registry", "GET", undefined, Schema.Unknown)).resolves.toEqual(
+      { recovered: true },
+    );
     expect(stored.refreshToken).toBe("refresh-2");
   });
 
@@ -184,7 +194,9 @@ describe("Manifold API session recovery", () => {
       requests++;
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     });
-    await expect(apiCall(stale, "/v1/registry")).rejects.toThrow("Unauthorized");
+    await expect(apiCall(stale, "/v1/registry", "GET", undefined, Schema.Unknown)).rejects.toThrow(
+      "Unauthorized",
+    );
     expect(requests).toBe(2);
   });
 
@@ -203,7 +215,9 @@ describe("Manifold API session recovery", () => {
         ? Response.json({ recovered: true })
         : new Response(null, { status: 401 });
     });
-    await expect(apiCall(await config(), "/v1/registry")).resolves.toEqual({ recovered: true });
+    await expect(
+      apiCall(await config(), "/v1/registry", "GET", undefined, Schema.Unknown),
+    ).resolves.toEqual({ recovered: true });
     expect(refreshes).toBe(1);
   });
 
@@ -215,9 +229,9 @@ describe("Manifold API session recovery", () => {
       requests++;
       return Response.json({ error: "invalid_grant" }, { status: 400 });
     });
-    await expect(apiCall(await config(), "/v1/registry")).rejects.toThrow(
-      "Manifold OAuth refresh failed: HTTP 400",
-    );
+    await expect(
+      apiCall(await config(), "/v1/registry", "GET", undefined, Schema.Unknown),
+    ).rejects.toThrow("Manifold OAuth refresh failed: HTTP 400");
     expect(requests).toBe(1);
   });
 
@@ -242,9 +256,9 @@ describe("Manifold API session recovery", () => {
         Option.some(origin),
         source === "flag" ? Option.some("explicit-token") : Option.none(),
       );
-      await expect(apiCall(explicit, "/v1/registry")).rejects.toThrow(
-        "Unauthorized explicit token",
-      );
+      await expect(
+        apiCall(explicit, "/v1/registry", "GET", undefined, Schema.Unknown),
+      ).rejects.toThrow("Unauthorized explicit token");
       expect(requests).toBe(1);
     },
   );

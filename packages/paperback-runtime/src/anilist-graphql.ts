@@ -17,6 +17,7 @@ import {
 import type { MalBackupIdentity } from "@manifold/canonical";
 import { Data, Effect, Option, Schema } from "effect";
 import { fromPromise } from "./from-promise.js";
+import { toAniListGraphqlStatus, type AniListFieldChange } from "@manifold/contract";
 import type { AniListReadingStatus } from "./anilist-types.js";
 import {
   bridgeErrorDetail,
@@ -404,28 +405,6 @@ type LibraryData = Schema.Schema.Type<typeof LibraryDataSchema>;
 
 const decodeLibraryData = decodeWithSchema<LibraryData>(LibraryDataSchema);
 
-// Registry vocabulary -> AniList enum. toUpperCase is WRONG here: only
-// dropped/completed coincide; reading must become CURRENT, on_hold PAUSED,
-// plan_to_read PLANNING, re_reading REPEATING.
-export const toAniListStatus = (
-  status: AniListReadingStatus,
-): "CURRENT" | "PLANNING" | "COMPLETED" | "DROPPED" | "PAUSED" | "REPEATING" => {
-  switch (status) {
-    case "reading":
-      return "CURRENT";
-    case "on_hold":
-      return "PAUSED";
-    case "plan_to_read":
-      return "PLANNING";
-    case "re_reading":
-      return "REPEATING";
-    case "completed":
-      return "COMPLETED";
-    case "dropped":
-      return "DROPPED";
-  }
-};
-
 export const normalizeAniListStatus = (status: string): AniListReadingStatus | undefined => {
   switch (status) {
     case "CURRENT":
@@ -571,7 +550,7 @@ const saveAniListStatusEffect = (
         media { idMal title { english romaji native } synonyms }
       }
     }`,
-        { mediaId, status: status === null ? null : toAniListStatus(status) },
+        { mediaId, status: status === null ? null : toAniListGraphqlStatus(status) },
         decodeSavedStatusData,
       ),
     );
@@ -609,15 +588,6 @@ export const saveAniListStatus = (
 
 // Score / notes / dates / volumes — the fields Paperback has no UI for.
 // Managed by the admin panel and drained to AniList by this device.
-export interface AniListFieldChange {
-  readonly status?: AniListReadingStatus | null;
-  readonly score?: number | null;
-  readonly notes?: string | null;
-  readonly startedAt?: string | null;
-  readonly completedAt?: string | null;
-  readonly volumeProgress?: number | null;
-}
-
 const FMI_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** AniList GraphQL FuzzyDateInput for startedAt / completedAt mutations. */
@@ -672,7 +642,7 @@ const saveAniListFieldsEffect = (
       try: () => ({
         mediaId,
         ...(!(change.status === undefined) && {
-          status: change.status === null ? null : toAniListStatus(change.status),
+          status: change.status === null ? null : toAniListGraphqlStatus(change.status),
         }),
         ...(!(change.score === undefined) && { score: change.score }),
         ...(!(change.notes === undefined) && { notes: change.notes }),

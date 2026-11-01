@@ -21,6 +21,7 @@ import {
   runHost,
   sleepPromise,
   type CliEffectError,
+  type FetchFn,
 } from "@/effect-kit";
 
 /** AniList MediaListStatus → MAL list_status fields (status + optional reread). */
@@ -141,7 +142,7 @@ export const MAL_SEARCH_INTERVAL_MS = 1_500;
  */
 export const createMalTitleSearch = (
   clientId: string,
-  fetcher: typeof fetch = fetch,
+  fetcher: FetchFn = fetch,
   sleepFn: (ms: number) => Promise<void> = sleepPromise,
 ): Al2malSearch => {
   if (!clientId || clientId === "not-configured") {
