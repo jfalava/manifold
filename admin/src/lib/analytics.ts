@@ -19,7 +19,7 @@ import {
   tryPromise,
   workersRuntime,
 } from "./effect-host";
-import { cachedJsonProgram, type ComputedSnapshot } from "./server-cache";
+import { cachedJsonProgram, type CacheDecoder, type ComputedSnapshot } from "./server-cache";
 
 const GRAPHQL_URL = "https://api.cloudflare.com/client/v4/graphql";
 const REST_URL = "https://api.cloudflare.com/client/v4";
@@ -284,8 +284,7 @@ const decodeCacheRows = (data: JsonObject): CacheRows | undefined => {
   return totals === undefined || paths === undefined ? undefined : { totals, paths };
 };
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: cache decoder validates the persisted snapshot before use
-const decodeAnalyticsSnapshot = (value: unknown): AnalyticsSnapshot | undefined => {
+const decodeAnalyticsSnapshot: CacheDecoder<AnalyticsSnapshot> = (value) => {
   if (!isJsonObject(value)) {
     return undefined;
   }
@@ -438,12 +437,11 @@ const runGraphQL = Effect.fnUntraced(function* <T>(
 });
 
 function emptyHourly(): Record<LogicalWorker, HourlyPoint[]> {
-  // oxlint-disable-next-line anti-slop/no-known-value-widening -- SAFETY: empty arrays are intentionally widened to HourlyPoint[]; no evidence discarded (no elements)
   return {
-    ManifoldRouter: [],
-    ManifoldApi: [],
-    ManifoldDocs: [],
-    "manifold-admin": [],
+    ManifoldRouter: new Array<HourlyPoint>(),
+    ManifoldApi: new Array<HourlyPoint>(),
+    ManifoldDocs: new Array<HourlyPoint>(),
+    "manifold-admin": new Array<HourlyPoint>(),
   };
 }
 
@@ -724,8 +722,7 @@ const decodeSurfaceCacheStats = (value: JsonValue | undefined): SurfaceCacheStat
   return surfaces;
 };
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: cache decoder validates the persisted snapshot before use
-const decodeCacheSnapshot = (value: unknown): CacheSnapshot | undefined => {
+const decodeCacheSnapshot: CacheDecoder<CacheSnapshot> = (value) => {
   if (!isJsonObject(value)) {
     return undefined;
   }

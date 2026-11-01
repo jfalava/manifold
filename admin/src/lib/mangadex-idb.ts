@@ -55,7 +55,6 @@ const openDb = (): Promise<IDBDatabase> =>
     request.addEventListener("success", () => resolve(request.result));
   });
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: IndexedDB boundary parser; validates stored JSON before use
 const isLibraryItem = (value: unknown): value is MangaDexLibraryItem => {
   if (!isJsonObject(value) || !isString(value.mangaDexId) || !isString(value.status)) {
     return false;
@@ -64,12 +63,10 @@ const isLibraryItem = (value: unknown): value is MangaDexLibraryItem => {
   return value.entryId === null || isString(value.entryId);
 };
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: IndexedDB boundary parser; validates snapshot meta shape
 const isSnapshotMeta = (value: unknown): value is MangaDexLibrarySnapshotMeta =>
   isJsonObject(value) && isFiniteNumber(value.fetchedAt) && isFiniteNumber(value.count);
 
 const readAllEntries = async (store: IDBObjectStore): Promise<MangaDexLibraryItem[]> => {
-  // SAFETY: IDBRequest.result is typed any; owned store writes MangaDexLibraryItem rows only.
   const raw: unknown = await requestToPromise(store.getAll());
 
   if (!Array.isArray(raw)) {

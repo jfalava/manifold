@@ -45,6 +45,7 @@ import {
 import type { MangaDexLibraryItem, MangaDexReadingStatus, MangaDexStat } from "./mangadex";
 import {
   cachedJsonProgram,
+  type CacheDecoder,
   invalidateCachedJsonProgram,
   type ComputedSnapshot,
 } from "./server-cache";
@@ -93,16 +94,12 @@ const call = Effect.fnUntraced(function* <A>(
     ? new URL(`${url.pathname.replace(/\/api(?=\/|$)/, "")}${url.search}`, url.origin)
     : url;
 
-  // oxlint-disable-next-line anti-slop/no-known-value-widening -- SAFETY: headers are intentionally open dictionary for HTTP; literal values are known evidence
-  const headers: Record<string, string> = {
+  const headers = {
     accept: "application/json",
     authorization: `Bearer ${token}`,
     "user-agent": manifoldUserAgent("admin"),
+    ...(init?.body !== undefined && { "content-type": "application/json" }),
   };
-
-  if (init?.body !== undefined) {
-    headers["content-type"] = "application/json";
-  }
 
   const requestInit: RequestInit = {
     method: init?.method ?? "GET",
@@ -220,18 +217,10 @@ const loadOperationsProgram = Effect.fnUntraced(
       { concurrency: "unbounded" },
     );
 
-    const errors: {
-      ops?: string;
-      events?: string;
-    } = {}; // oxlint-disable-line anti-slop/no-known-value-widening -- SAFETY: errors map starts empty and is populated conditionally; anonymous type is intentionally widened from empty object
-
-    if (!ops.ok) {
-      errors.ops = ops.error;
-    }
-
-    if (!events.ok) {
-      errors.events = events.error;
-    }
+    const errors = {
+      ...(!ops.ok && { ops: ops.error }),
+      ...(!events.ok && { events: events.error }),
+    };
 
     return {
       ops: ops.ok ? ops.value.ops : [],
@@ -409,8 +398,7 @@ const LibraryOverviewSchema = Schema.Struct({
   errors: Schema.Array(Schema.String),
 });
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: cache decoder validates the persisted overview before use
-const decodeLibraryOverview = (value: unknown): LibraryOverview | undefined => {
+const decodeLibraryOverview: CacheDecoder<LibraryOverview> = (value) => {
   const decoded = Schema.decodeUnknownOption(LibraryOverviewSchema)(value);
 
   return Option.isSome(decoded) ? decoded.value : undefined;

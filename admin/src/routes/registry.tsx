@@ -220,24 +220,16 @@ function EntryEditor({
               dead || (status === "" && score.trim() === "" && volumeProgress.trim() === "")
             }
             onClick={() => {
-              const payload: {
-                entryId: string;
-                status?: string;
-                score?: number;
-                volumeProgress?: number;
-              } = { entryId: entry.id }; // oxlint-disable-line anti-slop/no-known-value-widening -- SAFETY: payload is intentionally widened to allow conditional optional fields; empty init is known evidence
+              const scoreValue = Number(score);
+              const volumeValue = Number(volumeProgress);
 
-              if (status !== "") {
-                payload.status = status;
-              }
-
-              if (score.trim() !== "" && Number.isFinite(Number(score))) {
-                payload.score = Number(score);
-              }
-
-              if (volumeProgress.trim() !== "" && Number.isFinite(Number(volumeProgress))) {
-                payload.volumeProgress = Number(volumeProgress);
-              }
+              const payload = {
+                entryId: entry.id,
+                ...(status !== "" && { status }),
+                ...(score.trim() !== "" && Number.isFinite(scoreValue) && { score: scoreValue }),
+                ...(volumeProgress.trim() !== "" &&
+                  Number.isFinite(volumeValue) && { volumeProgress: volumeValue }),
+              };
 
               onClose();
               void onAct(async () => {
