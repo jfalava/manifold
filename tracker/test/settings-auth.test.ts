@@ -1,4 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Form } from "@paperback/types";
 

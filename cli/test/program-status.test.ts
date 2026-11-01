@@ -1,5 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 

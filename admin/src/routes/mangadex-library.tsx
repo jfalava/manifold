@@ -1,9 +1,5 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
 import { Badge, Banner, Button, Select, Text } from "@cloudflare/kumo";
 import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useTable, type ColumnDef, type SortingState } from "@tanstack/react-table";

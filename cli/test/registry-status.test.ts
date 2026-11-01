@@ -1,5 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
 import { describe, expect, it } from "vitest";
 import { matchesStatusFilter, parseStatusFilter } from "../src/registry-status";
 

@@ -12,9 +12,6 @@
  *
  * Provisioned once via `bun run signing:provision`.
  */
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics globalConsole:off */
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";

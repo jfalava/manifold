@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 /**
  * Storage key: `nb-banner-dismissed-{id}`. Value is "0" for permanent,
  * or a future timestamp (ms) for time-limited dismissal.

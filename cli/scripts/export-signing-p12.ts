@@ -12,9 +12,6 @@
  * macOS will prompt "security wants to access key â¦/SimpleStep. â¦" â click
  * "Always Allow" so future exports don't prompt.
  */
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics globalConsole:off */
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

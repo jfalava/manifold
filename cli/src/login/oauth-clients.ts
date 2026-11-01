@@ -9,7 +9,6 @@
  * prints setup/usage, then walks each value with Enter-to-keep defaults.
  */
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
 import { Effect, Option, Schema } from "effect";
 
 import {

@@ -1,6 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics globalConsole:off */
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { resolveChannel } from "../api/scripts/channel.ts";

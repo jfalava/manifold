@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
 import { createInterface } from "node:readline/promises";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";

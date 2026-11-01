@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalFetch:off */
 import { expect, test } from "bun:test";
 import type { Fetcher } from "@cloudflare/workers-types";
 import router, { type Env } from "../src/index";

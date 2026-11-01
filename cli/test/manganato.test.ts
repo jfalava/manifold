@@ -1,5 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "@manifold/json";

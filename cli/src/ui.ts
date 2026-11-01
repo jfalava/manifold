@@ -1,4 +1,3 @@
-/** @effect-diagnostics nodeBuiltinImport:off — Terminal UI host boundary. */
 /** @effect-diagnostics processEnv:off — NO_COLOR presence is a terminal signal. */
 import { BunServices } from "@effect/platform-bun";
 import cliProgress from "cli-progress";

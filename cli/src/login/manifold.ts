@@ -1,6 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
 import { Effect, Option, Schema } from "effect";
 import { manifoldUserAgent, type JsonValue } from "@manifold/json";
 

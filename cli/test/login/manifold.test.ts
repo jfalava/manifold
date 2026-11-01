@@ -1,5 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalFetch:off */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { requestHref, requestInitText } from "@manifold/json";
 import { Option } from "effect";

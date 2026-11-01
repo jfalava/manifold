@@ -1,6 +1,5 @@
 /** Hono / Worker entry — platform async callbacks. */
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
 import { hostLogError, hostLogInfo } from "./effect-host";
 import { Hono } from "hono";
 import { Effect, Schema } from "effect";

@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 export interface Env {
   DOCS_ASSETS: {
     fetch(request: Request): Promise<Response>;

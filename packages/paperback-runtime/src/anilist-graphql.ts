@@ -3,12 +3,8 @@
 /* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
 
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalDate:off */
 /** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics newPromise:off */
 import {
   isFiniteNumber,
   isJsonArray,

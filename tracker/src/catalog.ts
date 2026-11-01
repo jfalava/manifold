@@ -1,6 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
 import type { ExtensionInfo } from "@paperback/types";
 import info from "./MANIFOLD/pbconfig.js";
 import betaInfo from "./MANIFOLD-beta/pbconfig.js";

@@ -1,5 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
 import { describe, expect, it, vi } from "vitest";
 
 import { loadRegistrySearchTitles, providerIdOf, searchTitlesFor } from "../src/registry-titles";

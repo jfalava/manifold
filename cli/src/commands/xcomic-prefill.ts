@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 import { RegistryEntry } from "@manifold/contract";

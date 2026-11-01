@@ -1,6 +1,5 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics extendsNativeError:off */
-/** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalTimers:off */
 /** @effect-diagnostics newPromise:off */
 /** @effect-diagnostics nodeBuiltinImport:off */

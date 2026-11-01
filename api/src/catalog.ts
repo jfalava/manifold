@@ -1,6 +1,5 @@
 /** Hono / Worker entry — platform async callbacks. */
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
 import { DateTime, Schema } from "effect";
 import { Hono } from "hono";
 import type { Env } from "./types";

@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 /**
  * Per-section /<section>/llms.txt — sub-index files that drill down
  * from the root `/llms.txt` into a named slice of the site's docs.

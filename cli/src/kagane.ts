@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
 /** @effect-diagnostics nodeBuiltinImport:off */
 import { Data, Effect, Schema } from "effect";
 import { homedir } from "node:os";

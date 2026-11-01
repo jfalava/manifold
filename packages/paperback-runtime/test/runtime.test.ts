@@ -1,5 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonValue } from "@manifold/json";
 

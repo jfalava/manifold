@@ -1,6 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics globalConsole:off */
 /**
  * Bundle tracker extensions for the active deploy channel.
  *

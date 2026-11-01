@@ -1,9 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
 import { isJsonObject, isNumberValue, isStringValue } from "./guards";
 import type { MangaDexLibraryItem, MangaDexReadingStatus } from "./mangadex";
 

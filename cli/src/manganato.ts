@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
 import { Data, DateTime, Effect, Option, Schema } from "effect";
 import { createAniListSource } from "@manifold/canonical/sources";
 import { errorMessage, manifoldUserAgent, type JsonObject, type JsonValue } from "@manifold/json";

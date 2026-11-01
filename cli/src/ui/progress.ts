@@ -1,4 +1,3 @@
-/** @effect-diagnostics nodeBuiltinImport:off — Terminal streams are the UI boundary. */
 import { stripVTControlCharacters } from "node:util";
 
 import cliProgress from "cli-progress";

@@ -1,5 +1,4 @@
 /** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics globalConsole:off */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 

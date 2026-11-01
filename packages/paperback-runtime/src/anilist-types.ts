@@ -2,12 +2,6 @@
 /* Copyright © 2026 Jorge Fernando Álava. */
 /* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
 
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics newPromise:off */
 export type AniListReadingStatus =
   | "reading"
   | "on_hold"

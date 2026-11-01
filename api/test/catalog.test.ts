@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
 import { describe, expect, it } from "vitest";
 import { requestHref } from "@manifold/json";
 import { catalogApp } from "../src/catalog";

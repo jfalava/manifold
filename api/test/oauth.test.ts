@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {

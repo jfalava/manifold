@@ -17,9 +17,6 @@
  *   - The first `codesign` run may prompt "codesign wants to access the key";
  *     click "Always Allow".
  */
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics globalConsole:off */
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

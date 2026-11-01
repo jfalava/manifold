@@ -2,9 +2,6 @@
 /* Copyright © 2026 Jorge Fernando Álava. */
 /* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
 
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
 import type { CanonicalEntry, CanonicalSearchResult } from "@manifold/canonical";
 import type { PersonalEntry } from "@manifold/paperback-runtime";
 

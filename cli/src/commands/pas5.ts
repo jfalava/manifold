@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsoleInEffect:off */
 /** @effect-diagnostics globalDateInEffect:off */
 /** @effect-diagnostics nodeBuiltinImport:off */
 /** @effect-diagnostics preferSchemaOverJson:off */

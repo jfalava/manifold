@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
 import { Data, Schema } from "effect";
 import { manifoldUserAgent, type JsonObject } from "@manifold/json";
 import { cliError, platformFetch, runHost, sleepPromise } from "@/effect-kit";

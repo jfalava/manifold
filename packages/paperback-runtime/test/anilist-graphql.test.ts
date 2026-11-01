@@ -1,9 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics newPromise:off */
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { isFiniteNumber, isJsonObject, type JsonObject, type JsonValue } from "@manifold/json";
 

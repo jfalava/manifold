@@ -1,5 +1,4 @@
 /** @effect-diagnostics nodeBuiltinImport:off — Bounded OSC reports must flush before exit. */
-/** @effect-diagnostics processEnv:off — Invocation-level terminal configuration. */
 import { writeSync } from "node:fs";
 
 import { Cause, Effect, Exit, Terminal } from "effect";
