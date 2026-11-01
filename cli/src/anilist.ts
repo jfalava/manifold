@@ -155,33 +155,10 @@ const fetchAniListRichEntriesEffect = (
   token: string,
 ): Effect.Effect<readonly AniListRichEntry[], CliEffectError> =>
   Effect.gen(function* () {
-    const userId = yield* fetchAniListViewerIdEffect(token);
-    const data = yield* aniListGraphqlEffect("cli", token, MEDIA_LIST_RICH_QUERY, { userId });
-    const rawEntries = listEntries(data);
-
-    if (!rawEntries) {
-      return yield* cliError("AniList returned an invalid manga list envelope");
-    }
-
-    const seen = new Set<number>();
+    const listed = yield* fetchListedEntriesEffect(token, MEDIA_LIST_RICH_QUERY);
     const entries: AniListRichEntry[] = [];
 
-    for (const entry of rawEntries) {
-      const mediaId = entry.mediaId;
-
-      if (!isFiniteNumber(mediaId) || mediaId <= 0 || seen.has(mediaId)) {
-        continue;
-      }
-
-      const status = stringField(entry, "status");
-
-      if (!status || !ANILIST_STATUSES.has(status)) {
-        continue;
-      }
-
-      seen.add(mediaId);
-      const media = objectField(entry, "media");
-      const titleObject = media ? objectField(media, "title") : undefined;
+    for (const { entry, mediaId, status, media, titleObject } of listed) {
       const english = titleObject ? stringField(titleObject, "english") : undefined;
       const romaji = titleObject ? stringField(titleObject, "romaji") : undefined;
       const native = titleObject ? stringField(titleObject, "native") : undefined;
@@ -221,6 +198,58 @@ const fetchAniListRichEntriesEffect = (
 
 export const fetchAniListRichEntries = (token: string): Promise<readonly AniListRichEntry[]> =>
   runHost(fetchAniListRichEntriesEffect(token));
+
+interface ListedEntry {
+  readonly entry: JsonObject;
+  readonly mediaId: number;
+  readonly status: string;
+  readonly media: JsonObject | undefined;
+  readonly titleObject: JsonObject | undefined;
+}
+
+/** The viewer's list entries, deduped by mediaId, with a known list status. */
+const fetchListedEntriesEffect = (
+  token: string,
+  query: string,
+): Effect.Effect<readonly ListedEntry[], CliEffectError> =>
+  Effect.gen(function* () {
+    const userId = yield* fetchAniListViewerIdEffect(token);
+    const data = yield* aniListGraphqlEffect("cli", token, query, { userId });
+    const rawEntries = listEntries(data);
+
+    if (!rawEntries) {
+      return yield* cliError("AniList returned an invalid manga list envelope");
+    }
+
+    const seen = new Set<number>();
+    const listed: ListedEntry[] = [];
+
+    for (const entry of rawEntries) {
+      const mediaId = entry.mediaId;
+
+      if (!isFiniteNumber(mediaId) || mediaId <= 0 || seen.has(mediaId)) {
+        continue;
+      }
+
+      const status = stringField(entry, "status");
+
+      if (!status || !ANILIST_STATUSES.has(status)) {
+        continue;
+      }
+
+      seen.add(mediaId);
+      const media = objectField(entry, "media");
+      listed.push({
+        entry,
+        mediaId,
+        status,
+        media,
+        titleObject: media ? objectField(media, "title") : undefined,
+      });
+    }
+
+    return listed;
+  });
 
 const listEntries = (data: JsonObject): readonly JsonObject[] | undefined => {
   const collection = data.MediaListCollection;
@@ -280,33 +309,10 @@ const fetchAniListMangaEntriesEffect = (
   token: string,
 ): Effect.Effect<readonly AniListEntry[], CliEffectError> =>
   Effect.gen(function* () {
-    const userId = yield* fetchAniListViewerIdEffect(token);
-    const data = yield* aniListGraphqlEffect("cli", token, MEDIA_LIST_QUERY, { userId });
-    const rawEntries = listEntries(data);
-
-    if (!rawEntries) {
-      return yield* cliError("AniList returned an invalid manga list envelope");
-    }
-
-    const seen = new Set<number>();
+    const listed = yield* fetchListedEntriesEffect(token, MEDIA_LIST_QUERY);
     const entries: AniListEntry[] = [];
 
-    for (const entry of rawEntries) {
-      const mediaId = entry.mediaId;
-
-      if (!isFiniteNumber(mediaId) || mediaId <= 0 || seen.has(mediaId)) {
-        continue;
-      }
-
-      const status = stringField(entry, "status");
-
-      if (!status || !ANILIST_STATUSES.has(status)) {
-        continue;
-      }
-
-      seen.add(mediaId);
-      const media = objectField(entry, "media");
-      const titleObject = media ? objectField(media, "title") : undefined;
+    for (const { entry, mediaId, status, media, titleObject } of listed) {
       const english = titleObject ? stringField(titleObject, "english") : undefined;
       const romaji = titleObject ? stringField(titleObject, "romaji") : undefined;
       const title = english ?? romaji ?? `AniList #${mediaId}`;

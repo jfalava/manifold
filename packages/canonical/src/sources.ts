@@ -13,6 +13,7 @@ import {
   type JsonObject,
   type JsonValue,
   type FetchResponse,
+  uniqueStrings,
 } from "@manifold/json";
 import {
   canonicalId,
@@ -21,7 +22,7 @@ import {
   type CanonicalSearchOptions,
   type CanonicalSearchResult,
   type CanonicalSearchSource,
-  type CanonicalSourceError,
+  CanonicalSourceError,
 } from "./index";
 
 export const ANILIST_GRAPHQL_ENDPOINT = "https://graphql.anilist.co";
@@ -107,46 +108,11 @@ const mangaDexExternalId = (value: JsonValue | undefined): string | undefined =>
   return undefined;
 };
 
-const uniqueStrings = (values: readonly (string | undefined)[]): string[] => {
-  const seen = new Set<string>();
-  const result: string[] = [];
-
-  for (const value of values) {
-    const normalized = value?.trim();
-
-    if (!normalized) {
-      continue;
-    }
-
-    const key = normalized.toLocaleLowerCase();
-
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    result.push(normalized);
-  }
-
-  return result;
-};
-
 const sourceError = (
   provider: CanonicalSourceError["provider"],
   message: string,
   status?: number,
-): CanonicalSourceError => ({
-  _tag: "CanonicalSourceError",
-  provider,
-  message,
-  ...(status !== undefined && { status }),
-});
-
-const isSourceError = (value: unknown): value is CanonicalSourceError =>
-  isJsonObject(value) &&
-  value._tag === "CanonicalSourceError" &&
-  (value.provider === "anilist" || value.provider === "mal") &&
-  isString(value.message);
+): CanonicalSourceError => new CanonicalSourceError({ provider, message, status });
 
 const requestJson = (
   provider: CanonicalSourceError["provider"],
@@ -188,7 +154,7 @@ const requestJson = (
       const message = `Canonical provider returned HTTP ${response.status}${diagnostics ? `: ${diagnostics}` : ""}`;
       yield* Effect.logError(`[Canonical:${provider}] ${message}`);
 
-      return yield* Effect.fail(sourceError(provider, message, response.status));
+      return yield* sourceError(provider, message, response.status);
     }
 
     const text = yield* Effect.tryPromise({
@@ -205,9 +171,7 @@ const requestJson = (
     );
 
     if (!isJsonObject(body)) {
-      return yield* Effect.fail(
-        sourceError(provider, "Canonical provider returned a non-object JSON body"),
-      );
+      return yield* sourceError(provider, "Canonical provider returned a non-object JSON body");
     }
 
     return body;
@@ -226,10 +190,14 @@ const dateFromParts = (value: JsonValue | undefined): string | undefined => {
     return undefined;
   }
 
-  return [year, month, day]
-    .filter((part): part is number => part !== undefined)
-    .map((part, index) => (index === 0 ? String(part) : String(part).padStart(2, "0")))
-    .join("-");
+  // A day without a month cannot be placed, so the date stops at the year.
+  if (month === undefined) {
+    return String(year);
+  }
+
+  const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
+
+  return day === undefined ? yearMonth : `${yearMonth}-${String(day).padStart(2, "0")}`;
 };
 
 const metadata = (value: JsonObject): CanonicalMetadata => {
@@ -437,7 +405,8 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
         const body = yield* request(anilistSearchQuery, {
           search: yield* Effect.try({
             try: () => requireQuery(query, "anilist"),
-            catch: (e) => (isSourceError(e) ? e : sourceError("anilist", "bad query")),
+            catch: (e) =>
+              e instanceof CanonicalSourceError ? e : sourceError("anilist", "bad query"),
           }),
           page: 1,
           perPage: limitFrom(searchOptions),
@@ -446,7 +415,7 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
         const graphQLError = anilistGraphQLError(body);
 
         if (graphQLError) {
-          return yield* Effect.fail(graphQLError);
+          return yield* graphQLError;
         }
 
         const data = objectField(body, "data");
@@ -454,9 +423,7 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
         const media = page === undefined ? undefined : arrayField(page, "media");
 
         if (!media) {
-          return yield* Effect.fail(
-            sourceError("anilist", "AniList search returned no media array"),
-          );
+          return yield* sourceError("anilist", "AniList search returned no media array");
         }
 
         return media.flatMap((item) => {
@@ -470,16 +437,14 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
         const id = Number.parseInt(providerId, 10);
 
         if (!Number.isSafeInteger(id)) {
-          return yield* Effect.fail(
-            sourceError("anilist", `Invalid AniList manga id: ${providerId}`),
-          );
+          return yield* sourceError("anilist", `Invalid AniList manga id: ${providerId}`);
         }
 
         const body = yield* request(anilistGetQuery, { id });
         const graphQLError = anilistGraphQLError(body);
 
         if (graphQLError) {
-          return yield* Effect.fail(graphQLError);
+          return yield* graphQLError;
         }
 
         const data = objectField(body, "data");
@@ -491,9 +456,7 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
         const id = Number.parseInt(idMal, 10);
 
         if (!Number.isSafeInteger(id)) {
-          return yield* Effect.fail(
-            sourceError("anilist", `Invalid MyAnimeList manga id: ${idMal}`),
-          );
+          return yield* sourceError("anilist", `Invalid MyAnimeList manga id: ${idMal}`);
         }
 
         const body = yield* request(anilistGetByMalQuery, { idMal: id });
@@ -504,7 +467,7 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
             return undefined;
           }
 
-          return yield* Effect.fail(graphQLError);
+          return yield* graphQLError;
         }
 
         const data = objectField(body, "data");
@@ -610,17 +573,19 @@ export const createMyAnimeListSource = (
     search: (query, searchOptions) =>
       Effect.gen(function* () {
         if (!options.clientId || options.clientId === "not-configured") {
-          return yield* Effect.fail(sourceError("mal", "MyAnimeList client id is not configured"));
+          return yield* sourceError("mal", "MyAnimeList client id is not configured");
         }
 
         const normalized = yield* Effect.try({
           try: () => requireQuery(query, "mal"),
-          catch: (e) => (isSourceError(e) ? e : sourceError("mal", "bad query")),
+          catch: (e) => (e instanceof CanonicalSourceError ? e : sourceError("mal", "bad query")),
         });
 
         if (Array.from(normalized).length < 3) {
-          return yield* Effect.fail(
-            sourceError("mal", "MyAnimeList search requires at least 3 characters", 400),
+          return yield* sourceError(
+            "mal",
+            "MyAnimeList search requires at least 3 characters",
+            400,
           );
         }
 
@@ -632,9 +597,7 @@ export const createMyAnimeListSource = (
         const data = arrayField(body, "data");
 
         if (!data) {
-          return yield* Effect.fail(
-            sourceError("mal", "MyAnimeList search returned no data array"),
-          );
+          return yield* sourceError("mal", "MyAnimeList search returned no data array");
         }
 
         return data.flatMap((item) => {
@@ -646,7 +609,7 @@ export const createMyAnimeListSource = (
     getById: (providerId) =>
       Effect.gen(function* () {
         if (!options.clientId || options.clientId === "not-configured") {
-          return yield* Effect.fail(sourceError("mal", "MyAnimeList client id is not configured"));
+          return yield* sourceError("mal", "MyAnimeList client id is not configured");
         }
 
         const href = `${endpoint}/${encodeURIComponent(providerId)}?fields=${encodeURIComponent(malFields)}`;
@@ -655,4 +618,41 @@ export const createMyAnimeListSource = (
         return malEntry(body);
       }),
   };
+};
+
+/** AniList GraphQL `FuzzyDateInput`, as sent for `startedAt` / `completedAt`. */
+// A type alias, not an interface, so it stays assignable to JsonValue in GraphQL variables.
+export type FuzzyDateInput = {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+};
+
+const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** Parses a real `YYYY-MM-DD` calendar date (leap years included); anything else is undefined. */
+export const parseAniListDate = (value: string): FuzzyDateInput | undefined => {
+  const match = YMD.exec(value);
+
+  if (!match) {
+    return undefined;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+
+  const daysInMonth =
+    month === 2
+      ? isLeapYear
+        ? 29
+        : 28
+      : month === 4 || month === 6 || month === 9 || month === 11
+        ? 30
+        : 31;
+
+  return year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth
+    ? undefined
+    : { year, month, day };
 };

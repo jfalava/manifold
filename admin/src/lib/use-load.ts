@@ -1,5 +1,5 @@
 /** @effect-diagnostics asyncFunction:off */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export type LoadState<T> =
   | { readonly status: "loading" }
@@ -39,4 +39,53 @@ export function useLoad<T>(load: () => Promise<T>): LoadState<T> {
   }, [load]);
 
   return state;
+}
+
+export type Act = (action: () => Promise<void>) => Promise<void>;
+
+/**
+ * Page data that loads on mount and reloads after each mutation. `act` runs a
+ * mutation, then refreshes; a failure from either lands in `error`.
+ */
+export function useRefreshingLoad<T>(load: () => Promise<T>) {
+  const [data, setData] = useState<T>();
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setBusy(true);
+
+    try {
+      setData(await load());
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }, [load]);
+
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- fetch-on-mount syncs with the API; busy must flip before the await
+    void refresh();
+  }, [refresh]);
+
+  const act = useCallback<Act>(
+    async (action) => {
+      setBusy(true);
+
+      try {
+        await action();
+        await refresh();
+        setError(null);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [refresh],
+  );
+
+  return { data, error, busy, refresh, act };
 }

@@ -184,7 +184,7 @@ describe("al2pas5 source attachments", () => {
           .map((source) => source.sourceId)
           .sort(),
       ).toEqual(["MANIFOLD", "MangaDex", "OtherSource"]);
-      expect(result.__MANGA_INFO_V5).not.toHaveProperty(String(comix!.mangaInfo.id));
+      expect(result.__MANGA_INFO_V5).not.toHaveProperty(comix!.mangaInfo.id);
       expect(result.__LIBRARY_MANGA_V5).not.toHaveProperty("COMIX-ONLY");
       expect(result.__LIBRARY_MANGA_V5["TRACKER-ONLY"]!.attachedSources).toEqual([
         { id: tracker!.id, type: "__SOURCE_MANGA_V5" },
@@ -469,7 +469,7 @@ describe("al2pas5 source attachments", () => {
     ]);
     const tracker =
       generated.infos[
-        String(generated.sources.find((source) => source.sourceId === "MANIFOLD")!.mangaInfo.id)
+        generated.sources.find((source) => source.sourceId === "MANIFOLD")!.mangaInfo.id
       ];
     expect(tracker).toMatchObject({
       primaryTitle: "Registry Title",
@@ -613,8 +613,7 @@ describe("al2pas5 source attachments", () => {
       mangaInfo: { id: legacyInfoId, type: "__MANGA_INFO_V5" as const },
     };
     base.__SOURCE_MANGA_V5[legacySource.id] = legacySource;
-    base.__MANGA_INFO_V5[legacyInfoId] =
-      generated.infos[String(generated.sources[0]!.mangaInfo.id)]!;
+    base.__MANGA_INFO_V5[legacyInfoId] = generated.infos[generated.sources[0]!.mangaInfo.id]!;
     base.__LIBRARY_MANGA_V5[generated.library.id] = {
       ...generated.library,
       attachedSources: [
@@ -731,12 +730,12 @@ describe("parsePas5 validation", () => {
         sourceId: "MangaDex",
         mangaId: "native-md-id",
         schemaVersion: 1,
-        mangaInfo: { id: 4242, type: "__MANGA_INFO_V5" },
+        mangaInfo: { id: "-7833653858300381379", type: "__MANGA_INFO_V5" },
         lastSync: 12,
       },
     },
     __MANGA_INFO_V5: {
-      "4242": {
+      "-7833653858300381379": {
         primaryTitle: "Native Title",
         secondaryTitles: ["Alt"],
         author: "Author",
@@ -750,7 +749,7 @@ describe("parsePas5 validation", () => {
     __UNKNOWN_FUTURE_V5: { anything: { kept: true } },
   };
 
-  it("keeps numeric manga-info ids, unknown fields and unknown entity files across round trips", async () => {
+  it("keeps int64 manga-info ids, unknown fields and unknown entity files across round trips", async () => {
     const parsed = await parsePas5(zip(nativeArchive));
     expect(parsed).toEqual(nativeArchive);
 
@@ -771,7 +770,7 @@ describe("parsePas5 validation", () => {
         orphan: {
           id: "orphan",
           sourceId: "Kagane",
-          mangaInfo: { id: 77, type: "__MANGA_INFO_V5" },
+          mangaInfo: { id: "77", type: "__MANGA_INFO_V5" },
         },
         excluded: { sourceId: "Comix" },
       },
@@ -838,7 +837,21 @@ describe("parsePas5 validation", () => {
         __SOURCE_MANGA_V5: {
           "NATIVE-SRC": {
             ...nativeArchive.__SOURCE_MANGA_V5["NATIVE-SRC"],
-            mangaInfo: { id: 4242 },
+            mangaInfo: { id: "-7833653858300381379" },
+          },
+        },
+      },
+      /Malformed PAS5 __SOURCE_MANGA_V5 record "NATIVE-SRC"/,
+    ],
+    [
+      // Real ids exceed 2^53, so a JSON number would already be rounded to the wrong key.
+      "a numeric manga-info id",
+      {
+        ...nativeArchive,
+        __SOURCE_MANGA_V5: {
+          "NATIVE-SRC": {
+            ...nativeArchive.__SOURCE_MANGA_V5["NATIVE-SRC"],
+            mangaInfo: { id: 4242, type: "__MANGA_INFO_V5" },
           },
         },
       },
@@ -846,8 +859,8 @@ describe("parsePas5 validation", () => {
     ],
     [
       "manga info referenced by a valid source",
-      { ...nativeArchive, __MANGA_INFO_V5: { "4242": { primaryTitle: 42 } } },
-      /Malformed PAS5 __MANGA_INFO_V5 record "4242"/,
+      { ...nativeArchive, __MANGA_INFO_V5: { "-7833653858300381379": { primaryTitle: 42 } } },
+      /Malformed PAS5 __MANGA_INFO_V5 record "-7833653858300381379"/,
     ],
     [
       "a non-object entity file",

@@ -12,6 +12,7 @@ SPDX-License-Identifier = "MIT"
 [[annotations]]
 path = [
   "packages/mangadex/src/**",
+  "packages/paperback-runtime/src/anilist-device.ts",
   "packages/paperback-runtime/src/anilist-graphql.ts",
   "tracker/src/MANIFOLD/main.ts",
   "tracker/src/MANIFOLD/managed-collections.ts",

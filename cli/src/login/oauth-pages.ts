@@ -7,6 +7,15 @@ export type CallbackPageState =
   | "missing-code"
   | "provider-error";
 
+/** SVG glyph per callback page: check, cross, or alert. */
+const CALLBACK_SYMBOLS = {
+  received: '<path d="m7 12 3 3 7-7"/>',
+  declined: '<path d="m8 8 8 8m0-8-8 8"/>',
+  "state-mismatch": '<circle cx="12" cy="12" r="10"/><path d="M12 7v6m0 4h.01"/>',
+  "missing-code": '<circle cx="12" cy="12" r="10"/><path d="M12 7v6m0 4h.01"/>',
+  "provider-error": '<circle cx="12" cy="12" r="10"/><path d="M12 7v6m0 4h.01"/>',
+} as const satisfies Record<CallbackPageState, string>;
+
 const escapeHtml = (value: string): string =>
   value
     .replaceAll("&", "&amp;")
@@ -52,12 +61,7 @@ export const renderCallbackPage = (state: CallbackPageState, providerLabel: stri
 
   const page = pages[state];
 
-  const symbol =
-    state === "received"
-      ? '<path d="m7 12 3 3 7-7"/>'
-      : state === "declined"
-        ? '<path d="m8 8 8 8m0-8-8 8"/>'
-        : '<circle cx="12" cy="12" r="10"/><path d="M12 7v6m0 4h.01"/>';
+  const symbol = CALLBACK_SYMBOLS[state];
 
   return `<!doctype html>
 <html lang="en">

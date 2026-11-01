@@ -1,3 +1,4 @@
+import { ANILIST_GRAPHQL_ENDPOINT } from "@manifold/canonical/sources";
 import {
   arrayField,
   isBoolean,
@@ -34,7 +35,7 @@ const USER_AGENT = manifoldUserAgent("cli");
  * includeTextActivities opt-in; anime is never touched.
  */
 
-const API_URL = "https://graphql.anilist.co";
+const API_URL = ANILIST_GRAPHQL_ENDPOINT;
 
 // Bulk deletes hit AniList rate limits routinely: entries and activities share
 // one 429-aware POST path with a bounded retry loop (no unbounded recursion).
@@ -163,8 +164,9 @@ const decodeMangaEntries = (value: JsonValue): WipeListEntry[] | undefined => {
 
 const postGraphQLEffect = (
   token: string,
+  label: string,
   query: string,
-  variables: GraphQLVariables,
+  variables: GraphQLVariables = {},
 ): Effect.Effect<Response, CliEffectError> =>
   Effect.gen(function* () {
     for (let attempt = 0; ; attempt += 1) {
@@ -179,7 +181,7 @@ const postGraphQLEffect = (
           },
           body: JSON.stringify({ query, variables }),
         }),
-      ).pipe(Effect.mapError((cause) => cliError(`AniList wipe POST failed: ${cause.message}`)));
+      ).pipe(Effect.mapError((cause) => cliError(`${label} failed: ${cause.message}`)));
 
       if (response.status !== 429 || attempt >= DELETE_429_MAX_RETRIES) {
         return response;
@@ -200,18 +202,11 @@ const fetchViewerEffect = (
   token: string,
 ): Effect.Effect<{ id: number; name: string }, CliEffectError> =>
   Effect.gen(function* () {
-    const response = yield* fromPromise(() =>
-      platformFetch(API_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "user-agent": USER_AGENT,
-        },
-        body: JSON.stringify({ query: `query { Viewer { id name } }` }),
-      }),
-    ).pipe(Effect.mapError((cause) => cliError(`Viewer query failed: ${cause.message}`)));
+    const response = yield* postGraphQLEffect(
+      token,
+      "Viewer query",
+      `query { Viewer { id name } }`,
+    );
 
     if (!response.ok) {
       return yield* cliError(`Viewer query failed: HTTP ${response.status}`);
@@ -235,25 +230,16 @@ const fetchMangaEntriesEffect = (
   userId: number,
 ): Effect.Effect<WipeListEntry[], CliEffectError> =>
   Effect.gen(function* () {
-    const response = yield* fromPromise(() =>
-      platformFetch(API_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "user-agent": USER_AGENT,
-        },
-        body: JSON.stringify({
-          query: `query ($userId: Int) {
+    const response = yield* postGraphQLEffect(
+      token,
+      "Manga list fetch",
+      `query ($userId: Int) {
         MediaListCollection(userId: $userId, type: MANGA) {
           lists { entries { id media { id title { romaji english } } } }
         }
       }`,
-          variables: { userId },
-        }),
-      }),
-    ).pipe(Effect.mapError((cause) => cliError(`Manga list fetch failed: ${cause.message}`)));
+      { userId },
+    );
 
     if (!response.ok) {
       return yield* cliError(`Manga list fetch failed: HTTP ${response.status}`);
@@ -325,6 +311,7 @@ const deleteEntryEffect = (
   Effect.gen(function* () {
     const response = yield* postGraphQLEffect(
       token,
+      "AniList delete",
       `mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }`,
       { id: entryId },
     );
@@ -364,17 +351,10 @@ const fetchActivitiesPageEffect = (
   page: number,
 ): Effect.Effect<ActivitiesPage, CliEffectError> =>
   Effect.gen(function* () {
-    const response = yield* fromPromise(() =>
-      platformFetch(API_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "user-agent": USER_AGENT,
-        },
-        body: JSON.stringify({
-          query: `query ($userId: Int, $page: Int) {
+    const response = yield* postGraphQLEffect(
+      token,
+      "Activity page fetch",
+      `query ($userId: Int, $page: Int) {
         Page(page: $page, perPage: 50) {
           pageInfo { hasNextPage }
           activities(userId: $userId, type_in: [MANGA_LIST, TEXT]) {
@@ -383,10 +363,8 @@ const fetchActivitiesPageEffect = (
           }
         }
       }`,
-          variables: { userId, page },
-        }),
-      }),
-    ).pipe(Effect.mapError((cause) => cliError(`Activity page fetch failed: ${cause.message}`)));
+      { userId, page },
+    );
 
     if (!response.ok) {
       return yield* cliError(`Activity page fetch failed: HTTP ${response.status}`);
@@ -514,6 +492,7 @@ const deleteActivityEffect = (
   Effect.gen(function* () {
     const response = yield* postGraphQLEffect(
       token,
+      "AniList delete",
       `mutation ($id: Int) { DeleteActivity(id: $id) { deleted } }`,
       { id: activityId },
     );

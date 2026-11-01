@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
-/* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
+/* Last modified by Manifold on 2026-11-01. See ATTRIBUTIONS.md. */
 
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalDate:off */
 /** @effect-diagnostics globalDateInEffect:off */
+import { parseAniListDate, type FuzzyDateInput } from "@manifold/canonical/sources";
 import {
   isFiniteNumber,
   isJsonArray,
   isJsonObject,
   isString,
-  manifoldUserAgent,
   type JsonObject,
   type JsonValue,
 } from "@manifold/json";
@@ -123,7 +123,7 @@ export class AniListUnauthorizedError extends Data.TaggedError("AniListUnauthori
 
 // AniList rate-limits per IP (~30 requests/minute at present) and answers 429
 // with a retry-after header once exceeded. Every GraphQL call funnels through
-// aniListRequest, so politeness lives here: traffic is fully serialized,
+// the client request function, so politeness lives here: traffic is fully serialized,
 // request starts are spaced MIN_REQUEST_SPACING_MS apart, and any 429 freezes
 // ALL AniList calls for the server-provided retry-after window before the
 // failed call is retried.
@@ -133,31 +133,33 @@ const DEFAULT_RETRY_AFTER_SECONDS = 60;
 const COOLDOWN_BUFFER_MS = 1_000;
 const THROTTLE_MESSAGE = /too many requests/i;
 
-let queueTail: Promise<unknown> = Promise.resolve();
-let nextSlotAt = 0;
-let cooldownUntil = 0;
+/**
+ * How AniList requests leave the host. Paperback's runtime has no global
+ * fetch, so the device sends through Application.scheduleRequest
+ * (anilist-device.ts); the CLI drain sends through fetch.
+ */
+export interface AniListTransport {
+  readonly post: (request: {
+    readonly url: string;
+    readonly headers: Record<string, string>;
+    readonly body: string;
+  }) => Promise<{
+    readonly status: number;
+    readonly headers: Record<string, string>;
+    readonly text: string;
+  }>;
+  readonly sleep: (ms: number) => Promise<void>;
+  readonly userAgent: string;
+  /** Minimum gap between request starts; defaults to 3 s. */
+  readonly minRequestSpacingMs?: number;
+}
 
-const enqueue = <T>(task: () => Promise<T>): Promise<T> => {
-  const run = queueTail.then(task);
-  // Failures must never stall the callers queued behind them.
-  queueTail = run.then(
-    () => undefined,
-    () => undefined,
-  );
-
-  return run;
-};
-
-const gate = (): Effect.Effect<void, PaperbackRuntimeError> =>
-  Effect.gen(function* () {
-    const waitMs = Math.max(nextSlotAt - Date.now(), cooldownUntil - Date.now(), 0);
-
-    if (waitMs > 0) {
-      yield* fromPromise(() => Application.sleep(Math.ceil(waitMs / 1000)));
-    }
-
-    nextSlotAt = Math.max(Date.now(), nextSlotAt) + MIN_REQUEST_SPACING_MS;
-  });
+export type AniListRequest = <A>(
+  token: string,
+  query: string,
+  variables: JsonObject,
+  decode: AniListDataDecoder<A>,
+) => Promise<A>;
 
 const headerValue = (headers: Record<string, string>, name: string): string | undefined => {
   const target = name.toLowerCase();
@@ -177,51 +179,6 @@ interface RawOutcome {
   readonly body?: GraphQLResponse;
 }
 
-const rawAniListRequest = (
-  token: string,
-  query: string,
-  variables: JsonObject,
-): Effect.Effect<RawOutcome, PaperbackRuntimeError> =>
-  Effect.gen(function* () {
-    const scheduled = yield* fromPromise(() =>
-      Application.scheduleRequest({
-        url: ANILIST_GRAPHQL_ENDPOINT,
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          accept: "application/json",
-          authorization: `Bearer ${token}`,
-          "user-agent": manifoldUserAgent("paperback-runtime"),
-        },
-        body: JSON.stringify({ query, variables }),
-      }),
-    ).pipe(
-      Effect.mapError((cause) =>
-        // Offline and other transport failures reject with message-less bridge
-        // values; label the request so device logs stay actionable.
-        paperbackError(`AniList request failed: ${bridgeErrorDetail(cause)}`),
-      ),
-    );
-
-    const [response, bodyBuffer] = scheduled;
-
-    const parsed = yield* Schema.decodeEffect(JsonBodyString)(
-      Application.arrayBufferToUTF8String(bodyBuffer),
-    ).pipe(Effect.orElseSucceed(() => undefined));
-
-    const body = decodeGraphQLResponse(parsed);
-
-    if (body === undefined) {
-      return { status: response.status, headers: response.headers ?? {} };
-    }
-
-    return {
-      status: response.status,
-      headers: response.headers ?? {},
-      body,
-    };
-  });
-
 const isThrottled = (outcome: RawOutcome): boolean => {
   if (outcome.status === 429) {
     return true;
@@ -231,16 +188,6 @@ const isThrottled = (outcome: RawOutcome): boolean => {
     (error) =>
       error.status === 429 || (error.message !== undefined && THROTTLE_MESSAGE.test(error.message)),
   );
-};
-
-const scheduleCooldown = (headers: Record<string, string>): void => {
-  const raw = headerValue(headers, "retry-after");
-  const seconds = raw !== undefined ? Number.parseInt(raw, 10) : Number.NaN;
-
-  const waitSeconds =
-    Number.isSafeInteger(seconds) && seconds > 0 ? seconds : DEFAULT_RETRY_AFTER_SECONDS;
-
-  cooldownUntil = Math.max(cooldownUntil, Date.now() + waitSeconds * 1000 + COOLDOWN_BUFFER_MS);
 };
 
 const interpretOutcome = <A>(outcome: RawOutcome, decode: AniListDataDecoder<A>): A => {
@@ -277,42 +224,113 @@ const interpretOutcome = <A>(outcome: RawOutcome, decode: AniListDataDecoder<A>)
   return decoded;
 };
 
-const aniListRequestEffect = <A>(
-  token: string,
-  query: string,
-  variables: JsonObject = {},
-  decode: AniListDataDecoder<A>,
-): Effect.Effect<A, PaperbackRuntimeError | AniListUnauthorizedError> =>
-  Effect.gen(function* () {
-    for (let attempt = 1; ; attempt += 1) {
-      yield* gate();
-      const outcome = yield* rawAniListRequest(token, query, variables);
+/** Serialized, spaced AniList requests with one shared 429 cooldown, sent through `transport`. */
+const createAniListRequest = (transport: AniListTransport): AniListRequest => {
+  const spacingMs = transport.minRequestSpacingMs ?? MIN_REQUEST_SPACING_MS;
+  let queueTail: Promise<unknown> = Promise.resolve();
+  let nextSlotAt = 0;
+  let cooldownUntil = 0;
 
-      if (!isThrottled(outcome)) {
-        return yield* Effect.try({
-          try: () => interpretOutcome(outcome, decode),
-          catch: (cause) =>
-            cause instanceof AniListUnauthorizedError ? cause : paperbackError(errorMessage(cause)),
-        });
+  const enqueue = <T>(task: () => Promise<T>): Promise<T> => {
+    const run = queueTail.then(task);
+    // Failures must never stall the callers queued behind them.
+    queueTail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    return run;
+  };
+
+  const gate = (): Effect.Effect<void, PaperbackRuntimeError> =>
+    Effect.gen(function* () {
+      const waitMs = Math.max(nextSlotAt - Date.now(), cooldownUntil - Date.now(), 0);
+
+      if (waitMs > 0) {
+        yield* fromPromise(() => transport.sleep(waitMs));
       }
 
-      if (attempt > MAX_THROTTLED_RETRIES) {
-        return yield* paperbackError("AniList kept rate limiting after repeated backoff");
+      nextSlotAt = Math.max(Date.now(), nextSlotAt) + spacingMs;
+    });
+
+  const scheduleCooldown = (headers: Record<string, string>): void => {
+    const raw = headerValue(headers, "retry-after");
+    const seconds = raw !== undefined ? Number.parseInt(raw, 10) : Number.NaN;
+
+    const waitSeconds =
+      Number.isSafeInteger(seconds) && seconds > 0 ? seconds : DEFAULT_RETRY_AFTER_SECONDS;
+
+    cooldownUntil = Math.max(cooldownUntil, Date.now() + waitSeconds * 1000 + COOLDOWN_BUFFER_MS);
+  };
+
+  const rawAniListRequest = (
+    token: string,
+    query: string,
+    variables: JsonObject,
+  ): Effect.Effect<RawOutcome, PaperbackRuntimeError> =>
+    Effect.gen(function* () {
+      const response = yield* fromPromise(() =>
+        transport.post({
+          url: ANILIST_GRAPHQL_ENDPOINT,
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+            authorization: `Bearer ${token}`,
+            "user-agent": transport.userAgent,
+          },
+          body: JSON.stringify({ query, variables }),
+        }),
+      ).pipe(
+        Effect.mapError((cause) =>
+          // Offline and other transport failures can reject with message-less
+          // bridge values; label the request so logs stay actionable.
+          paperbackError(`AniList request failed: ${bridgeErrorDetail(cause)}`),
+        ),
+      );
+
+      const parsed = yield* Schema.decodeEffect(JsonBodyString)(response.text).pipe(
+        Effect.orElseSucceed(() => undefined),
+      );
+
+      const body = decodeGraphQLResponse(parsed);
+
+      return body === undefined
+        ? { status: response.status, headers: response.headers }
+        : { status: response.status, headers: response.headers, body };
+    });
+
+  const requestEffect = <A>(
+    token: string,
+    query: string,
+    variables: JsonObject,
+    decode: AniListDataDecoder<A>,
+  ): Effect.Effect<A, PaperbackRuntimeError | AniListUnauthorizedError> =>
+    Effect.gen(function* () {
+      for (let attempt = 1; ; attempt += 1) {
+        yield* gate();
+        const outcome = yield* rawAniListRequest(token, query, variables);
+
+        if (!isThrottled(outcome)) {
+          return yield* Effect.try({
+            try: () => interpretOutcome(outcome, decode),
+            catch: (cause) =>
+              cause instanceof AniListUnauthorizedError
+                ? cause
+                : paperbackError(errorMessage(cause)),
+          });
+        }
+
+        if (attempt > MAX_THROTTLED_RETRIES) {
+          return yield* paperbackError("AniList kept rate limiting after repeated backoff");
+        }
+
+        scheduleCooldown(outcome.headers);
       }
+    });
 
-      scheduleCooldown(outcome.headers);
-    }
-  });
-
-// Paperback's JS runtime exposes no global fetch; requests must go through
-// Application.scheduleRequest.
-export const aniListRequest = async <A>(
-  token: string,
-  query: string,
-  variables: JsonObject = {},
-  decode: AniListDataDecoder<A>,
-): Promise<A> =>
-  enqueue(() => Effect.runPromise(aniListRequestEffect(token, query, variables, decode)));
+  return (token, query, variables, decode) =>
+    enqueue(() => Effect.runPromise(requestEffect(token, query, variables, decode)));
+};
 
 export interface AniListViewer {
   readonly Viewer: {
@@ -428,12 +446,13 @@ const titleValue = (value: string | null | undefined): string | undefined =>
   value !== undefined && value !== null && value.trim().length > 0 ? value.trim() : undefined;
 
 const fetchAniListLibraryEffect = (
+  request: AniListRequest,
   token: string,
   userId: number,
 ): Effect.Effect<readonly AniListLibraryItem[], PaperbackRuntimeError> =>
   Effect.gen(function* () {
     const data = yield* fromPromise(() =>
-      aniListRequest(token, LIBRARY_QUERY, { userId }, decodeLibraryData),
+      request(token, LIBRARY_QUERY, { userId }, decodeLibraryData),
     );
 
     const items = new Map<string, AniListLibraryItem>();
@@ -471,12 +490,6 @@ const fetchAniListLibraryEffect = (
 
     return [...items.values()];
   });
-
-export const fetchAniListLibrary = (
-  token: string,
-  userId: number,
-): Promise<readonly AniListLibraryItem[]> =>
-  Effect.runPromise(fetchAniListLibraryEffect(token, userId));
 
 const GRAPHQL_INT_MAX = 2_147_483_647;
 const ANILIST_ID = /^[1-9]\d*$/;
@@ -527,6 +540,7 @@ type SavedStatusData = Schema.Schema.Type<typeof SavedStatusDataSchema>;
 const decodeSavedStatusData = decodeWithSchema<SavedStatusData>(SavedStatusDataSchema);
 
 const saveAniListStatusEffect = (
+  request: AniListRequest,
   token: string,
   anilistId: string,
   status: AniListReadingStatus | null,
@@ -542,7 +556,7 @@ const saveAniListStatusEffect = (
 
     // Privacy policy: everything this source touches stays private.
     const data = yield* fromPromise(() =>
-      aniListRequest(
+      request(
         token,
         `mutation ($mediaId: Int!, $status: MediaListStatus) {
       SaveMediaListEntry(mediaId: $mediaId, status: $status, private: true) {
@@ -579,55 +593,26 @@ const saveAniListStatusEffect = (
     };
   });
 
-export const saveAniListStatus = (
-  token: string,
-  anilistId: string,
-  status: AniListReadingStatus | null,
-): Promise<{ mediaListEntryId?: number; backupIdentity?: MalBackupIdentity }> =>
-  Effect.runPromise(saveAniListStatusEffect(token, anilistId, status));
-
 // Score / notes / dates / volumes — the fields Paperback has no UI for.
 // Managed by the admin panel and drained to AniList by this device.
-const FMI_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** AniList GraphQL FuzzyDateInput for startedAt / completedAt mutations. */
-export type FuzzyDateInput = {
-  readonly year: number;
-  readonly month: number;
-  readonly day: number;
-};
-
 const fmiDate = (value: string | null): FuzzyDateInput | null => {
   if (value === null) {
     return null;
   }
 
-  if (!FMI_DATE.test(value)) {
-    throw paperbackError(`Invalid AniList date: ${value}; expected YYYY-MM-DD`);
+  const date = parseAniListDate(value);
+
+  if (date === undefined) {
+    throw paperbackError(
+      `Invalid AniList date: ${value}; expected a real YYYY-MM-DD calendar date`,
+    );
   }
 
-  const year = Number(value.slice(0, 4));
-  const month = Number(value.slice(5, 7));
-  const day = Number(value.slice(8, 10));
-  const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-
-  const daysInMonth =
-    month === 2
-      ? isLeapYear
-        ? 29
-        : 28
-      : month === 4 || month === 6 || month === 9 || month === 11
-        ? 30
-        : 31;
-
-  if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth) {
-    throw paperbackError(`Invalid AniList date: ${value}; expected a real calendar date`);
-  }
-
-  return { year, month, day };
+  return date;
 };
 
 const saveAniListFieldsEffect = (
+  request: AniListRequest,
   token: string,
   anilistId: string,
   change: AniListFieldChange,
@@ -654,7 +639,7 @@ const saveAniListFieldsEffect = (
     });
 
     yield* fromPromise(() =>
-      aniListRequest(
+      request(
         token,
         `mutation (
       $mediaId: Int!, $status: MediaListStatus, $score: Float, $notes: String,
@@ -672,12 +657,6 @@ const saveAniListFieldsEffect = (
     );
   });
 
-export const saveAniListFields = (
-  token: string,
-  anilistId: string,
-  change: AniListFieldChange,
-): Promise<void> => Effect.runPromise(saveAniListFieldsEffect(token, anilistId, change));
-
 /** Deletes the list entry outright. Requires its numeric mediaListEntry id. */
 const DeleteMediaListEntryDataSchema = Schema.Struct({
   DeleteMediaListEntry: Schema.optional(
@@ -692,6 +671,7 @@ const DeleteMediaListEntryDataSchema = Schema.Struct({
 const decodeDeleteMediaListEntryData = decodeWithSchema(DeleteMediaListEntryDataSchema);
 
 const deleteAniListEntryEffect = (
+  request: AniListRequest,
   token: string,
   mediaListEntryId: number,
 ): Effect.Effect<boolean, PaperbackRuntimeError> =>
@@ -705,7 +685,7 @@ const deleteAniListEntryEffect = (
     }
 
     const data = yield* fromPromise(() =>
-      aniListRequest(
+      request(
         token,
         `mutation ($id: Int) {
       DeleteMediaListEntry(id: $id) { deleted }
@@ -717,9 +697,6 @@ const deleteAniListEntryEffect = (
 
     return data.DeleteMediaListEntry?.deleted === true;
   });
-
-export const deleteAniListEntry = (token: string, mediaListEntryId: number): Promise<boolean> =>
-  Effect.runPromise(deleteAniListEntryEffect(token, mediaListEntryId));
 
 /**
  * Batch-fetches numeric list entry ids for media ids. Deletion on AniList is
@@ -759,12 +736,13 @@ const decodeMediaListEntryIdsData = decodeWithSchema<MediaListEntryIdsData>(
 );
 
 const fetchAniListMediaListEntryIdsEffect = (
+  request: AniListRequest,
   token: string,
   userId: number,
 ): Effect.Effect<Readonly<Record<string, number>>, PaperbackRuntimeError> =>
   Effect.gen(function* () {
     const data = yield* fromPromise(() =>
-      aniListRequest(
+      request(
         token,
         `query ($userId: Int!) {
       MediaListCollection(userId: $userId, type: MANGA) {
@@ -789,13 +767,8 @@ const fetchAniListMediaListEntryIdsEffect = (
     return ids;
   });
 
-export const fetchAniListMediaListEntryIds = (
-  token: string,
-  userId: number,
-): Promise<Readonly<Record<string, number>>> =>
-  Effect.runPromise(fetchAniListMediaListEntryIdsEffect(token, userId));
-
 const saveAniListProgressEffect = (
+  request: AniListRequest,
   token: string,
   anilistId: string,
   progress: number,
@@ -820,7 +793,7 @@ const saveAniListProgressEffect = (
     // CURRENT entry only when the title is unlisted, mirroring AniList's own
     // mark-as-read behaviour).
     yield* fromPromise(() =>
-      aniListRequest(
+      request(
         token,
         `mutation ($mediaId: Int!, $progress: Int) {
       SaveMediaListEntry(mediaId: $mediaId, progress: $progress, private: true) {
@@ -835,8 +808,37 @@ const saveAniListProgressEffect = (
     return true;
   });
 
-export const saveAniListProgress = (
-  token: string,
-  anilistId: string,
-  progress: number,
-): Promise<boolean> => Effect.runPromise(saveAniListProgressEffect(token, anilistId, progress));
+/** AniList reads and writes bound to one transport and its rate limiter. */
+export const createAniListClient = (transport: AniListTransport) => {
+  const request = createAniListRequest(transport);
+
+  return {
+    aniListRequest: request,
+    fetchAniListLibrary: (token: string, userId: number): Promise<readonly AniListLibraryItem[]> =>
+      Effect.runPromise(fetchAniListLibraryEffect(request, token, userId)),
+    fetchAniListMediaListEntryIds: (
+      token: string,
+      userId: number,
+    ): Promise<Readonly<Record<string, number>>> =>
+      Effect.runPromise(fetchAniListMediaListEntryIdsEffect(request, token, userId)),
+    saveAniListStatus: (
+      token: string,
+      anilistId: string,
+      status: AniListReadingStatus | null,
+    ): Promise<{ mediaListEntryId?: number; backupIdentity?: MalBackupIdentity }> =>
+      Effect.runPromise(saveAniListStatusEffect(request, token, anilistId, status)),
+    saveAniListFields: (
+      token: string,
+      anilistId: string,
+      change: AniListFieldChange,
+    ): Promise<void> =>
+      Effect.runPromise(saveAniListFieldsEffect(request, token, anilistId, change)),
+    saveAniListProgress: (token: string, anilistId: string, progress: number): Promise<boolean> =>
+      Effect.runPromise(saveAniListProgressEffect(request, token, anilistId, progress)),
+    /** Resolves false when AniList does not confirm the deletion. */
+    deleteAniListEntry: (token: string, mediaListEntryId: number): Promise<boolean> =>
+      Effect.runPromise(deleteAniListEntryEffect(request, token, mediaListEntryId)),
+  };
+};
+
+export type { FuzzyDateInput };

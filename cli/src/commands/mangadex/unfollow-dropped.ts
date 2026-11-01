@@ -1,25 +1,27 @@
 /** @effect-diagnostics asyncFunction:off */
-import { cliError, envString, runHost, sleepPromise } from "@/effect-kit";
-import { Effect, Option, Schema } from "effect";
+import { cliError, runHost } from "@/effect-kit";
+import { Effect, Schema } from "effect";
 import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
-import { errorMessage, isJsonObject, manifoldUserAgent, numberField } from "@manifold/json";
+import { errorMessage } from "@manifold/json";
 
-import { createMangaDexTokenManager } from "@/mangadex-token";
+import {
+  fetchFollowedMangaIds,
+  fetchMangaDexTitles,
+  mangadexCredentialFlags,
+  openMangaDexSession,
+  requireMangaDexCredentials,
+  runMangaDexWrites,
+} from "@/mangadex-session";
 import {
   abortFrame,
   closeFrame,
   createRun,
-  frameDetail,
   makePhaseReporter,
   openFrame,
   type RunContext,
 } from "@/ui";
-import {
-  createMangaDexClient,
-  MANGADEX_CONTENT_RATINGS,
-  MangaDexReadingStatus,
-} from "@manifold/mangadex";
+import { MangaDexReadingStatus } from "@manifold/mangadex";
 
 interface UnfollowCtx extends RunContext {
   droppedIds: readonly string[];
@@ -29,23 +31,16 @@ interface UnfollowCtx extends RunContext {
 
 const READ_SPACING_MS = 250;
 const WRITE_SPACING_MS = 220;
-const TITLE_BATCH_SIZE = 100;
 const DETAIL_LINE_CAP = 40;
-const TOKEN_CACHE_PATH = ".tmp/mangadex-token.json";
 
 const VALID_STATUSES = MangaDexReadingStatus.literals;
 const isReadingStatus = Schema.is(MangaDexReadingStatus);
-
-const optional = (name: string, description: string) =>
-  Flag.String(name).pipe(Flag.optional, Flag.withDescription(description));
 
 const parseList = (raw: string): string[] =>
   raw
     .split(",")
     .map((item) => item.trim().toLowerCase())
     .filter((item) => item.length > 0);
-
-const sleep = sleepPromise;
 
 export const unfollowDroppedCommand = Command.make(
   "unfollow-dropped",
@@ -60,53 +55,11 @@ export const unfollowDroppedCommand = Command.make(
       Flag.withDefault(false),
       Flag.withDescription("Actually unfollow on MangaDex. Default is a dry run."),
     ),
-    mangadexClientId: optional("mangadex-client-id", "Falls back to MANIFOLD_MANGADEX_CLIENT_ID."),
-    mangadexClientSecret: optional(
-      "mangadex-client-secret",
-      "Falls back to MANIFOLD_MANGADEX_CLIENT_SECRET.",
-    ),
-    mangadexUsername: optional("mangadex-username", "Falls back to MANIFOLD_MANGADEX_USERNAME."),
-    mangadexPassword: optional("mangadex-password", "Falls back to MANIFOLD_MANGADEX_PASSWORD."),
+    ...mangadexCredentialFlags,
   },
-  ({ status, apply, mangadexClientId, mangadexClientSecret, mangadexUsername, mangadexPassword }) =>
+  ({ status, apply, ...credentialFlags }) =>
     Effect.gen(function* () {
-      const resolveValue = (
-        flagValue: Option.Option<string>,
-        ...names: readonly string[]
-      ): string | undefined => {
-        const direct = Option.getOrUndefined(flagValue);
-
-        if (direct !== undefined) {
-          return direct;
-        }
-
-        for (const name of names) {
-          const value = envString(name);
-
-          if (value !== undefined && value !== "") {
-            return value;
-          }
-        }
-
-        return undefined;
-      };
-
-      const credentials = {
-        clientId: resolveValue(mangadexClientId, "MANIFOLD_MANGADEX_CLIENT_ID") ?? "",
-        clientSecret: resolveValue(mangadexClientSecret, "MANIFOLD_MANGADEX_CLIENT_SECRET") ?? "",
-        username: resolveValue(mangadexUsername, "MANIFOLD_MANGADEX_USERNAME") ?? "",
-        password: resolveValue(mangadexPassword, "MANIFOLD_MANGADEX_PASSWORD") ?? "",
-      };
-
-      const missing = Object.entries(credentials)
-        .filter(([, value]) => !value)
-        .map(([key]) => key);
-
-      if (missing.length > 0) {
-        return yield* cliError(
-          `Missing MangaDex credentials: ${missing.join(", ")}. Pass them as flags or set MANGADEX_*.`,
-        );
-      }
+      const credentials = yield* requireMangaDexCredentials(credentialFlags);
 
       const targetStatuses = parseList(status);
 
@@ -128,29 +81,12 @@ export const unfollowDroppedCommand = Command.make(
             `Unfollow dropped → ${targetStatuses.join(",")} ${apply ? "(apply)" : "(dry run)"}`,
           );
 
-          const manager = createMangaDexTokenManager({
-            credentials,
-            cachePath: TOKEN_CACHE_PATH,
-          });
-
-          let client = createMangaDexClient({
-            accessToken: await manager.current(),
-            userAgent: manifoldUserAgent("cli"),
-          });
-
-          const refreshClient = async () => {
-            client = createMangaDexClient({
-              accessToken: await manager.current(),
-              userAgent: manifoldUserAgent("cli"),
-            });
-
-            return client;
-          };
+          const session = await openMangaDexSession(credentials);
 
           const fetchStatusesTask: ListrTask<UnfollowCtx> = {
             title: "Fetch reading statuses",
             task: async (ctx, task) => {
-              const statuses = await runHost(client.readingStatuses());
+              const statuses = await runHost(session.client().readingStatuses());
 
               const droppedIds = Object.entries(statuses)
                 .filter(([, s]) => targetStatuses.includes(s))
@@ -181,26 +117,11 @@ export const unfollowDroppedCommand = Command.make(
               // This is cheaper than N individual isFollowingManga checks and lets
               // the dry run list be exact. DELETE /manga/{id}/follow is idempotent
               // (404 is swallowed), but reporting needs the real followed set.
-              const followed = new Set<string>();
-              let offset = 0;
-
-              while (true) {
-                const page = await runHost(client.followedManga({ limit: 100, offset }));
-
-                for (const manga of page.items) {
-                  followed.add(manga.id);
-                }
-
-                offset += page.items.length;
-                const total = page.total ?? offset;
-                reporter.progress(followed.size, total, [["followed", followed.size]] as const);
-
-                if (page.items.length === 0 || offset >= total) {
-                  break;
-                }
-
-                await sleep(READ_SPACING_MS);
-              }
+              const followed = await fetchFollowedMangaIds(
+                session.client(),
+                READ_SPACING_MS,
+                (count, total) => reporter.progress(count, total, [["followed", count]]),
+              );
 
               const followedDroppedIds = ctx.droppedIds.filter((id) => followed.has(id));
               ctx.followedDroppedIds = followedDroppedIds;
@@ -215,27 +136,11 @@ export const unfollowDroppedCommand = Command.make(
                 return;
               }
 
-              const titles: Record<string, string> = {};
-
-              for (let start = 0; start < followedDroppedIds.length; start += TITLE_BATCH_SIZE) {
-                const batch = followedDroppedIds.slice(start, start + TITLE_BATCH_SIZE);
-
-                const page = await runHost(
-                  client.listManga({
-                    ids: batch,
-                    contentRating: [...MANGADEX_CONTENT_RATINGS],
-                    limit: 100,
-                  }),
-                );
-
-                for (const manga of page.items) {
-                  titles[manga.id] = manga.title;
-                }
-
-                await sleep(READ_SPACING_MS);
-              }
-
-              ctx.titles = titles;
+              ctx.titles = await fetchMangaDexTitles(
+                session.client(),
+                followedDroppedIds,
+                READ_SPACING_MS,
+              );
             },
             rendererOptions: { outputBar: 1, persistentOutput: true },
           };
@@ -256,67 +161,14 @@ export const unfollowDroppedCommand = Command.make(
                         return;
                       }
 
-                      await refreshClient();
-                      const failures: string[] = [];
-                      let done = 0;
-
-                      for (const mangaId of ctx.followedDroppedIds) {
-                        try {
-                          await runHost(client.unfollowManga(mangaId));
-                        } catch (cause) {
-                          const msg = errorMessage(cause);
-
-                          const isAuth =
-                            isJsonObject(cause) && numberField(cause, "status") === 401;
-
-                          if (isAuth) {
-                            try {
-                              await refreshClient();
-                              await runHost(client.unfollowManga(mangaId));
-                              done += 1;
-                              reporter.progress(done, ctx.followedDroppedIds.length, [
-                                ["failed", failures.length],
-                              ] as const);
-
-                              if (done < ctx.followedDroppedIds.length) {
-                                await sleep(WRITE_SPACING_MS);
-                              }
-
-                              continue;
-                            } catch (retryCause) {
-                              failures.push(
-                                `${ctx.titles[mangaId] ?? mangaId}: ${errorMessage(retryCause)}`,
-                              );
-                            }
-                          } else {
-                            failures.push(`${ctx.titles[mangaId] ?? mangaId}: ${msg}`);
-                          }
-                        }
-
-                        done += 1;
-                        reporter.progress(done, ctx.followedDroppedIds.length, [
-                          ["failed", failures.length],
-                        ] as const);
-                        frameDetail(`  ${ctx.titles[mangaId] ?? mangaId} unfollowed`);
-
-                        if (done < ctx.followedDroppedIds.length) {
-                          await sleep(WRITE_SPACING_MS);
-                        }
-                      }
-
-                      for (const failure of failures.slice(0, DETAIL_LINE_CAP)) {
-                        reporter.problem(failure);
-                      }
-
-                      if (failures.length > DETAIL_LINE_CAP) {
-                        reporter.problem(`…and ${failures.length - DETAIL_LINE_CAP} more failures`);
-                      }
-
-                      reporter.note(`${done - failures.length}/${done} unfollowed.`);
-
-                      if (failures.length > 0) {
-                        process.exitCode = 1;
-                      }
+                      await runMangaDexWrites(session, reporter, {
+                        ids: ctx.followedDroppedIds,
+                        titles: ctx.titles,
+                        write: (client, mangaId) => client.unfollowManga(mangaId),
+                        verb: "unfollowed",
+                        spacingMs: WRITE_SPACING_MS,
+                        listWritten: true,
+                      });
                     },
                     rendererOptions: { outputBar: 1, persistentOutput: true },
                   },

@@ -3,6 +3,14 @@ import { writeSync } from "node:fs";
 
 import { Cause, Effect, Exit, Terminal } from "effect";
 
+type CloseOutcome = "done" | "idle" | "error";
+
+const CLOSE_LABELS = {
+  done: "Done",
+  idle: "Cancelled",
+  error: "Failed",
+} as const satisfies Record<CloseOutcome, string>;
+
 export interface TerminalSessionControls {
   readonly cancelled: boolean;
   phase(label: string): void;
@@ -11,7 +19,7 @@ export interface TerminalSessionControls {
   resume(): void;
   cancel(): void;
   summary(message: string, hasErrors?: boolean): void;
-  close(outcome: "done" | "idle" | "error"): void;
+  close(outcome: CloseOutcome): void;
 }
 
 export interface TerminalSessionOptions {
@@ -186,7 +194,7 @@ export const createTerminalSession = (
         summary = undefined;
       }
 
-      publish(state, state === "idle" ? "Cancelled" : state === "error" ? "Failed" : "Done");
+      publish(state, CLOSE_LABELS[state]);
     },
   };
 };

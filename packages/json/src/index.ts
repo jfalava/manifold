@@ -147,3 +147,28 @@ export {
   withManifoldUserAgent,
   type ManifoldUserAgentSurface,
 } from "./user-agent";
+
+/** Trimmed, non-empty values deduplicated case-insensitively; the first spelling wins. */
+export const uniqueStrings = (values: readonly (string | undefined)[]): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    const normalized = value?.trim();
+
+    if (!normalized) {
+      continue;
+    }
+
+    const key = normalized.toLocaleLowerCase();
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(normalized);
+  }
+
+  return result;
+};

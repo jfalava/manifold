@@ -11,7 +11,14 @@ import { errorMessage } from "@manifold/json";
 import { apiCall, apiConfig, listRegistryRows, type RegistryRow } from "@/commands/toolbox";
 import { classifyPage, openBunBrowserView, type BrowserView } from "@/browser-view";
 import { resolveValue } from "@/env-resolve";
-import { cliError, jsonBodyString, sleepPromise, validateNonNegativeLimit } from "@/effect-kit";
+import {
+  cliError,
+  jsonBodyString,
+  sleepPromise,
+  validateNonNegativeLimit,
+  validateDelayMs,
+  validateMaxPages,
+} from "@/effect-kit";
 import {
   createManganatoClient,
   hasManganatoAuthor,
@@ -45,6 +52,15 @@ import {
   openFrame,
   type RunContext,
 } from "@/ui";
+
+/** Why a row was deferred instead of linked, as written to the prefill report. */
+const DEFERRED_NOTES = {
+  no_query: "No usable English/romanized title words; not a catalog miss",
+  no_useful_query:
+    "No completed query returned an exact-title candidate; known competitors retained for review",
+  page_budget:
+    "Search page budget exhausted; no automatic link. Resume skips until --max-pages or search policy changes",
+} as const;
 
 interface ManganatoCtx extends RunContext {
   rows: readonly RegistryRow[];
@@ -117,16 +133,12 @@ export const manganatoPrefillCommand = Command.make("manganato", {
             const maximum = Option.getOrUndefined(limit);
             validateNonNegativeLimit(maximum);
 
-            if (!Number.isSafeInteger(delay) || delay < 0) {
-              throw cliError("--delay must be a non-negative integer (milliseconds).");
-            }
+            validateDelayMs(delay);
 
             const maxPages = Option.getOrElse(pageLimit, () => 5);
             const continuationMaxPages = Option.getOrElse(pageLimit, () => 20);
 
-            if (!Number.isSafeInteger(maxPages) || maxPages < 1) {
-              throw cliError("--max-pages must be a positive integer.");
-            }
+            validateMaxPages(maxPages);
 
             const chromeUrl = resolveValue(chromeCdpUrl, "MANIFOLD_MANGANATO_CHROME_CDP_URL");
 
@@ -343,7 +355,7 @@ export const manganatoPrefillCommand = Command.make("manganato", {
 
                   let usefulQuery: string | null = null;
                   let stopReason = "exhausted_plans";
-                  let deferredReason: string | undefined;
+                  let deferredReason: keyof typeof DEFERRED_NOTES | undefined;
                   let blocked: ManganatoBlockedError | undefined;
                   let retryable = false;
 
@@ -668,12 +680,7 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                       note = "Publication title/version conflict; user requested manual selection";
                     } else if (deferredReason) {
                       outcome = "deferred";
-                      note =
-                        deferredReason === "no_query"
-                          ? "No usable English/romanized title words; not a catalog miss"
-                          : deferredReason === "no_useful_query"
-                            ? "No completed query returned an exact-title candidate; known competitors retained for review"
-                            : `Search page budget exhausted; no automatic link. Resume skips until --max-pages or search policy changes`;
+                      note = DEFERRED_NOTES[deferredReason];
                     } else if (manualDuplicate() && !acceptedRecommendation) {
                       outcome = "ambiguous";
                       note =
@@ -835,8 +842,10 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                         userConfirmed:
                           identity.confirmedCandidateIds?.includes(candidate.id) ?? false,
                         queries: attempts
+                          .values()
                           .filter((attempt) => attempt.candidateIds.includes(candidate.id))
-                          .map((attempt) => attempt.query),
+                          .map((attempt) => attempt.query)
+                          .toArray(),
                       },
                       exactTitle: hasManganatoTitle(titles, [
                         candidate.title,

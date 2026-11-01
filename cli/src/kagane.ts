@@ -93,7 +93,7 @@ export const hasExactKaganeTitle = (
   titles: readonly string[],
   names: readonly string[],
 ): boolean => {
-  const normalized = new Set(titles.map(normalizeKaganeTitle).filter(Boolean));
+  const normalized = new Set(titles.values().map(normalizeKaganeTitle).filter(Boolean));
 
   return names.some((name) => normalized.has(normalizeKaganeTitle(name)));
 };

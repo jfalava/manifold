@@ -323,7 +323,7 @@ export const matchingBaseLibraryIds = (
           return true;
         }
 
-        const info = base.__MANGA_INFO_V5[String(source.mangaInfo.id)];
+        const info = base.__MANGA_INFO_V5[source.mangaInfo.id];
 
         if (!info) {
           return false;
@@ -400,10 +400,10 @@ export const migrateLibrarySources = (
     }
 
     sources.push(candidate);
-    const info = candidateInfos[String(candidate.mangaInfo.id)];
+    const info = candidateInfos[candidate.mangaInfo.id];
 
     if (info) {
-      infos[String(candidate.mangaInfo.id)] = info;
+      infos[candidate.mangaInfo.id] = info;
     }
   }
 
@@ -501,9 +501,7 @@ export const sourceFreeEntities = (
     Object.entries(sources).filter(([id]) => usedSourceIds.has(id)),
   );
 
-  const usedInfoIds = new Set(
-    Object.values(retainedSources).map((source) => String(source.mangaInfo.id)),
-  );
+  const usedInfoIds = new Set(Object.values(retainedSources).map((source) => source.mangaInfo.id));
 
   const retainedInfos = Object.fromEntries(
     Object.entries(allInfos)

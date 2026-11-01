@@ -26,7 +26,7 @@ copyright and license terms:
 The corresponding Manifold-derived implementation is in:
 
 - `packages/mangadex/`
-- `packages/paperback-runtime/src/anilist-graphql.ts` (AniList runtime)
+- `packages/paperback-runtime/src/anilist-graphql.ts` and `anilist-device.ts` (AniList runtime)
 - `tracker/src/MANIFOLD/main.ts`
 - `tracker/src/MANIFOLD/managed-collections.ts`
 - `tracker/src/MANIFOLD/pbconfig.ts`

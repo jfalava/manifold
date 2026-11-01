@@ -44,6 +44,7 @@
     "@manifold/contract": "workspace:*",
     "@manifold/json": "workspace:*",
     "@manifold/mangadex": "workspace:*",
+    "@manifold/paperback-runtime": "workspace:*",
     "cli-progress": "3.12.0",
     "cli-truncate": "6.1.1",
     "effect": "catalog:effect",

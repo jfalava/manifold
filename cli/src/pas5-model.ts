@@ -78,8 +78,8 @@ export interface LibraryManga {
 }
 
 export interface MangaInfoReference {
-  /** Generated archives use the string `mangaInfoKey`; native device exports may store a number. */
-  readonly id: string | number;
+  /** Signed int64 as a decimal string, in native exports and generated archives alike. */
+  readonly id: string;
   readonly type: "__MANGA_INFO_V5";
 }
 

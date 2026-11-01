@@ -96,6 +96,19 @@ const readEntry = (archive: Uint8Array, view: DataView, offset: number): ZipEntr
   };
 };
 
+/** ZIP method 0 is stored, 8 is raw deflate; release archives use nothing else. */
+const decompress = (method: number, compressed: Uint8Array): Uint8Array => {
+  if (method === 0) {
+    return compressed;
+  }
+
+  if (method === 8) {
+    return new Uint8Array(inflateRawSync(compressed));
+  }
+
+  throw new Error(`Downloaded release uses unsupported ZIP compression method ${method}.`);
+};
+
 const extractEntry = (archive: Uint8Array, view: DataView, entry: ZipEntry): Uint8Array => {
   ensureRange(
     entry.localFileOffset,
@@ -119,18 +132,7 @@ const extractEntry = (archive: Uint8Array, view: DataView, entry: ZipEntry): Uin
   );
   const compressed = archive.subarray(dataOffset, dataOffset + entry.compressedSize);
 
-  const binary =
-    entry.compressionMethod === 0
-      ? compressed
-      : entry.compressionMethod === 8
-        ? new Uint8Array(inflateRawSync(compressed))
-        : undefined;
-
-  if (!binary) {
-    throw new Error(
-      `Downloaded release uses unsupported ZIP compression method ${entry.compressionMethod}.`,
-    );
-  }
+  const binary = decompress(entry.compressionMethod, compressed);
 
   if (binary.byteLength !== entry.uncompressedSize) {
     throw new Error("Downloaded release executable size does not match its ZIP entry.");

@@ -66,7 +66,7 @@ export const filterPas5Providers = (
   );
 
   const infoIds = new Set([
-    ...Object.values(sources).map((source) => String(source.mangaInfo.id)),
+    ...Object.values(sources).map((source) => source.mangaInfo.id),
     ...Object.values(unvalidatedSources).flatMap(rawMangaInfoId),
   ]);
 
@@ -136,10 +136,8 @@ export const filterPas5Providers = (
 
 /** Best-effort `mangaInfo.id` of a record that failed validation. */
 const rawMangaInfoId = (source: JsonValue): string[] =>
-  isJsonObject(source) &&
-  isJsonObject(source.mangaInfo) &&
-  (isString(source.mangaInfo.id) || isFiniteNumber(source.mangaInfo.id))
-    ? [String(source.mangaInfo.id)]
+  isJsonObject(source) && isJsonObject(source.mangaInfo) && isString(source.mangaInfo.id)
+    ? [source.mangaInfo.id]
     : [];
 
 /** Omits the passthrough entirely when nothing is left, so clean archives compare equal. */
@@ -173,9 +171,7 @@ const isLibraryManga = (value: unknown): value is LibraryManga =>
   hasOptionalNumbers(value, ["schemaVersion", "lastUpdated", "dateBookmarked", "lastRead"]);
 
 const isMangaInfoReference = (value: unknown): value is MangaInfoReference =>
-  isJsonObject(value) &&
-  (isIdentifier(value.id) || isFiniteNumber(value.id)) &&
-  value.type === "__MANGA_INFO_V5";
+  isJsonObject(value) && isIdentifier(value.id) && value.type === "__MANGA_INFO_V5";
 
 const isSourceManga = (value: unknown): value is SourceManga =>
   isJsonObject(value) &&
@@ -272,9 +268,7 @@ const parsePas5Effect = (buf: Buffer): Effect.Effect<Pas5Entities, CliEffectErro
         (id) => attachedIds.has(id),
       );
 
-      const infoIds = new Set(
-        Object.values(sources.valid).map((source) => String(source.mangaInfo.id)),
-      );
+      const infoIds = new Set(Object.values(sources.valid).map((source) => source.mangaInfo.id));
 
       const infos = partitionRecords(
         files,

@@ -23,7 +23,7 @@ import {
   RegistryListResponse,
 } from "@manifold/contract";
 import { apiCall, apiConfig, type ApiConfig, type RegistryRow } from "@/commands/toolbox";
-import { cliError, sleepPromise, validateNonNegativeLimit } from "@/effect-kit";
+import { cliError, sleepPromise, validateNonNegativeLimit, validateDelayMs } from "@/effect-kit";
 
 const sleep = sleepPromise;
 
@@ -117,9 +117,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
         const limitValue = Option.getOrUndefined(limit);
         validateNonNegativeLimit(limitValue);
 
-        if (!Number.isSafeInteger(delay) || delay < 0) {
-          throw cliError("--delay must be a non-negative integer (milliseconds).");
-        }
+        validateDelayMs(delay);
 
         const config: ApiConfig = await apiConfig(apiOrigin, apiToken);
         const statusFilter = parseStatusFilter(status);

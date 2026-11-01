@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as HttpClient from "effect/http/HttpClient";
 import type * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as Layer from "effect/Layer";
+import * as Predicate from "effect/Predicate";
 
 /** Secrets Store secret records are created and rotated only from the
  * Cloudflare dashboard. Deployments bind existing records exclusively, so any
@@ -93,7 +94,7 @@ export const validateManifoldWorkerUpload = (
     return Effect.void;
   }
 
-  if (request.body._tag !== "FormData") {
+  if (!Predicate.isTagged(request.body, "FormData")) {
     return rejectMalformedUpload("expected a multipart upload");
   }
 

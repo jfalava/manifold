@@ -42,20 +42,23 @@ export {
 
 export {
   AniListUnauthorizedError,
-  aniListRequest,
   decodeAniListViewer,
   viewerQuery,
   normalizeAniListStatus,
+  type AniListLibraryItem,
+  type AniListViewer,
+  type FuzzyDateInput,
+} from "./anilist-graphql.js";
+
+export {
+  aniListRequest,
   fetchAniListLibrary,
   fetchAniListMediaListEntryIds,
   saveAniListStatus,
   saveAniListProgress,
   saveAniListFields,
   deleteAniListEntry,
-  type AniListLibraryItem,
-  type AniListViewer,
-  type FuzzyDateInput,
-} from "./anilist-graphql.js";
+} from "./anilist-device.js";
 
 export { drainAniListOps, maybeDrainAniListOps } from "./op-drain.js";
 

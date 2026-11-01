@@ -168,7 +168,10 @@ export const getRegistryCanonical = (env: Env, entry: RegistryEntry): Promise<Ca
           const details = yield* Schema.encodeEffect(JsonString)({
             event: "canonical.details.failed",
             entryId: entry.id,
-            ...outcome.error,
+            error: outcome.error._tag,
+            provider: outcome.error.provider,
+            message: outcome.error.message,
+            status: outcome.error.status,
           });
 
           hostLogWarn(details);

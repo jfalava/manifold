@@ -1,14 +1,16 @@
 /** @effect-diagnostics asyncFunction:off */
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
-import { boundedInteger, routeId } from "../src/http";
+import { boundedInteger, ParseRequestError, routeId } from "../src/http";
 
 describe("HTTP route parsing", () => {
   it("rejects malformed percent-encoded route IDs", async () => {
-    await expect(Effect.runPromise(routeId("bad%2"))).rejects.toMatchObject({
-      _tag: "ParseRequestError",
-      message: "Route identifier is not valid URL encoding",
-    });
+    const error: unknown = await Effect.runPromise(routeId("bad%2")).catch(
+      (cause: unknown) => cause,
+    );
+
+    expect(error).toBeInstanceOf(ParseRequestError);
+    expect(error).toMatchObject({ message: "Route identifier is not valid URL encoding" });
   });
 
   it("normalizes invalid and out-of-range query integers", () => {

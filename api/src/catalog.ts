@@ -1,6 +1,6 @@
 /** Hono / Worker entry — platform async callbacks. */
 /** @effect-diagnostics asyncFunction:off */
-import { DateTime, Schema } from "effect";
+import { DateTime, Option, Schema } from "effect";
 import { Hono } from "hono";
 import type { Env } from "./types";
 
@@ -68,9 +68,7 @@ const readExtensionInfo = async (
   try {
     const raw: unknown = await response.json();
 
-    return Schema.decodeUnknownOption(ExtensionInfoBody)(raw).pipe((option) =>
-      option._tag === "Some" ? option.value : undefined,
-    );
+    return Schema.decodeUnknownOption(ExtensionInfoBody)(raw).pipe(Option.getOrUndefined);
   } catch {
     return undefined;
   }

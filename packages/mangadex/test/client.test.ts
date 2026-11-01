@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { requestHref, requestInitText, type JsonValue } from "@manifold/json";
-import { createMangaDexClient } from "../src/index";
+import { createMangaDexClient, MangaDexSourceError } from "../src/index";
 
 const jsonResponse = (body: JsonValue, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -137,10 +137,12 @@ describe("MangaDex client", () => {
       fetcher: async () => jsonResponse({ error: "missing" }, 404),
     });
 
-    await expect(Effect.runPromise(client.getManga("missing"))).rejects.toMatchObject({
-      _tag: "MangaDexSourceError",
-      status: 404,
-    });
+    const error: unknown = await Effect.runPromise(client.getManga("missing")).catch(
+      (cause: unknown) => cause,
+    );
+
+    expect(error).toBeInstanceOf(MangaDexSourceError);
+    expect(error).toMatchObject({ status: 404 });
   });
 
   it("marks chapters as read with the authenticated MangaDex endpoint", async () => {

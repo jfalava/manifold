@@ -14,7 +14,7 @@ import {
   type PersonalReadInput,
   type PersonalReadingProgress,
 } from "@manifold/paperback-runtime";
-import { Clock, Effect } from "effect";
+import { Clock, Effect, Result } from "effect";
 import { fromPromise, trackerError } from "./effect-error.js";
 
 export interface ReadQueueDeps {
@@ -234,7 +234,7 @@ const flushPendingProgressEffect = (
         fromPromise(() => pushProgress(entry.sourceManga, entry.chapterNum)),
       );
 
-      if (outcome._tag === "Failure") {
+      if (Result.isFailure(outcome)) {
         // Keep it queued; the next read-queue run retries.
         yield* Effect.logError(
           `[manifold] anilist progress retry failed:${mangaId}:${errorMessage(outcome.failure)}`,
@@ -332,7 +332,7 @@ const processReadActionsEffect = (
         }),
       );
 
-      if (outcome._tag === "Success") {
+      if (Result.isSuccess(outcome)) {
         successfulItems.push(outcome.success);
       } else {
         failedItems.push(action.id);
@@ -351,7 +351,7 @@ const processReadActionsEffect = (
         fromPromise(() => deps.pushProgress(max.sourceManga, max.chapterNum)),
       );
 
-      if (outcome._tag === "Success") {
+      if (Result.isSuccess(outcome)) {
         if (outcome.success) {
           acknowledgeProgress(mangaId, max.chapterNum);
           yield* Effect.logInfo(`[manifold] anilist progress:${mangaId}:${max.chapterNum}`);

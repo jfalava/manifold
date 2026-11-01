@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
 
 import { errorMessage } from "@manifold/json";
 import { json, tryPromise, type RouteContext, type RouteEffect } from "../http";
@@ -62,7 +62,7 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
         ),
       );
 
-      if (start._tag === "Failure") {
+      if (Result.isFailure(start)) {
         return oauthError("invalid_request", start.failure.cause.message);
       }
 
@@ -93,7 +93,7 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
         ),
       );
 
-      if (complete._tag === "Failure") {
+      if (Result.isFailure(complete)) {
         return oauthError("invalid_grant", complete.failure.cause.message);
       }
 
@@ -127,7 +127,7 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
         ),
       );
 
-      if (token._tag === "Failure") {
+      if (Result.isFailure(token)) {
         return oauthError("invalid_grant", token.failure.cause.message);
       }
 

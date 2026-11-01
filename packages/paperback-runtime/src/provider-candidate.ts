@@ -45,6 +45,15 @@ const isRegistryProvider = (value: string): value is RegistryProvider =>
   value === "manganato" ||
   value === "xcomic";
 
+const PROVIDER_LABELS = {
+  anilist: "AniList",
+  mal: "MyAnimeList",
+  mangadex: "MangaDex",
+  kagane: "Kagane",
+  manganato: "MangaNato",
+  xcomic: "XComic",
+} as const satisfies Record<RegistryProvider, string>;
+
 export interface ProviderCandidate {
   readonly provider: RegistryProvider;
   readonly providerId: string;
@@ -201,16 +210,7 @@ export const toProviderCandidateSearchResult = (
 ): SearchResultItem => ({
   mangaId: providerCandidateId(candidate.provider, candidate.providerId),
   title: candidate.title,
-  subtitle: [
-    candidate.provider === "mangadex"
-      ? "MangaDex"
-      : candidate.provider === "anilist"
-        ? "AniList"
-        : "MyAnimeList",
-    ...candidate.aliases,
-  ]
-    .filter(Boolean)
-    .join(" · "),
+  subtitle: [PROVIDER_LABELS[candidate.provider], ...candidate.aliases].filter(Boolean).join(" · "),
   imageUrl: safeImageUrl(candidate.imageUrl),
   contentRating: ContentRating.MATURE,
   metadata: candidate,

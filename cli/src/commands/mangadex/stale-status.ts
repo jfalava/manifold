@@ -9,16 +9,16 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { Effect, Option, Schema } from "effect";
 import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
-import {
-  errorMessage,
-  isJsonObject,
-  manifoldUserAgent,
-  numberField,
-  objectField,
-  stringField,
-} from "@manifold/json";
+import { errorMessage, isJsonObject, numberField, objectField, stringField } from "@manifold/json";
 
-import { createMangaDexTokenManager } from "@/mangadex-token";
+import {
+  fetchFollowedMangaIds,
+  fetchMangaDexTitles,
+  mangadexCredentialFlags,
+  openMangaDexSession,
+  requireMangaDexCredentials,
+  runMangaDexWrites,
+} from "@/mangadex-session";
 import {
   abortFrame,
   closeFrame,
@@ -28,19 +28,8 @@ import {
   openFrame,
   type RunContext,
 } from "@/ui";
-import {
-  createMangaDexClient,
-  MANGADEX_CONTENT_RATINGS,
-  MangaDexReadingStatus,
-} from "@manifold/mangadex";
-import {
-  cliError,
-  envString,
-  epochMillisNow,
-  fromPromise,
-  runHost,
-  sleepPromise,
-} from "@/effect-kit";
+import { MangaDexReadingStatus } from "@manifold/mangadex";
+import { cliError, epochMillisNow, fromPromise, runHost, sleepPromise } from "@/effect-kit";
 
 interface StaleCtx extends RunContext {
   statuses: Record<string, MangaDexReadingStatus>;
@@ -50,9 +39,7 @@ interface StaleCtx extends RunContext {
 
 const READ_SPACING_MS = 250;
 const WRITE_SPACING_MS = 220;
-const TITLE_BATCH_SIZE = 100;
 const DETAIL_LINE_CAP = 40;
-const TOKEN_CACHE_PATH = ".tmp/mangadex-token.json";
 const STALE_CACHE_PATH = ".tmp/mangadex-stale-cache.json";
 const PLAN_PATH = ".tmp/mangadex-stale-plan.json";
 
@@ -203,9 +190,6 @@ export const parseDurationMs = (raw: string): number | undefined => {
   return Number(match[1]) * DURATION_UNIT_MS[unit];
 };
 
-const optional = (name: string, description: string) =>
-  Flag.String(name).pipe(Flag.optional, Flag.withDescription(description));
-
 const parseList = (raw: string): string[] =>
   raw
     .split(",")
@@ -241,63 +225,11 @@ export const staleStatusCommand = Command.make(
         "Skip scanning: reuse the stale list saved by the last run. Flags must match that run.",
       ),
     ),
-    mangadexClientId: optional("mangadex-client-id", "Falls back to MANIFOLD_MANGADEX_CLIENT_ID."),
-    mangadexClientSecret: optional(
-      "mangadex-client-secret",
-      "Falls back to MANIFOLD_MANGADEX_CLIENT_SECRET.",
-    ),
-    mangadexUsername: optional("mangadex-username", "Falls back to MANIFOLD_MANGADEX_USERNAME."),
-    mangadexPassword: optional("mangadex-password", "Falls back to MANIFOLD_MANGADEX_PASSWORD."),
+    ...mangadexCredentialFlags,
   },
-  ({
-    olderThan,
-    to,
-    from,
-    apply,
-    usePlan,
-    mangadexClientId,
-    mangadexClientSecret,
-    mangadexUsername,
-    mangadexPassword,
-  }) =>
+  ({ olderThan, to, from, apply, usePlan, ...credentialFlags }) =>
     Effect.gen(function* () {
-      const resolveValue = (
-        flagValue: Option.Option<string>,
-        ...names: readonly string[]
-      ): string | undefined => {
-        const direct = Option.getOrUndefined(flagValue);
-
-        if (direct !== undefined) {
-          return direct;
-        }
-
-        for (const name of names) {
-          const value = envString(name);
-
-          if (value !== undefined && value !== "") {
-            return value;
-          }
-        }
-
-        return undefined;
-      };
-
-      const credentials = {
-        clientId: resolveValue(mangadexClientId, "MANIFOLD_MANGADEX_CLIENT_ID") ?? "",
-        clientSecret: resolveValue(mangadexClientSecret, "MANIFOLD_MANGADEX_CLIENT_SECRET") ?? "",
-        username: resolveValue(mangadexUsername, "MANIFOLD_MANGADEX_USERNAME") ?? "",
-        password: resolveValue(mangadexPassword, "MANIFOLD_MANGADEX_PASSWORD") ?? "",
-      };
-
-      const missing = Object.entries(credentials)
-        .filter(([, value]) => !value)
-        .map(([key]) => key);
-
-      if (missing.length > 0) {
-        return yield* cliError(
-          `Missing MangaDex credentials: ${missing.join(", ")}. Pass them as flags or set MANGADEX_*.`,
-        );
-      }
+      const credentials = yield* requireMangaDexCredentials(credentialFlags);
 
       const olderThanMs = parseDurationMs(olderThan);
 
@@ -331,29 +263,12 @@ export const staleStatusCommand = Command.make(
           openFrame(`Stale library prune → ${targetStatus} ${apply ? "(apply)" : "(dry run)"}`);
           frameDetail(`Chapters newer than ${cutoffIso} keep their status`);
 
-          const manager = createMangaDexTokenManager({
-            credentials,
-            cachePath: TOKEN_CACHE_PATH,
-          });
-
-          let client = createMangaDexClient({
-            accessToken: await manager.current(),
-            userAgent: manifoldUserAgent("cli"),
-          });
-
-          const refreshClient = async () => {
-            client = createMangaDexClient({
-              accessToken: await manager.current(),
-              userAgent: manifoldUserAgent("cli"),
-            });
-
-            return client;
-          };
+          const session = await openMangaDexSession(credentials);
 
           const fetchStatusesTask: ListrTask<StaleCtx> = {
             title: "Fetch library statuses",
             task: async (ctx, task) => {
-              ctx.statuses = await runHost(client.readingStatuses());
+              ctx.statuses = await runHost(session.client().readingStatuses());
               makePhaseReporter(task).note(
                 `${Object.keys(ctx.statuses).length} library entries with a status.`,
               );
@@ -404,7 +319,7 @@ export const staleStatusCommand = Command.make(
               try {
                 while (true) {
                   const page = await runHost(
-                    client.followedFeed({ publishedAtSince: cutoff, limit: 500, offset }),
+                    session.client().followedFeed({ publishedAtSince: cutoff, limit: 500, offset }),
                   );
 
                   for (const chapter of page.items) {
@@ -445,31 +360,11 @@ export const staleStatusCommand = Command.make(
               // list. A library title that is not followed never appears in
               // the feed above, so its freshness is unknown and needs an
               // individual check.
-              const followed = new Set<string>();
-
-              if (sweepComplete) {
-                offset = 0;
-
-                while (true) {
-                  const page = await runHost(client.followedManga({ limit: 100, offset }));
-
-                  for (const manga of page.items) {
-                    followed.add(manga.id);
-                  }
-
-                  offset += page.items.length;
-                  const total = page.total ?? offset;
-                  reporter.progress(followed.size, candidates.length, [
-                    ["followed", followed.size],
-                  ] as const);
-
-                  if (page.items.length === 0 || offset >= total) {
-                    break;
-                  }
-
-                  await sleep(READ_SPACING_MS);
-                }
-              }
+              const followed = sweepComplete
+                ? await fetchFollowedMangaIds(session.client(), READ_SPACING_MS, (count) =>
+                    reporter.progress(count, candidates.length, [["followed", count]]),
+                  )
+                : new Set<string>();
 
               // Entries with no chapters at all never appear in feeds, so
               // they land here too — which is intended.
@@ -504,7 +399,7 @@ export const staleStatusCommand = Command.make(
               }
 
               for (const id of unverified) {
-                const chapter = await runHost(client.latestChapterSince(id, cutoff));
+                const chapter = await runHost(session.client().latestChapterSince(id, cutoff));
                 requests += 1;
 
                 if (chapter?.publishedAt !== undefined) {
@@ -528,25 +423,7 @@ export const staleStatusCommand = Command.make(
               Object.assign(mergedUploads, knownUploads, seenUploads);
               await saveStaleCache(mergedUploads);
 
-              const titles: Record<string, string> = {};
-
-              for (let start = 0; start < staleIds.length; start += TITLE_BATCH_SIZE) {
-                const batch = staleIds.slice(start, start + TITLE_BATCH_SIZE);
-
-                const page = await runHost(
-                  client.listManga({
-                    ids: batch,
-                    contentRating: [...MANGADEX_CONTENT_RATINGS],
-                    limit: 100,
-                  }),
-                );
-
-                for (const manga of page.items) {
-                  titles[manga.id] = manga.title;
-                }
-
-                await sleep(READ_SPACING_MS);
-              }
+              const titles = await fetchMangaDexTitles(session.client(), staleIds, READ_SPACING_MS);
 
               ctx.titles = titles;
               await saveStalePlan({
@@ -596,66 +473,14 @@ export const staleStatusCommand = Command.make(
                   title: `Update stale entries to ${targetStatus}`,
                   task: async (ctx, task) => {
                     const reporter = makePhaseReporter(task);
-                    // Token from the start of the run may have expired during the
-                    // 8m scan; refresh once before the write burst.
-                    await refreshClient();
-                    const failures: string[] = [];
-                    let done = 0;
-
-                    for (const mangaId of ctx.staleIds) {
-                      try {
-                        await runHost(client.updateReadingStatus(mangaId, targetStatus));
-                      } catch (cause) {
-                        const msg = errorMessage(cause);
-                        const isAuth = isJsonObject(cause) && numberField(cause, "status") === 401;
-
-                        if (isAuth) {
-                          try {
-                            await refreshClient();
-                            await runHost(client.updateReadingStatus(mangaId, targetStatus));
-                            done += 1;
-                            reporter.progress(done, ctx.staleIds.length, [
-                              ["failed", failures.length],
-                            ] as const);
-
-                            if (done < ctx.staleIds.length) {
-                              await sleep(WRITE_SPACING_MS);
-                            }
-
-                            continue;
-                          } catch (retryCause) {
-                            failures.push(
-                              `${ctx.titles[mangaId] ?? mangaId}: ${errorMessage(retryCause)}`,
-                            );
-                          }
-                        } else {
-                          failures.push(`${ctx.titles[mangaId] ?? mangaId}: ${msg}`);
-                        }
-                      }
-
-                      done += 1;
-                      reporter.progress(done, ctx.staleIds.length, [
-                        ["failed", failures.length],
-                      ] as const);
-
-                      if (done < ctx.staleIds.length) {
-                        await sleep(WRITE_SPACING_MS);
-                      }
-                    }
-
-                    for (const failure of failures.slice(0, DETAIL_LINE_CAP)) {
-                      reporter.problem(failure);
-                    }
-
-                    if (failures.length > DETAIL_LINE_CAP) {
-                      reporter.problem(`…and ${failures.length - DETAIL_LINE_CAP} more failures`);
-                    }
-
-                    reporter.note(`${done - failures.length}/${done} updated.`);
-
-                    if (failures.length > 0) {
-                      process.exitCode = 1;
-                    }
+                    await runMangaDexWrites(session, reporter, {
+                      ids: ctx.staleIds,
+                      titles: ctx.titles,
+                      write: (client, mangaId) => client.updateReadingStatus(mangaId, targetStatus),
+                      verb: "updated",
+                      spacingMs: WRITE_SPACING_MS,
+                      listWritten: false,
+                    });
                   },
                   rendererOptions: { outputBar: 1, persistentOutput: true },
                 }

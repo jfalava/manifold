@@ -5,7 +5,13 @@ import { RegistryEntry } from "@manifold/contract";
 import { errorMessage } from "@manifold/json";
 import { apiCall, apiConfig, listRegistryRows } from "@/commands/toolbox";
 import { coverageComparisons, coverageDifference } from "@/chapter-coverage";
-import { cliError, jsonBodyString, validateNonNegativeLimit } from "@/effect-kit";
+import {
+  cliError,
+  jsonBodyString,
+  validateNonNegativeLimit,
+  validateDelayMs,
+  validateMaxPages,
+} from "@/effect-kit";
 import { loadRegistrySearchTitles } from "@/registry-titles";
 import { resolveAniListToken } from "@/login/anilist";
 import { openRegistryReport } from "@/registry-report";
@@ -86,13 +92,9 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
           const maximum = Option.getOrUndefined(limit);
           validateNonNegativeLimit(maximum);
 
-          if (!Number.isSafeInteger(delay) || delay < 0) {
-            throw cliError("--delay must be a non-negative integer.");
-          }
+          validateDelayMs(delay);
 
-          if (!Number.isSafeInteger(maxPages) || maxPages < 1) {
-            throw cliError("--max-pages must be a positive integer.");
-          }
+          validateMaxPages(maxPages);
 
           if (!/^[a-z]{2,3}(?:_[a-z0-9]{2,3})?$/.test(language)) {
             throw cliError("--language must be an XComic language code such as en or pt_br.");

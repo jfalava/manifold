@@ -27,7 +27,7 @@ import {
   type PersonalApiClient,
   type AniListReadingStatus,
 } from "@manifold/paperback-runtime";
-import { Clock, Effect } from "effect";
+import { Clock, Effect, Result } from "effect";
 import { fromPromise, trackerError, type TrackerEffectError } from "./effect-error.js";
 
 export const MANAGED_COLLECTIONS: ManagedCollection[] = [
@@ -329,7 +329,7 @@ const resolveManagedCollectionEntriesEffect = (
         ),
       );
 
-      if (outcome._tag === "Failure") {
+      if (Result.isFailure(outcome)) {
         const detail =
           outcome.failure instanceof Error ? outcome.failure.message : String(outcome.failure);
 
@@ -473,7 +473,7 @@ const commitManagedCollectionChangesEffect = (
         ),
       );
 
-      if (setOutcome._tag === "Success") {
+      if (Result.isSuccess(setOutcome)) {
         acknowledgeReconcile(reconcile);
       } else {
         yield* Effect.logError(
@@ -553,7 +553,7 @@ const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
       }),
     );
 
-    if (userIdOutcome._tag === "Failure") {
+    if (Result.isFailure(userIdOutcome)) {
       return 0;
     }
 
@@ -563,7 +563,7 @@ const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
       fromPromise(() => fetchAniListLibrary(token, userId)),
     );
 
-    if (libraryOutcome._tag === "Failure") {
+    if (Result.isFailure(libraryOutcome)) {
       yield* Effect.logError(
         `[manifold] nuke flush library fetch failed:${libraryOutcome.failure instanceof Error ? libraryOutcome.failure.message : String(libraryOutcome.failure)}`,
       );
@@ -619,7 +619,7 @@ const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
             fromPromise(() => api.nukeEntry(nuke.entryId)),
           );
 
-          if (registryOutcome._tag === "Success") {
+          if (Result.isSuccess(registryOutcome)) {
             acknowledgeReconcile(reconcile);
           } else {
             yield* Effect.logError(
@@ -634,7 +634,7 @@ const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
         }),
       );
 
-      if (nukeOutcome._tag === "Failure") {
+      if (Result.isFailure(nukeOutcome)) {
         // Keep it pending; the next flush retries.
         yield* Effect.logError(
           `[manifold] nuke failed:${anilistId}:${nukeOutcome.failure instanceof Error ? nukeOutcome.failure.message : String(nukeOutcome.failure)}`,
@@ -677,7 +677,7 @@ const flushPendingReconcilesEffect = (
         }),
       );
 
-      if (outcome._tag === "Success") {
+      if (Result.isSuccess(outcome)) {
         acknowledgeReconcile(reconcile);
         acknowledged += 1;
         yield* Effect.logInfo(

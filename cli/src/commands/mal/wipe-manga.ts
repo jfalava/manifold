@@ -4,7 +4,7 @@ import { Command, Flag } from "effect/cli";
 import { errorMessage } from "@manifold/json";
 import { AuthConnection } from "@manifold/contract";
 
-import { apiCall, apiConfig } from "@/commands/toolbox";
+import { apiCall, apiConfig, backupCheckApiFlags } from "@/commands/toolbox";
 import { loadMalSession, saveMalSession } from "@/login/mal-session";
 import { resolveValue } from "@/env-resolve";
 import { createMalClient, wipeMalManga } from "@/mal";
@@ -30,18 +30,7 @@ export const wipeMalMangaCommand = Command.make("manga", {
       "Acknowledge all other MAL writers are paused/disconnected. Required with --apply.",
     ),
   ),
-  apiOrigin: Flag.String("api-origin").pipe(
-    Flag.optional,
-    Flag.withDescription(
-      "Personal API origin for the backup-connection check. Falls back to MANIFOLD_API_ORIGIN.",
-    ),
-  ),
-  apiToken: Flag.String("api-token").pipe(
-    Flag.optional,
-    Flag.withDescription(
-      "Personal API token for the backup-connection check. Falls back to MANIFOLD_TOKEN.",
-    ),
-  ),
+  ...backupCheckApiFlags,
 }).pipe(
   Command.withDescription(
     "Wipe MAL manga only, across every status, including adult entries. Does not read or modify AniList.",

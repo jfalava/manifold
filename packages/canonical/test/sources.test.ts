@@ -1,14 +1,8 @@
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
-import {
-  isJsonObject,
-  isJsonValue,
-  isString,
-  requestHref,
-  requestInitText,
-  type JsonValue,
-} from "@manifold/json";
-import { createAniListSource, createMyAnimeListSource } from "../src/sources";
+import { isJsonValue, requestHref, requestInitText, type JsonValue } from "@manifold/json";
+import { CanonicalSourceError } from "../src/index";
+import { createAniListSource, createMyAnimeListSource, parseAniListDate } from "../src/sources";
 
 const jsonResponse = (body: JsonValue, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -104,6 +98,27 @@ describe("AniList canonical source", () => {
     expect(result?.externalIds).toEqual({ anilist: "42" });
   });
 
+  it("keeps partial AniList dates positional", async () => {
+    const source = createAniListSource({
+      fetcher: async () =>
+        jsonResponse({
+          data: {
+            Media: {
+              id: 42,
+              title: { romaji: "Example" },
+              synonyms: [],
+              startDate: { year: 2020, month: null, day: 5 },
+              endDate: { year: 2021, month: 3, day: null },
+            },
+          },
+        }),
+    });
+
+    const result = await Effect.runPromise(source.getById("42"));
+    expect(result?.metadata.startDate).toBe("2020");
+    expect(result?.metadata.endDate).toBe("2021-03");
+  });
+
   it("includes upstream diagnostics when AniList rejects a request", async () => {
     const source = createAniListSource({
       fetcher: async () =>
@@ -122,12 +137,9 @@ describe("AniList canonical source", () => {
       (cause: unknown) => cause,
     );
 
-    expect(error).toMatchObject({
-      _tag: "CanonicalSourceError",
-      provider: "anilist",
-      status: 403,
-    });
-    const message = isJsonObject(error) && isString(error.message) ? error.message : "";
+    expect(error).toBeInstanceOf(CanonicalSourceError);
+    expect(error).toMatchObject({ provider: "anilist", status: 403 });
+    const message = error instanceof CanonicalSourceError ? error.message : "";
     expect(message).toContain("You have been manually blocked");
   });
 });
@@ -227,10 +239,29 @@ describe("MyAnimeList canonical source", () => {
   it("fails clearly when the client id is not configured", async () => {
     const source = createMyAnimeListSource({ clientId: "not-configured" });
 
-    await expect(Effect.runPromise(source.search("Example"))).rejects.toMatchObject({
-      _tag: "CanonicalSourceError",
+    const error: unknown = await Effect.runPromise(source.search("Example")).catch(
+      (cause: unknown) => cause,
+    );
+
+    expect(error).toBeInstanceOf(CanonicalSourceError);
+    expect(error).toMatchObject({
       provider: "mal",
       message: "MyAnimeList client id is not configured",
     });
+  });
+});
+
+describe("parseAniListDate", () => {
+  it("accepts real calendar dates, including leap days", () => {
+    expect(parseAniListDate("2024-02-29")).toEqual({ year: 2024, month: 2, day: 29 });
+    expect(parseAniListDate("2000-02-29")).toEqual({ year: 2000, month: 2, day: 29 });
+  });
+
+  it("rejects impossible dates and other formats", () => {
+    expect(parseAniListDate("2024-02-30")).toBeUndefined();
+    expect(parseAniListDate("1900-02-29")).toBeUndefined();
+    expect(parseAniListDate("2023-04-31")).toBeUndefined();
+    expect(parseAniListDate("0000-01-01")).toBeUndefined();
+    expect(parseAniListDate("2024-2-01")).toBeUndefined();
   });
 });
