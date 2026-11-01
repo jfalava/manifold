@@ -95,12 +95,14 @@ export const al2malCommand = Command.make("anilist-to-mal", {
               undefined,
               AuthConnection,
             );
+
             if (connection.connected) {
               if (apply) {
                 throw cliError(
                   "The Manifold API is still connected to MAL. Disconnect its MAL backup before importing; --backup-paused does not override this check.",
                 );
               }
+
               frameDetail(
                 "Warning: Manifold's MAL backup is connected and can overwrite imported entries. Disconnect it before --apply.",
               );
@@ -112,6 +114,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
           }
 
           const anilist = (await resolveAniListToken(Option.getOrUndefined(anilistToken))) ?? "";
+
           if (!anilist) {
             throw cliError(
               "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
@@ -120,6 +123,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
 
           const accessToken = resolveValue(malToken, "MANIFOLD_MAL_TOKEN");
           const session = accessToken ? undefined : await loadMalSession();
+
           if (!accessToken && !session) {
             throw cliError(
               "Missing MAL token: run login mal, pass --mal-token, or set MANIFOLD_MAL_TOKEN.",
@@ -127,6 +131,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
           }
 
           const malClientId = envString("MANIFOLD_MAL_CLIENT_ID") ?? session?.clientId;
+
           if (!malClientId) {
             throw cliError(
               "Missing MANIFOLD_MAL_CLIENT_ID for MAL title search (public client id).",
@@ -139,6 +144,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
             clientSecret: envString("MANIFOLD_MAL_CLIENT_SECRET"),
             saveSession: saveMalSession,
           });
+
           const search = createMalTitleSearch(malClientId);
 
           const run = createRun<Al2malCtx>([
@@ -149,10 +155,12 @@ export const al2malCommand = Command.make("anilist-to-mal", {
                 reporter.detail("Fetching AniList manga list…");
                 let entries = await fetchAniListMangaEntries(anilist);
                 const cap = Option.getOrUndefined(limit);
+
                 if (cap !== undefined) {
                   if (!Number.isSafeInteger(cap) || cap < 1) {
                     throw cliError("--limit must be a positive integer.");
                   }
+
                   entries = entries.slice(0, cap);
                   reporter.note(`Limited to first ${entries.length} entries.`);
                 } else {
@@ -162,6 +170,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
                 let matchedSoFar = 0;
                 let unmatchedSoFar = 0;
                 let errorsSoFar = 0;
+
                 const tick = (index: number, total: number) => {
                   reporter.progress(index + 1, total, [
                     ["matched", matchedSoFar],
@@ -169,6 +178,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
                     ["errors", errorsSoFar],
                   ]);
                 };
+
                 ctx.report = await runAl2mal({
                   entries,
                   search,
@@ -181,9 +191,11 @@ export const al2malCommand = Command.make("anilist-to-mal", {
                   },
                   onUnmatched: (entry, index, total) => {
                     unmatchedSoFar += 1;
+
                     if (entry.reason.startsWith("MAL title search failed")) {
                       errorsSoFar += 1;
                     }
+
                     tick(index, total);
                   },
                   onWritten: (done, total) => {
@@ -196,9 +208,11 @@ export const al2malCommand = Command.make("anilist-to-mal", {
               title: "Summarize",
               task: async (ctx, task) => {
                 const report = ctx.report;
+
                 if (!report) {
                   throw cliError("Migration produced no report.");
                 }
+
                 const reporter = makePhaseReporter(task);
                 const prefix = report.dryRun ? "[dry run] " : "";
                 reporter.note(
@@ -219,14 +233,16 @@ export const al2malCommand = Command.make("anilist-to-mal", {
                   ]
                     .filter(Boolean)
                     .join(", ");
+
                   if (entry.error) {
                     reporter.problem(`${entry.title} → mal:${entry.malId} [${fields}]`);
                   } else {
-                    reporter.detail(
+                    reporter.note(
                       `${entry.title} → mal:${entry.malId} (${entry.matchedTitle}) [${fields}]`,
                     );
                   }
                 }
+
                 for (const entry of report.unmatched) {
                   reporter.problem(`${entry.title} — ${entry.reason}`);
                 }

@@ -46,16 +46,24 @@ describe("canonical fallback with the real registry", () => {
       platform: "browser",
       external: ["cloudflare:workers"],
     });
+
+    const [output] = built.outputFiles;
+
+    if (!output) {
+      throw new Error("esbuild produced no output");
+    }
+
     worker = new Miniflare(
       convertV4MiniflareOptions({
         name: "canonical-fallback",
         modules: true,
-        script: built.outputFiles[0].text,
+        script: output.text,
         compatibilityDate: "2026-08-28",
         durableObjects: { MANIFOLD_SYNC: { className: "TestSync", useSQLite: true } },
         bindings: { MANIFOLD_MAL_CLIENT_ID: "client" },
         outboundService: async (request) => {
           const url = new URL(request.url);
+
           if (url.hostname === "graphql.anilist.co") {
             return blocked
               ? new WorkerResponse("Blocked", { status: 403 })
@@ -65,10 +73,13 @@ describe("canonical fallback with the real registry", () => {
                   },
                 });
           }
+
           if (url.hostname !== "api.myanimelist.net") {
             throw new Error(`Unexpected upstream ${url}`);
           }
+
           const manga = { id: 77, title: "MAL title", synopsis: "MAL description" };
+
           return WorkerResponse.json(
             url.pathname === "/v2/manga" ? { data: [{ node: manga }] } : manga,
           );
@@ -89,11 +100,14 @@ describe("canonical fallback with the real registry", () => {
         headers: { "content-type": "application/json" },
       }),
     });
+
     expect(response.status).toBe(200);
     const value = await response.json();
+
     if (!isJsonValue(value)) {
       throw new Error("Invalid response");
     }
+
     return value;
   };
 
@@ -106,10 +120,13 @@ describe("canonical fallback with the real registry", () => {
         links: [{ provider: "mal", externalId: "77" }],
       }),
     );
+
     const search = Schema.decodeUnknownSync(CanonicalSearchResponse)(
       await request("/v1/canonical/search?q=title"),
     );
+
     expect(search.results[0]?.provider).toBe("mal");
+
     const selected = Schema.decodeUnknownSync(RegistryEntry)(
       await request("/v1/registry/ingest", {
         provider: "mal",
@@ -117,8 +134,10 @@ describe("canonical fallback with the real registry", () => {
         title: "MAL title",
       }),
     );
+
     expect(selected.id).toBe(original.id);
     expect(selected.title).toBe("Registry title");
+
     const state = Schema.decodeUnknownSync(ListState)(
       await request(`/v1/entries/${selected.id}/list-state`, {
         origin: "device",
@@ -128,6 +147,7 @@ describe("canonical fallback with the real registry", () => {
         volumeProgress: 9,
       }),
     );
+
     expect(state).toMatchObject({
       entryId: original.id,
       status: "completed",
@@ -138,10 +158,12 @@ describe("canonical fallback with the real registry", () => {
     expect(ops.ops).toContainEqual(
       expect.objectContaining({ target: "anilist", kind: "anilist.fields", state: "pending" }),
     );
+
     const details = () =>
       request(`/v1/entries/${selected.id}/canonical`).then(
         Schema.decodeUnknownSync(CanonicalIdentity),
       );
+
     expect(await details()).toMatchObject({
       id: original.id,
       provider: "mal",
@@ -170,6 +192,7 @@ describe("canonical fallback with the real registry", () => {
       providerId: "43",
       title: "Another manga",
     });
+
     const malOnly = Schema.decodeUnknownSync(RegistryEntry)(
       await request("/v1/registry/ingest", {
         provider: "mal",
@@ -177,8 +200,10 @@ describe("canonical fallback with the real registry", () => {
         title: "Different manga",
       }),
     );
+
     expect(malOnly.id).not.toBe("mal:88");
     expect(malOnly.provider).toBe("mal");
+
     const response = await worker.dispatchFetch("https://fixture.test/v1/registry/ingest", {
       method: "POST",
       body: JSON.stringify({
@@ -188,11 +213,13 @@ describe("canonical fallback with the real registry", () => {
         links: [{ provider: "mal", externalId: "88" }],
       }),
     });
+
     expect(response.status).toBe(409);
     expect(await request(`/v1/entries/${malOnly.id}`)).toMatchObject({
       providerId: "88",
       title: "Different manga",
     });
+
     const recovered = Schema.decodeUnknownSync(RegistryEntry)(
       await request("/v1/registry/ingest", {
         provider: "anilist",
@@ -201,6 +228,7 @@ describe("canonical fallback with the real registry", () => {
         links: [{ provider: "mal", externalId: "88" }],
       }),
     );
+
     expect(recovered.id).toBe(malOnly.id);
     expect(
       recovered.providers.some(

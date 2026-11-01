@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 /**
  * Shared button styling — the single source of truth for both <Button>
  * (a real button) and <LinkButton> (an anchor styled as a button), so the
@@ -21,7 +16,9 @@ export type ButtonVariant =
   | "destructive"
   | "secondary-destructive"
   | "outline";
+
 export type ButtonSize = "xs" | "sm" | "base" | "lg";
+
 export type ButtonAppearance = "base" | "square" | "circle";
 
 // `rounded-lg` is the default radius for every button; `circle` overrides
@@ -87,5 +84,6 @@ export function buttonVariants({
           "p-0",
           appearance === "circle" && "rounded-full",
         );
+
   return cn(buttonBase, buttonVariantClasses[variant], dims);
 }

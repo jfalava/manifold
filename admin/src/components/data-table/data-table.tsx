@@ -1,9 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
 import { SkeletonLine, Table } from "@cloudflare/kumo";
 import { flexRender, type ReactTable, type Row, type RowData } from "@tanstack/react-table";
 import type { ReactNode } from "react";
@@ -37,13 +31,17 @@ export function DataTable<TData extends RowData>({
               {headerGroup.headers.map((header) => {
                 const canSort = header.column.getCanSort();
                 const sort = header.column.getIsSorted();
+
                 const headerContent = header.isPlaceholder
                   ? undefined
                   : flexRender(header.column.columnDef.header, header.getContext());
+
                 const sortDescription =
                   sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "not sorted";
+
                 const ariaSort =
                   sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "none";
+
                 return (
                   <Table.Head
                     key={header.id}
@@ -98,9 +96,11 @@ export function DataTable<TData extends RowData>({
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </Table.Cell>
                   ));
+
                 if (renderRow) {
                   return renderRow(row, cells);
                 }
+
                 return <Table.Row key={row.id}>{cells}</Table.Row>;
               })}
           {!loading && rows.length === 0 && (

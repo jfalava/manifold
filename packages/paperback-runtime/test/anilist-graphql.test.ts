@@ -1,9 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics newPromise:off */
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { isFiniteNumber, isJsonObject, type JsonObject, type JsonValue } from "@manifold/json";
 
@@ -16,7 +10,9 @@ const decodeViewer = (value: JsonValue): ViewerData | undefined => {
   if (!isJsonObject(value) || !isJsonObject(value.Viewer)) {
     return undefined;
   }
+
   const id = value.Viewer.id;
+
   return isFiniteNumber(id) ? { Viewer: { id } } : undefined;
 };
 
@@ -63,14 +59,18 @@ const makeHarness = () => {
           request: ScheduledRequestLike,
         ): Promise<[ResponseLike, ArrayBuffer]> => {
           const callIndex = index++;
+
           if (inFlight > 0) {
             overlapped = true;
           }
+
           inFlight += 1;
           requests.push({ body: request.body ?? "" });
+
           try {
             await Promise.resolve();
             const outcome = respond(callIndex);
+
             return [
               { status: outcome.status, headers: outcome.headers ?? {} },
               jsonResponse(outcome.body ?? { data: {} }),
@@ -81,6 +81,7 @@ const makeHarness = () => {
         },
       } satisfies ApplicationHarness,
     });
+
     return () => index;
   };
 
@@ -109,6 +110,7 @@ describe("aniListRequest throttling", () => {
       status: 200,
       body: { data: { Viewer: { id: 1, name: "x" } } },
     }));
+
     const { aniListRequest, viewerQuery } = await harness.loadModule();
 
     const results = await Promise.all([
@@ -126,15 +128,21 @@ describe("aniListRequest throttling", () => {
 
   it("honours retry-after on a 429, cools down, and retries successfully", async () => {
     let calls = 0;
+
     const getCallCount = harness.install(() => {
       calls += 1;
+
       if (calls === 1) {
         const body: JsonValue = { errors: [{ message: "Too Many Requests.", status: 429 }] };
+
         return { status: 429, headers: { "Retry-After": "38" }, body };
       }
+
       const body: JsonValue = { data: { Viewer: { id: 7, name: "y" } } };
+
       return { status: 200, body };
     });
+
     const { aniListRequest, viewerQuery } = await harness.loadModule();
 
     const result = await aniListRequest("t", viewerQuery, {}, decodeViewer);
@@ -150,6 +158,7 @@ describe("aniListRequest throttling", () => {
       headers: { "retry-after": "5" },
       body: { errors: [{ message: "Too Many Requests." }] },
     }));
+
     const { aniListRequest, viewerQuery } = await harness.loadModule();
 
     await expect(aniListRequest("t", viewerQuery, {}, decodeObject)).rejects.toThrow(/rate limit/i);
@@ -251,6 +260,7 @@ describe("AniList field dates", () => {
         },
       },
     }));
+
     const { saveAniListStatus } = await harness.loadModule();
     expect(await saveAniListStatus("t", "42", "reading")).toEqual({
       mediaListEntryId: 10,

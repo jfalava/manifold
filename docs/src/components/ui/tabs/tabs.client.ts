@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 /** Wires <Tabs>; auto-detects manual triggers vs. synthesized-from-TabItem mode. */
 
 import { mount, initTabs } from "@cloudflare/nimbus-docs/client";
@@ -16,6 +11,7 @@ function initTabContainer(container: HTMLElement): () => void {
   const id = `nb-tabs-${counter++}`;
   const syncKey = container.dataset.nbSyncKey;
   const tablist = container.querySelector<HTMLElement>("[role=tablist]");
+
   const indicator = container.querySelector<HTMLElement>(
     "[data-nb-tabs-indicator]",
   );
@@ -27,6 +23,7 @@ function initTabContainer(container: HTMLElement): () => void {
     container.querySelectorAll("[data-nb-tabs-trigger]"),
     // SAFETY: DOM query returns the expected element type in this document
   ).filter((t) => (t as HTMLElement).closest("[data-nb-tabs]") === container);
+
   const synthesize = existingTriggers.length === 0;
 
   if (synthesize && tablist) {
@@ -76,14 +73,18 @@ function initTabContainer(container: HTMLElement): () => void {
       if (!tablist) {
         return;
       }
+
       const trigger = tablist.querySelectorAll<HTMLElement>(
         "[data-nb-tabs-trigger]",
       )[index];
+
       if (!trigger) {
         return;
       }
+
       const left = trigger.offsetLeft;
       const right = left + trigger.offsetWidth;
+
       if (left < tablist.scrollLeft) {
         tablist.scrollLeft = left;
       } else if (right > tablist.scrollLeft + tablist.clientWidth) {
@@ -100,9 +101,11 @@ function initTabContainer(container: HTMLElement): () => void {
     )
       .filter((t) => t.closest("[data-nb-tabs]") === container)
       .map((t) => (t.textContent ?? "").trim());
+
     const dupes = [
       ...new Set(labels.filter((l, i) => labels.indexOf(l) !== i)),
     ];
+
     if (dupes.length) {
       console.warn(
         `[nimbus] <Tabs syncKey="${syncKey}"> has duplicate tab labels (${dupes
@@ -117,6 +120,7 @@ function initTabContainer(container: HTMLElement): () => void {
 
   return () => {
     instance.destroy();
+
     // Remove synthesized triggers so re-mount doesn't double up.
     if (synthesize && tablist) {
       tablist

@@ -19,11 +19,13 @@ export function resolveEntries(
   input: readonly ResolveEntryInput[] | ResolveEntryInput,
 ): readonly RegistryEntry[] {
   const requests = Array.isArray(input) ? input : [input];
+
   return requests.map((request) => resolveEntrySync(host, request));
 }
 
 export function ingestCandidate(host: SyncHost, input: IngestCandidateInput): RegistryEntry {
   const byProvider = new Map<string, LinkProviderInput>();
+
   for (const link of [
     {
       provider: input.provider,
@@ -33,16 +35,20 @@ export function ingestCandidate(host: SyncHost, input: IngestCandidateInput): Re
     ...(input.links ?? []),
   ]) {
     const existing = byProvider.get(link.provider);
+
     if (existing && existing.externalId !== link.externalId) {
       throw new Error(
         `Registry candidate has conflicting ${link.provider} ids: ` +
           `${existing.externalId} and ${link.externalId}`,
       );
     }
+
     byProvider.set(link.provider, link);
   }
+
   const links = [...byProvider.values()];
   const matchingEntryIds = new Set<string>();
+
   for (const link of links) {
     for (const row of host.ctx.storage.sql
       .exec<{ entry_id: string }>(
@@ -56,6 +62,7 @@ export function ingestCandidate(host: SyncHost, input: IngestCandidateInput): Re
       matchingEntryIds.add(row.entry_id);
     }
   }
+
   if (matchingEntryIds.size > 1) {
     throw new Error(
       `Registry candidate links belong to multiple entries: ${[...matchingEntryIds].join(", ")}`,
@@ -65,6 +72,7 @@ export function ingestCandidate(host: SyncHost, input: IngestCandidateInput): Re
   const timestamp = now();
   const matchedId = [...matchingEntryIds][0];
   const entryId = matchedId ?? newId();
+
   if (matchedId) {
     const existingLinks = host.ctx.storage.sql
       .exec<ProviderRow>(
@@ -72,15 +80,19 @@ export function ingestCandidate(host: SyncHost, input: IngestCandidateInput): Re
         entryId,
       )
       .toArray();
+
     const existingByProvider = new Map(existingLinks.map((link) => [link.provider, link]));
+
     for (const link of links) {
       const existing = existingByProvider.get(link.provider);
+
       if (existing && existing.external_id !== link.externalId) {
         throw new Error(
           `Registry entry ${entryId} already has ${link.provider}:${existing.external_id}`,
         );
       }
     }
+
     host.ctx.storage.sql.exec(
       "UPDATE canonical_entries SET updated_at = ? WHERE id = ?",
       timestamp,
@@ -89,6 +101,7 @@ export function ingestCandidate(host: SyncHost, input: IngestCandidateInput): Re
   } else {
     const mintProvider =
       input.provider === "anilist" || input.provider === "mal" ? input.provider : "local";
+
     host.ctx.storage.sql.exec(
       `INSERT INTO canonical_entries (id, provider, provider_id, title, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -117,20 +130,24 @@ export function ingestCandidate(host: SyncHost, input: IngestCandidateInput): Re
       timestamp,
     );
   }
+
   appendEvent(host, entryId, "candidate.ingest", "device", {
     provider: input.provider,
     providerId: input.providerId,
     linkedProviders: links.map((link) => link.provider),
   });
   const entry = readEntry(host, entryId);
+
   if (!entry) {
     throw new Error(`Registry row not found after candidate ingest: ${entryId}`);
   }
+
   return entry;
 }
 
 export function resolveEntrySync(host: SyncHost, request: ResolveEntryInput): RegistryEntry {
   const timestamp = now();
+
   // Tombstoned rows are dead lifecycles: a nuked title coming back gets a
   // fresh registry row, never the corpse. History stays in the admin view.
   const existing = host.ctx.storage.sql
@@ -142,6 +159,7 @@ export function resolveEntrySync(host: SyncHost, request: ResolveEntryInput): Re
       request.providerId,
     )
     .toArray()[0];
+
   if (existing) {
     host.ctx.storage.sql.exec(
       "UPDATE canonical_entries SET title = ?, updated_at = ? WHERE id = ? AND title <> ?",
@@ -151,17 +169,21 @@ export function resolveEntrySync(host: SyncHost, request: ResolveEntryInput): Re
       request.title,
     );
     const entry = readEntry(host, existing.entry_id, false);
+
     if (!entry) {
       throw new Error(`Registry row vanished for link: ${existing.entry_id}`);
     }
+
     return entry;
   }
 
   const id = newId();
+
   // canonical_entries.provider is CanonicalProvider (anilist|mal|local).
   // Content providers only live on provider_links — mint source stays local.
   const mintProvider =
     request.provider === "anilist" || request.provider === "mal" ? request.provider : "local";
+
   host.ctx.storage.sql.exec(
     `INSERT INTO canonical_entries (id, provider, provider_id, title, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -183,8 +205,10 @@ export function resolveEntrySync(host: SyncHost, request: ResolveEntryInput): Re
   );
 
   const minted = readEntry(host, id);
+
   if (!minted) {
     throw new Error(`Registry row not found after mint: ${id}`);
   }
+
   return minted;
 }

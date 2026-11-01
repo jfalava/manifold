@@ -1,9 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics newPromise:off */
 export {
   MANIFOLD_API_ORIGIN,
   MANIFOLD_API_TOKEN_KEY,
@@ -51,7 +45,6 @@ export {
   aniListRequest,
   decodeAniListViewer,
   viewerQuery,
-  toAniListStatus,
   normalizeAniListStatus,
   fetchAniListLibrary,
   fetchAniListMediaListEntryIds,
@@ -61,7 +54,6 @@ export {
   deleteAniListEntry,
   type AniListLibraryItem,
   type AniListViewer,
-  type AniListFieldChange,
   type FuzzyDateInput,
 } from "./anilist-graphql.js";
 

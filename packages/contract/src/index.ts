@@ -1,7 +1,11 @@
 export * from "./literals";
+
 export * from "./inputs";
+
 export * from "./entities";
+
 export * from "./responses";
+
 export {
   decodeResponse,
   decodeResponseEffect,
@@ -9,3 +13,5 @@ export {
   encodeResponseEffect,
   ResponseDecodeError,
 } from "./codec";
+
+export * from "./anilist-op";

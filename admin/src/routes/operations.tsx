@@ -1,9 +1,5 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
 import { Badge, Banner, Button, Input, Tabs, Text } from "@cloudflare/kumo";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useTable, type ColumnDef, type SortingState } from "@tanstack/react-table";
@@ -39,6 +35,7 @@ type OperationsSearch = {
 function validateOperationsSearch(search: Record<string, unknown>): OperationsSearch {
   const ops = parseTablePaginationSearch(search, "ops");
   const logs = parseTablePaginationSearch(search, "logs");
+
   return {
     tab: search.tab === "logs" ? "logs" : undefined,
     opsPage: ops.page,
@@ -80,11 +77,13 @@ function OperationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const tab: OperationsTab = search.tab ?? "operations";
+
   const handleTabChange = useCallback(
     (next: string) => {
       if (next !== "operations" && next !== "logs") {
         return;
       }
+
       void navigate({
         search: (current) => ({
           ...current,
@@ -98,6 +97,7 @@ function OperationsPage() {
 
   const refresh = useCallback(async () => {
     setBusy(true);
+
     try {
       setData(await loadOperations());
       setError(null);
@@ -116,6 +116,7 @@ function OperationsPage() {
   const act = useCallback(
     async (action: () => Promise<void>): Promise<void> => {
       setBusy(true);
+
       try {
         await action();
         await refresh();
@@ -145,17 +146,15 @@ function OperationsPage() {
         </Button>
       </div>
 
-      {error && (
-        <Banner variant="error" title="Action failed">
-          {error}
-        </Banner>
-      )}
+      {error && <Banner variant="error" title="Action failed" description={error} />}
       {loadErrors && Object.keys(loadErrors).length > 0 && (
-        <Banner variant="default" title="Partial load">
-          {Object.entries(loadErrors)
+        <Banner
+          variant="alert"
+          title="Partial load"
+          description={Object.entries(loadErrors)
             .map(([source, message]) => `${source}: ${message}`)
             .join(" · ")}
-        </Banner>
+        />
       )}
 
       <Tabs
@@ -190,6 +189,7 @@ function OpsTable({
   const navigate = useNavigate({ from: "/operations" });
   const [stateFilters, setStateFilters] = useState<ReadonlySet<string>>(() => new Set());
   const [sorting, setSorting] = useState<SortingState>([]);
+
   const controlledPagination = useMemo<ClientPagination>(
     () => ({
       pageIndex: Math.max(0, (search.opsPage ?? 1) - 1),
@@ -197,6 +197,7 @@ function OpsTable({
     }),
     [search.opsPage, search.opsPageSize],
   );
+
   const handlePaginationChange = useCallback(
     (next: ClientPagination) => {
       void navigate({
@@ -210,6 +211,7 @@ function OpsTable({
     },
     [navigate],
   );
+
   const { pagination, setPagination, goToPage, changePageSize, safePageIndex } =
     useClientPagination(25, {
       controlledPagination,
@@ -220,9 +222,11 @@ function OpsTable({
 
   const byState = useMemo(() => {
     const counts = new Map<string, number>();
+
     for (const op of ops) {
       counts.set(op.state, (counts.get(op.state) ?? 0) + 1);
     }
+
     return counts;
   }, [ops]);
 
@@ -230,6 +234,7 @@ function OpsTable({
     const preferred = ["pending", "blocked", "failed", "completed"] as const;
     const known = new Set<string>(preferred);
     const present = [...byState.keys()].filter((value) => !known.has(value));
+
     return [...preferred.filter((value) => byState.has(value)), ...present];
   }, [byState]);
 
@@ -237,6 +242,7 @@ function OpsTable({
     if (stateFilters.size === 0) {
       return ops;
     }
+
     return ops.filter((op) => stateFilters.has(op.state));
   }, [ops, stateFilters]);
 
@@ -245,9 +251,11 @@ function OpsTable({
   const toggleStateFilter = useCallback((value: string) => {
     setStateFilters((current) => {
       const next = new Set(current);
+
       if (!next.delete(value)) {
         next.add(value);
       }
+
       return next;
     });
   }, []);
@@ -341,6 +349,7 @@ function OpsTable({
           </FilterToggle>
           {stateChips.map((value) => {
             const active = stateFilters.has(value);
+
             return (
               <FilterToggle
                 key={value}
@@ -359,7 +368,12 @@ function OpsTable({
       </div>
 
       {pager}
-      <DataTable table={table} emptyText="No ops recorded." loading={loading} skeletonColumns={7} />
+      <DataTable
+        table={table}
+        emptyText={data?.errors.ops === undefined ? "No ops recorded." : "Ops could not be loaded."}
+        loading={loading}
+        skeletonColumns={7}
+      />
       {pager}
     </div>
   );
@@ -380,6 +394,7 @@ function EventsTable({
   const navigate = useNavigate({ from: "/operations" });
   const [filter, setFilter] = useState("");
   const [sorting, setSorting] = useState<SortingState>([{ id: "createdAt", desc: true }]);
+
   const controlledPagination = useMemo<ClientPagination>(
     () => ({
       pageIndex: Math.max(0, (search.logsPage ?? 1) - 1),
@@ -387,6 +402,7 @@ function EventsTable({
     }),
     [search.logsPage, search.logsPageSize],
   );
+
   const handlePaginationChange = useCallback(
     (next: ClientPagination) => {
       void navigate({
@@ -400,6 +416,7 @@ function EventsTable({
     },
     [navigate],
   );
+
   const { pagination, setPagination, goToPage, changePageSize, safePageIndex } =
     useClientPagination(25, {
       controlledPagination,
@@ -410,11 +427,14 @@ function EventsTable({
 
   const filtered = useMemo(() => {
     const needle = filter.trim().toLowerCase();
+
     if (needle === "") {
       return events;
     }
+
     return events.filter((event) => {
       const detail = JSON.stringify(event.detail ?? {}).toLowerCase();
+
       return (
         event.entryId.toLowerCase().includes(needle) ||
         event.kind.toLowerCase().includes(needle) ||
@@ -506,7 +526,9 @@ function EventsTable({
       {pager}
       <DataTable
         table={table}
-        emptyText="No events recorded."
+        emptyText={
+          data?.errors.events === undefined ? "No events recorded." : "Events could not be loaded."
+        }
         loading={loading}
         skeletonColumns={5}
       />

@@ -1,5 +1,6 @@
 export const parseCliVersion = (value: string): [number, number, number] | undefined => {
   const match = /^(?:cli-v|v)?(\d+)\.(\d+)\.(\d+)$/.exec(value);
+
   if (!match) {
     return undefined;
   }
@@ -10,6 +11,7 @@ export const parseCliVersion = (value: string): [number, number, number] | undef
 export const isNewerVersion = (candidate: string, current: string): boolean => {
   const candidateParts = parseCliVersion(candidate);
   const currentParts = parseCliVersion(current);
+
   if (!candidateParts || !currentParts) {
     throw new Error(`Cannot compare CLI versions "${current}" and "${candidate}".`);
   }
@@ -18,9 +20,11 @@ export const isNewerVersion = (candidate: string, current: string): boolean => {
     if (candidateParts[index]! > currentParts[index]!) {
       return true;
     }
+
     if (candidateParts[index]! < currentParts[index]!) {
       return false;
     }
   }
+
   return false;
 };

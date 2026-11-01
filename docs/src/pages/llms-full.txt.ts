@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 // Full-corpus markdown for AI agents — every published page in one
 // document. Scope and collation live in the framework helper; reshape or
 // delete this route to change the site's corpus policy.

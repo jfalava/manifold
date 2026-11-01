@@ -3,12 +3,8 @@
 /* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
 
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalDate:off */
 /** @effect-diagnostics globalDateInEffect:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics newPromise:off */
 import {
   isFiniteNumber,
   isJsonArray,
@@ -21,6 +17,7 @@ import {
 import type { MalBackupIdentity } from "@manifold/canonical";
 import { Data, Effect, Option, Schema } from "effect";
 import { fromPromise } from "./from-promise.js";
+import { toAniListGraphqlStatus, type AniListFieldChange } from "@manifold/contract";
 import type { AniListReadingStatus } from "./anilist-types.js";
 import {
   bridgeErrorDetail,
@@ -55,6 +52,7 @@ const decodeWithSchema =
   <A>(schema: Schema.ConstraintDecoder<A>): AniListDataDecoder<A> =>
   (value) => {
     const decoded = Schema.decodeOption(schema)(value);
+
     return Option.isSome(decoded) ? decoded.value : undefined;
   };
 
@@ -65,14 +63,17 @@ const decodeGraphQLError = (value: JsonValue): GraphQLError | undefined => {
   if (!isJsonObject(value)) {
     return undefined;
   }
+
   const message = value.message;
   const status = value.status;
+
   if (
     (message !== undefined && !isString(message)) ||
     (status !== undefined && !isString(status) && !isFiniteNumber(status))
   ) {
     return undefined;
   }
+
   return {
     ...(isString(message) && { message }),
     ...((isString(status) || isFiniteNumber(status)) && { status }),
@@ -84,21 +85,29 @@ const decodeGraphQLResponse = (value: unknown): GraphQLResponse | undefined => {
   if (!isJsonObject(value)) {
     return undefined;
   }
+
   const errorsValue = value.errors;
+
   if (errorsValue === undefined) {
     return { ...(value.data !== undefined && { data: value.data }) };
   }
+
   if (!isJsonArray(errorsValue)) {
     return undefined;
   }
+
   const errors: GraphQLError[] = [];
+
   for (const errorValue of errorsValue) {
     const error = decodeGraphQLError(errorValue);
+
     if (error === undefined) {
       return undefined;
     }
+
     errors.push(error);
   }
+
   return {
     ...(value.data !== undefined && { data: value.data }),
     errors,
@@ -107,7 +116,7 @@ const decodeGraphQLResponse = (value: unknown): GraphQLResponse | undefined => {
 
 /** Thrown when AniList rejects the credentials (HTTP 401/403). */
 export class AniListUnauthorizedError extends Data.TaggedError("AniListUnauthorizedError")<{}> {
-  get message() {
+  override get message() {
     return "AniList rejected this token";
   }
 }
@@ -135,25 +144,30 @@ const enqueue = <T>(task: () => Promise<T>): Promise<T> => {
     () => undefined,
     () => undefined,
   );
+
   return run;
 };
 
 const gate = (): Effect.Effect<void, PaperbackRuntimeError> =>
   Effect.gen(function* () {
     const waitMs = Math.max(nextSlotAt - Date.now(), cooldownUntil - Date.now(), 0);
+
     if (waitMs > 0) {
       yield* fromPromise(() => Application.sleep(Math.ceil(waitMs / 1000)));
     }
+
     nextSlotAt = Math.max(Date.now(), nextSlotAt) + MIN_REQUEST_SPACING_MS;
   });
 
 const headerValue = (headers: Record<string, string>, name: string): string | undefined => {
   const target = name.toLowerCase();
+
   for (const [key, value] of Object.entries(headers)) {
     if (key.toLowerCase() === target) {
       return value;
     }
   }
+
   return undefined;
 };
 
@@ -188,14 +202,19 @@ const rawAniListRequest = (
         paperbackError(`AniList request failed: ${bridgeErrorDetail(cause)}`),
       ),
     );
+
     const [response, bodyBuffer] = scheduled;
+
     const parsed = yield* Schema.decodeEffect(JsonBodyString)(
       Application.arrayBufferToUTF8String(bodyBuffer),
     ).pipe(Effect.orElseSucceed(() => undefined));
+
     const body = decodeGraphQLResponse(parsed);
+
     if (body === undefined) {
       return { status: response.status, headers: response.headers ?? {} };
     }
+
     return {
       status: response.status,
       headers: response.headers ?? {},
@@ -207,6 +226,7 @@ const isThrottled = (outcome: RawOutcome): boolean => {
   if (outcome.status === 429) {
     return true;
   }
+
   return (outcome.body?.errors ?? []).some(
     (error) =>
       error.status === 429 || (error.message !== undefined && THROTTLE_MESSAGE.test(error.message)),
@@ -216,8 +236,10 @@ const isThrottled = (outcome: RawOutcome): boolean => {
 const scheduleCooldown = (headers: Record<string, string>): void => {
   const raw = headerValue(headers, "retry-after");
   const seconds = raw !== undefined ? Number.parseInt(raw, 10) : Number.NaN;
+
   const waitSeconds =
     Number.isSafeInteger(seconds) && seconds > 0 ? seconds : DEFAULT_RETRY_AFTER_SECONDS;
+
   cooldownUntil = Math.max(cooldownUntil, Date.now() + waitSeconds * 1000 + COOLDOWN_BUFFER_MS);
 };
 
@@ -225,25 +247,33 @@ const interpretOutcome = <A>(outcome: RawOutcome, decode: AniListDataDecoder<A>)
   if (outcome.status === 401 || outcome.status === 403) {
     throw new AniListUnauthorizedError();
   }
+
   if (outcome.body === undefined) {
     throw paperbackError(`AniList returned non-JSON response (HTTP ${outcome.status})`);
   }
+
   if (outcome.body.errors && outcome.body.errors.length > 0) {
     throw paperbackError(
       `AniList error: ${outcome.body.errors.map((e) => e.message ?? "?").join("; ")}`,
     );
   }
+
   if (outcome.status < 200 || outcome.status >= 300) {
     throw paperbackError(`AniList request failed with HTTP ${outcome.status}`);
   }
+
   const data = outcome.body.data;
+
   if (data === undefined) {
     throw paperbackError("AniList response missing data");
   }
+
   const decoded = decode(data);
+
   if (decoded === undefined) {
     throw paperbackError("AniList response data failed validation");
   }
+
   return decoded;
 };
 
@@ -257,6 +287,7 @@ const aniListRequestEffect = <A>(
     for (let attempt = 1; ; attempt += 1) {
       yield* gate();
       const outcome = yield* rawAniListRequest(token, query, variables);
+
       if (!isThrottled(outcome)) {
         return yield* Effect.try({
           try: () => interpretOutcome(outcome, decode),
@@ -264,9 +295,11 @@ const aniListRequestEffect = <A>(
             cause instanceof AniListUnauthorizedError ? cause : paperbackError(errorMessage(cause)),
         });
       }
+
       if (attempt > MAX_THROTTLED_RETRIES) {
         return yield* paperbackError("AniList kept rate limiting after repeated backoff");
       }
+
       scheduleCooldown(outcome.headers);
     }
   });
@@ -369,29 +402,8 @@ const LibraryDataSchema = Schema.Struct({
 });
 
 type LibraryData = Schema.Schema.Type<typeof LibraryDataSchema>;
-const decodeLibraryData = decodeWithSchema<LibraryData>(LibraryDataSchema);
 
-// Registry vocabulary -> AniList enum. toUpperCase is WRONG here: only
-// dropped/completed coincide; reading must become CURRENT, on_hold PAUSED,
-// plan_to_read PLANNING, re_reading REPEATING.
-export const toAniListStatus = (
-  status: AniListReadingStatus,
-): "CURRENT" | "PLANNING" | "COMPLETED" | "DROPPED" | "PAUSED" | "REPEATING" => {
-  switch (status) {
-    case "reading":
-      return "CURRENT";
-    case "on_hold":
-      return "PAUSED";
-    case "plan_to_read":
-      return "PLANNING";
-    case "re_reading":
-      return "REPEATING";
-    case "completed":
-      return "COMPLETED";
-    case "dropped":
-      return "DROPPED";
-  }
-};
+const decodeLibraryData = decodeWithSchema<LibraryData>(LibraryDataSchema);
 
 export const normalizeAniListStatus = (status: string): AniListReadingStatus | undefined => {
   switch (status) {
@@ -425,15 +437,18 @@ const fetchAniListLibraryEffect = (
     );
 
     const items = new Map<string, AniListLibraryItem>();
+
     for (const list of data.MediaListCollection?.lists ?? []) {
       for (const entry of list.entries ?? []) {
         const mediaId = entry.media?.id;
         const status = entry.status ? normalizeAniListStatus(entry.status) : undefined;
+
         if (!mediaId || !status) {
           continue;
         }
 
         const key = String(mediaId);
+
         if (items.get(key)?.status === "re_reading") {
           continue;
         }
@@ -453,6 +468,7 @@ const fetchAniListLibraryEffect = (
         });
       }
     }
+
     return [...items.values()];
   });
 
@@ -469,10 +485,13 @@ const mediaIdOf = (anilistId: string): number => {
   if (!ANILIST_ID.test(anilistId)) {
     throw paperbackError(`Invalid AniList manga id: ${anilistId}`);
   }
+
   const mediaId = Number(anilistId);
+
   if (!Number.isSafeInteger(mediaId) || mediaId > GRAPHQL_INT_MAX) {
     throw paperbackError(`Invalid AniList manga id: ${anilistId}`);
   }
+
   return mediaId;
 };
 
@@ -504,6 +523,7 @@ const SavedStatusDataSchema = Schema.Struct({
 });
 
 type SavedStatusData = Schema.Schema.Type<typeof SavedStatusDataSchema>;
+
 const decodeSavedStatusData = decodeWithSchema<SavedStatusData>(SavedStatusDataSchema);
 
 const saveAniListStatusEffect = (
@@ -519,6 +539,7 @@ const saveAniListStatusEffect = (
       try: () => mediaIdOf(anilistId),
       catch: (cause) => paperbackError(errorMessage(cause)),
     });
+
     // Privacy policy: everything this source touches stays private.
     const data = yield* fromPromise(() =>
       aniListRequest(
@@ -529,12 +550,14 @@ const saveAniListStatusEffect = (
         media { idMal title { english romaji native } synonyms }
       }
     }`,
-        { mediaId, status: status === null ? null : toAniListStatus(status) },
+        { mediaId, status: status === null ? null : toAniListGraphqlStatus(status) },
         decodeSavedStatusData,
       ),
     );
+
     const entryId = data.SaveMediaListEntry?.id;
     const media = data.SaveMediaListEntry?.media;
+
     return {
       ...(entryId !== undefined && { mediaListEntryId: entryId }),
       ...(media && {
@@ -565,15 +588,6 @@ export const saveAniListStatus = (
 
 // Score / notes / dates / volumes — the fields Paperback has no UI for.
 // Managed by the admin panel and drained to AniList by this device.
-export interface AniListFieldChange {
-  readonly status?: AniListReadingStatus | null;
-  readonly score?: number | null;
-  readonly notes?: string | null;
-  readonly startedAt?: string | null;
-  readonly completedAt?: string | null;
-  readonly volumeProgress?: number | null;
-}
-
 const FMI_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** AniList GraphQL FuzzyDateInput for startedAt / completedAt mutations. */
@@ -587,6 +601,7 @@ const fmiDate = (value: string | null): FuzzyDateInput | null => {
   if (value === null) {
     return null;
   }
+
   if (!FMI_DATE.test(value)) {
     throw paperbackError(`Invalid AniList date: ${value}; expected YYYY-MM-DD`);
   }
@@ -595,6 +610,7 @@ const fmiDate = (value: string | null): FuzzyDateInput | null => {
   const month = Number(value.slice(5, 7));
   const day = Number(value.slice(8, 10));
   const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+
   const daysInMonth =
     month === 2
       ? isLeapYear
@@ -603,9 +619,11 @@ const fmiDate = (value: string | null): FuzzyDateInput | null => {
       : month === 4 || month === 6 || month === 9 || month === 11
         ? 30
         : 31;
+
   if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth) {
     throw paperbackError(`Invalid AniList date: ${value}; expected a real calendar date`);
   }
+
   return { year, month, day };
 };
 
@@ -619,11 +637,12 @@ const saveAniListFieldsEffect = (
       try: () => mediaIdOf(anilistId),
       catch: (cause) => paperbackError(errorMessage(cause)),
     });
+
     const variables = yield* Effect.try({
       try: () => ({
         mediaId,
         ...(!(change.status === undefined) && {
-          status: change.status === null ? null : toAniListStatus(change.status),
+          status: change.status === null ? null : toAniListGraphqlStatus(change.status),
         }),
         ...(!(change.score === undefined) && { score: change.score }),
         ...(!(change.notes === undefined) && { notes: change.notes }),
@@ -633,6 +652,7 @@ const saveAniListFieldsEffect = (
       }),
       catch: (cause) => paperbackError(errorMessage(cause)),
     });
+
     yield* fromPromise(() =>
       aniListRequest(
         token,
@@ -683,6 +703,7 @@ const deleteAniListEntryEffect = (
     ) {
       return yield* paperbackError(`Invalid AniList list entry id: ${mediaListEntryId}`);
     }
+
     const data = yield* fromPromise(() =>
       aniListRequest(
         token,
@@ -693,6 +714,7 @@ const deleteAniListEntryEffect = (
         decodeDeleteMediaListEntryData,
       ),
     );
+
     return data.DeleteMediaListEntry?.deleted === true;
   });
 
@@ -731,6 +753,7 @@ const MediaListEntryIdsDataSchema = Schema.Struct({
 });
 
 type MediaListEntryIdsData = Schema.Schema.Type<typeof MediaListEntryIdsDataSchema>;
+
 const decodeMediaListEntryIdsData = decodeWithSchema<MediaListEntryIdsData>(
   MediaListEntryIdsDataSchema,
 );
@@ -752,7 +775,9 @@ const fetchAniListMediaListEntryIdsEffect = (
         decodeMediaListEntryIdsData,
       ),
     );
+
     const ids: Record<string, number> = {};
+
     for (const list of data.MediaListCollection?.lists ?? []) {
       for (const entry of list.entries ?? []) {
         if (entry.id !== undefined && entry.mediaId !== undefined) {
@@ -760,6 +785,7 @@ const fetchAniListMediaListEntryIdsEffect = (
         }
       }
     }
+
     return ids;
   });
 
@@ -779,12 +805,15 @@ const saveAniListProgressEffect = (
       try: () => mediaIdOf(anilistId),
       catch: (cause) => paperbackError(errorMessage(cause)),
     });
+
     // AniList tracks whole chapters only; fractional releases (e.g. 38.5)
     // normalize down to their integer part. Below 1 there is nothing to push.
     const chapters = Math.floor(progress);
+
     if (!Number.isSafeInteger(chapters) || chapters < 1) {
       return false;
     }
+
     // Status is NEVER touched here — collections own status transitions.
     // Reading a DROPPED title bumps its progress and stays DROPPED; omitting
     // the field preserves whatever AniList already has (creating a private
@@ -802,6 +831,7 @@ const saveAniListProgressEffect = (
         decodeJsonObject,
       ),
     );
+
     return true;
   });
 

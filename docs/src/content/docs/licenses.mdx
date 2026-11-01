@@ -1,0 +1,61 @@
+---
+title: Licenses
+description: Manifold's licenses, the upstream projects it derives from, and the open-source packages it is built with.
+---
+
+Manifold is a mixed-license repository. Manifold-authored code is released under
+the [MIT License](https://github.com/jfalava/manifold/blob/main/LICENSE-MIT).
+Code derived from Inkdex remains under the
+[GNU General Public License, version 3 or any later version](https://github.com/jfalava/manifold/blob/main/LICENSE).
+[ATTRIBUTIONS.md](https://github.com/jfalava/manifold/blob/main/ATTRIBUTIONS.md)
+in the repository is the authoritative statement of scope.
+
+## Attributions
+
+### Inkdex
+
+The MangaDex and AniList integrations and the core of the `MANIFOLD` tracker
+extension are modified versions of Inkdex's GPL-3.0-or-later Paperback
+extensions:
+
+- [Inkdex General Extensions](https://github.com/inkdex/general-extensions),
+  branch `0.9/stable`, `src/MangaDex/`
+- [Inkdex Tracker Extensions](https://github.com/inkdex/tracker-extensions),
+  branch `0.9/stable`, `src/AniList/`
+
+The derived files are `packages/mangadex/src/**`,
+`packages/paperback-runtime/src/anilist-graphql.ts`, and the
+`tracker/src/MANIFOLD` `main.ts`, `managed-collections.ts`, `pbconfig.ts` and
+`read-queue.ts` files. They keep the Inkdex copyright notice next to a dated
+Manifold modification notice. The generated `MANIFOLD` and `MANIFOLD-beta`
+bundles combine these files and are distributed under GPL-3.0-or-later.
+
+### CLI releases
+
+The CLI source is MIT, but each released `manifold` executable also bundles
+the GPL-derived MangaDex code, so the executable as a whole is conveyed under
+GPL-3.0-or-later. Every release archive ships `LICENSE`, `LICENSE-MIT`,
+`ATTRIBUTIONS.md`, and a `THIRD-PARTY-NOTICES.md` listing each bundled package
+with its license text and a link to the tagged source.
+
+### IBM Plex Sans
+
+The CLI login callback pages embed the Latin weight-variable
+[IBM Plex Sans](https://www.npmjs.com/package/@fontsource-variable/ibm-plex-sans/v/5.3.0)
+font, copyright 2019 IBM Corp., under the
+[SIL Open Font License 1.1](https://github.com/jfalava/manifold/blob/main/LICENSES/OFL-1.1.txt).
+
+### Provider content and branding
+
+These licenses cover Manifold's software, not content returned by MangaDex,
+AniList, MyAnimeList or other providers. Titles, descriptions, covers, chapter
+pages, metadata, APIs and service terms remain controlled by their providers
+and rights holders. Provider names and logos are used descriptively and do not
+imply affiliation or endorsement.
+
+## Open-source packages
+
+Every direct dependency of the repository's workspaces, at its installed
+version.
+
+<PackageLicenses />

@@ -65,20 +65,26 @@ export default { async fetch(request, env, ctx) {
 
 describe("queued reads with stale registry IDs", () => {
   let worker: Miniflare;
+
   const request = async (input: JsonObject, status = 200): Promise<JsonValue> => {
     const response = await worker.dispatchFetch("https://fixture.test", {
       method: "POST",
       body: JSON.stringify(input),
     });
+
     expect(response.status).toBe(status);
     const body = await response.json();
+
     if (!isJsonValue(body)) {
       throw new Error("Invalid fixture response");
     }
+
     return body;
   };
+
   const entry = async (provider: string, id: string) =>
     Schema.decodeUnknownSync(RegistryEntry)(await request({ action: "entry", provider, id }));
+
   const read = (provider: string, sourceMangaId: string, eventId: string) => ({
     eventId,
     provider,
@@ -91,20 +97,27 @@ describe("queued reads with stale registry IDs", () => {
 
   const snapshotEntries = async (): Promise<readonly JsonObject[]> => {
     const snapshot = await request({ action: "snapshot" });
+
     if (!isJsonObject(snapshot)) {
       throw new Error("Invalid fixture snapshot");
     }
+
     const entries = arrayField(snapshot, "canonical_entries");
+
     if (entries === undefined) {
       throw new Error("Invalid fixture snapshot entries");
     }
+
     return entries.filter(isJsonObject);
   };
+
   const snapshotEntry = async (id: string): Promise<JsonObject> => {
     const row = (await snapshotEntries()).find((row) => row["id"] === id);
+
     if (row === undefined) {
       throw new Error(`Missing fixture entry ${id}`);
     }
+
     return row;
   };
 
@@ -117,11 +130,18 @@ describe("queued reads with stale registry IDs", () => {
       platform: "browser",
       external: ["cloudflare:workers"],
     });
+
+    const [output] = built.outputFiles;
+
+    if (!output) {
+      throw new Error("esbuild produced no output");
+    }
+
     worker = new Miniflare(
       convertV4MiniflareOptions({
         name: "read-recovery-test",
         modules: true,
-        script: built.outputFiles[0].text,
+        script: output.text,
         compatibilityDate: "2026-08-28",
         bindings: { MANIFOLD_TOKEN: "fixture-token" },
         durableObjects: { MANIFOLD_SYNC: { className: "TestSync", useSQLite: true } },
@@ -136,19 +156,23 @@ describe("queued reads with stale registry IDs", () => {
     "recovers missing UUIDs using exact %s links and keeps retries idempotent",
     async (provider) => {
       const current = await entry(provider, `native-${provider}`);
+
       const input = {
         action: "read",
         id: `missing-${provider}`,
         read: read(provider, `native-${provider}`, `event-${provider}`),
       };
+
       const progress = Schema.decodeUnknownSync(ReadingProgress)(await request(input));
       expect(progress).toMatchObject({ entryId: current.id, chapterNumber: 12, version: 1 });
       expect(await request(input)).toEqual(progress);
       expect(await request({ action: "get", id: input.id })).toBeNull();
+
       if (provider === "mangadex") {
         const ops = Schema.decodeUnknownSync(Schema.Array(SyncOp))(
           await request({ action: "ops" }),
         );
+
         const matchingOps = ops.filter((op) => op.opId === input.read.eventId);
         expect(matchingOps).toHaveLength(1);
         expect(matchingOps[0]?.payload.entryId).toBe(current.id);
@@ -158,11 +182,13 @@ describe("queued reads with stale registry IDs", () => {
 
   it("keeps unresolved reads failed rather than inventing an entry or stealing a cross-provider ID", async () => {
     await entry("anilist", "canonical-only");
+
     const input = {
       action: "read",
       id: "missing-unresolved",
       read: read("mangadex", "canonical-only", "unresolved-event"),
     };
+
     expect(await request(input, 500)).toEqual({
       error: "Canonical entry not found: missing-unresolved",
     });
@@ -342,14 +368,18 @@ describe("queued reads with stale registry IDs", () => {
       },
     });
     const before = await request({ action: "snapshot" });
+
     if (!isJsonObject(before)) {
       throw new Error("Invalid snapshot");
     }
+
     await request({ action: "upgrade" });
     const after = await request({ action: "snapshot" });
+
     if (!isJsonObject(after)) {
       throw new Error("Invalid snapshot");
     }
+
     expect(after.list_state).toEqual(before.list_state);
     expect(after.sync_ops).toEqual(before.sync_ops);
     expect(after.md_status_queue).toEqual(before.md_status_queue);
@@ -397,6 +427,7 @@ describe("queued reads with stale registry IDs", () => {
     await request({ action: "nuke", id: target.id });
     const before = await request({ action: "snapshot" });
     const identity = { provider: "comix", providerId: "old-id", title: "Retired" };
+
     for (const [path, body] of [
       ["/v1/registry/ingest", identity],
       ["/v1/canonical/resolve", identity],
@@ -408,8 +439,10 @@ describe("queued reads with stale registry IDs", () => {
         headers: { authorization: "Bearer fixture-token", "content-type": "application/json" },
         body: JSON.stringify(body),
       });
+
       expect(response.status, path).toBe(400);
     }
+
     expect(await request({ action: "snapshot" })).toEqual(before);
   });
 });

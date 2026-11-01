@@ -45,11 +45,7 @@ const clearAniListEnv = (): (() => void) => {
 describe("oauth client credentials", () => {
   it("round-trips keychain storage", async () => {
     const store = memoryStore();
-    await saveStoredOAuthClient(
-      "anilist",
-      { clientId: "id-1", clientSecret: "sec-1" },
-      store,
-    );
+    await saveStoredOAuthClient("anilist", { clientId: "id-1", clientSecret: "sec-1" }, store);
     await expect(loadStoredOAuthClient("anilist", store)).resolves.toEqual({
       clientId: "id-1",
       clientSecret: "sec-1",
@@ -83,11 +79,7 @@ describe("oauth client credentials", () => {
 
   it("loads from keychain when env is empty (non-wizard)", async () => {
     const store = memoryStore();
-    await saveStoredOAuthClient(
-      "anilist",
-      { clientId: "kc-id", clientSecret: "kc-secret" },
-      store,
-    );
+    await saveStoredOAuthClient("anilist", { clientId: "kc-id", clientSecret: "kc-secret" }, store);
     const restore = clearAniListEnv();
     try {
       const resolved = await resolveOAuthClient({

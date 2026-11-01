@@ -1,5 +1,4 @@
 /** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics globalConsole:off */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -45,11 +44,13 @@ const BETA: ChannelConfig = {
 };
 
 type ProcessEnvMap = Record<string, string | undefined>;
+
 type ProcessHost = { readonly env: ProcessEnvMap };
 
 const processHost = (): ProcessHost | undefined => {
   // SAFETY: optional field is { process?: ProcessHost } when present at this call site
   const host = globalThis as { process?: ProcessHost };
+
   return host.process;
 };
 
@@ -59,6 +60,7 @@ const iacEnvFile = resolve(import.meta.dirname, "../../iac/.env");
 
 const readIacEnvValue = (key: string): string | undefined => {
   let contents: string;
+
   try {
     contents = readFileSync(iacEnvFile, "utf8");
   } catch {
@@ -67,11 +69,13 @@ const readIacEnvValue = (key: string): string | undefined => {
 
   for (const line of contents.split(/\r?\n/u)) {
     const match = line.match(/^\s*(?:export\s+)?([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/u);
+
     if (!match) {
       continue;
     }
 
     const [, envKey, rawValue] = match;
+
     if (!envKey || rawValue === undefined || envKey !== key) {
       continue;
     }
@@ -92,11 +96,13 @@ const readIacEnvValue = (key: string): string | undefined => {
 /** `ENV` from the process environment, else `iac/.env`. */
 export const readDeployEnv = (): string | undefined => {
   const fromProcess = readProcessEnv("ENV")?.trim();
+
   if (fromProcess !== undefined && fromProcess.length > 0) {
     return fromProcess;
   }
 
   const fromFile = readIacEnvValue("ENV")?.trim();
+
   if (fromFile !== undefined && fromFile.length > 0) {
     return fromFile;
   }
@@ -116,9 +122,11 @@ export function resolveChannel(): ChannelConfig;
 export function resolveChannel(rawEnv: string): ChannelConfig;
 export function resolveChannel(rawEnv?: string): ChannelConfig {
   const value = (arguments.length === 0 ? readDeployEnv() : rawEnv)?.trim();
+
   if (value === "manifold-stable") {
     return STABLE;
   }
+
   if (value === "manifold-beta") {
     return BETA;
   }

@@ -32,6 +32,7 @@ export const OAuthTokenResponse = Schema.Struct({
   expires_in: Schema.optional(Schema.Finite),
   scope: Schema.optional(Schema.String),
 });
+
 export type OAuthTokenResponse = Schema.Schema.Type<typeof OAuthTokenResponse>;
 
 export const getOAuthClientConfig = (
@@ -74,6 +75,7 @@ export const getOAuthClientConfig = (
 export const createRandomValue = (bytes = 32): string => {
   const value = new Uint8Array(bytes);
   crypto.getRandomValues(value);
+
   return toBase64Url(value);
 };
 
@@ -83,6 +85,7 @@ export const createPkceChallenge = (verifier: string): Promise<string> =>
       const digest = yield* Effect.promise(() =>
         crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)),
       );
+
       return toBase64Url(new Uint8Array(digest));
     }),
   );

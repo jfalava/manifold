@@ -81,9 +81,11 @@ const hashOpaque = (value: string): Promise<string> =>
 
 const withQuery = (base: string, values: Record<string, string>): string => {
   const url = new URL(base);
+
   for (const [key, value] of Object.entries(values)) {
     url.searchParams.set(key, value);
   }
+
   return url.toString();
 };
 
@@ -111,9 +113,11 @@ const startManifoldOAuthEffect = (host: SyncHost, input: ManifoldOAuthAuthorizat
 
     const providerState = createRandomValue();
     const providerCodeVerifier = createRandomValue(48);
+
     const providerCodeChallenge = yield* fromPromise(() =>
       createPkceChallenge(providerCodeVerifier),
     );
+
     const createdAt = now();
 
     host.ctx.storage.sql.exec(
@@ -137,12 +141,15 @@ const startManifoldOAuthEffect = (host: SyncHost, input: ManifoldOAuthAuthorizat
     yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_GITHUB_CLIENT_SECRET, "MANIFOLD_GITHUB_CLIENT_SECRET"),
     );
+
     const clientId = yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_GITHUB_CLIENT_ID, "MANIFOLD_GITHUB_CLIENT_ID"),
     );
+
     const callback = manifoldOAuthCallbackUri(
       yield* fromPromise(() => resolveRedirectBase(host.env)),
     );
+
     const authorizationUrl = withQuery(GITHUB_AUTHORIZE_ENDPOINT, {
       client_id: clientId,
       redirect_uri: callback,
@@ -172,6 +179,7 @@ const completeGithubOAuthEffect = (host: SyncHost, state: string, code?: string,
         now() - OAUTH_REQUEST_TTL_MS,
       )
       .toArray()[0];
+
     if (!request) {
       return yield* apiError("Manifold OAuth session is invalid or expired");
     }
@@ -189,15 +197,19 @@ const completeGithubOAuthEffect = (host: SyncHost, state: string, code?: string,
     const clientSecret = yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_GITHUB_CLIENT_SECRET, "MANIFOLD_GITHUB_CLIENT_SECRET"),
     );
+
     const clientId = yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_GITHUB_CLIENT_ID, "MANIFOLD_GITHUB_CLIENT_ID"),
     );
+
     const allowedUserId = yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_GITHUB_ALLOWED_USER_ID, "MANIFOLD_GITHUB_ALLOWED_USER_ID"),
     );
+
     const callback = manifoldOAuthCallbackUri(
       yield* fromPromise(() => resolveRedirectBase(host.env)),
     );
+
     const tokenResponse = yield* fromPromise(() =>
       platformFetch(GITHUB_TOKEN_ENDPOINT, {
         method: "POST",
@@ -215,9 +227,11 @@ const completeGithubOAuthEffect = (host: SyncHost, state: string, code?: string,
         }),
       }),
     );
+
     if (!tokenResponse.ok) {
       return redirectWithError(request.redirect_uri, request.outer_state, "server_error");
     }
+
     const tokenBody = yield* fromPromise(() => tokenResponse.json());
     const githubToken = yield* Schema.decodeUnknownEffect(GithubTokenResponse)(tokenBody);
 
@@ -230,23 +244,29 @@ const completeGithubOAuthEffect = (host: SyncHost, state: string, code?: string,
         },
       }),
     );
+
     if (!userResponse.ok) {
       return redirectWithError(request.redirect_uri, request.outer_state, "server_error");
     }
+
     const userBody = yield* fromPromise(() => userResponse.json());
     const githubUser = yield* Schema.decodeUnknownEffect(GithubUserResponse)(userBody);
+
     if (String(githubUser.id) !== allowedUserId) {
       const rejected = redirectWithError(
         request.redirect_uri,
         request.outer_state,
         "access_denied",
       );
+
       return request.client_id === MANIFOLD_OAUTH_CLIENT_ID
         ? { ...rejected, accountMismatch: true }
         : rejected;
     }
+
     const subject = `github:${String(githubUser.id)}`;
     const authorizationCode = yield* issueAuthorizationCodeEffect(host, request, subject);
+
     return {
       redirectUri: withQuery(request.redirect_uri, {
         code: authorizationCode,
@@ -286,6 +306,7 @@ const issueAuthorizationCodeEffect = (
       createdAt,
       createdAt + OAUTH_CODE_TTL_MS,
     );
+
     return code;
   });
 
@@ -312,6 +333,7 @@ const createSessionEffect = (
       createdAt,
       createdAt,
     );
+
     return {
       access_token: accessToken,
       refresh_token: refreshToken,
@@ -334,10 +356,13 @@ const exchangeManifoldOAuthTokenEffect = (host: SyncHost, input: ManifoldOAuthTo
       const code = input.code;
       const redirectUri = input.redirectUri;
       const codeVerifier = input.codeVerifier;
+
       if (!code || !redirectUri || !codeVerifier) {
         return yield* apiError("Manifold OAuth code exchange is incomplete");
       }
+
       const codeHash = yield* fromPromise(() => hashOpaque(code));
+
       const row = host.ctx.storage.sql
         .exec<ManifoldOAuthCodeRow>(
           `DELETE FROM manifold_oauth_codes
@@ -347,6 +372,7 @@ const exchangeManifoldOAuthTokenEffect = (host: SyncHost, input: ManifoldOAuthTo
           now(),
         )
         .toArray()[0];
+
       if (!row) {
         return yield* apiError("Manifold OAuth code is invalid or expired");
       }
@@ -357,10 +383,13 @@ const exchangeManifoldOAuthTokenEffect = (host: SyncHost, input: ManifoldOAuthTo
       if (row.redirect_uri !== redirectUri || row.client_id !== input.clientId) {
         return yield* apiError("Manifold OAuth code does not match the client");
       }
+
       const challenge = yield* fromPromise(() => createPkceChallenge(codeVerifier));
+
       if (challenge !== row.code_challenge) {
         return yield* apiError("Manifold OAuth PKCE verification failed");
       }
+
       return yield* createSessionEffect(host, row.subject);
     }
 
@@ -368,7 +397,9 @@ const exchangeManifoldOAuthTokenEffect = (host: SyncHost, input: ManifoldOAuthTo
       if (!input.refreshToken) {
         return yield* apiError("Manifold OAuth refresh token is missing");
       }
+
       const refreshTokenHash = yield* fromPromise(() => hashOpaque(input.refreshToken!));
+
       const row = host.ctx.storage.sql
         .exec<ManifoldSessionRow>(
           `UPDATE manifold_sessions
@@ -381,6 +412,7 @@ const exchangeManifoldOAuthTokenEffect = (host: SyncHost, input: ManifoldOAuthTo
           now(),
         )
         .toArray()[0];
+
       if (!row) {
         return yield* apiError("Manifold OAuth refresh token is invalid or expired");
       }
@@ -402,7 +434,9 @@ const authorizeManifoldAccessTokenEffect = (host: SyncHost, accessToken: string)
     if (!accessToken) {
       return false;
     }
+
     const hash = yield* fromPromise(() => hashOpaque(accessToken));
+
     const row = host.ctx.storage.sql
       .exec<ManifoldSessionRow>(
         `SELECT access_token_hash FROM manifold_sessions
@@ -411,6 +445,7 @@ const authorizeManifoldAccessTokenEffect = (host: SyncHost, accessToken: string)
         now(),
       )
       .toArray()[0];
+
     return row !== undefined;
   });
 
@@ -424,6 +459,7 @@ const revokeManifoldSessionEffect = (host: SyncHost, token: string) =>
     if (!token) {
       return;
     }
+
     const hash = yield* fromPromise(() => hashOpaque(token));
     host.ctx.storage.sql.exec(
       `UPDATE manifold_sessions SET revoked_at = ?, updated_at = ?

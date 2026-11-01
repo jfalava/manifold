@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 /**
  * steps.client.ts — Safari list-role restoration.
  *
@@ -15,6 +10,7 @@ import { mount } from "@cloudflare/nimbus-docs/client";
 
 function initSteps(root: HTMLElement): () => void {
   const lists = root.querySelectorAll<HTMLOListElement>("ol");
+
   if (
     import.meta.env.DEV &&
     lists.length === 0 &&
@@ -27,6 +23,7 @@ function initSteps(root: HTMLElement): () => void {
         "use an ordered list.",
     );
   }
+
   lists.forEach((ol) => ol.setAttribute("role", "list"));
 
   return () => {

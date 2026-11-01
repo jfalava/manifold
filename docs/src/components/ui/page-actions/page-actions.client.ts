@@ -1,23 +1,22 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 import { mount } from "@cloudflare/nimbus-docs/client";
 
 function initPageActions(root: HTMLElement): () => void {
   const copyBtn = root.querySelector<HTMLButtonElement>(
     "[data-nb-page-actions-copy]",
   );
+
   const copyIcon = root.querySelector<SVGElement>(
     "[data-nb-page-actions-copy-icon]",
   );
+
   const checkIcon = root.querySelector<SVGElement>(
     "[data-nb-page-actions-check-icon]",
   );
+
   const label = root.querySelector<HTMLSpanElement>(
     "[data-nb-page-actions-label]",
   );
+
   const mdUrl = root.dataset.mdUrl;
 
   if (!copyBtn || !mdUrl) {
@@ -30,6 +29,7 @@ function initPageActions(root: HTMLElement): () => void {
     if (!copyIcon || !checkIcon || !label) {
       return;
     }
+
     if (state === "copied") {
       copyIcon.classList.add("hidden");
       checkIcon.classList.remove("hidden");
@@ -37,9 +37,11 @@ function initPageActions(root: HTMLElement): () => void {
     } else {
       label.textContent = "Couldn't copy";
     }
+
     if (resetTimer) {
       window.clearTimeout(resetTimer);
     }
+
     resetTimer = window.setTimeout(() => {
       copyIcon.classList.remove("hidden");
       checkIcon.classList.add("hidden");
@@ -50,10 +52,13 @@ function initPageActions(root: HTMLElement): () => void {
   async function handleCopyPage() {
     try {
       const res = await fetch(mdUrl!);
+
       if (!res.ok) {
         showState("error");
+
         return;
       }
+
       const text = await res.text();
       await navigator.clipboard.writeText(text);
       showState("copied");
@@ -68,6 +73,7 @@ function initPageActions(root: HTMLElement): () => void {
     if (resetTimer) {
       window.clearTimeout(resetTimer);
     }
+
     copyBtn.removeEventListener("click", handleCopyPage);
   };
 }

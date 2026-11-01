@@ -1,6 +1,5 @@
 /** Hono / Worker entry — platform async callbacks. */
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
 import { hostLogError } from "./effect-host";
 import { Data, Effect, Schema } from "effect";
 import {
@@ -104,7 +103,7 @@ export const json = (body: JsonResponseBody, status = 200): Response =>
 export class ResponseEncodeError extends Data.TaggedError("ResponseEncodeError")<{
   readonly details: string;
 }> {
-  get message() {
+  override get message() {
     return `Response encode failed: ${this.details}`;
   }
 }
@@ -132,7 +131,7 @@ export class ParseRequestError extends Data.TaggedError("ParseRequestError")<{
 export class HttpRequestError extends Data.TaggedError("HttpRequestError")<{
   readonly cause: Error;
 }> {
-  get message() {
+  override get message() {
     return this.cause.message;
   }
 }
@@ -141,9 +140,11 @@ export const parseJson = (request: Request): Effect.Effect<JsonValue, ParseReque
   Effect.tryPromise({
     try: async () => {
       const raw: unknown = await request.json();
+
       if (!isJsonValue(raw)) {
         throw new ParseRequestError({ message: "Request body must be valid JSON" });
       }
+
       return raw;
     },
     catch: () => new ParseRequestError({ message: "Request body must be valid JSON" }),
@@ -153,9 +154,11 @@ export const toError = (cause: unknown): Error => {
   if (cause instanceof Error) {
     return cause;
   }
+
   if (isJsonObject(cause) && isString(cause.message)) {
     return new Error(cause.message);
   }
+
   return new Error(errorMessage(cause));
 };
 
@@ -176,11 +179,14 @@ export const attempt = <A>(
     }
   });
 
-export const routeId = (value: string): Effect.Effect<string, ParseRequestError> =>
-  Effect.try({
-    try: () => decodeURIComponent(value),
-    catch: () => new ParseRequestError({ message: "Route identifier is not valid URL encoding" }),
-  });
+export const routeId = (value: string | undefined): Effect.Effect<string, ParseRequestError> =>
+  value === undefined
+    ? Effect.fail(new ParseRequestError({ message: "Route identifier is missing" }))
+    : Effect.try({
+        try: () => decodeURIComponent(value),
+        catch: () =>
+          new ParseRequestError({ message: "Route identifier is not valid URL encoding" }),
+      });
 
 export const boundedInteger = (
   value: string | null,
@@ -191,32 +197,41 @@ export const boundedInteger = (
   if (value === null || value.trim() === "") {
     return fallback;
   }
+
   const parsed = Number(value);
+
   if (!Number.isSafeInteger(parsed)) {
     return fallback;
   }
+
   return Math.min(maximum, Math.max(minimum, parsed));
 };
 
 export const authorized = async (request: Request, env: Env): Promise<boolean> => {
   const authorization = request.headers.get("authorization");
+
   if (!authorization?.startsWith("Bearer ")) {
     return false;
   }
 
   const suppliedToken = authorization.slice("Bearer ".length);
   const expected = await readSecretOptional(env.MANIFOLD_TOKEN, "MANIFOLD_TOKEN");
+
   if (expected) {
     const suppliedDigest = new Uint8Array(
       await crypto.subtle.digest("SHA-256", new TextEncoder().encode(suppliedToken)),
     );
+
     const expectedDigest = new Uint8Array(
       await crypto.subtle.digest("SHA-256", new TextEncoder().encode(expected)),
     );
+
     let difference = 0;
-    for (let index = 0; index < expectedDigest.length; index += 1) {
-      difference |= suppliedDigest[index] ^ expectedDigest[index];
+
+    for (const [index, byte] of expectedDigest.entries()) {
+      difference |= byte ^ (suppliedDigest[index] ?? 0);
     }
+
     if (difference === 0) {
       return true;
     }
@@ -229,6 +244,7 @@ export const authProvider = (value: string | undefined): AuthProvider | undefine
   if (value === "anilist" || value === "mal" || value === "mangadex") {
     return value;
   }
+
   return undefined;
 };
 
@@ -236,6 +252,7 @@ export const oauthProvider = (value: string | undefined): OAuthProvider | undefi
   if (value === "anilist" || value === "mal") {
     return value;
   }
+
   return undefined;
 };
 
@@ -248,6 +265,7 @@ export const resolveRedirectBase = (
 
 export const oauthApiBaseUrl = (base: string): string => {
   const trimmed = base.replace(/\/+$/, "");
+
   // Older deployments stored the bare origin; the router mounts SyncApi under /api.
   // NOTE: new URL() would discard the base's path for an absolute path arg — concatenate.
   return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
@@ -270,13 +288,17 @@ export const adminOAuthReturnPath = (value: string | null): string | undefined =
   if (!value) {
     return undefined;
   }
+
   const trimmed = value.trim();
+
   if (!trimmed.startsWith("/admin")) {
     return undefined;
   }
+
   if (trimmed.startsWith("//") || trimmed.includes("://") || /[\s<>"']/.test(trimmed)) {
     return undefined;
   }
+
   return trimmed;
 };
 
@@ -291,9 +313,11 @@ export const isPublicOAuthRoute = (method: string, path: readonly string[]): boo
       (method === "POST" && path.length === 3 && path[2] === "token")
     );
   }
+
   if (method !== "GET" || path.length !== 4 || path[0] !== "v1" || path[1] !== "auth") {
     return false;
   }
+
   return (
     (path[3] === "callback" && oauthProvider(path[2]) !== undefined) ||
     (path[2] === "anilist" && path[3] === "device")

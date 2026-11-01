@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
 import { describe, expect, it } from "vitest";
 import { decryptToken, encryptToken, fromBase64Url, toBase64Url } from "../src/token-crypto";
 import type { Env } from "../src/types";

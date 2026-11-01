@@ -1,9 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
 /**
  * Client-safe types for the MangaDex library admin page. The server
  * functions live in `./registry` — keeping this module free of server
@@ -11,13 +5,9 @@
  * `cloudflare:workers` into the client bundle.
  */
 
-export type MangaDexReadingStatus =
-  | "reading"
-  | "on_hold"
-  | "plan_to_read"
-  | "dropped"
-  | "re_reading"
-  | "completed";
+import type { ListStatus } from "@manifold/contract";
+
+export type MangaDexReadingStatus = ListStatus;
 
 // Type alias (not interface) so TanStack Table v9's `TData extends Record<string, any>` constraint accepts it
 export type MangaDexLibraryItem = {
@@ -60,6 +50,7 @@ export function formatMangaDexStatus(status: string): string {
   if (!status || status === "unset") {
     return "Unset";
   }
+
   return status
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
@@ -79,9 +70,12 @@ export const proxiedCoverUrl = (coverUrl: string | undefined): string | undefine
   if (!coverUrl) {
     return undefined;
   }
+
   const match = /\/covers\/([^/]+)\/([^/]+)$/.exec(coverUrl);
+
   if (!match) {
     return undefined;
   }
+
   return `/mangadex-cover/${match[1]}/${match[2]}`;
 };

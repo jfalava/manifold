@@ -1,6 +1,6 @@
 {
   "name": "@manifold/cli",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "manifold CLI: migrations, op-log triage, drift reconciliation, registry backfill.",
   "license": "MIT",
@@ -14,7 +14,7 @@
     "anilist:wipe": "bun index.ts anilist wipe manga",
     "build": "mkdir -p dist && bun build --compile index.ts --outfile dist/manifold",
     "build:all": "bun run build:darwin-arm64 && bun run build:linux-x64 && bun run build:linux-arm64 && bun run build:windows-x64",
-    "build:darwin-arm64": "mkdir -p dist && bun build --compile --target=bun-darwin-arm64 index.ts --outfile dist/manifold-cli-darwin-arm64",
+    "build:darwin-arm64": "bun scripts/build-darwin.ts",
     "build:linux-arm64": "mkdir -p dist && bun build --compile --target=bun-linux-arm64 index.ts --outfile dist/manifold-cli-linux-arm64",
     "build:linux-x64": "mkdir -p dist && bun build --compile --target=bun-linux-x64 index.ts --outfile dist/manifold-cli-linux-x64",
     "build:windows-x64": "mkdir -p dist && bun build --compile --target=bun-windows-x64 index.ts --outfile dist/manifold-cli-windows-x64.exe",
@@ -32,8 +32,10 @@
     "reconcile:diff": "bun index.ts reconcile diff",
     "registry:import": "bun index.ts registry import",
     "registry:mangadex": "bun index.ts registry mangadex",
+    "signing:export": "bun scripts/export-signing-p12.ts",
+    "signing:provision": "bun scripts/provision-signing-cert.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsrs --noEmit && tsrs --noEmit -p tsconfig.test.json",
     "upgrade": "bun index.ts upgrade"
   },
   "dependencies": {
@@ -43,17 +45,21 @@
     "@manifold/json": "workspace:*",
     "@manifold/mangadex": "workspace:*",
     "cli-progress": "3.12.0",
+    "cli-truncate": "6.1.1",
     "effect": "catalog:effect",
     "listr2": "11.4.0",
-    "picocolors": "1.1.1"
+    "picocolors": "1.1.1",
+    "string-width": "8.3.0"
   },
   "devDependencies": {
     "@types/cli-progress": "3.11.6",
     "@types/node": "catalog:types",
+    "@xterm/headless": "6.0.0",
     "bun-types": "catalog:types",
     "oxfmt": "catalog:build",
     "oxlint": "catalog:build",
     "oxlint-tsgolint": "catalog:build",
+    "tsrs": "catalog:build",
     "typescript": "catalog:build",
     "vitest": "catalog:build"
   }

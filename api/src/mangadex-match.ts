@@ -22,6 +22,7 @@ export type {
 export const MANGADEX_EMBEDDING_MODEL = "@cf/qwen/qwen3-embedding-0.6b" as const;
 
 const VECTOR_TOP_K = 20;
+
 // Prefill/CLI now pass AniList english/romaji/native/synonyms, so exact-title
 // hits cover more cases and the semantic accept bar can sit higher.
 export const VECTOR_ACCEPT_SCORE = 0.85;
@@ -31,10 +32,10 @@ const MATCH_CANDIDATE_LIMIT = 100;
 
 /**
  * Vectorize metadata bag for MangaDex title embeddings.
- * Index signature matches VectorizeVector.metadata value contract.
+ * Vectorize returns this bag as written; the helpers below narrow each value.
  */
 interface VectorMetadata {
-  [key: string]: string | number | boolean | string[];
+  [key: string]: VectorizeVectorMetadata;
 }
 
 export interface EmbeddedMangaDexCandidate {
@@ -54,10 +55,13 @@ const numberValue = (value: VectorMetadata[string] | undefined): number | undefi
   if (isFiniteNumber(value)) {
     return value;
   }
+
   if (!isString(value) || value.trim().length === 0) {
     return undefined;
   }
+
   const parsed = Number(value);
+
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
@@ -65,8 +69,10 @@ const stringArray = (value: VectorMetadata[string] | undefined): readonly string
   if (!Array.isArray(value)) {
     return [];
   }
+
   return value.flatMap((item) => {
     const result = isString(item) && item.trim().length > 0 ? item.trim() : undefined;
+
     return result ? [result] : [];
   });
 };
@@ -74,18 +80,24 @@ const stringArray = (value: VectorMetadata[string] | undefined): readonly string
 const uniqueStrings = (values: readonly string[]): string[] => {
   const seen = new Set<string>();
   const result: string[] = [];
+
   for (const value of values) {
     const normalized = value.trim();
+
     if (!normalized) {
       continue;
     }
+
     const key = normalizeTitle(normalized);
+
     if (!key || seen.has(key)) {
       continue;
     }
+
     seen.add(key);
     result.push(normalized);
   }
+
   return result;
 };
 
@@ -99,9 +111,11 @@ export const normalizeTitle = (value: string): string =>
 
 const yearFromDate = (value: string | undefined): number | undefined => {
   const year = value?.slice(0, 4);
+
   if (!year || !/^\d{4}$/.test(year)) {
     return undefined;
   }
+
   return Number(year);
 };
 
@@ -113,6 +127,7 @@ const mangaTitles = (manga: MangaDexManga): readonly string[] =>
 
 export const buildCanonicalEmbeddingText = (entry: MangaDexMatchInput): string => {
   const year = yearFromDate(entry.metadata?.startDate);
+
   return [
     "manga title",
     ...canonicalTitles(entry),
@@ -135,6 +150,7 @@ export const buildMangaDexEmbeddingText = (manga: MangaDexManga): string =>
 
 const hasExactTitle = (entry: MangaDexMatchInput, manga: MangaDexManga): boolean => {
   const canonical = new Set(canonicalTitles(entry).map(normalizeTitle));
+
   return mangaTitles(manga).some((title) => canonical.has(normalizeTitle(title)));
 };
 
@@ -164,20 +180,22 @@ export const chooseMangaDexMatch = (
   candidates: readonly RankedMangaDexCandidate[],
 ): MangaDexMatchResult => {
   const ordered = [...candidates].sort((left, right) => right.score - left.score);
+
   const exactLinks = ordered.filter(
     (candidate) => linkedProviderId(entry, candidate.manga) === entry.providerId,
   );
 
-  if (exactLinks.length === 1) {
-    const candidate = exactLinks[0];
+  const [onlyLink] = exactLinks;
+
+  if (exactLinks.length === 1 && onlyLink) {
     return {
       canonicalId: entry.id,
       status: "matched",
-      candidates: [decisionCandidate(candidate)],
-      externalId: candidate.manga.id,
-      title: candidate.manga.title,
+      candidates: [decisionCandidate(onlyLink)],
+      externalId: onlyLink.manga.id,
+      title: onlyLink.manga.title,
       method: entry.provider === "anilist" ? "anilist-link" : "mal-link",
-      score: Number(candidate.score.toFixed(6)),
+      score: Number(onlyLink.score.toFixed(6)),
       margin: 1,
     };
   }
@@ -187,27 +205,31 @@ export const chooseMangaDexMatch = (
   }
 
   const exactTitles = ordered.filter((candidate) => hasExactTitle(entry, candidate.manga));
-  if (exactTitles.length === 1) {
-    const candidate = exactTitles[0];
+
+  const [onlyTitle] = exactTitles;
+
+  if (exactTitles.length === 1 && onlyTitle) {
     return {
       canonicalId: entry.id,
       status: "matched",
-      candidates: [decisionCandidate(candidate)],
-      externalId: candidate.manga.id,
-      title: candidate.manga.title,
+      candidates: [decisionCandidate(onlyTitle)],
+      externalId: onlyTitle.manga.id,
+      title: onlyTitle.manga.title,
       method: "vectorize",
-      score: Number(candidate.score.toFixed(6)),
+      score: Number(onlyTitle.score.toFixed(6)),
       margin: 1,
     };
   }
 
   const best = ordered[0];
+
   if (!best) {
     return resultForCandidates(entry.id, "not_found", ordered);
   }
 
   const second = ordered[1];
   const margin = second === undefined ? 1 : best.score - second.score;
+
   if (best.score >= VECTOR_ACCEPT_SCORE && margin >= VECTOR_ACCEPT_MARGIN) {
     return {
       canonicalId: entry.id,
@@ -228,9 +250,11 @@ export const cosineSimilarity = (left: readonly number[], right: readonly number
   if (left.length === 0 || left.length !== right.length) {
     return 0;
   }
+
   let dot = 0;
   let leftMagnitude = 0;
   let rightMagnitude = 0;
+
   for (let index = 0; index < left.length; index += 1) {
     const leftValue = left[index] ?? 0;
     const rightValue = right[index] ?? 0;
@@ -238,9 +262,11 @@ export const cosineSimilarity = (left: readonly number[], right: readonly number
     leftMagnitude += leftValue * leftValue;
     rightMagnitude += rightValue * rightValue;
   }
+
   if (leftMagnitude === 0 || rightMagnitude === 0) {
     return 0;
   }
+
   return dot / Math.sqrt(leftMagnitude * rightMagnitude);
 };
 
@@ -261,10 +287,13 @@ const vectorCandidate = (
 ): MangaDexManga | undefined => {
   const mangaId = stringValue(metadata?.mangaId) ?? id.replace(/^mangadex:/, "");
   const title = stringValue(metadata?.title);
+
   if (!mangaId || !title) {
     return undefined;
   }
+
   const year = numberValue(metadata?.year);
+
   return {
     id: mangaId,
     title,
@@ -281,28 +310,35 @@ const vectorMetadata = (manga: MangaDexManga): VectorMetadata => {
   metadata.mangaId = manga.id;
   metadata.title = manga.title;
   metadata.aliases = [...manga.altTitles];
+
   if (manga.anilistId) {
     metadata.anilistId = manga.anilistId;
   }
+
   if (manga.myAnimeListId) {
     metadata.malId = manga.myAnimeListId;
   }
+
   if (manga.year !== undefined) {
     metadata.year = manga.year;
   }
+
   return metadata;
 };
 
 const uniqueManga = (values: readonly MangaDexManga[]): MangaDexManga[] => {
   const seen = new Set<string>();
   const result: MangaDexManga[] = [];
+
   for (const manga of values) {
     if (seen.has(manga.id)) {
       continue;
     }
+
     seen.add(manga.id);
     result.push(manga);
   }
+
   return result;
 };
 
@@ -315,16 +351,21 @@ const embedMangaTitlesEffect = (ai: Ai, texts: readonly string[]) =>
     if (texts.length === 0) {
       return [];
     }
+
     const vectors: number[][] = [];
+
     for (let index = 0; index < texts.length; index += EMBED_BATCH_SIZE) {
       const chunk = [...texts].slice(index, index + EMBED_BATCH_SIZE);
       const result = yield* fromPromise(() => ai.run(MANGADEX_EMBEDDING_MODEL, { text: chunk }));
       const data = result.data ?? [];
+
       if (data.length !== chunk.length || data.some((vector) => vector.length === 0)) {
         return yield* apiError("Workers AI returned an invalid MangaDex embedding response");
       }
+
       vectors.push(...data);
     }
+
     return vectors;
   });
 
@@ -335,8 +376,8 @@ const indexedCandidates = (
   matches: Awaited<ReturnType<VectorizeIndex["query"]>>["matches"],
 ): readonly RankedMangaDexCandidate[] =>
   matches.flatMap((match) => {
-    // SAFETY: optional field is VectorMetadata | undefined when present at this call site
-    const manga = vectorCandidate(match.id, match.metadata as VectorMetadata | undefined);
+    const manga = vectorCandidate(match.id, match.metadata);
+
     return manga ? [{ manga, score: match.score }] : [];
   });
 
@@ -364,6 +405,7 @@ const queryIndex = (
       ),
       Effect.orElseSucceed((): readonly RankedMangaDexCandidate[] => []),
     );
+
     if (exactCandidates.length > 0) {
       return exactCandidates;
     }
@@ -390,6 +432,7 @@ const searchMangaDex = (entry: MangaDexMatchInput) =>
       limit: MATCH_CANDIDATE_LIMIT,
       userAgent: manifoldUserAgent("api"),
     });
+
     const terms = uniqueStrings([entry.title, ...entry.aliases]).slice(0, SEARCH_TERM_LIMIT);
     // Sequential on purpose: parallel searches burst api.mangadex.org from
     // shared Cloudflare egress IPs and trip its 403 anomaly blocking — the same
@@ -397,6 +440,7 @@ const searchMangaDex = (entry: MangaDexMatchInput) =>
     // term actually gets answered.
     const searched: MangaDexManga[] = [];
     let lastError: string | undefined;
+
     for (const term of terms) {
       const outcome = yield* client.search(term).pipe(
         Effect.match({
@@ -407,15 +451,18 @@ const searchMangaDex = (entry: MangaDexMatchInput) =>
           }),
         }),
       );
+
       if (outcome.ok) {
         searched.push(...outcome.results);
       } else {
         lastError = outcome.error;
       }
     }
+
     if (searched.length === 0 && lastError !== undefined) {
       return yield* apiError(lastError);
     }
+
     return uniqueManga(searched);
   });
 
@@ -444,6 +491,7 @@ export const resolveMangaDex = (
       const sync = env.MANIFOLD_SYNC.getByName("default");
       const existing = yield* fromPromise(() => sync.getEntry(entry.id));
       const cached = existing?.providers.find((provider) => provider.provider === "mangadex");
+
       if (cached) {
         return cachedResult(entry, cached.externalId, cached.title);
       }
@@ -455,18 +503,21 @@ export const resolveMangaDex = (
       const queryVector = (yield* embedMangaTitlesEffect(env.AI, [
         buildCanonicalEmbeddingText(entry),
       ]))[0];
+
       if (!queryVector) {
         return yield* apiError("Workers AI returned no MangaDex query embedding");
       }
 
       const indexed = yield* queryIndex(env.MANGADEX_INDEX, queryVector, entry);
       const indexedDecision = chooseMangaDexMatch(entry, indexed);
+
       if (indexedDecision.status === "matched") {
         return indexedDecision;
       }
 
       const searched = yield* searchMangaDex(entry);
       const fresh = yield* embedMangaTitlesEffect(env.AI, searched.map(buildMangaDexEmbeddingText));
+
       const freshRanked = rankEmbeddedCandidates(
         queryVector,
         searched.map((manga, index) => ({ manga, embedding: fresh[index] ?? [] })),
@@ -477,6 +528,7 @@ export const resolveMangaDex = (
           env.MANGADEX_INDEX.upsert(
             searched.flatMap((manga, index) => {
               const values = fresh[index];
+
               return values
                 ? [{ id: `mangadex:${manga.id}`, values, metadata: vectorMetadata(manga) }]
                 : [];
@@ -493,15 +545,19 @@ export const resolveMangaDex = (
       }
 
       const byId = new Map<string, RankedMangaDexCandidate>();
+
       for (const candidate of indexed) {
         byId.set(candidate.manga.id, candidate);
       }
+
       for (const candidate of freshRanked) {
         const existingCandidate = byId.get(candidate.manga.id);
+
         if (!existingCandidate || candidate.score > existingCandidate.score) {
           byId.set(candidate.manga.id, candidate);
         }
       }
+
       return chooseMangaDexMatch(entry, [...byId.values()]);
     }),
   );

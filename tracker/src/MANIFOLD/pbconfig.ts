@@ -2,9 +2,6 @@
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
 /* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
 
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
 import { ContentRating, SourceIntents, type ExtensionInfo } from "@paperback/types";
 import pkg from "../../package.json" with { type: "json" };
 

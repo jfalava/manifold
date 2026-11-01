@@ -25,6 +25,7 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
 
     if (path[0] === "v1" && path[1] === "ops") {
       const sync = env.MANIFOLD_SYNC.getByName("default");
+
       if (
         path.length === 4 &&
         path[2] === "pending" &&
@@ -37,11 +38,14 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
           ),
         });
       }
+
       if (path.length === 3 && path[2] === "complete" && request.method === "POST") {
         const raw = yield* parseJson(request);
         const input = yield* Schema.decodeUnknownEffect(CompleteOpsInput)(raw);
+
         return jsonEncoded(UpdatedCountResponse, yield* tryPromise(() => sync.completeOps(input)));
       }
+
       if (path.length === 3 && path[2] === "summary" && request.method === "GET") {
         return jsonEncoded(OpsSummaryResponse, {
           summary: yield* tryPromise(() =>
@@ -49,6 +53,7 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
           ),
         });
       }
+
       if (path.length === 2 && request.method === "GET") {
         return jsonEncoded(OpsListResponse, {
           ops: yield* tryPromise(() =>
@@ -60,11 +65,14 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
           ),
         });
       }
+
       if (path.length === 4 && path[3] === "retry" && request.method === "POST") {
         const opId = yield* routeId(path[2]);
         const op = yield* tryPromise(() => sync.retryOp(opId));
+
         return op ? jsonEncoded(SyncOp, op) : jsonEncoded(ErrorBody, { error: "Not found" }, 404);
       }
+
       return jsonEncoded(ErrorBody, { error: "Not found" }, 404);
     }
 
@@ -75,6 +83,7 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
       request.method === "POST"
     ) {
       const sync = env.MANIFOLD_SYNC.getByName("default");
+
       return jsonEncoded(RetriedCountResponse, yield* tryPromise(() => sync.retryFailedSync()));
     }
 
@@ -86,6 +95,7 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
       request.method === "POST"
     ) {
       const sync = env.MANIFOLD_SYNC.getByName("default");
+
       return jsonEncoded(
         EnqueuedCountResponse,
         yield* tryPromise(() => sync.backfillMangaDexShelf()),

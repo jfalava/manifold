@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 import type {
   Breadcrumb,
   PrevNext,
@@ -66,6 +61,7 @@ export function withBaseInText(
   }
 
   const siteOrigin = new URL(site).origin;
+
   return paths.reduce(
     (text, path) =>
       text.replaceAll(`${siteOrigin}${path}`, `${siteOrigin}${withBase(path)}`),

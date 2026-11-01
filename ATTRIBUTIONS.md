@@ -43,13 +43,25 @@ the generated Paperback bundles served by the Manifold catalog.
 The API and CLI are MIT-licensed as Manifold source. They import and use the
 GPL-derived MangaDex package; when those components are conveyed together as a
 single combined executable, the applicable GPL requirements still apply to
-that combined work.
+that combined work. Each CLI release archive therefore ships `LICENSE`,
+`LICENSE-MIT`, this file, and a generated `THIRD-PARTY-NOTICES.md` that lists
+every bundled npm package with its license text and links the tagged source.
 
 The Inkdex extension registry at
 [`inkdex/extensions`](https://github.com/inkdex/extensions) is only a generated
 registry containing bundles, assets, and registry automation; it is not the
 source of the extension implementations. Its absence of a root license does
 not replace the licenses above.
+
+## IBM Plex Sans
+
+CLI login callback pages embed the Latin weight-variable IBM Plex Sans font
+from [`@fontsource-variable/ibm-plex-sans` version 5.3.0](https://www.npmjs.com/package/@fontsource-variable/ibm-plex-sans/v/5.3.0).
+The unmodified WOFF2 is stored as base64 in
+`cli/src/login/fonts/ibm-plex-sans-latin-wght-normal.json` with its source URL
+and upstream copyright and license notice. IBM Plex Sans is copyright 2019
+IBM Corp. and licensed under the [SIL Open Font License 1.1](./LICENSES/OFL-1.1.txt).
+Each callback document includes that notice alongside the embedded font.
 
 ## Provider content and branding
 

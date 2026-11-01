@@ -36,27 +36,34 @@ export const groupOutboxForDrain = <R extends OutboxRowLike>(rows: readonly R[])
 
   for (const row of rows) {
     let raw: unknown;
+
     try {
       raw = JSON.parse(row.payload);
     } catch {
       invalid.push(row);
       continue;
     }
+
     const result = Schema.decodeUnknownOption(SyncReadPayloadSchema)(raw);
+
     if (Option.isNone(result)) {
       invalid.push(row);
       continue;
     }
+
     const payload = result.value;
     const group = byEntry.get(payload.entryId) ?? { chapters: [], rows: [] };
+
     if (!group.chapters.includes(payload.sourceChapterId)) {
       group.chapters.push(payload.sourceChapterId);
     }
+
     group.rows.push(row);
     byEntry.set(payload.entryId, group);
   }
 
   const groups: DrainGroup<R>[] = [];
+
   for (const [entryId, group] of byEntry) {
     groups.push({
       entryId,
@@ -64,5 +71,6 @@ export const groupOutboxForDrain = <R extends OutboxRowLike>(rows: readonly R[])
       rows: group.rows,
     });
   }
+
   return { groups, invalid };
 };

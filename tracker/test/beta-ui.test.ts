@@ -1,5 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 describe("MANIFOLD settings UI", () => {

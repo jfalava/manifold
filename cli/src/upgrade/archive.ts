@@ -39,12 +39,14 @@ const findDirectory = (archive: Uint8Array, view: DataView): ZipDirectory => {
   const searchStart = Math.max(0, archive.length - END_RECORD_SIZE - MAX_COMMENT_SIZE);
   const lastRecordOffset = archive.length - END_RECORD_SIZE;
   let recordOffset = -1;
+
   for (let offset = lastRecordOffset; offset >= searchStart; offset -= 1) {
     if (readUint32(view, offset) === END_OF_DIRECTORY) {
       recordOffset = offset;
       break;
     }
   }
+
   if (recordOffset < 0) {
     throw new Error("Downloaded release is not a valid ZIP archive.");
   }
@@ -59,11 +61,13 @@ const findDirectory = (archive: Uint8Array, view: DataView): ZipDirectory => {
     archive.length,
     "Downloaded release has an invalid ZIP directory.",
   );
+
   return { entryCount, offset: directoryOffset, end: directoryEnd };
 };
 
 const readEntry = (archive: Uint8Array, view: DataView, offset: number): ZipEntry => {
   ensureRange(offset, 46, archive.length, "Downloaded release has an invalid ZIP entry.");
+
   if (readUint32(view, offset) !== CENTRAL_ENTRY) {
     throw new Error("Downloaded release has an invalid ZIP entry.");
   }
@@ -79,6 +83,7 @@ const readEntry = (archive: Uint8Array, view: DataView, offset: number): ZipEntr
     archive.length,
     "Downloaded release has a truncated ZIP entry.",
   );
+
   return {
     compressionMethod: readUint16(view, offset + 10),
     compressedSize: readUint32(view, offset + 20),
@@ -98,6 +103,7 @@ const extractEntry = (archive: Uint8Array, view: DataView, entry: ZipEntry): Uin
     archive.length,
     "Downloaded release has an invalid executable entry.",
   );
+
   if (readUint32(view, entry.localFileOffset) !== LOCAL_ENTRY) {
     throw new Error("Downloaded release has an invalid executable entry.");
   }
@@ -112,20 +118,24 @@ const extractEntry = (archive: Uint8Array, view: DataView, entry: ZipEntry): Uin
     "Downloaded release has a truncated executable entry.",
   );
   const compressed = archive.subarray(dataOffset, dataOffset + entry.compressedSize);
+
   const binary =
     entry.compressionMethod === 0
       ? compressed
       : entry.compressionMethod === 8
         ? new Uint8Array(inflateRawSync(compressed))
         : undefined;
+
   if (!binary) {
     throw new Error(
       `Downloaded release uses unsupported ZIP compression method ${entry.compressionMethod}.`,
     );
   }
+
   if (binary.byteLength !== entry.uncompressedSize) {
     throw new Error("Downloaded release executable size does not match its ZIP entry.");
   }
+
   return binary;
 };
 
@@ -136,9 +146,11 @@ export const extractZipBinary = (archive: Uint8Array, expectedName: string): Uin
 
   for (let index = 0; index < directory.entryCount && offset < directory.end; index += 1) {
     const entry = readEntry(archive, view, offset);
+
     if (entry.name === expectedName) {
       return extractEntry(archive, view, entry);
     }
+
     offset = entry.nextOffset;
   }
 

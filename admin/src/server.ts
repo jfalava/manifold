@@ -1,9 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
 /**
  * Custom TanStack Start server entry (same shape as jfa.dev keweke).
  *
@@ -37,8 +32,10 @@ function isFetcher(value: unknown): value is AssetsFetcher {
   if (value === null || value === undefined || Object(value) !== value) {
     return false;
   }
+
   // SAFETY: host binding; shape is not a plain object.
   const fetchFn = (value as { fetch?: unknown }).fetch;
+
   return Object.prototype.toString.call(fetchFn).endsWith("Function]");
 }
 
@@ -51,7 +48,9 @@ async function getAssetsFetcher(): Promise<AssetsFetcher | null> {
     const workers = (await import(/* @vite-ignore */ "cloudflare:workers")) as {
       readonly env?: { readonly ASSETS?: unknown };
     };
+
     const assets = workers.env?.ASSETS;
+
     return isFetcher(assets) ? assets : null;
   } catch {
     return null;
@@ -61,6 +60,7 @@ async function getAssetsFetcher(): Promise<AssetsFetcher | null> {
 function withPathname(request: Request, pathname: string): Request {
   const url = new URL(request.url);
   url.pathname = pathname;
+
   // Never forward the original body into ASSETS — static lookups are bodyless
   // and cloning with `request` would tee/consume the stream for SSR/serverFns.
   return new Request(url.toString(), {
@@ -74,7 +74,9 @@ async function fetchStaticAsset(request: Request): Promise<Response | null> {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return null;
   }
+
   const assets = await getAssetsFetcher();
+
   if (assets === null) {
     return null;
   }
@@ -90,6 +92,7 @@ async function fetchStaticAsset(request: Request): Promise<Response | null> {
 
   for (const candidate of candidates) {
     const response = await assets.fetch(candidate);
+
     // Real file or asset-layer redirect. 404/5xx → try next candidate / SSR.
     if (response.status < 400) {
       return response;
@@ -102,9 +105,11 @@ async function fetchStaticAsset(request: Request): Promise<Response | null> {
 export default createServerEntry({
   async fetch(request, options) {
     const asset = await fetchStaticAsset(request);
+
     if (asset !== null) {
       return asset;
     }
+
     return handler.fetch(request, options);
   },
 });

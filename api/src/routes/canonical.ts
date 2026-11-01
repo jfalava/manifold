@@ -28,32 +28,37 @@ const canonicalProvider = (value: string | null): CanonicalProviderFilter | unde
   if (value === null || value === "auto") {
     return "auto";
   }
+
   if (value === "all") {
     return "all";
   }
+
   if (value === "anilist" || value === "mal") {
     return value;
   }
+
   return undefined;
 };
 
-const searchLimit = (value: string | null): number => {
-  return boundedInteger(value, 20, 1, 25);
-};
+const searchLimit = (value: string | null): number => boundedInteger(value, 20, 1, 25);
 
 export const handleCanonical = (ctx: RouteContext): RouteEffect =>
   Effect.gen(function* () {
     const { path, request, env, url } = ctx;
+
     if (path[0] !== "v1" || path[1] !== "canonical") {
       return null;
     }
 
     if (path[2] === "search" && path.length === 3 && request.method === "GET") {
       const query = url.searchParams.get("q")?.trim() ?? "";
+
       if (!query) {
         return jsonEncoded(ErrorBody, { error: "Query parameter q is required" }, 400);
       }
+
       const provider = canonicalProvider(url.searchParams.get("provider"));
+
       if (!provider) {
         return jsonEncoded(
           ErrorBody,
@@ -65,8 +70,10 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
       const result = yield* tryPromise(() =>
         searchCanonical(env, query, provider, searchLimit(url.searchParams.get("limit"))),
       );
+
       const failedProviders = result.providers.filter((item) => item.error !== undefined);
       const status = failedProviders.length === result.providers.length ? 502 : 200;
+
       return jsonEncoded(CanonicalSearchResponse, result, status);
     }
 
@@ -78,6 +85,7 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
     ) {
       const raw = yield* parseJson(request);
       const input = yield* Schema.decodeUnknownEffect(MangaDexMatchInput)(raw);
+
       return jsonEncoded(MangaDexMatchResult, yield* tryPromise(() => resolveMangaDex(env, input)));
     }
 
@@ -85,19 +93,24 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
       const sync = env.MANIFOLD_SYNC.getByName("default");
       const raw = yield* parseJson(request);
       const input = yield* Schema.decodeUnknownEffect(ResolveEntryInput)(raw);
+
       return jsonEncoded(RegistryEntry, yield* tryPromise(() => sync.resolveEntry(input)));
     }
 
     if (path[2] === "resolve-batch" && path.length === 3 && request.method === "POST") {
       const sync = env.MANIFOLD_SYNC.getByName("default");
       const raw = yield* parseJson(request);
+
       if (isJsonArray(raw)) {
         const input = yield* Schema.decodeUnknownEffect(Schema.Array(ResolveEntryInput))(raw);
+
         return jsonEncoded(RegistryEntriesResponse, {
           entries: yield* tryPromise(() => sync.resolveEntries(input)),
         });
       }
+
       const input = yield* Schema.decodeUnknownEffect(ResolveEntryInput)(raw);
+
       return jsonEncoded(RegistryEntriesResponse, {
         entries: yield* tryPromise(() => sync.resolveEntries(input)),
       });
@@ -112,19 +125,24 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
       const sync = env.MANIFOLD_SYNC.getByName("default");
       const entryId = yield* routeId(path[4]);
       const entry = yield* tryPromise(() => sync.entryByProvider("mangadex", entryId));
+
       return jsonEncoded(EntryByProviderResponse, { entry: entry ?? null });
     }
 
     if (path.length === 4 && request.method === "GET") {
-      const provider = canonicalProvider(path[2]);
+      const provider = canonicalProvider(path[2] ?? null);
+
       if (!provider || provider === "all" || provider === "auto") {
         return jsonEncoded(ErrorBody, { error: "Unknown canonical provider" }, 404);
       }
+
       const entryId = yield* routeId(path[3]);
       const outcome = yield* attempt(() => getCanonical(env, provider, entryId));
+
       if (!outcome.ok) {
         return jsonEncoded(ErrorBody, { error: outcome.error.message }, 502);
       }
+
       return outcome.value
         ? jsonEncoded(CanonicalIdentity, outcome.value)
         : jsonEncoded(ErrorBody, { error: "Not found" }, 404);

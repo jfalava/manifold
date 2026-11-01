@@ -1,9 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics newPromise:off */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonValue } from "@manifold/json";
 
@@ -43,8 +37,10 @@ const makeHarness = () => {
         scheduleRequest: (request: ScheduledRequestLike): Promise<[ResponseLike, ArrayBuffer]> => {
           const callIndex = index++;
           urls.push(request.url);
+
           return Promise.resolve().then(() => {
             const outcome = respond(callIndex);
+
             return [{ status: outcome.status, headers: {} }, jsonBuffer(outcome.body)];
           });
         },
@@ -172,12 +168,14 @@ describe("AniList operation drain", () => {
           },
         };
       }
+
       if (index === 1) {
         return {
           status: 200,
           body: { data: { MediaListCollection: { lists: [] } } },
         };
       }
+
       return { status: 200, body: { updated: 1 } };
     }, 7);
     const { drainAniListOps } = await harness.loadDrain();

@@ -21,16 +21,21 @@ const setListStateEffect = (host: SyncHost, entryId: string, input: SetListState
 
     const nextStatus =
       changes.status === undefined ? current?.status : (changes.status ?? undefined);
+
     const nextScore = changes.score === undefined ? current?.score : (changes.score ?? undefined);
     const nextNotes = changes.notes === undefined ? current?.notes : (changes.notes ?? undefined);
+
     const nextStarted =
       changes.startedAt === undefined ? current?.startedAt : (changes.startedAt ?? undefined);
+
     const nextCompleted =
       changes.completedAt === undefined ? current?.completedAt : (changes.completedAt ?? undefined);
+
     const nextVolumes =
       changes.volumeProgress === undefined
         ? current?.volumeProgress
         : (changes.volumeProgress ?? undefined);
+
     const mediaListEntryId = current?.mediaListEntryId;
 
     host.ctx.storage.sql.exec(
@@ -59,6 +64,7 @@ const setListStateEffect = (host: SyncHost, entryId: string, input: SetListState
     );
 
     const origin: OpOrigin = changes.origin ?? "admin";
+
     const eventDetail: JsonObject = {
       ...(changes.status !== undefined && { status: changes.status }),
       ...(changes.score !== undefined && { score: changes.score }),
@@ -69,6 +75,7 @@ const setListStateEffect = (host: SyncHost, entryId: string, input: SetListState
       ...(changes.origin !== undefined && { origin: changes.origin }),
       ...(changes.appliedRemotely !== undefined && { appliedRemotely: changes.appliedRemotely }),
     };
+
     appendEvent(host, entryId, "list.state", origin, eventDetail);
 
     // Device-originated mutations were already applied to AniList on-device;
@@ -90,6 +97,7 @@ const setListStateEffect = (host: SyncHost, entryId: string, input: SetListState
         changes.startedAt === undefined &&
         changes.completedAt === undefined &&
         changes.volumeProgress === undefined;
+
       enqueueOp(host, {
         opId: newId(),
         target: "anilist",
@@ -100,15 +108,18 @@ const setListStateEffect = (host: SyncHost, entryId: string, input: SetListState
     }
 
     const stored = readListState(host, entryId);
+
     if (!stored) {
       throw new Error(`List state missing after write: ${entryId}`);
     }
+
     // MAL is only a backup sink. The original update commits before any
     // upstream work, regardless of whether AniList was already updated.
     if (origin === "device" && stored.status) {
       enqueueMalBackup(host, entryId, changes);
       yield* fromPromise(() => scheduleSync(host));
     }
+
     return stored;
   });
 
@@ -184,6 +195,7 @@ export function listEvents(
           )
           .toArray()
   ).map((row) => toListEvent(row));
+
   return rows;
 }
 
@@ -199,10 +211,13 @@ export function enqueueMalBackup(
       entryId,
     )
     .toArray()[0];
+
   let prior: Schema.Schema.Type<typeof MalBackupPayload>["backupIdentity"];
+
   if (previous) {
     try {
       const decoded = Schema.decodeUnknownOption(MalBackupPayload)(JSON.parse(previous.payload));
+
       if (Option.isSome(decoded)) {
         prior = decoded.value.backupIdentity;
       }
@@ -210,6 +225,7 @@ export function enqueueMalBackup(
       // Corrupt prior payload: treat as no prior identity.
     }
   }
+
   const identity = changes.backupIdentity ?? prior;
   // Supersede old rows too: a newer update retries the latest state, and
   // successes are not logged, so superseded rows are deleted outright.

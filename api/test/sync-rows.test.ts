@@ -1,5 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
 import { describe, expect, it } from "vitest";
 import { encodeResponse, RegistryEntry } from "@manifold/contract";
 import {
@@ -38,6 +36,7 @@ describe("toRegistryEntry", () => {
         updated_at: 3,
       },
     ]);
+
     expect(() => encodeResponse(RegistryEntry, entry)).not.toThrow();
     expect(entry.providers).toHaveLength(2);
   });
@@ -74,6 +73,7 @@ describe("toRegistryEntry", () => {
         updated_at: 1,
       },
     ]);
+
     expect(entry.providers).toEqual([{ provider: "kagane", externalId: "hid1", updatedAt: 1 }]);
     expect(() => encodeResponse(RegistryEntry, entry)).not.toThrow();
   });
@@ -88,6 +88,7 @@ describe("toRegistryEntry", () => {
       }),
       [],
     );
+
     expect(entry.provider).toBe("local");
     expect(entry.providerId).toBe(entry.id);
     expect(entry.title).toBe(entry.id);

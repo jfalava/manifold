@@ -1,18 +1,9 @@
-/** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
 import { Badge, Banner, LayerCard, Meter, Table, Text } from "@cloudflare/kumo";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import {
-  InfrastructureWidgetsSkeleton,
-  LibraryWidgetsSkeleton,
-  StatCardSkeleton,
-} from "../components/loading";
+import { InfrastructureWidgetsSkeleton, LibraryWidgetsSkeleton } from "../components/loading";
 import { getAnalyticsSnapshot, WORKER_CATALOG, type AnalyticsSnapshot } from "../lib/analytics";
 import {
   getLibraryOverview,
@@ -40,9 +31,11 @@ const STATUS_ORDER = [
 
 function orderedStatuses(statuses: Record<string, number>): [string, number][] {
   const known = new Set<string>(STATUS_ORDER);
+
   const rest = Object.entries(statuses)
     .filter(([status]) => !known.has(status))
     .toSorted((a, b) => b[1] - a[1]);
+
   return [
     ...STATUS_ORDER.flatMap<[string, number]>((status) =>
       status in statuses ? [[status, statuses[status] ?? 0]] : [],
@@ -107,9 +100,11 @@ function libraryParts(state: LoadState<LibraryOverview>): {
   if (state.status === "loading") {
     return null;
   }
+
   if (state.status === "error") {
     return { registry: null, ops: null, mangadex: null };
   }
+
   return {
     registry: state.value.registry,
     ops: state.value.ops,
@@ -121,6 +116,7 @@ function attentionCount(ops: OpsSummary | null): number {
   if (ops === null) {
     return 0;
   }
+
   return (
     (ops.states.pending ?? 0) +
     (ops.states.blocked ?? 0) +
@@ -132,14 +128,17 @@ function attentionCount(ops: OpsSummary | null): number {
 
 function LibrarySection({ state }: { readonly state: LoadState<LibraryOverview> }): ReactNode {
   const parts = libraryParts(state);
+
   if (parts === null) {
     return <LibraryWidgetsSkeleton />;
   }
 
   const { registry, ops, mangadex } = parts;
   const attention = attentionCount(ops);
+
   const coverage =
     registry !== null && registry.active > 0 ? percent(registry.fullyLinked, registry.active) : "—";
+
   const mangadexFooter =
     mangadex !== null && mangadex.rated > 0
       ? `${mangadex.rated.toLocaleString("en")} rated · mean ${(mangadex.meanRating ?? 0).toFixed(1)}/10`
@@ -245,6 +244,7 @@ function ProviderCoverageCard({ registry }: { registry: RegistrySummary | null }
   const providers = registry
     ? [...new Set([...TRACKER_PROVIDERS, ...Object.keys(registry.providerCounts)])]
     : [];
+
   return (
     <LayerCard className="px-5 py-4">
       <div className="grid content-start gap-3">
@@ -255,6 +255,7 @@ function ProviderCoverageCard({ registry }: { registry: RegistrySummary | null }
         {registry &&
           providers.map((provider) => {
             const linked = registry.providerCounts[provider] ?? 0;
+
             return (
               <Meter
                 key={provider}
@@ -360,6 +361,7 @@ function StatCard({
       <p className="text-sm opacity-60">{hint}</p>
     </div>
   );
+
   return (
     <LayerCard className="px-5 py-4">
       {to === undefined ? body : <Link to={to}>{body}</Link>}
@@ -380,7 +382,8 @@ function InfrastructureSection({
     return <InfrastructureWidgetsSkeleton />;
   }
 
-  if (state.status === "error") {
+  // The banner above explains the failure; zero counts here would read as real traffic.
+  if (state.status === "error" || !state.value.ok) {
     return (
       <div className="grid gap-6">
         <div className="grid gap-1.5">
@@ -394,8 +397,6 @@ function InfrastructureSection({
             value={String(WORKER_CATALOG.length)}
             hint="deployed workers and sites"
           />
-          <StatCardSkeleton />
-          <StatCardSkeleton />
         </div>
       </div>
     );
@@ -419,7 +420,7 @@ function InfrastructureSection({
         <StatCard
           label="Requests (24h)"
           value={formatCount(snapshot.totalRequests)}
-          hint={`${snapshot.totalErrors.toLocaleString("en")} errors across the df stack`}
+          hint={`${snapshot.totalErrors.toLocaleString("en")} errors across all workers`}
         />
         <StatCard
           label="Durable Object requests (24h)"
@@ -444,7 +445,8 @@ function InfrastructureSection({
             </Table.Header>
             <Table.Body>
               {WORKER_CATALOG.map((worker) => {
-                const traffic = snapshot.ok ? snapshot.workerTraffic[worker.logical] : undefined;
+                const traffic = snapshot.workerTraffic[worker.logical];
+
                 return (
                   <Table.Row key={worker.logical}>
                     <Table.Cell>{worker.logical}</Table.Cell>
@@ -460,12 +462,10 @@ function InfrastructureSection({
             </Table.Body>
           </Table>
         </LayerCard>
-        {snapshot.ok && (
-          <p className="text-sm opacity-60">
-            Updated {new Date(snapshot.fetchedAt).toLocaleTimeString("en")} from Cloudflare GraphQL
-            analytics.
-          </p>
-        )}
+        <p className="text-sm opacity-60">
+          Updated {new Date(snapshot.fetchedAt).toLocaleTimeString("en")} from Cloudflare GraphQL
+          analytics.
+        </p>
       </div>
     </div>
   );
@@ -477,6 +477,7 @@ function healthVariant(
   if (!traffic || traffic.requests === 0) {
     return "neutral";
   }
+
   return traffic.errors / traffic.requests < 0.01 ? "success" : "warning";
 }
 
@@ -484,6 +485,7 @@ function healthLabel(traffic: { requests: number; errors: number } | undefined):
   if (!traffic || traffic.requests === 0) {
     return "no traffic";
   }
+
   return traffic.errors / traffic.requests < 0.01 ? "healthy" : "degraded";
 }
 

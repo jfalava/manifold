@@ -55,6 +55,7 @@ export const mapWithConcurrency = <T>(
 
 export const sampleFeedStats = (page: MdFeedPage): MdFeedStatsPayload => {
   const newest = page.items[0];
+
   return {
     totalListed: page.total ?? page.items.length,
     latestChapter: newest?.chapterNumber ?? null,
@@ -71,41 +72,51 @@ export const sampleFeedStats = (page: MdFeedPage): MdFeedStatsPayload => {
 
 const stringRecord = (value: JsonObject): Readonly<Record<string, string>> | undefined => {
   const numbersById: Record<string, string> = {};
+
   for (const [key, entry] of Object.entries(value)) {
     if (!isString(entry)) {
       return undefined;
     }
+
     numbersById[key] = entry;
   }
+
   return numbersById;
 };
 
 const nullableNumber = (record: JsonObject, key: string): number | null | undefined => {
   const value = record[key];
+
   if (value === null) {
     return null;
   }
+
   if (value === undefined) {
     return null;
   }
+
   return isFiniteNumber(value) ? value : undefined;
 };
 
 export const parseMdFeedStatsPayload = (text: string): MdFeedStatsPayload | undefined => {
   let parsed: unknown;
+
   try {
     parsed = JSON.parse(text);
   } catch {
     return undefined;
   }
+
   if (!isJsonObject(parsed)) {
     return undefined;
   }
+
   const totalListed = numberField(parsed, "totalListed");
   const latestChapter = nullableNumber(parsed, "latestChapter");
   const latestPublishedAt = nullableNumber(parsed, "latestPublishedAt");
   const numbers = objectField(parsed, "numbersById");
   const numbersById = numbers === undefined ? undefined : stringRecord(numbers);
+
   if (
     totalListed === undefined ||
     latestChapter === undefined ||
@@ -114,6 +125,7 @@ export const parseMdFeedStatsPayload = (text: string): MdFeedStatsPayload | unde
   ) {
     return undefined;
   }
+
   return { totalListed, latestChapter, latestPublishedAt, numbersById };
 };
 
@@ -125,26 +137,33 @@ export const composeMangaDexEntryStat = (
   const totalListed = feed?.totalListed ?? null;
   let lastRead: number | null = null;
   let readChapters: number | null = null;
+
   if (!markerFailed) {
     readChapters = 0;
+
     if (marks !== undefined && feed !== undefined) {
       for (const chapterId of marks) {
         const numberText = feed.numbersById[chapterId];
+
         if (numberText === undefined) {
           continue;
         }
+
         readChapters += 1;
         const parsed = Number.parseFloat(numberText);
+
         if (Number.isFinite(parsed) && (lastRead === null || parsed > lastRead)) {
           lastRead = parsed;
         }
       }
     }
   }
+
   const percent =
     totalListed !== null && totalListed > 0 && readChapters !== null
       ? Math.min(100, Math.round((readChapters / totalListed) * 100))
       : null;
+
   return {
     lastRead,
     readChapters,

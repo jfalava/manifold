@@ -1,9 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
 import { Banner, Empty, Surface, Table, Text } from "@cloudflare/kumo";
 import { createFileRoute } from "@tanstack/react-router";
 
@@ -80,7 +74,7 @@ function RequestsPage() {
         <Surface className="px-5 py-10">
           <Empty
             title="No request data yet"
-            description="No invocations recorded for the df stack in the last 24 hours."
+            description="No worker invocations recorded in the last 24 hours."
           />
         </Surface>
       )}
@@ -102,6 +96,7 @@ function RequestsPage() {
                 </Table.Cell>
                 {workerOrder.map((worker, index) => {
                   const total = totals[index] ?? { requests: 0, errors: 0 };
+
                   return (
                     <Table.Cell key={worker}>
                       <span className="font-medium tabular-nums">
@@ -117,6 +112,7 @@ function RequestsPage() {
                   <Table.Cell>{hour.slice(11, 16)}:00</Table.Cell>
                   {workerOrder.map((worker) => {
                     const point = snapshot.hourly[worker].find((p) => p.hour === hour);
+
                     return (
                       <Table.Cell key={worker}>
                         <span className="tabular-nums">
@@ -145,6 +141,7 @@ function ErrorCount({ errors }: { errors: number }) {
   if (errors <= 0) {
     return null;
   }
+
   return (
     <span className="ml-1.5 text-xs text-kumo-danger tabular-nums">
       {errors.toLocaleString("en")} err

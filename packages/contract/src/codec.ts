@@ -35,12 +35,14 @@ export const decodeResponseEffect = <T>(
     // does not fire a false positive.
     const untrusted: unknown = body;
     const decoded = Schema.decodeUnknownOption(schema)(untrusted);
+
     if (Option.isNone(decoded)) {
       return yield* new ResponseDecodeError({
         label,
         details: "schema rejected body",
       });
     }
+
     return decoded.value;
   });
 
@@ -63,7 +65,7 @@ export class ResponseDecodeError extends Data.TaggedError("ResponseDecodeError")
   readonly label: string;
   readonly details: string;
 }> {
-  get message() {
+  override get message() {
     return `Response decode failed (${this.label}): ${this.details}`;
   }
 }

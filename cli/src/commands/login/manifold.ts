@@ -37,6 +37,7 @@ export const manifoldLoginCommand = Command.make("manifold", {
         const origin = resolveValue(apiOrigin, "MANIFOLD_API_ORIGIN") ?? DEFAULT_API_ORIGIN;
         openFrame("login manifold");
         const auth = await createManifoldAuthorization(origin);
+
         const code = await awaitOAuthAuthorizationCode({
           providerLabel: "Manifold",
           authorizeUrl: auth.url,
@@ -44,6 +45,7 @@ export const manifoldLoginCommand = Command.make("manifold", {
           expectedState: auth.state,
           pasteOnly,
         });
+
         const session = await exchangeManifoldCode(origin, code, auth.verifier);
         await saveManifoldSession(session);
         closeFrame("Signed in with GitHub. Manifold session saved in the OS keychain.");

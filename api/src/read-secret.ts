@@ -23,16 +23,20 @@ const readSecretOptionalEffect = (
     if (isString(value)) {
       return value.length > 0 ? value : undefined;
     }
+
     if (secretBinding(value)) {
       const resolved = yield* Effect.tryPromise({
         try: () => value.get(),
         catch: () => new SecretBindingError({ label, message: `Secret binding ${label} failed` }),
       });
+
       return resolved ? resolved : undefined;
     }
+
     if (value === undefined) {
       return undefined;
     }
+
     return yield* fail(label, `Secret binding ${label} has invalid type`);
   });
 
@@ -45,18 +49,23 @@ const readSecretEffect = (
       if (value.length > 0) {
         return value;
       }
+
       return yield* fail(label, `Secret ${label} is empty`);
     }
+
     if (secretBinding(value)) {
       const resolved = yield* Effect.tryPromise({
         try: () => value.get(),
         catch: () => new SecretBindingError({ label, message: `Secret binding ${label} failed` }),
       });
+
       if (resolved) {
         return resolved;
       }
+
       return yield* fail(label, `Secret binding ${label} is empty`);
     }
+
     return yield* fail(
       label,
       value === undefined

@@ -1,6 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceManga, TrackedMangaChapterReadAction } from "@paperback/types";
 import type { PersonalReadInput } from "@manifold/paperback-runtime";
@@ -9,6 +6,7 @@ import { processReadActions } from "../src/MANIFOLD/read-queue.js";
 
 // Installs the Application global stub backed by an in-memory map.
 import { applicationState, PENDING_PROGRESS_KEY_SAFE } from "./managed-collections-fixtures";
+
 beforeEach(() => {
   applicationState.clear();
 });
@@ -84,6 +82,7 @@ describe("processReadActions", () => {
       .mockImplementation((_entryId: string, input: PersonalReadInput) =>
         input.eventId === "bad" ? Promise.reject(new Error("HTTP 502")) : Promise.resolve({}),
       );
+
     const pushProgress = vi.fn().mockResolvedValue(true);
 
     const result = await processReadActions(
@@ -111,11 +110,13 @@ describe("processReadActions", () => {
     // Two immediate pushes only: the same-tick flush skips just-attempted
     // entries instead of doubling upstream load during a rate-limit window.
     expect(pushProgress).toHaveBeenCalledTimes(2);
+
     // SAFETY: the queued-progress JSON is fully controlled by this test.
     const queued = JSON.parse(String(applicationState.get(PENDING_PROGRESS_KEY_SAFE))) as Record<
       string,
       { chapterNum: number; sourceManga: SourceManga }
     >;
+
     expect(queued["anilist:1"]).toMatchObject({ chapterNum: 4 });
     expect(queued["anilist:2"]).toMatchObject({ chapterNum: 7 });
     // Only the fields the push reads are persisted — no thumbnails or prose.
@@ -244,10 +245,12 @@ describe("processReadActions", () => {
   it("queues a 429'd progress push durably and retries it on the next run", async () => {
     const recordRead = vi.fn().mockResolvedValue({});
     let rateLimited = true;
+
     const pushProgress = vi.fn(async (_sourceManga: SourceManga, _chapterNum: number) => {
       if (rateLimited) {
         throw new Error("AniList error: Too Many Requests.");
       }
+
       return true;
     });
 
@@ -262,11 +265,13 @@ describe("processReadActions", () => {
     expect(result.successfulItems).toEqual(["a"]);
     expect(result.failedItems).toEqual([]);
     expect(pushProgress).toHaveBeenCalledTimes(1);
+
     // SAFETY: the queued-progress JSON is fully controlled by this test.
     const queued = JSON.parse(String(applicationState.get(PENDING_PROGRESS_KEY_SAFE))) as Record<
       string,
       { chapterNum: number }
     >;
+
     expect(queued["anilist:1"]).toMatchObject({ chapterNum: 5 });
 
     // Next run (possibly after a restart): the queued push is retried first.

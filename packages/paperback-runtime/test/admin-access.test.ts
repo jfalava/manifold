@@ -1,9 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics newPromise:off */
 import { describe, expect, it } from "vitest";
 import type { Cookie } from "@paperback/types";
 import type { JsonObject } from "@manifold/json";
@@ -19,23 +13,29 @@ const b64url = (json: string): string => {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   const bytes = Array.from(json, (ch) => ch.charCodeAt(0));
   let out = "";
+
   for (let i = 0; i < bytes.length; i += 3) {
     const a = bytes[i] ?? 0;
     const b = bytes[i + 1];
     const c = bytes[i + 2];
     out += alphabet[a >> 2];
     out += alphabet[((a & 3) << 4) | ((b ?? 0) >> 4)];
+
     if (b === undefined) {
       out += "==";
       break;
     }
+
     out += alphabet[((b & 15) << 2) | ((c ?? 0) >> 6)];
+
     if (c === undefined) {
       out += "=";
       break;
     }
+
     out += alphabet[c & 63];
   }
+
   return out.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 };
 
@@ -43,6 +43,7 @@ const b64url = (json: string): string => {
 const makeJwt = (payload: JsonObject): string => {
   const header = b64url(JSON.stringify({ alg: "none", typ: "JWT" }));
   const body = b64url(JSON.stringify(payload));
+
   return `${header}.${body}.sig`;
 };
 
@@ -52,11 +53,13 @@ describe("filterAdminAccessCookies", () => {
   it("keeps CF_Authorization, pins empty domain, synthesizes expires from JWT exp", () => {
     const expSec = Math.floor(now / 1000) + 3600;
     const jwt = makeJwt({ exp: expSec, email: "you@jfa.dev", sub: "x" });
+
     const input: Cookie[] = [
       { name: "CF_Authorization", value: jwt, domain: "", path: "/" },
       { name: "noise", value: "1", domain: "manifold.jfa.dev", path: "/" },
       { name: "cf_clearance", value: "unrelated", domain: "example.test", path: "/" },
     ];
+
     const out = filterAdminAccessCookies(input, now);
     expect(out).toHaveLength(1);
     expect(out[0]?.name).toBe("CF_Authorization");
@@ -69,11 +72,13 @@ describe("filterAdminAccessCookies", () => {
       [{ name: "CF_AppSession", value: "sess", domain: "manifold.jfa.dev", path: "/" }],
       now,
     );
+
     expect(out).toEqual([]);
   });
 
   it("keeps AppSession alongside Authorization", () => {
     const jwt = makeJwt({ exp: Math.floor(now / 1000) + 60, email: "a@b.c" });
+
     const out = filterAdminAccessCookies(
       [
         { name: "CF_Authorization", value: jwt, domain: "manifold.jfa.dev" },
@@ -81,6 +86,7 @@ describe("filterAdminAccessCookies", () => {
       ],
       now,
     );
+
     const names = out.map((cookie) => cookie.name);
     expect(names).toContain("CF_AppSession");
     expect(names).toContain("CF_Authorization");
@@ -89,6 +95,7 @@ describe("filterAdminAccessCookies", () => {
 
   it("drops expired cookies", () => {
     const jwt = makeJwt({ exp: Math.floor(now / 1000) - 10 });
+
     const out = filterAdminAccessCookies(
       [
         {
@@ -100,6 +107,7 @@ describe("filterAdminAccessCookies", () => {
       ],
       now,
     );
+
     expect(out).toEqual([]);
   });
 });
@@ -107,6 +115,7 @@ describe("filterAdminAccessCookies", () => {
 describe("serialize/deserialize AdminAccessCookies", () => {
   it("round-trips and rebuilds request cookie map", () => {
     const jwt = makeJwt({ exp: Math.floor(now / 1000) + 120, email: "ops@jfa.dev" });
+
     const cookies: Cookie[] = [
       {
         name: "CF_Authorization",
@@ -116,6 +125,7 @@ describe("serialize/deserialize AdminAccessCookies", () => {
         expires: new Date(now + 120_000),
       },
     ];
+
     const raw = serializeAdminAccessCookies(cookies, now);
     const restored = deserializeAdminAccessCookies(raw, now);
     expect(restored).toHaveLength(1);

@@ -1,12 +1,12 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics extendsNativeError:off */
-/** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalTimers:off */
 /** @effect-diagnostics newPromise:off */
 /** @effect-diagnostics nodeBuiltinImport:off */
 import { spawn } from "node:child_process";
 import { chmod, rename, writeFile } from "node:fs/promises";
 
+import { ui, writeOutput } from "@/ui";
 import { extractZipBinary } from "@/upgrade/archive";
 import type { CliRelease } from "@/upgrade/release";
 
@@ -18,11 +18,11 @@ const RETRY_DELAYS_MS = [250, 500] as const;
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 class DownloadError extends Error {
-  constructor(
-    message: string,
-    readonly retryable: boolean,
-  ) {
+  readonly retryable: boolean;
+
+  constructor(message: string, retryable: boolean) {
     super(message);
+    this.retryable = retryable;
   }
 }
 
@@ -34,6 +34,7 @@ const isRetryableNetworkError = (cause: unknown): boolean =>
 
 const waitForRetry = (attempt: number): Promise<void> => {
   const delay = RETRY_DELAYS_MS[attempt - 1] ?? RETRY_DELAYS_MS.at(-1)!;
+
   return new Promise((resolve) => setTimeout(resolve, delay));
 };
 
@@ -44,26 +45,31 @@ const downloadAttempt = async (
 ): Promise<Uint8Array> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+
   try {
     const response = await fetcher(url, {
       headers: { "User-Agent": "manifold-cli" },
       redirect: "follow",
       signal: controller.signal,
     });
+
     if (!response.ok) {
       throw new DownloadError(
         `${label} failed with HTTP ${response.status}: ${url}`,
         response.status === 408 || response.status === 429 || response.status >= 500,
       );
     }
+
     return new Uint8Array(await response.arrayBuffer());
   } catch (cause) {
     if (controller.signal.aborted) {
       throw new DownloadError(`${label} timed out after ${DOWNLOAD_TIMEOUT_MS}ms.`, true);
     }
+
     if (cause instanceof DownloadError) {
       throw cause;
     }
+
     throw new DownloadError(`${label}: ${errorMessage(cause)}`, isRetryableNetworkError(cause));
   } finally {
     clearTimeout(timer);
@@ -76,25 +82,31 @@ export const downloadBytes = async (
   fetcher: Fetcher = fetch,
 ): Promise<Uint8Array> => {
   let lastError: unknown;
+
   for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt += 1) {
     try {
       return await downloadAttempt(url, label, fetcher);
     } catch (cause) {
       lastError = cause;
+
       if (!(cause instanceof DownloadError && cause.retryable) || attempt === DOWNLOAD_ATTEMPTS) {
         throw cause;
       }
+
       await waitForRetry(attempt);
     }
   }
+
   throw lastError instanceof Error ? lastError : new Error(`${label} failed.`);
 };
 
 export const checksumFromFile = (contents: string): string => {
   const checksum = /^([a-fA-F0-9]{64})(?:\s|$)/.exec(contents.trim())?.[1];
+
   if (!checksum) {
     throw new Error("Release checksum file is invalid.");
   }
+
   return checksum.toLowerCase();
 };
 
@@ -107,7 +119,9 @@ export const scheduleWindowsReplacement = (
     `Wait-Process -Id ${waitingProcessId}`,
     `Move-Item -LiteralPath ${quotePowerShellLiteral(temporaryPath)} -Destination ${quotePowerShellLiteral(targetPath)} -Force`,
   ].join("; ");
+
   const encodedScript = Buffer.from(script, "utf16le").toString("base64");
+
   const child = spawn(
     "cmd.exe",
     [
@@ -127,6 +141,7 @@ export const scheduleWindowsReplacement = (
     ],
     { detached: true, stdio: "ignore", windowsHide: true },
   );
+
   child.unref();
 };
 
@@ -135,6 +150,7 @@ export const installRelease = async (release: CliRelease, targetPath: string): P
   const checksumBytes = await downloadBytes(release.checksumUrl, "Release checksum");
   const expectedChecksum = checksumFromFile(new TextDecoder().decode(checksumBytes));
   const actualChecksum = new Bun.CryptoHasher("sha256").update(assetBytes).digest("hex");
+
   if (actualChecksum !== expectedChecksum) {
     throw new Error(
       `Downloaded release asset checksum mismatch (expected ${expectedChecksum}, received ${actualChecksum}).`,
@@ -148,6 +164,7 @@ export const installRelease = async (release: CliRelease, targetPath: string): P
 
   if (process.platform === "win32") {
     scheduleWindowsReplacement(temporaryPath, targetPath);
+
     return;
   }
 
@@ -161,15 +178,23 @@ export const installRelease = async (release: CliRelease, targetPath: string): P
         stdout: "ignore",
         stderr: "ignore",
       });
+
       await proc.exited;
+
       if (proc.exitCode !== 0) {
-        console.warn(
-          `Warning: codesign failed for ${targetPath} (exit ${proc.exitCode}). The binary may be killed on keychain access (exit 137). Run 'codesign --force --sign - ${targetPath}' manually.`,
+        writeOutput(
+          `${ui.warning(
+            `codesign failed for ${targetPath} (exit ${proc.exitCode}). The binary may be killed on keychain access (exit 137). Run 'codesign --force --sign - ${targetPath}' manually.`,
+          )}\n`,
+          process.stderr,
         );
       }
     } catch (cause) {
-      console.warn(
-        `Warning: Could not codesign ${targetPath}: ${errorMessage(cause)}. The binary may be killed on keychain access.`,
+      writeOutput(
+        `${ui.warning(
+          `Could not codesign ${targetPath}: ${errorMessage(cause)}. The binary may be killed on keychain access.`,
+        )}\n`,
+        process.stderr,
       );
     }
   }

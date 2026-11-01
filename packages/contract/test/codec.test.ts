@@ -1,10 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics newPromise:off */
 import { describe, expect, it } from "vitest";
 import { Effect, Result } from "effect";
 import {
@@ -77,7 +70,9 @@ describe("decodeResponse", () => {
     const result = Effect.runSync(
       Effect.result(decodeResponseEffect(RegistryEntry, { nope: true }, "entry")),
     );
+
     expect(Result.isFailure(result)).toBe(true);
+
     if (Result.isFailure(result)) {
       expect(result.failure).toBeInstanceOf(ResponseDecodeError);
       expect(result.failure.label).toBe("entry");

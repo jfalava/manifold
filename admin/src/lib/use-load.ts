@@ -1,9 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
 import { useEffect, useState } from "react";
 
 export type LoadState<T> =
@@ -24,6 +19,7 @@ export function useLoad<T>(load: () => Promise<T>): LoadState<T> {
     void (async () => {
       try {
         const value = await load();
+
         if (!cancelled) {
           setState({ status: "ready", value });
         }
@@ -36,6 +32,7 @@ export function useLoad<T>(load: () => Promise<T>): LoadState<T> {
         }
       }
     })();
+
     return () => {
       cancelled = true;
     };

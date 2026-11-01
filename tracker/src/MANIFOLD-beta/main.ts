@@ -1,5 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
 import { ManifoldTrackerSource } from "../MANIFOLD/main.js";
 
 /**

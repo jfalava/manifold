@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
 import { describe, expect, it } from "vitest";
 import { requestHref } from "@manifold/json";
 import { catalogApp } from "../src/catalog";
@@ -40,9 +39,11 @@ const env = {
     fetch: async (input: Request | string) => {
       const pathname = new URL(requestHref(input)).pathname;
       const body = assets.get(pathname);
+
       if (body === undefined) {
         return new Response("missing", { status: 404 });
       }
+
       return new Response(body, { status: 200 });
     },
   },
@@ -55,6 +56,7 @@ describe("Paperback catalog routes", () => {
     const response = await get("/extensions/0.9/stable/versioning.json");
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
+
     // SAFETY: parsed JSON matches the trusted/test versioning payload shape
     const body = (await response.json()) as {
       license: string;
@@ -64,6 +66,7 @@ describe("Paperback catalog routes", () => {
       attributionsUrl: string;
       sources: readonly { id: string; version: string }[];
     };
+
     expect(body.license).toBe("GPL-3.0-or-later");
     expect(body.licenseUrl).toBe("/extensions/0.9/stable/LICENSE");
     expect(body.mitLicense).toBe("MIT");
@@ -75,10 +78,12 @@ describe("Paperback catalog routes", () => {
   it("publishes the beta tracker under the beta channel", async () => {
     const response = await get("/extensions/0.9/beta/versioning.json");
     expect(response.status).toBe(200);
+
     // SAFETY: parsed JSON matches the trusted/test versioning payload shape
     const body = (await response.json()) as {
       sources: readonly { id: string; name: string }[];
     };
+
     expect(body.sources.map((source) => source.id)).toEqual(["MANIFOLD-beta"]);
     expect(body.sources[0]?.name).toBe("MANIFOLD beta");
   });

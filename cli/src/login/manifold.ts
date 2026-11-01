@@ -1,6 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
 import { Effect, Option, Schema } from "effect";
 import { manifoldUserAgent, type JsonValue } from "@manifold/json";
 
@@ -33,11 +30,13 @@ const Session = Schema.Struct({
 
 const parseStoredSession = (stored: string): ManifoldSession | undefined => {
   let parsed: unknown;
+
   try {
     parsed = JSON.parse(stored);
   } catch {
     return undefined;
   }
+
   return Option.getOrUndefined(Schema.decodeUnknownOption(Session)(parsed));
 };
 
@@ -49,9 +48,11 @@ const TokenResponse = Schema.Struct({
 
 const base64Url = (bytes: Uint8Array): string => {
   let binary = "";
+
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);
   }
+
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 };
 
@@ -86,6 +87,7 @@ const createManifoldAuthorizationEffect = (
       code_challenge: challenge,
       code_challenge_method: "S256",
     }).toString();
+
     return { url: url.href, state, verifier };
   });
 
@@ -94,9 +96,11 @@ export const createManifoldAuthorization = (origin: string): Promise<ManifoldAut
 
 const decodeTokenResponse = (body: JsonValue | undefined): ManifoldSession | undefined => {
   const tokens = Option.getOrUndefined(Schema.decodeUnknownOption(TokenResponse)(body));
+
   if (!tokens || tokens.expires_in <= 0) {
     return undefined;
   }
+
   return {
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token,
@@ -129,20 +133,25 @@ const exchangeManifoldCodeEffect = (
         }),
       }),
     );
+
     if (!response.ok) {
       return yield* cliError(
         `Manifold OAuth exchange failed: HTTP ${response.status}. Run login manifold again.`,
       );
     }
+
     const body = yield* jsonFromResponseEffect(response, "manifold.tokens").pipe(
       Effect.orElseSucceed(() => undefined),
     );
+
     const session = decodeTokenResponse(body);
+
     if (!session) {
       return yield* cliError(
         "Manifold returned an invalid OAuth session. Run login manifold again.",
       );
     }
+
     return session;
   });
 
@@ -158,9 +167,11 @@ export const saveManifoldSession = (session: ManifoldSession): Promise<void> =>
 const loadManifoldSessionEffect = (): Effect.Effect<ManifoldSession | undefined, CliEffectError> =>
   Effect.gen(function* () {
     const stored = yield* fromPromise(() => Bun.secrets.get(MANIFOLD_SESSION_SECRET));
+
     if (!stored) {
       return undefined;
     }
+
     return parseStoredSession(stored);
   });
 
@@ -189,21 +200,27 @@ const refreshManifoldSessionEffect = (
         }),
       }),
     );
+
     if (!response.ok) {
       return yield* cliError(
         `Manifold OAuth refresh failed: HTTP ${response.status}. Run login manifold again.`,
       );
     }
+
     const body = yield* jsonFromResponseEffect(response, "manifold.refresh").pipe(
       Effect.orElseSucceed(() => undefined),
     );
+
     const refreshed = decodeTokenResponse(body);
+
     if (!refreshed) {
       return yield* cliError(
         "Manifold returned an invalid refreshed session. Run login manifold again.",
       );
     }
+
     yield* fromPromise(() => saveManifoldSession(refreshed));
+
     return refreshed;
   });
 

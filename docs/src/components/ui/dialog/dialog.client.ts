@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 import {
   lockScroll,
   mount,
@@ -13,6 +8,7 @@ mount("[data-dialog]", (root) => {
   if (!(root instanceof HTMLDialogElement)) {
     return () => undefined;
   }
+
   const dialog = root;
 
   const sync = () => (dialog.open ? lockScroll() : unlockScroll());
@@ -20,11 +16,13 @@ mount("[data-dialog]", (root) => {
   observer.observe(dialog, { attributes: true, attributeFilter: ["open"] });
 
   const onClose = () => unlockScroll();
+
   const onBackdrop = (e: MouseEvent) => {
     if (e.target === dialog) {
       dialog.close();
     }
   };
+
   dialog.addEventListener("close", onClose);
   dialog.addEventListener("click", onBackdrop);
 
@@ -32,6 +30,7 @@ mount("[data-dialog]", (root) => {
     observer.disconnect();
     dialog.removeEventListener("close", onClose);
     dialog.removeEventListener("click", onBackdrop);
+
     // A swap while open never fires `close`; balance the scroll lock.
     if (dialog.open) {
       unlockScroll();

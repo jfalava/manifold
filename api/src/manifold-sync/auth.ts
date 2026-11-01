@@ -34,6 +34,7 @@ const createOAuthSessionEffect = (
     const config = yield* fromPromise(() => getOAuthClientConfig(provider, host.env));
     const state = createRandomValue();
     const codeVerifier = config.pkceMethod ? createRandomValue(48) : undefined;
+
     const codeChallenge = codeVerifier
       ? config.pkceMethod === "S256"
         ? yield* fromPromise(() => createPkceChallenge(codeVerifier))
@@ -98,15 +99,18 @@ const completeOAuthSessionEffect = (
     );
 
     const config = yield* fromPromise(() => getOAuthClientConfig(provider, host.env));
+
     const form = new URLSearchParams({
       grant_type: "authorization_code",
       code,
       client_id: config.clientId,
       redirect_uri: session.redirect_uri,
     });
+
     if (config.clientSecret) {
       form.set("client_secret", config.clientSecret);
     }
+
     if (session.code_verifier) {
       form.set("code_verifier", session.code_verifier);
     }
@@ -121,6 +125,7 @@ const completeOAuthSessionEffect = (
         body: form,
       }),
     );
+
     if (!response.ok) {
       return yield* apiError(`OAuth token exchange failed for ${provider} (${response.status})`);
     }
@@ -128,6 +133,7 @@ const completeOAuthSessionEffect = (
     const body = yield* fromPromise(() => response.json());
     const token = yield* Schema.decodeUnknownEffect(OAuthTokenResponseSchema)(body);
     const connection = yield* persistTokenEffect(host, provider, token);
+
     return returnPath ? { ...connection, returnPath } : connection;
   });
 
@@ -152,12 +158,14 @@ const cancelOAuthSessionEffect = (
         state,
       )
       .toArray()[0];
+
     host.ctx.storage.sql.exec(
       "DELETE FROM oauth_sessions WHERE provider = ? AND state = ?",
       provider,
       state,
     );
     const returnPath = session?.return_path ?? undefined;
+
     return returnPath ? { returnPath } : {};
   });
 
@@ -173,12 +181,15 @@ const loginMangaDexEffect = (host: SyncHost) =>
     const clientId = yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_MANGADEX_CLIENT_ID, "MANIFOLD_MANGADEX_CLIENT_ID"),
     );
+
     const clientSecret = yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_MANGADEX_CLIENT_SECRET, "MANIFOLD_MANGADEX_CLIENT_SECRET"),
     );
+
     const username = yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_MANGADEX_USERNAME, "MANIFOLD_MANGADEX_USERNAME"),
     );
+
     const password = yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_MANGADEX_PASSWORD, "MANIFOLD_MANGADEX_PASSWORD"),
     );
@@ -199,8 +210,10 @@ const loginMangaDexEffect = (host: SyncHost) =>
         }),
       }),
     );
+
     if (!response.ok) {
       const detail = (yield* fromPromise(() => response.text())).trim().slice(0, 500);
+
       return yield* apiError(
         `MangaDex login failed (${response.status})` + (detail ? `: ${detail}` : ""),
       );
@@ -227,6 +240,7 @@ const loginMangaDexEffect = (host: SyncHost) =>
         }),
       ),
     );
+
     return connection;
   });
 
@@ -241,12 +255,15 @@ const importAuthTokenEffect = (
 ) =>
   Effect.gen(function* () {
     const token = accessToken.trim();
+
     if (!token) {
       return yield* apiError("Access token is empty");
     }
+
     if (provider !== "anilist" && provider !== "mal") {
       return yield* apiError(`Token import is not supported for ${provider}`);
     }
+
     const payload: {
       readonly access_token: string;
       readonly expires_in?: number;
@@ -254,6 +271,7 @@ const importAuthTokenEffect = (
       expiresIn !== undefined && expiresIn > 0
         ? { access_token: token, expires_in: expiresIn }
         : { access_token: token };
+
     return yield* persistTokenEffect(host, provider, payload);
   });
 
@@ -269,6 +287,7 @@ export const listAuthConnections = (host: SyncHost): Promise<readonly AuthConnec
   Effect.runPromise(
     Effect.sync(() => {
       const providers: readonly AuthProvider[] = ["anilist", "mal", "mangadex"];
+
       return providers.map((provider) => readAuthConnection(host, provider));
     }),
   );
@@ -289,6 +308,7 @@ export const disconnectAuth = (host: SyncHost, provider: AuthProvider): Promise<
 const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
   Effect.gen(function* () {
     const row = readAuthToken(host, provider);
+
     if (!row) {
       return yield* apiError(`Auth provider is not connected: ${provider}`);
     }
@@ -296,11 +316,13 @@ const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
     if (row.expires_at === null || row.expires_at > now() + 30_000) {
       return yield* fromPromise(() => decryptToken(host.env, row.access_token));
     }
+
     if (!row.refresh_token) {
       return yield* apiError(`Auth provider requires reauthorization: ${provider}`);
     }
 
     const refreshToken = yield* fromPromise(() => decryptToken(host.env, row.refresh_token!));
+
     const form =
       provider === "mangadex"
         ? createMangaDexRefreshGrant(
@@ -317,23 +339,27 @@ const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
             },
             refreshToken,
           )
-        : yield* Effect.gen(function* () {
-            const config = yield* fromPromise(() => getOAuthClientConfig(provider, host.env));
-            const refreshForm = new URLSearchParams({
-              grant_type: "refresh_token",
-              refresh_token: refreshToken,
-              client_id: config.clientId,
-            });
-            if (config.clientSecret) {
-              refreshForm.set("client_secret", config.clientSecret);
-            }
-            return refreshForm;
-          });
+        : yield* fromPromise(() => getOAuthClientConfig(provider, host.env)).pipe(
+            Effect.map((config) => {
+              const refreshForm = new URLSearchParams({
+                grant_type: "refresh_token",
+                refresh_token: refreshToken,
+                client_id: config.clientId,
+              });
+
+              if (config.clientSecret) {
+                refreshForm.set("client_secret", config.clientSecret);
+              }
+
+              return refreshForm;
+            }),
+          );
 
     const tokenEndpoint =
       provider === "mangadex"
         ? MANGADEX_TOKEN_ENDPOINT
         : (yield* fromPromise(() => getOAuthClientConfig(provider, host.env))).tokenEndpoint;
+
     const response = yield* fromPromise(() =>
       platformFetch(tokenEndpoint, {
         method: "POST",
@@ -345,8 +371,10 @@ const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
         body: form,
       }),
     );
+
     if (!response.ok) {
       const detail = (yield* fromPromise(() => response.text())).trim().slice(0, 500);
+
       return yield* apiError(
         `Auth token refresh failed for ${provider} (${response.status})` +
           (detail ? `: ${detail}` : ""),
@@ -357,18 +385,22 @@ const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
     const token = yield* Schema.decodeUnknownEffect(OAuthTokenResponseSchema)(body);
     const timestamp = now();
     const latest = readAuthToken(host, provider);
+
     if (!latest || latest.updated_at !== row.updated_at) {
       if (!latest) {
         return yield* apiError(`Auth provider disconnected during refresh: ${provider}`);
       }
+
       return yield* fromPromise(() => decryptToken(host.env, latest.access_token));
     }
 
     const expiresAt = token.expires_in ? timestamp + token.expires_in * 1000 : null;
     const encryptedAccess = yield* fromPromise(() => encryptToken(host.env, token.access_token));
+
     const encryptedRefresh = token.refresh_token
       ? yield* fromPromise(() => encryptToken(host.env, token.refresh_token!))
       : null;
+
     host.ctx.storage.sql.exec(
       `UPDATE oauth_tokens SET
        access_token = ?,
@@ -396,12 +428,15 @@ export const getAuthAccessToken = (host: SyncHost, provider: AuthProvider): Prom
 const persistTokenEffect = (host: SyncHost, provider: AuthProvider, token: OAuthTokenResponse) =>
   Effect.gen(function* () {
     const timestamp = now();
+
     const encryptedAccessToken = yield* fromPromise(() =>
       encryptToken(host.env, token.access_token),
     );
+
     const encryptedRefreshToken = token.refresh_token
       ? yield* fromPromise(() => encryptToken(host.env, token.refresh_token!))
       : null;
+
     const expiresAt = token.expires_in ? timestamp + token.expires_in * 1000 : null;
 
     host.ctx.storage.sql.exec(
@@ -440,6 +475,7 @@ export const persistToken = (
 
 export function readAuthConnection(host: SyncHost, provider: AuthProvider): AuthConnection {
   const row = readAuthToken(host, provider);
+
   return {
     provider,
     connected: row !== undefined,

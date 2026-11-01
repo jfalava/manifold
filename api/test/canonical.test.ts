@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Effect from "effect/Effect";
 import { requestHref, requestInitText } from "@manifold/json";
@@ -16,6 +15,7 @@ import type { Env } from "../src/types";
 const environment = (clientId = "not-configured"): Env => {
   const emptyEmbeddings: number[][] = [];
   const emptyMatches: never[] = [];
+
   const fixture = {
     AI: { run: async () => ({ data: emptyEmbeddings }) },
     MANGADEX_INDEX: {
@@ -43,6 +43,7 @@ const environment = (clientId = "not-configured"): Env => {
     MANIFOLD_MANGADEX_USERNAME: "manga-user",
     MANIFOLD_MANGADEX_PASSWORD: "manga-password",
   };
+
   // SAFETY: fixture implements the Env surface searchCanonical reads
   // @ts-expect-error Ai/VectorizeIndex platform brands are wider than test doubles
   return fixture;
@@ -112,10 +113,13 @@ describe("personal canonical search", () => {
         const href = requestHref(input);
         requests.push(href);
         expect(init?.signal).toBeInstanceOf(AbortSignal);
+
         if (href.includes("anilist.co")) {
           return new Response("Blocked", { status });
         }
+
         expect(new Headers(init?.headers).get("X-MAL-CLIENT-ID")).toBe("client");
+
         return Response.json({ data: [{ node: { id: 77, title: "Example Manga" } }] });
       });
       const result = await searchCanonical(environment("client"), "example", "auto", 3);
@@ -160,23 +164,29 @@ describe("personal canonical search", () => {
         if (!requestHref(input).includes("anilist.co")) {
           return Response.json({ data: [{ node: { id: 77, title: "Example" } }] });
         }
+
         if (failure === "network") {
           throw new TypeError("Network unavailable");
         }
+
         if (failure === "timeout") {
           throw new DOMException("Timed out", "TimeoutError");
         }
+
         if (failure === "non-json") {
           return new Response("<html>Blocked</html>");
         }
+
         if (failure === "graphql") {
           return Response.json({ errors: [{ message: "Blocked", status: 403 }] });
         }
+
         return Response.json({ data: null });
       });
       const result = await searchCanonical(environment("client"), "example", "auto", 3);
       expect(result.results[0]?.id).toBe("mal:77");
       expect(result.providers[0]?.error).toBeDefined();
+
       if (failure === "graphql") {
         expect(result.providers[0]?.error?.status).toBe(403);
       }
@@ -189,12 +199,14 @@ describe("personal canonical search", () => {
       expect(delay).toBe(5_000);
       const signal = AbortSignal.abort(new DOMException("Timed out", "TimeoutError"));
       signals.push(signal);
+
       return signal;
     });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       if (requestHref(input).includes("anilist.co")) {
         init?.signal?.throwIfAborted();
       }
+
       return Response.json({ data: [] });
     });
     const result = await searchCanonical(environment("client"), "example", "auto", 3);
@@ -219,6 +231,7 @@ describe("personal canonical search", () => {
           : Response.json({ data: [] }, { status: malStatus }),
       );
       const url = new URL("https://example.test/v1/canonical/search?q=example");
+
       const response = await Effect.runPromise(
         handleCanonical({
           url,
@@ -227,6 +240,7 @@ describe("personal canonical search", () => {
           env: environment("client"),
         }),
       );
+
       expect(response?.status).toBe(malStatus === 200 ? 200 : 502);
       expect(await response?.json()).toMatchObject({
         providers: [{ provider: "anilist", error: { status: 403 } }, { provider: "mal" }],
@@ -251,18 +265,23 @@ const registryEntry: RegistryEntry = {
 describe("registry metadata fallback", () => {
   it("uses the linked MAL id and retains the UUID across outage and recovery", async () => {
     let blocked = true;
+
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (requestHref(input).includes("anilist.co")) {
         expect(JSON.parse(requestInitText(init) ?? "")).toMatchObject({ variables: { id: 42 } });
+
         return blocked
           ? new Response("Blocked", { status: 403 })
           : Response.json({
               data: { Media: { id: 42, idMal: 77, title: { romaji: "AniList title" } } },
             });
       }
+
       expect(requestHref(input)).toContain("/manga/77?");
+
       return Response.json({ id: 77, title: "MAL title", synopsis: "Fallback description" });
     });
+
     vi.stubGlobal("fetch", fetcher);
     expect(await getRegistryCanonical(environment("client"), registryEntry)).toMatchObject({
       id: registryEntry.id,
@@ -283,15 +302,19 @@ describe("registry metadata fallback", () => {
   it("reads MAL-only entries without calling AniList", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       expect(requestHref(input)).toContain("/manga/77?");
+
       return Response.json({ id: 77, title: "MAL title" });
     });
+
     vi.stubGlobal("fetch", fetcher);
+
     const result = await getRegistryCanonical(environment("client"), {
       ...registryEntry,
       provider: "mal",
       providerId: "77",
       providers: registryEntry.providers.slice(1),
     });
+
     expect(result).toMatchObject({ id: registryEntry.id, provider: "mal", providerId: "77" });
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
@@ -301,10 +324,12 @@ describe("registry metadata fallback", () => {
     async (hasMal) => {
       const fetcher = vi.fn(async () => new Response("Unavailable", { status: 503 }));
       vi.stubGlobal("fetch", fetcher);
+
       const result = await getRegistryCanonical(environment("client"), {
         ...registryEntry,
         providers: hasMal ? registryEntry.providers : registryEntry.providers.slice(0, 1),
       });
+
       expect(result).toEqual({
         id: registryEntry.id,
         provider: "anilist",

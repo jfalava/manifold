@@ -34,18 +34,23 @@ const JsonString = Schema.fromJsonString(Schema.Unknown);
 const backupRegistryEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     const bucket = host.env.REGISTRY_BACKUPS;
+
     if (!bucket) {
       throw new Error("Registry backup bucket is not configured");
     }
+
     const backup = yield* fromPromise(() => snapshotRegistry(host));
 
     const key = backupKey(backup.createdAt);
     const body = yield* Schema.encodeEffect(JsonString)(backup);
     const size = new TextEncoder().encode(body).byteLength;
+
     if (size > MAX_REGISTRY_BACKUP_BYTES) {
       throw new Error("Registry backup exceeds the 16 MiB recovery limit");
     }
+
     const digest = yield* fromPromise(() => sha256(body));
+
     const object = yield* fromPromise(() =>
       bucket.put(key, body, {
         httpMetadata: { contentType: "application/json", cacheControl: "no-store" },
@@ -59,7 +64,7 @@ const backupRegistryEffect = (host: SyncHost) =>
       }),
     );
 
-    return backupMetadata(host, backup, key, object.uploaded.getTime(), size);
+    return backupMetadata(backup, key, object.uploaded.getTime(), size);
   });
 
 export const backupRegistry = (host: SyncHost): Promise<RegistryBackupMetadata> =>
@@ -68,12 +73,14 @@ export const backupRegistry = (host: SyncHost): Promise<RegistryBackupMetadata> 
 const listBackupsEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     const bucket = host.env.REGISTRY_BACKUPS;
+
     if (!bucket) {
       throw new Error("Registry backup bucket is not configured");
     }
 
     const backups: RegistryBackupMetadata[] = [];
     let cursor: string | undefined;
+
     do {
       const page = yield* fromPromise(() =>
         bucket.list({
@@ -83,12 +90,14 @@ const listBackupsEffect = (host: SyncHost) =>
           include: ["customMetadata"],
         }),
       );
+
       for (const object of page.objects) {
         const metadata = object.customMetadata;
         const createdAt = Number(metadata?.createdAt);
         const databaseSize = Number(metadata?.databaseSize);
         const entryCount = Number(metadata?.entryCount);
         const bookmark = metadata?.bookmark;
+
         if (
           !isRegistryBackupKey(object.key) ||
           !Number.isFinite(createdAt) ||
@@ -98,6 +107,7 @@ const listBackupsEffect = (host: SyncHost) =>
         ) {
           continue;
         }
+
         backups.push({
           key: object.key,
           createdAt,
@@ -108,6 +118,7 @@ const listBackupsEffect = (host: SyncHost) =>
           bookmark,
         });
       }
+
       cursor = page.truncated ? page.cursor : undefined;
     } while (cursor !== undefined);
 
@@ -122,24 +133,30 @@ const restoreBackupEffect = (host: SyncHost, key: string) =>
     if (!isRegistryBackupKey(key)) {
       throw new Error("Invalid registry backup key");
     }
+
     const bucket = host.env.REGISTRY_BACKUPS;
+
     if (!bucket) {
       throw new Error("Registry backup bucket is not configured");
     }
 
     // Download and validate before entering the synchronous transaction.
     const object = yield* fromPromise(() => bucket.get(key));
+
     if (!object) {
       throw new Error(`Registry backup not found: ${key}`);
     }
+
     const backup = yield* fromPromise(() =>
       readBackupBody(object.body, object.customMetadata?.sha256 ?? ""),
     );
+
     yield* fromPromise(() => validateBackupKey(host, backup));
     // Preserve the state being replaced, including when the wrong backup was chosen.
     yield* fromPromise(() => backupRegistry(host));
     applyRegistryBackup(host, backup);
-    return backupMetadata(host, backup, key, object.uploaded.getTime(), object.size);
+
+    return backupMetadata(backup, key, object.uploaded.getTime(), object.size);
   });
 
 export const restoreBackup = (host: SyncHost, key: string): Promise<RegistryBackupMetadata> =>
@@ -162,7 +179,9 @@ const validateBackupKeyEffect = (host: SyncHost, backup: RegistryBackup) =>
         "MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET",
       ),
     );
+
     const fingerprint = yield* fromPromise(() => sha256(secret));
+
     if (fingerprint !== backup.tokenKeyHash) {
       throw new Error("Restore requires the original MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET");
     }
@@ -184,11 +203,14 @@ const snapshotRegistryEffect = (host: SyncHost) =>
         "MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET",
       ),
     );
+
     const tokenKeyHash = yield* fromPromise(() => sha256(secret));
+
     return yield* fromPromise(() =>
       host.ctx.blockConcurrencyWhile(async () => {
         const createdAt = now();
         const bookmark = await host.ctx.storage.getCurrentBookmark();
+
         const tables: RegistryBackup["tables"] = {
           canonical_entries: toBackupRows(
             host.ctx.storage.sql
@@ -274,6 +296,7 @@ const snapshotRegistryEffect = (host: SyncHost) =>
             REGISTRY_BACKUP_TABLE_COLUMNS.list_events,
           ),
         };
+
         return {
           version: 1 as const,
           kind: "manifold-sync" as const,
@@ -294,6 +317,7 @@ export function restoreRegistry(host: SyncHost, backup: RegistryBackup): void {
   host.ctx.storage.transactionSync(() => {
     host.ctx.storage.kv.put("registry_sync_paused", true);
     host.ctx.storage.sql.exec("DELETE FROM oauth_sessions");
+
     for (const table of [
       "md_status_queue",
       "progress_state",
@@ -308,6 +332,7 @@ export function restoreRegistry(host: SyncHost, backup: RegistryBackup): void {
     ]) {
       host.ctx.storage.sql.exec(`DELETE FROM ${table}`);
     }
+
     host.ctx.storage.sql.exec(
       "DELETE FROM sqlite_sequence WHERE name IN ('sync_ops', 'list_events')",
     );
@@ -315,6 +340,7 @@ export function restoreRegistry(host: SyncHost, backup: RegistryBackup): void {
     for (const table of REGISTRY_BACKUP_TABLE_NAMES) {
       const columns = REGISTRY_BACKUP_TABLE_COLUMNS[table];
       const placeholders = columns.map(() => "?").join(", ");
+
       for (const row of backup.tables[table]) {
         host.ctx.storage.sql.exec(
           `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${placeholders})`,
@@ -322,12 +348,12 @@ export function restoreRegistry(host: SyncHost, backup: RegistryBackup): void {
         );
       }
     }
+
     retireComix(host);
   });
 }
 
 export function backupMetadata(
-  host: SyncHost,
   backup: RegistryBackup,
   key: string,
   uploadedAt: number,

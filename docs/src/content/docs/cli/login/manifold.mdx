@@ -60,5 +60,13 @@ After the code arrives, it exchanges for access + refresh tokens and stores the
 session in the OS keychain under `manifold` / `manifold-session`. Rotated
 refresh tokens are saved on later API use.
 
+Long-running commands reread the keychain before refreshing an expired or rejected
+access token. If another CLI process already rotated the session, the command uses
+the newer credentials. A failed refresh checks storage once more to cover a
+rotation during the request; it never retries the same rejected refresh token.
+If storage has no usable replacement, run `manifold login manifold` again.
+Registry reports retain successful links and failed rows can be retried with
+`--resume` without raising discovery limits.
+
 Downstream API credentials resolve as: **flag → `MANIFOLD_TOKEN` → keychain**.
 `MANIFOLD_TOKEN` remains a break-glass override without refresh.

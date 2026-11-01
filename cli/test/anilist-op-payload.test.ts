@@ -5,7 +5,7 @@ import {
   parsePendingAniListOp,
   toAniListGraphqlStatus,
   type PendingAniListOp,
-} from "../src/anilist-op-payload";
+} from "@manifold/contract";
 
 const pendingOp = (opId: string, kind: string, payload: JsonObject): PendingAniListOp => ({
   opId,

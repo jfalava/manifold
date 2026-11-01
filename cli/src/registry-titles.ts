@@ -37,13 +37,16 @@ const loadRegistrySearchTitlesEffect = (
     ) => Promise<readonly string[]>;
     readonly mangaDexTitles?: (id: string, signal: AbortSignal) => Promise<readonly string[]>;
     readonly onProgress?: (message: string) => void;
+    readonly onIncomplete?: () => void;
   } = {},
 ): Effect.Effect<readonly string[]> =>
   Effect.gen(function* () {
     const titles = [row.title];
     const anilistId = providerIdOf(row, "anilist");
+
     if (anilistId && options.anilistToken) {
       const parsed = Number(anilistId);
+
       if (Number.isInteger(parsed) && parsed > 0) {
         options.onProgress?.("Loading AniList aliases (20s timeout)");
         yield* Effect.tryPromise({
@@ -57,6 +60,7 @@ const loadRegistrySearchTitlesEffect = (
           }),
           Effect.catch(() =>
             Effect.sync(() => {
+              options.onIncomplete?.();
               options.onProgress?.(
                 "AniList aliases unavailable or timed out; continuing with known titles",
               );
@@ -65,36 +69,47 @@ const loadRegistrySearchTitlesEffect = (
         );
       }
     }
+
     const unique = uniqueTitles(titles);
+
     if (unique.length >= 2) {
       return unique;
     }
+
     const mangadexId = providerIdOf(row, "mangadex");
+
     if (!mangadexId) {
       return unique;
     }
+
     options.onProgress?.("Loading MangaDex aliases (20s timeout)");
+
     return yield* Effect.gen(function* () {
       const signal = yield* Effect.abortSignal;
+
       if (options.mangaDexTitles) {
         return yield* Effect.tryPromise({
           try: () => options.mangaDexTitles!(mangadexId, signal),
           catch: (cause) => cliError(errorMessage(cause)),
         });
       }
+
       const manga = yield* createMangaDexClient({
         userAgent: manifoldUserAgent("cli"),
         fetcher: (input, init) => platformFetch(input, { ...init, signal }),
       }).getManga(mangadexId);
+
       return [manga.title, ...manga.altTitles] as const;
     }).pipe(
       Effect.scoped,
       Effect.timeout("20 seconds"),
       Effect.map((extra) => uniqueTitles([...unique, ...extra])),
       Effect.orElseSucceed(() => {
+        options.onIncomplete?.();
         options.onProgress?.(
           "MangaDex aliases unavailable or timed out; continuing with known titles",
         );
+
         return unique;
       }),
     );
@@ -114,5 +129,6 @@ export const loadRegistrySearchTitles = (
     ) => Promise<readonly string[]>;
     readonly mangaDexTitles?: (id: string, signal: AbortSignal) => Promise<readonly string[]>;
     readonly onProgress?: (message: string) => void;
+    readonly onIncomplete?: () => void;
   } = {},
 ): Promise<readonly string[]> => runHost(loadRegistrySearchTitlesEffect(row, options));

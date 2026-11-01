@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 /**
  * theme-toggle.client.ts — light/dark toggle. Writes pref to localStorage
  * ("ui-mode"); BaseLayout's pre-paint script owns DOM application so view
@@ -21,16 +16,19 @@ function initThemeToggle(button: HTMLElement): () => void {
   function handleClick() {
     const isDark =
       document.documentElement.getAttribute("data-mode") === "dark";
+
     try {
       localStorage.setItem("ui-mode", isDark ? "light" : "dark");
     } catch {
       // Ignore storage errors (private mode / restricted contexts).
     }
+
     window.__nbApplyTheme?.();
   }
 
   window.__nbApplyTheme?.();
   button.addEventListener("click", handleClick);
+
   return () => button.removeEventListener("click", handleClick);
 }
 

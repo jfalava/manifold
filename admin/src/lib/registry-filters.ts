@@ -64,12 +64,15 @@ export function matchesRegistryFilters(
   filters: RegistryFilters,
 ): boolean {
   const status = entry.tombstoned === true ? "tombstoned" : (entry.state?.status ?? "unset");
+
   if (filters.statuses.length > 0 && !filters.statuses.includes(status)) {
     return false;
   }
+
   if (filters.unlinked && entry.providers.length !== 0) {
     return false;
   }
+
   if (
     !filters.bindings.every(
       ({ provider, present }) =>
@@ -78,7 +81,9 @@ export function matchesRegistryFilters(
   ) {
     return false;
   }
+
   const needle = filters.text.trim().toLowerCase();
+
   return (
     needle === "" ||
     entry.title.toLowerCase().includes(needle) ||

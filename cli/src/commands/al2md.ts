@@ -63,15 +63,19 @@ export const al2mdCommand = Command.make(
         ...names: readonly string[]
       ): string | undefined => {
         const direct = Option.getOrUndefined(flagValue);
+
         if (direct !== undefined) {
           return direct;
         }
+
         for (const name of names) {
           const value = envString(name);
+
           if (value !== undefined && value !== "") {
             return value;
           }
         }
+
         return undefined;
       };
 
@@ -79,6 +83,7 @@ export const al2mdCommand = Command.make(
         (yield* Effect.tryPromise(() =>
           resolveAniListToken(Option.getOrUndefined(anilistToken)),
         )) ?? "";
+
       const credentials = {
         clientId: resolveValue(mangadexClientId, "MANIFOLD_MANGADEX_CLIENT_ID") ?? "",
         clientSecret: resolveValue(mangadexClientSecret, "MANIFOLD_MANGADEX_CLIENT_SECRET") ?? "",
@@ -92,9 +97,11 @@ export const al2mdCommand = Command.make(
             `Register ${ANILIST_REDIRECT_URI} on a separate authorization-code client, then run: bun index.ts login anilist`,
         );
       }
+
       const missing = Object.entries(credentials)
         .filter(([, value]) => !value)
         .map(([key]) => key);
+
       if (missing.length > 0) {
         return yield* cliError(
           `Missing MangaDex credentials: ${missing.join(", ")}. Pass them as flags or set MANGADEX_*.`,
@@ -119,6 +126,7 @@ export const al2mdCommand = Command.make(
               task: async (ctx, task) => {
                 const entries = ctx.entries;
                 const manager = createMangaDexTokenManager({ credentials });
+
                 const migrationReport = await runMigration(entries, manager, {
                   dryRun: !apply,
                   includeProgress: !skipProgress,
@@ -127,6 +135,7 @@ export const al2mdCommand = Command.make(
                 const failures = migrationReport.matched.filter(
                   (entry) => entry.error !== undefined,
                 );
+
                 const chapters = migrationReport.matched.reduce(
                   (sum, entry) => sum + entry.chaptersToMark,
                   0,
@@ -140,20 +149,24 @@ export const al2mdCommand = Command.make(
 
                 for (const entry of migrationReport.matched) {
                   const target = entry.mangaDexId || "(unresolved)";
+
                   const status = entry.error
                     ? `ERROR: ${entry.error}`
                     : (entry.mangadexStatus ?? "skipped");
+
                   const progress =
                     entry.progress !== undefined && entry.chaptersToMark > 0
                       ? `, ${entry.chaptersToMark} chapters`
                       : "";
-                  makePhaseReporter(task).detail(
+
+                  makePhaseReporter(task).note(
                     `${entry.title} → ${target} [${status}]` +
                       (entry.progress !== undefined
                         ? ` progress=${entry.progress}${progress}`
                         : ""),
                   );
                 }
+
                 for (const entry of migrationReport.unmatched) {
                   makePhaseReporter(task).problem(`${entry.title} — ${entry.reason}`);
                 }

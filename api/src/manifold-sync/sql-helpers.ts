@@ -79,6 +79,7 @@ export function readOps(
           )
           .toArray()
   ).map((row) => toOp(row));
+
   return rows;
 }
 
@@ -86,6 +87,7 @@ export function readListState(host: SyncHost, entryId: string): ListState | unde
   const row = host.ctx.storage.sql
     .exec<ListStateRow>("SELECT * FROM list_state WHERE entry_id = ?", entryId)
     .toArray()[0];
+
   return row ? toListState(row) : undefined;
 }
 
@@ -126,10 +128,12 @@ export function readEntry(
   const row = host.ctx.storage.sql
     .exec<EntryRow>("SELECT * FROM canonical_entries WHERE id = ?", entryId)
     .toArray()[0];
+
   if (!row) {
     if (required) {
       throw new Error(`Canonical entry not found: ${entryId}`);
     }
+
     return undefined;
   }
 
@@ -147,5 +151,6 @@ export function getProgressSync(host: SyncHost, entryId: string): ReadingProgres
   const row = host.ctx.storage.sql
     .exec<ProgressRow>("SELECT * FROM progress_state WHERE entry_id = ?", entryId)
     .toArray()[0];
+
   return row ? toProgress(row) : undefined;
 }

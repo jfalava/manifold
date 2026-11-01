@@ -61,9 +61,11 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
           }),
         ),
       );
+
       if (start._tag === "Failure") {
         return oauthError("invalid_request", start.failure.cause.message);
       }
+
       return redirect(start.success.authorizationUrl);
     }
 
@@ -76,9 +78,11 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
       request.method === "GET"
     ) {
       const state = url.searchParams.get("state");
+
       if (!state) {
         return oauthError("invalid_request", "OAuth callback is missing state");
       }
+
       const complete = yield* Effect.result(
         tryPromise(() =>
           sync.completeGithubOAuth(
@@ -88,12 +92,15 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
           ),
         ),
       );
+
       if (complete._tag === "Failure") {
         return oauthError("invalid_grant", complete.failure.cause.message);
       }
+
       if (complete.success.accountMismatch) {
         return githubAccountMismatchPage();
       }
+
       return redirect(complete.success.redirectUri);
     }
 
@@ -106,6 +113,7 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
     ) {
       const body = yield* tryPromise(() => request.text());
       const form = new URLSearchParams(body);
+
       const token = yield* Effect.result(
         tryPromise(() =>
           sync.exchangeManifoldOAuthToken({
@@ -118,9 +126,11 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
           }),
         ),
       );
+
       if (token._tag === "Failure") {
         return oauthError("invalid_grant", token.failure.cause.message);
       }
+
       return json(token.success);
     }
 

@@ -1,5 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "@manifold/json";
 import { isRegistryBackupKey, parseRegistryBackup, toBackupRows } from "../src/registry-backup";
@@ -38,11 +36,14 @@ describe("registry backups", () => {
       title: "A Story",
       updated_at: 1,
     };
+
     const current = { ...legacy, source_name: "Kodansha Comics" };
+
     const backup = {
       ...emptyBackup,
       tables: { ...emptyBackup.tables, provider_links: [legacy, current] },
     } satisfies JsonValue;
+
     expect(parseRegistryBackup(backup).tables.provider_links).toEqual([
       { ...legacy, source_name: null },
       current,

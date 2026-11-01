@@ -3,13 +3,12 @@ import { Effect } from "effect";
 import { Command, Flag } from "effect/cli";
 import { errorMessage } from "@manifold/json";
 import { AuthConnection } from "@manifold/contract";
-import cliProgress from "cli-progress";
 
 import { apiCall, apiConfig } from "@/commands/toolbox";
 import { loadMalSession, saveMalSession } from "@/login/mal-session";
 import { resolveValue } from "@/env-resolve";
 import { createMalClient, wipeMalManga } from "@/mal";
-import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
+import { abortFrame, closeFrame, createProgress, frameDetail, openFrame } from "@/ui";
 import { cliError, envString } from "@/effect-kit";
 
 export const wipeMalMangaCommand = Command.make("manga", {
@@ -55,7 +54,9 @@ export const wipeMalMangaCommand = Command.make("manga", {
             "Pause/disconnect other MAL writers, then pass --backup-paused with --apply.",
           );
         }
+
         openFrame("mal wipe manga");
+
         if (resolveValue(apiToken, "MANIFOLD_TOKEN")) {
           const connection = await apiCall(
             await apiConfig(apiOrigin, apiToken),
@@ -64,12 +65,14 @@ export const wipeMalMangaCommand = Command.make("manga", {
             undefined,
             AuthConnection,
           );
+
           if (connection.connected) {
             if (apply) {
               throw cliError(
                 "The Manifold API is still connected to MAL. Disconnect its MAL backup before wiping; --backup-paused does not override this check.",
               );
             }
+
             frameDetail(
               "Warning: Manifold's MAL backup is connected and can recreate entries. Disconnect it before --apply.",
             );
@@ -79,23 +82,18 @@ export const wipeMalMangaCommand = Command.make("manga", {
             "API backup connection not checked: MANIFOLD_TOKEN is unset. Verify other writers are paused yourself.",
           );
         }
+
         const accessToken = resolveValue(malToken, "MANIFOLD_MAL_TOKEN");
+
         const client = createMalClient({
           accessToken,
           session: accessToken ? undefined : await loadMalSession(),
           clientSecret: envString("MANIFOLD_MAL_CLIENT_SECRET"),
           saveSession: saveMalSession,
         });
-        const progress = new cliProgress.SingleBar({
-          stream: process.stdout,
-          format:
-            "│  {bar} {percentage}% · {value}/{total} manga · elapsed {duration_formatted} · ETA {eta_formatted}",
-          barsize: 24,
-          barCompleteChar: "█",
-          barIncompleteChar: "░",
-          hideCursor: true,
-        });
-        let progressStarted = false;
+
+        const progress = createProgress("Delete MAL manga");
+
         const result = await wipeMalManga({
           client,
           apply,
@@ -103,15 +101,12 @@ export const wipeMalMangaCommand = Command.make("manga", {
             frameDetail(`Signed in as ${account}. Scanned ${entries.length} manga entries.`);
           },
           progress: (deleted, total) => {
-            if (!progressStarted) {
-              progress.start(total, deleted);
-              progressStarted = true;
-            } else {
-              progress.update(deleted);
-            }
+            progress.update(deleted, total, "Deleting manga entries");
           },
-        }).finally(() => progress.stop());
+        }).finally(progress.finish);
+
         const account = `${result.account} (${result.accountId})`;
+
         if (!apply) {
           closeFrame(
             `Dry run: ${account}, ${result.scanned} manga entries would be deleted. No entries changed.`,

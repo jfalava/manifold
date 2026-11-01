@@ -18,11 +18,14 @@ import {
 export const ANILIST_REDIRECT_URI = "http://127.0.0.1:8767/callback";
 export const ANILIST_SECRET = { service: "manifold", name: "anilist-session" };
 const Session = Schema.Struct({ accessToken: Schema.NonEmptyString, expiresAt: Schema.Finite });
+
 export type AniListSession = Schema.Schema.Type<typeof Session>;
+
 const TokenResponse = Schema.Struct({
   access_token: Schema.NonEmptyString,
   expires_in: Schema.Finite,
 });
+
 const ViewerResponse = Schema.Struct({
   data: Schema.Struct({ Viewer: Schema.Struct({ id: Schema.Int, name: Schema.NonEmptyString }) }),
 });
@@ -44,6 +47,7 @@ export const createAniListAuthorization = (clientId: string) => {
     response_type: "code",
     state,
   }).toString();
+
   return { url: url.href, state };
 };
 
@@ -72,28 +76,34 @@ const exchangeAniListCodeEffect = (
         }),
       }),
     ).pipe(Effect.mapError((cause) => cliError(`AniList token exchange failed: ${cause.message}`)));
+
     if (!response.ok) {
       return yield* cliError(
         `AniList token exchange failed: HTTP ${response.status}. Check the CLI client credentials and run login anilist again.`,
       );
     }
+
     const bodyResult = yield* jsonFromResponseEffect(response, "anilist.tokens").pipe(
       Effect.map((body) => ({ ok: true as const, body })),
       Effect.orElseSucceed(() => ({ ok: false as const, body: undefined })),
     );
+
     if (!bodyResult.ok) {
       // Schema errors can echo tokens. Do not propagate response payloads.
       return yield* cliError(
         "AniList returned an invalid token response. Run login anilist again.",
       );
     }
+
     const tokens = decodeJsonOption(TokenResponse, bodyResult.body);
+
     if (Option.isNone(tokens) || tokens.value.expires_in <= 0) {
       // Schema errors can echo tokens. Do not propagate response payloads.
       return yield* cliError(
         "AniList returned an invalid token response. Run login anilist again.",
       );
     }
+
     return {
       accessToken: tokens.value.access_token,
       expiresAt: epochMillisNow() + tokens.value.expires_in * 1000,
@@ -124,12 +134,15 @@ const validateAniListSessionEffect = (
         body: JSON.stringify({ query: "query { Viewer { id name } }" }),
       }),
     ).pipe(Effect.mapError((cause) => cliError(`AniList profile lookup failed: ${cause.message}`)));
+
     if (!response.ok) {
       return yield* cliError(
         `AniList profile lookup failed: HTTP ${response.status}. Login has not been saved.`,
       );
     }
+
     const body = yield* jsonFromResponseEffect(response, "anilist.viewer");
+
     return decodeJsonOrThrow(ViewerResponse, body, "anilist.viewer").data.Viewer;
   });
 
@@ -144,24 +157,30 @@ const resolveAniListTokenEffect = (
 ): Effect.Effect<string | undefined, CliEffectError> =>
   Effect.gen(function* () {
     const override = explicit ?? envString("MANIFOLD_ANILIST_TOKEN");
+
     if (override) {
       return override;
     }
+
     const stored = yield* fromPromise(() => secrets.get(ANILIST_SECRET)).pipe(
       Effect.mapError((cause) => cliError(`AniList keychain read failed: ${cause.message}`)),
     );
+
     if (!stored) {
       return undefined;
     }
+
     const session = yield* Effect.try({
       try: () => decodeJsonOrThrow(Session, parseJsonValue(stored), "decode"),
       catch: () => cliError("Invalid AniList keychain session. Run login anilist again."),
     });
+
     if (session.expiresAt <= epochMillisNow() + 60_000) {
       return yield* cliError(
         "AniList login expired. Run login anilist again; AniList does not support refresh tokens.",
       );
     }
+
     return session.accessToken;
   });
 

@@ -1,6 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
 import { vi } from "vitest";
 
 import type { PersonalApiClient } from "@manifold/paperback-runtime";
@@ -31,6 +28,7 @@ const installApplicationStub = (): void => {
     getSecureState: (key: string) => applicationState.get(key),
   });
 };
+
 installApplicationStub();
 
 export const sourceManga = (entryId: string, anilistId: string): SourceManga => ({

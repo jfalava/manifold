@@ -1,12 +1,4 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
 import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
-
-import { isFunctionValue } from "../../lib/guards";
 
 export type ClientPagination = {
   readonly pageIndex: number;
@@ -30,7 +22,7 @@ export type ClientPaginationOptions = {
 function isPaginationUpdater(
   update: SetStateAction<ClientPagination>,
 ): update is (pagination: ClientPagination) => ClientPagination {
-  return isFunctionValue(update);
+  return typeof update === "function";
 }
 
 /**
@@ -55,8 +47,10 @@ export function useClientPagination(
       if (controlledPagination !== undefined) {
         const next = isPaginationUpdater(update) ? update(controlledPagination) : update;
         onPaginationChange?.(next);
+
         return;
       }
+
       setLocalPagination(update);
     },
     [controlledPagination, onPaginationChange],
@@ -79,6 +73,7 @@ export function useClientPagination(
   const safePageIndex = useCallback(
     (rowCount: number): number => {
       const maxPageIndex = Math.max(0, Math.ceil(rowCount / pagination.pageSize) - 1);
+
       return Math.min(pagination.pageIndex, maxPageIndex);
     },
     [pagination.pageIndex, pagination.pageSize],

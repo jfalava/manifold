@@ -11,13 +11,15 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics newPromise:off */
 /** @effect-diagnostics globalTimers:off */
-import { stdin, stdout } from "node:process";
+import { stdin, stderr } from "node:process";
 import { createInterface } from "node:readline/promises";
 
 import { errorMessage } from "@manifold/json";
 
 import { cliError, envString } from "@/effect-kit";
-import { frameDetail, frameUrl, muted } from "@/ui";
+import { frameDetail, frameUrl } from "@/ui";
+import { terminalSession } from "@/terminal-alert";
+import { renderCallbackPage, type CallbackPageState } from "@/login/oauth-pages";
 
 const asError = (cause: unknown): Error =>
   cause instanceof Error ? cause : cliError(errorMessage(cause));
@@ -36,12 +38,14 @@ export type OAuthCallbackInput = {
  */
 export const parseOAuthCallbackInput = (raw: string): OAuthCallbackInput => {
   const value = raw.trim();
+
   if (!value) {
     throw cliError("Paste an authorization code or the full callback URL.");
   }
 
   try {
     const url = new URL(value);
+
     if (url.searchParams.has("error")) {
       return {
         code: "",
@@ -49,6 +53,7 @@ export const parseOAuthCallbackInput = (raw: string): OAuthCallbackInput => {
         denied: true,
       };
     }
+
     return {
       code: url.searchParams.get("code") ?? "",
       state: url.searchParams.get("state"),
@@ -59,6 +64,7 @@ export const parseOAuthCallbackInput = (raw: string): OAuthCallbackInput => {
   }
 
   const separator = value.lastIndexOf("#");
+
   if (separator >= 0) {
     return {
       code: value.slice(0, separator).trim(),
@@ -77,31 +83,39 @@ export const resolveOAuthAuthorizationCode = (
   providerLabel: string,
 ): string => {
   const parsed = parseOAuthCallbackInput(raw);
+
   if (parsed.denied) {
     throw cliError(`${providerLabel} authorization denied.`);
   }
+
   if (!parsed.code) {
     throw cliError("Paste an authorization code or the full callback URL.");
   }
+
   if (parsed.state !== null && parsed.state !== expectedState) {
     throw cliError("OAuth state does not match this login attempt. Start login again.");
   }
+
   return parsed.code;
 };
 
 /** OSC 52 clipboard write (works over SSH when the client allows it). */
 const writeOsc52Clipboard = (text: string): boolean => {
-  if (!stdout.isTTY) {
+  if (!stderr.isTTY) {
     return false;
   }
+
   try {
     const payload = Buffer.from(text, "utf8").toString("base64");
     let sequence = `\u001b]52;c;${payload}\u0007`;
+
     // tmux needs a DCS passthrough wrapper to forward OSC 52 to the outer client.
     if (envString("TMUX") !== undefined) {
       sequence = `\u001bPtmux;\u001b${sequence.replaceAll("\u001b", "\u001b\u001b")}\u001b\\`;
     }
-    stdout.write(sequence);
+
+    stderr.write(sequence);
+
     return true;
   } catch {
     return false;
@@ -119,9 +133,11 @@ export const tryCopyToClipboard = async (text: string): Promise<boolean> => {
         stdout: "ignore",
         stderr: "ignore",
       });
+
       await proc.stdin.write(payload);
       await proc.stdin.end();
       const code = await proc.exited;
+
       return code === 0;
     } catch {
       return false;
@@ -129,6 +145,7 @@ export const tryCopyToClipboard = async (text: string): Promise<boolean> => {
   };
 
   let tool = false;
+
   if (process.platform === "darwin") {
     tool = await write(["pbcopy"], text);
   } else if (process.platform === "win32") {
@@ -157,18 +174,86 @@ export type AwaitOAuthAuthorizationCodeOptions = {
   readonly timeoutMs?: number;
 };
 
+type LoopbackRequestOptions = {
+  readonly pathname: string;
+  readonly expectedState: string;
+  readonly providerLabel: string;
+  readonly onCode: (code: string) => void;
+  readonly onError: (error: Error) => void;
+};
+
+/** Browser callbacks require state; bare codes remain supported by the paste flow. */
+export const handleLoopbackRequest = (
+  request: Request,
+  options: LoopbackRequestOptions,
+): Response => {
+  const url = new URL(request.url);
+
+  if (request.method !== "GET" || url.pathname !== options.pathname) {
+    return new Response("Not found", {
+      status: 404,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
+
+  const page = (state: CallbackPageState, status = 200): Response =>
+    new Response(renderCallbackPage(state, options.providerLabel), {
+      status,
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+        "x-content-type-options": "nosniff",
+        "content-security-policy":
+          "default-src 'none'; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      },
+    });
+
+  if (url.searchParams.get("state") !== options.expectedState) {
+    return page("state-mismatch", 400);
+  }
+
+  if (url.searchParams.has("error")) {
+    const denied = url.searchParams.get("error") === "access_denied";
+    options.onError(
+      cliError(
+        denied
+          ? `${options.providerLabel} authorization denied.`
+          : `${options.providerLabel} authorization failed. Start login again.`,
+      ),
+    );
+
+    return page(denied ? "declined" : "provider-error");
+  }
+
+  const code = url.searchParams.get("code");
+
+  if (!code) {
+    return page("missing-code", 400);
+  }
+
+  options.onCode(code);
+
+  return page("received");
+};
+
 const readPasteLine = async (signal: AbortSignal): Promise<string> => {
   if (signal.aborted) {
     throw cliError("Login cancelled.");
   }
-  stdout.write(`${muted("│")}\n${muted("│")}  Paste authorization code or callback URL: `);
-  const reader = createInterface({ input: stdin, output: stdout });
+
+  stderr.write("  󰌗 Paste authorization code or callback URL: ");
+  const reader = createInterface({ input: stdin, output: stderr });
+
   const onAbort = (): void => {
     reader.close();
   };
+
   signal.addEventListener("abort", onAbort, { once: true });
+
   try {
     const line = await reader.question("");
+
     return line;
   } finally {
     signal.removeEventListener("abort", onAbort);
@@ -184,20 +269,11 @@ type RawStdin = NodeJS.ReadStream & {
   setRawMode: (mode: boolean) => NodeJS.ReadStream;
 };
 
-const asRawStdin = (stream: NodeJS.ReadStream): RawStdin | undefined => {
-  if (!stream.isTTY) {
-    return undefined;
-  }
-  // SAFETY: Node TTY streams expose setRawMode; non-TTY already returned above.
-  const candidate: NodeJS.ReadStream & {
-    setRawMode?: (mode: boolean) => NodeJS.ReadStream;
-  } = stream;
-  if (candidate.setRawMode === undefined) {
-    return undefined;
-  }
-  // SAFETY: setRawMode presence checked above; RawStdin requires that method.
-  return candidate as RawStdin;
-};
+const isRawStdin = (stream: NodeJS.ReadStream): stream is RawStdin =>
+  stream.isTTY && stream.setRawMode !== undefined;
+
+const asRawStdin = (stream: NodeJS.ReadStream): RawStdin | undefined =>
+  isRawStdin(stream) ? stream : undefined;
 
 const BRACKETED_PASTE_ENABLE = "\u001b[?2004h";
 const BRACKETED_PASTE_DISABLE = "\u001b[?2004l";
@@ -212,6 +288,7 @@ export const isBulkPasteChunk = (text: string): boolean => {
   if (text.length <= 1 || text.startsWith("\u001b")) {
     return false;
   }
+
   return text.replace(/[\r\n]+$/g, "").length > 1;
 };
 
@@ -220,11 +297,9 @@ export const isBulkPasteChunk = (text: string): boolean => {
  * Multi-byte pastes must not be interpreted key-by-key (every `c` in an OAuth
  * code used to fire the copy bind).
  */
-const waitForPasteOrKey = async (
-  authorizeUrl: string,
-  signal: AbortSignal,
-): Promise<string> => {
+const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Promise<string> => {
   const rawStdin = asRawStdin(stdin);
+
   if (!rawStdin) {
     return readPasteLine(signal);
   }
@@ -241,19 +316,23 @@ const waitForPasteOrKey = async (
       if (cleaned) {
         return;
       }
+
       cleaned = true;
       rawStdin.removeListener("data", onData);
       signal.removeEventListener("abort", onAbort);
+
       try {
-        stdout.write(BRACKETED_PASTE_DISABLE);
+        stderr.write(BRACKETED_PASTE_DISABLE);
       } catch {
         // ignore
       }
+
       try {
         rawStdin.setRawMode(false);
       } catch {
         // already non-raw
       }
+
       rawStdin.pause();
     };
 
@@ -275,12 +354,15 @@ const waitForPasteOrKey = async (
       if (copyBusy || signal.aborted) {
         return;
       }
+
       copyBusy = true;
       void tryCopyToClipboard(authorizeUrl).then((ok) => {
         copyBusy = false;
+
         if (signal.aborted) {
           return;
         }
+
         frameDetail(
           ok
             ? "Authorize URL copied to the clipboard."
@@ -293,13 +375,16 @@ const waitForPasteOrKey = async (
       while (buffer.length > 0 && !cleaned) {
         if (inBracketedPaste) {
           const end = buffer.indexOf(BRACKETED_PASTE_END);
+
           if (end < 0) {
             return;
           }
+
           const pasted = buffer.slice(0, end);
           buffer = buffer.slice(end + BRACKETED_PASTE_END.length);
           inBracketedPaste = false;
           succeed(pasted);
+
           return;
         }
 
@@ -314,10 +399,12 @@ const waitForPasteOrKey = async (
           if (buffer.length === 1) {
             return;
           }
+
           // Drop unknown short escapes; keep waiting if it might still grow into paste start.
           if (BRACKETED_PASTE_START.startsWith(buffer) || buffer.length < 6) {
             return;
           }
+
           buffer = buffer.slice(1);
           continue;
         }
@@ -326,14 +413,19 @@ const waitForPasteOrKey = async (
         buffer = buffer.slice(1);
 
         if (ch === "\u0003") {
+          terminalSession()?.cancel();
           fail(cliError("Login cancelled."));
+
           return;
         }
+
         if (ch === "\r" || ch === "\n") {
           cleanup();
           void readPasteLine(signal).then(resolve, (cause: unknown) => fail(asError(cause)));
+
           return;
         }
+
         if (ch === "c" || ch === "C") {
           copyAuthorizeUrl();
         }
@@ -345,13 +437,17 @@ const waitForPasteOrKey = async (
       if (signal.aborted || cleaned) {
         return;
       }
+
       const text = chunk.toString("utf8");
+
       // Terminals without bracketed paste often deliver the whole paste in one
       // multi-byte chunk. Treat that as the callback payload, not keybinds.
       if (!inBracketedPaste && buffer.length === 0 && isBulkPasteChunk(text)) {
         succeed(text.replace(/[\r\n]+$/g, ""));
+
         return;
       }
+
       buffer += text;
       consumeBuffer();
     };
@@ -359,11 +455,13 @@ const waitForPasteOrKey = async (
     signal.addEventListener("abort", onAbort, { once: true });
     rawStdin.setRawMode(true);
     rawStdin.resume();
+
     try {
-      stdout.write(BRACKETED_PASTE_ENABLE);
+      stderr.write(BRACKETED_PASTE_ENABLE);
     } catch {
       // ignore
     }
+
     rawStdin.on("data", onData);
 
     if (signal.aborted) {
@@ -381,11 +479,7 @@ export const awaitOAuthAuthorizationCode = async (
 ): Promise<string> => {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const redirect = new URL(options.redirectUri);
-  const port = redirect.port
-    ? Number(redirect.port)
-    : redirect.protocol === "https:"
-      ? 443
-      : 80;
+  const port = redirect.port ? Number(redirect.port) : redirect.protocol === "https:" ? 443 : 80;
   const hostname = redirect.hostname || "127.0.0.1";
   const pathname = redirect.pathname || "/callback";
 
@@ -394,19 +488,26 @@ export const awaitOAuthAuthorizationCode = async (
 
   const codeGate = Promise.withResolvers<string>();
   let settled = false;
-  const settleResolve = (code: string): void => {
+  let settledByCallback = false;
+
+  const settleResolve = (code: string, fromCallback = false): void => {
     if (settled) {
       return;
     }
+
     settled = true;
+    settledByCallback = fromCallback;
     ac.abort();
     codeGate.resolve(code);
   };
-  const settleReject = (cause: Error): void => {
+
+  const settleReject = (cause: Error, fromCallback = false): void => {
     if (settled) {
       return;
     }
+
     settled = true;
+    settledByCallback = fromCallback;
     ac.abort();
     codeGate.reject(cause);
   };
@@ -420,30 +521,13 @@ export const awaitOAuthAuthorizationCode = async (
         hostname,
         port,
         fetch(request: Request) {
-          const url = new URL(request.url);
-          const headers = { "content-type": "text/plain", "cache-control": "no-store" };
-          if (request.method !== "GET" || url.pathname !== pathname) {
-            return new Response("Not found", { status: 404, headers });
-          }
-          try {
-            const code = resolveOAuthAuthorizationCode(
-              url.href,
-              options.expectedState,
-              options.providerLabel,
-            );
-            settleResolve(code);
-            return new Response(
-              "Authorization received. Return to the CLI to check the result.",
-              { headers },
-            );
-          } catch (cause) {
-            const failure = asError(cause);
-            if (failure.message.includes("denied")) {
-              settleReject(failure);
-              return new Response("Authorization denied. Return to the CLI.", { headers });
-            }
-            return new Response(failure.message, { status: 400, headers });
-          }
+          return handleLoopbackRequest(request, {
+            pathname,
+            expectedState: options.expectedState,
+            providerLabel: options.providerLabel,
+            onCode: (code) => settleResolve(code, true),
+            onError: (error) => settleReject(error, true),
+          });
         },
       });
     } catch (cause) {
@@ -479,11 +563,11 @@ export const awaitOAuthAuthorizationCode = async (
   }
 
   const minutes = Math.round(timeoutMs / 60_000);
+
   const timeoutId = setTimeout(() => {
-    settleReject(
-      cliError(`${options.providerLabel} login timed out after ${minutes} minutes.`),
-    );
+    settleReject(cliError(`${options.providerLabel} login timed out after ${minutes} minutes.`));
   }, timeoutMs);
+
   // Do not keep the process alive solely for the timer once login finishes.
   timeoutId.unref?.();
 
@@ -493,6 +577,7 @@ export const awaitOAuthAuthorizationCode = async (
         if (settled) {
           return;
         }
+
         settleResolve(
           resolveOAuthAuthorizationCode(raw, options.expectedState, options.providerLabel),
         );
@@ -504,14 +589,20 @@ export const awaitOAuthAuthorizationCode = async (
       });
   }
 
+  terminalSession()?.blocked("auth", `Authorize ${options.providerLabel} in your browser`);
+
   try {
     return await codeGate.promise;
   } finally {
+    terminalSession()?.resume();
     // Always cancel the timer first — awaiting a live 5‑minute sleep hung paste login.
     clearTimeout(timeoutId);
+
     if (!signal.aborted) {
       ac.abort();
     }
-    await server?.stop(true);
+
+    // Drain terminal callbacks; paste and timeout still close active connections immediately.
+    await server?.stop(!settledByCallback);
   }
 };

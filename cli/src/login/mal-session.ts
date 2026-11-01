@@ -20,9 +20,11 @@ const loadMalSessionEffect = (): Effect.Effect<MalSession | undefined, CliEffect
     const stored = yield* fromPromise(() => Bun.secrets.get(MAL_SECRET)).pipe(
       Effect.mapError((cause) => cliError(`MAL keychain read failed: ${cause.message}`)),
     );
+
     if (!stored) {
       return undefined;
     }
+
     return yield* Effect.try({
       try: () => decodeJsonOrThrow(MalSession, parseJsonValue(stored), "decode"),
       catch: () => cliError("Invalid MAL keychain session. Run login mal again."),

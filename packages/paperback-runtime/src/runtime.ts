@@ -1,9 +1,5 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics newPromise:off */
 import {
   isJsonObject,
   isJsonValue,
@@ -53,15 +49,19 @@ const scheduledPersonalRequesterEffect = (
         ),
       ),
     );
+
     const [response, bodyBuffer] = scheduled;
     const text = Application.arrayBufferToUTF8String(bodyBuffer);
     let body: JsonValue = text;
+
     const parsed = yield* Schema.decodeEffect(JsonBodyString)(text).pipe(
       Effect.orElseSucceed(() => undefined),
     );
+
     if (parsed !== undefined && isJsonValue(parsed)) {
       body = parsed;
     }
+
     return { status: response.status, body };
   });
 
@@ -72,6 +72,7 @@ export const scheduledPersonalRequester = (
 
 export const secureStateString = (key: string): string | undefined => {
   const value = Application.getSecureState(key);
+
   return isString(value) && value.trim().length > 0 ? value.trim() : undefined;
 };
 
@@ -90,6 +91,7 @@ const refreshManifoldSession = async (): Promise<string> => {
   }
 
   const refreshToken = secureStateString(MANIFOLD_API_REFRESH_TOKEN_KEY);
+
   if (!refreshToken) {
     throw new Error("Manifold session expired; login with GitHub in tracker settings");
   }
@@ -108,9 +110,11 @@ const refreshManifoldSession = async (): Promise<string> => {
         refresh_token: refreshToken,
       }).toString(),
     });
+
     if (response.status === 400 || response.status === 401) {
       clearManifoldSession();
     }
+
     if (response.status < 200 || response.status >= 300 || !isJsonObject(response.body)) {
       throw new Error("Manifold session refresh failed; login with GitHub in tracker settings");
     }
@@ -118,9 +122,11 @@ const refreshManifoldSession = async (): Promise<string> => {
     const accessToken = stringField(response.body, "access_token");
     const replacementRefreshToken = stringField(response.body, "refresh_token");
     const expiresIn = numberField(response.body, "expires_in");
+
     if (!accessToken || !replacementRefreshToken || !expiresIn || expiresIn <= 0) {
       throw new Error("Manifold session refresh returned an invalid response");
     }
+
     Application.setSecureState(accessToken, MANIFOLD_API_ACCESS_TOKEN_KEY);
     Application.setSecureState(replacementRefreshToken, MANIFOLD_API_REFRESH_TOKEN_KEY);
     Application.setSecureState(
@@ -128,10 +134,12 @@ const refreshManifoldSession = async (): Promise<string> => {
       MANIFOLD_API_ACCESS_EXPIRES_AT_KEY,
     );
     Application.setState("Connected", MANIFOLD_API_STATUS_KEY);
+
     return accessToken;
   })();
 
   refreshInFlight = operation;
+
   try {
     return await operation;
   } finally {
@@ -147,12 +155,14 @@ const authorizedPersonalRequester = async (
   const accessToken = secureStateString(MANIFOLD_API_ACCESS_TOKEN_KEY);
   const legacyToken = secureStateString(MANIFOLD_API_TOKEN_KEY);
   let token = accessToken ?? legacyToken;
+
   if (!token) {
     throw new Error("Login with GitHub in tracker settings before using Manifold");
   }
 
   const refreshToken = secureStateString(MANIFOLD_API_REFRESH_TOKEN_KEY);
   const expiresAt = Number(secureStateString(MANIFOLD_API_ACCESS_EXPIRES_AT_KEY));
+
   if (
     accessToken &&
     refreshToken &&
@@ -166,7 +176,9 @@ const authorizedPersonalRequester = async (
     ...request,
     headers: { ...request.headers, authorization: `Bearer ${value}` },
   });
+
   let response = await scheduledPersonalRequester(withToken(token));
+
   if (response.status === 401 && accessToken && refreshToken) {
     token = await refreshManifoldSession();
     response = await scheduledPersonalRequester(withToken(token));
@@ -176,20 +188,24 @@ const authorizedPersonalRequester = async (
     if (accessToken) {
       clearManifoldSession();
     }
+
     Application.setState(
       "Unauthorized — replace the token or log in with GitHub",
       MANIFOLD_API_STATUS_KEY,
     );
   }
+
   return response;
 };
 
 export const configuredPersonalApi = (): PersonalApiClient => {
   const token =
     secureStateString(MANIFOLD_API_ACCESS_TOKEN_KEY) ?? secureStateString(MANIFOLD_API_TOKEN_KEY);
+
   if (!token) {
     throw new Error("Login with GitHub in tracker settings before using Manifold");
   }
+
   return createPersonalApiClient(authorizedPersonalRequester, {
     origin: MANIFOLD_API_ORIGIN,
     token,

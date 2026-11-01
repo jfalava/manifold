@@ -29,28 +29,23 @@ import {
   SyncOp,
   type ListEvent,
 } from "@manifold/contract";
-import { manifoldUserAgent } from "@manifold/json";
+import { isJsonObject, isJsonValue, isString, manifoldUserAgent } from "@manifold/json";
 import { createServerFn } from "@tanstack/react-start";
 import { DateTime, Effect, Option, Schema } from "effect";
 
 import {
   AdminError,
   platformFetch,
+  resolveSecret,
   runHost,
   toError,
   tryPromise,
   workersRuntime,
 } from "./effect-host";
-import {
-  isFunctionValue,
-  isJsonObject,
-  isJsonValue,
-  isStringValue,
-  type SecretHandle,
-} from "./guards";
 import type { MangaDexLibraryItem, MangaDexReadingStatus, MangaDexStat } from "./mangadex";
 import {
   cachedJsonProgram,
+  type CacheDecoder,
   invalidateCachedJsonProgram,
   type ComputedSnapshot,
 } from "./server-cache";
@@ -60,32 +55,14 @@ const JsonString = Schema.fromJsonString(Schema.Unknown);
 
 // Type aliases (not interfaces) so TanStack Table v9 accepts them as TData.
 export type RegistryLink = RegistryListEntry["providers"][number];
-export type RegistryListState = NonNullable<RegistryListEntry["state"]>;
-export type RegistryEntry = RegistryListEntry;
-export type SyncOpItem = SyncOp;
-export type ListEventItem = ListEvent;
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: secret binding comes from untyped workers env; parsed at I/O boundary
-const resolveSecret = Effect.fnUntraced(function* (
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: Alchemy secret bindings are runtime handles; guards parse them before use
-  binding: unknown,
-): Effect.fn.Return<string, AdminError> {
-  if (isStringValue(binding)) {
-    return binding;
-  }
-  if (isJsonObject(binding)) {
-    // SAFETY: binding is validated as JsonObject and SecretHandle shape is owned; narrow to handle type
-    const handle = binding as SecretHandle;
-    if (isFunctionValue(handle.get)) {
-      const value = yield* tryPromise(() => handle.get!());
-      return isStringValue(value) ? value : "";
-    }
-    if (isStringValue(handle.value)) {
-      return handle.value;
-    }
-  }
-  return "";
-});
+export type RegistryListState = NonNullable<RegistryListEntry["state"]>;
+
+export type RegistryEntry = RegistryListEntry;
+
+export type SyncOpItem = SyncOp;
+
+export type ListEventItem = ListEvent;
 
 const call = Effect.fnUntraced(function* <A>(
   path: string,
@@ -94,13 +71,15 @@ const call = Effect.fnUntraced(function* <A>(
 ): Effect.fn.Return<A, AdminError | ResponseDecodeError> {
   const { env } = yield* workersRuntime();
   const token = yield* resolveSecret(env.MANIFOLD_TOKEN);
+
   if (!token) {
     return yield* new AdminError({
       message: "MANIFOLD_TOKEN binding is not configured for the admin app",
     });
   }
+
   const origin =
-    isStringValue(env.MANIFOLD_API_ORIGIN) && env.MANIFOLD_API_ORIGIN !== ""
+    isString(env.MANIFOLD_API_ORIGIN) && env.MANIFOLD_API_ORIGIN !== ""
       ? env.MANIFOLD_API_ORIGIN
       : MANIFOLD_API_ORIGIN;
 
@@ -110,47 +89,57 @@ const call = Effect.fnUntraced(function* <A>(
   // without it; direct fetch keeps the public shape.
   const binding = env.SYNC_API;
   const url = new URL(`${origin}${path}`);
+
   const target = binding
     ? new URL(`${url.pathname.replace(/\/api(?=\/|$)/, "")}${url.search}`, url.origin)
     : url;
-  // oxlint-disable-next-line anti-slop/no-known-value-widening -- SAFETY: headers are intentionally open dictionary for HTTP; literal values are known evidence
-  const headers: Record<string, string> = {
+
+  const headers = {
     accept: "application/json",
     authorization: `Bearer ${token}`,
     "user-agent": manifoldUserAgent("admin"),
+    ...(init?.body !== undefined && { "content-type": "application/json" }),
   };
-  if (init?.body !== undefined) {
-    headers["content-type"] = "application/json";
-  }
+
   const requestInit: RequestInit = {
     method: init?.method ?? "GET",
     headers,
   };
+
   if (init?.body !== undefined) {
     requestInit.body = yield* Schema.encodeEffect(JsonString)(init.body).pipe(
       Effect.mapError(toError),
     );
   }
+
   const response = yield* tryPromise<Response>(() =>
     binding ? binding.fetch(new Request(target, requestInit)) : platformFetch(target, requestInit),
   );
+
   const text = yield* tryPromise<string>(() => response.text());
   const decoded = Schema.decodeOption(JsonString)(text);
+
   const raw =
     text.length > 0 && Option.isSome(decoded) ? decoded.value : text.length > 0 ? text : undefined;
+
   if (!response.ok) {
     let message = `HTTP ${response.status}`;
+
     if (isJsonObject(raw) && "error" in raw) {
-      message = isStringValue(raw.error)
+      message = isString(raw.error)
         ? raw.error
         : yield* Schema.encodeEffect(JsonString)(raw.error).pipe(Effect.mapError(toError));
     }
+
     return yield* new AdminError({ message });
   }
+
   if (raw !== undefined && !isJsonValue(raw)) {
     return yield* new AdminError({ message: `Personal API response is not JSON (${path})` });
   }
+
   const body = raw === undefined ? null : raw;
+
   return yield* decodeResponseEffect(schema, body, path);
 });
 
@@ -191,16 +180,20 @@ const loadAllEntries = Effect.fnUntraced(function* (): Effect.fn.Return<
 > {
   const pageSize = 500;
   const all: RegistryEntry[] = [];
+
   for (let offset = 0; ; offset += pageSize) {
     const page = yield* call(
       `/v1/registry?limit=${pageSize}&offset=${offset}`,
       RegistryListResponse,
     );
+
     all.push(...page.entries);
+
     if (page.entries.length < pageSize) {
       break;
     }
   }
+
   return all;
 });
 
@@ -223,16 +216,12 @@ const loadOperationsProgram = Effect.fnUntraced(
       ],
       { concurrency: "unbounded" },
     );
-    const errors: {
-      ops?: string;
-      events?: string;
-    } = {}; // oxlint-disable-line anti-slop/no-known-value-widening -- SAFETY: errors map starts empty and is populated conditionally; anonymous type is intentionally widened from empty object
-    if (!ops.ok) {
-      errors.ops = ops.error;
-    }
-    if (!events.ok) {
-      errors.events = events.error;
-    }
+
+    const errors = {
+      ...(!ops.ok && { ops: ops.error }),
+      ...(!events.ok && { events: events.error }),
+    };
+
     return {
       ops: ops.ok ? ops.value.ops : [],
       events: events.ok ? events.value.events : [],
@@ -259,6 +248,7 @@ export const saveListState = createServerFn({ method: "POST" })
   .validator((data: ListStatePatch) => data)
   .handler(({ data }) => {
     const { entryId, ...patch } = data;
+
     return runHost(
       call(`/v1/entries/${encodeURIComponent(entryId)}/list-state`, ListState, {
         method: "POST",
@@ -322,10 +312,12 @@ export const loadMangaDexLibrary = createServerFn({ method: "POST" })
   .validator((data: { status?: MangaDexReadingStatus } | undefined) => data ?? {})
   .handler(({ data }) => {
     const status = data.status;
+
     const path =
       status === undefined
         ? "/v1/mangadex/library"
         : `/v1/mangadex/library?status=${encodeURIComponent(status)}`;
+
     return runHost(
       call(path, MangaDexLibraryResponse).pipe(
         Effect.map((body): readonly MangaDexLibraryItem[] =>
@@ -352,9 +344,11 @@ export const loadMangaDexStats = createServerFn({ method: "POST" })
   .validator((data: { ids: readonly string[] }) => data)
   .handler(({ data }): Promise<Record<string, MangaDexStat>> => {
     const ids = [...new Set(data.ids)].slice(0, 200);
+
     if (ids.length === 0) {
       return runHost(Effect.succeed({}));
     }
+
     return runHost(
       call("/v1/mangadex/stats", MangaDexStatsResponse, {
         method: "POST",
@@ -383,7 +377,9 @@ export const setMangaDexStatus = createServerFn({ method: "POST" })
 export const TRACKER_PROVIDERS = ["anilist", "mal", "mangadex"] as const;
 
 export type RegistrySummary = ContractRegistrySummary;
+
 export type OpsSummary = ContractOpsSummary;
+
 export type MangaDexSummary = ContractMangaDexLibrarySummary;
 
 export interface LibraryOverview {
@@ -402,9 +398,9 @@ const LibraryOverviewSchema = Schema.Struct({
   errors: Schema.Array(Schema.String),
 });
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: cache decoder validates the persisted overview before use
-const decodeLibraryOverview = (value: unknown): LibraryOverview | undefined => {
+const decodeLibraryOverview: CacheDecoder<LibraryOverview> = (value) => {
   const decoded = Schema.decodeUnknownOption(LibraryOverviewSchema)(value);
+
   return Option.isSome(decoded) ? decoded.value : undefined;
 };
 
@@ -441,16 +437,21 @@ const libraryOverviewProgram = cachedJsonProgram(
       ],
       { concurrency: "unbounded" },
     );
+
     const errors: string[] = [];
+
     if (!registry.ok) {
       errors.push(`registry: ${registry.error}`);
     }
+
     if (!ops.ok) {
       errors.push(`ops: ${ops.error}`);
     }
+
     if (!mangadex.ok) {
       errors.push(`mangadex library: ${mangadex.error}`);
     }
+
     const overview: LibraryOverview = {
       fetchedAt: DateTime.formatIso(DateTime.nowUnsafe()),
       registry: registry.ok ? registry.value : null,
@@ -458,6 +459,7 @@ const libraryOverviewProgram = cachedJsonProgram(
       mangadex: mangadex.ok ? mangadex.value : null,
       errors,
     };
+
     return { value: overview, cacheable: errors.length === 0 };
   }),
 );
@@ -471,6 +473,7 @@ export const getLibraryOverview = createServerFn({ method: "GET" }).handler(() =
 // ------------------------------------------------------------------
 
 export type AuthProvider = ContractAuthProvider;
+
 export type AuthConnection = ContractAuthConnection;
 
 export const AUTH_PROVIDERS = ["anilist", "mal", "mangadex"] as const;
@@ -481,16 +484,13 @@ const isAuthProvider = (value: string): value is AuthProvider => {
       return true;
     }
   }
+
   return false;
 };
 
-const loadAuthConnectionsProgram = capture(
-  "auth connections",
-  call("/v1/auth", AuthConnectionsResponse),
-).pipe(Effect.map((result): readonly AuthConnection[] => (result.ok ? result.value : [])));
-
+// A failed load must reach the page; an empty list would render every provider as disconnected.
 export const loadAuthConnections = createServerFn({ method: "GET" }).handler(() =>
-  runHost(loadAuthConnectionsProgram),
+  runHost(call("/v1/auth", AuthConnectionsResponse)),
 );
 
 /**
@@ -522,7 +522,7 @@ export const startMalOAuth = createServerFn({ method: "POST" }).handler(() =>
   runHost(
     call(`/v1/auth/mal/start?return=${encodeURIComponent("/admin/credentials")}`, OAuthStart).pipe(
       Effect.flatMap((start) =>
-        isStringValue(start.authorizationUrl) && start.authorizationUrl.length > 0
+        isString(start.authorizationUrl) && start.authorizationUrl.length > 0
           ? Effect.succeed({ authorizationUrl: start.authorizationUrl })
           : Effect.fail(
               new AdminError({ message: "OAuth start for mal returned no authorization URL" }),
@@ -541,9 +541,11 @@ export const importAniListToken = createServerFn({ method: "POST" })
   .validator((data: { accessToken: string; expiresIn?: number }) => data)
   .handler(({ data }) => {
     const accessToken = data.accessToken.trim();
+
     if (!accessToken) {
       return runHost(Effect.fail(new AdminError({ message: "AniList access token is empty" })));
     }
+
     return runHost(
       call(
         "/v1/auth/anilist/token",
@@ -589,11 +591,13 @@ export const disconnectAuth = createServerFn({ method: "POST" })
   .validator((data: { provider: AuthProvider }) => data)
   .handler(({ data }) => {
     const provider = data.provider;
+
     if (!isAuthProvider(provider)) {
       return runHost(
         Effect.fail(new AdminError({ message: `Unknown auth provider: ${String(provider)}` })),
       );
     }
+
     return runHost(
       call(`/v1/auth/${encodeURIComponent(provider)}`, AuthDisconnectedResponse, {
         method: "DELETE",

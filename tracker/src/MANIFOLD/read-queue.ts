@@ -2,9 +2,6 @@
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
 /* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
 
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
 import {
   ContentRating,
   type SourceManga,
@@ -55,17 +52,20 @@ type PendingProgressMap = { [mangaId: string]: PendingProgressEntry };
 const PENDING_PROGRESS_KEY = "manifold.pending-progress";
 const PENDING_PROGRESS_MAX = 200;
 
-const decodePendingSourceManga = (value: JsonValue): SourceManga | undefined => {
+const decodePendingSourceManga = (value: JsonValue | undefined): SourceManga | undefined => {
   if (!isJsonObject(value)) {
     return undefined;
   }
+
   const mangaId = value["mangaId"];
   const mangaInfo = value["mangaInfo"];
+
   if (!isString(mangaId) || mangaId.length === 0 || !isJsonObject(mangaInfo)) {
     return undefined;
   }
 
   const contentRating = mangaInfo["contentRating"];
+
   if (
     contentRating !== undefined &&
     contentRating !== ContentRating.EVERYONE &&
@@ -77,17 +77,22 @@ const decodePendingSourceManga = (value: JsonValue): SourceManga | undefined => 
 
   const additionalInfoValue = mangaInfo["additionalInfo"];
   let additionalInfo: Record<string, string> | undefined;
+
   if (additionalInfoValue !== undefined && additionalInfoValue !== null) {
     if (!isJsonObject(additionalInfoValue)) {
       return undefined;
     }
+
     const decoded: Record<string, string> = {};
+
     for (const [key, field] of Object.entries(additionalInfoValue)) {
       if (!isString(field)) {
         return undefined;
       }
+
       decoded[key] = field;
     }
+
     additionalInfo = decoded;
   }
 
@@ -106,22 +111,28 @@ const decodePendingSourceManga = (value: JsonValue): SourceManga | undefined => 
 
 const readPendingProgress = (): PendingProgressMap => {
   const raw = Application.getState(PENDING_PROGRESS_KEY);
+
   if (!isString(raw)) {
     return {};
   }
+
   try {
-    // SAFETY: state was written by queueProgress from a live SourceManga on
-    // this device; malformed entries are skipped below.
+    // queueProgress wrote this state on this device; malformed entries are skipped below.
     const parsed: unknown = JSON.parse(raw);
+
     if (!isJsonObject(parsed)) {
       return {};
     }
+
     const entries: [string, PendingProgressEntry][] = [];
+
     for (const [mangaId, value] of Object.entries(parsed)) {
       if (!isJsonObject(value)) {
         continue;
       }
+
       const sourceManga = decodePendingSourceManga(value["sourceManga"]);
+
       if (
         sourceManga === undefined ||
         sourceManga.mangaId !== mangaId ||
@@ -132,6 +143,7 @@ const readPendingProgress = (): PendingProgressMap => {
       ) {
         continue;
       }
+
       entries.push([
         mangaId,
         {
@@ -141,10 +153,13 @@ const readPendingProgress = (): PendingProgressMap => {
         },
       ]);
     }
+
     const cleaned = Object.fromEntries(entries);
+
     if (entries.length !== Object.keys(parsed).length) {
       Application.setState(JSON.stringify(cleaned), PENDING_PROGRESS_KEY);
     }
+
     return cleaned;
   } catch {
     return {};
@@ -167,19 +182,25 @@ const slimSourceManga = (manga: SourceManga): SourceManga => ({
 const queueProgress = (mangaId: string, entry: PendingProgressEntry): void => {
   const pending = readPendingProgress();
   const existing = pending[mangaId];
+
   if (existing !== undefined && existing.chapterNum >= entry.chapterNum) {
     return;
   }
+
   const ids = Object.keys(pending);
+
   if (!pending[mangaId] && ids.length >= PENDING_PROGRESS_MAX) {
     let oldestId = ids[0]!;
+
     for (const id of ids) {
       if (pending[id]!.at < pending[oldestId]!.at) {
         oldestId = id;
       }
     }
+
     delete pending[oldestId];
   }
+
   pending[mangaId] = entry;
   Application.setState(JSON.stringify(pending), PENDING_PROGRESS_KEY);
 };
@@ -187,9 +208,11 @@ const queueProgress = (mangaId: string, entry: PendingProgressEntry): void => {
 const acknowledgeProgress = (mangaId: string, chapterNum: number): void => {
   const pending = readPendingProgress();
   const existing = pending[mangaId];
+
   if (existing === undefined || existing.chapterNum > chapterNum) {
     return;
   }
+
   delete pending[mangaId];
   Application.setState(JSON.stringify(pending), PENDING_PROGRESS_KEY);
 };
@@ -201,13 +224,16 @@ const flushPendingProgressEffect = (
   Effect.gen(function* () {
     const pending = readPendingProgress();
     let pushed = 0;
+
     for (const [mangaId, entry] of Object.entries(pending)) {
       if (skip?.has(mangaId)) {
         continue;
       }
+
       const outcome = yield* Effect.result(
         fromPromise(() => pushProgress(entry.sourceManga, entry.chapterNum)),
       );
+
       if (outcome._tag === "Failure") {
         // Keep it queued; the next read-queue run retries.
         yield* Effect.logError(
@@ -215,6 +241,7 @@ const flushPendingProgressEffect = (
         );
         continue;
       }
+
       if (outcome.success) {
         acknowledgeProgress(mangaId, entry.chapterNum);
         pushed += 1;
@@ -226,6 +253,7 @@ const flushPendingProgressEffect = (
         yield* Effect.logInfo(`[manifold] anilist progress retry skipped:${mangaId}`);
       }
     }
+
     return pushed;
   });
 
@@ -233,6 +261,7 @@ const chapterProvenance = (chapterSourceId: string, sourceChapterId: string): Ch
   if (chapterSourceId === "MangaDex") {
     return { provider: "mangadex", chapterKey: `mangadex:${sourceChapterId}` };
   }
+
   throw trackerError(`Unsupported chapter source: ${chapterSourceId}`);
 };
 
@@ -245,6 +274,7 @@ const processReadActionsEffect = (
 
     const successfulItems: string[] = [];
     const failedItems: string[] = [];
+
     const maxByManga = new Map<
       string,
       { readonly sourceManga: SourceManga; readonly chapterNum: number }
@@ -257,9 +287,11 @@ const processReadActionsEffect = (
             `[manifold] read action:${action.id}:${action.chapterSourceId}:${action.chapterMangaId}:${action.sourceManga.mangaId}`,
           );
           const sourceChapterId = action.readChapter?.chapterId ?? action.chapterId;
+
           if (!sourceChapterId) {
             return yield* trackerError("Chapter read action has no source chapter ID");
           }
+
           if (!action.chapterMangaId) {
             return yield* trackerError("Chapter read action has no source manga ID");
           }
@@ -268,6 +300,7 @@ const processReadActionsEffect = (
             try: () => chapterProvenance(action.chapterSourceId, sourceChapterId),
             catch: (cause) => trackerError(errorMessage(cause)),
           });
+
           yield* fromPromise(() =>
             deps.recordRead(action.sourceManga.mangaId, {
               eventId: action.id,
@@ -283,8 +316,10 @@ const processReadActionsEffect = (
           yield* Effect.logInfo(`[manifold] read queued:${sourceChapterId}`);
 
           const num = action.chapterNum;
+
           if (isFiniteNumber(num) && num >= 0) {
             const current = maxByManga.get(action.sourceManga.mangaId);
+
             if (!current || num > current.chapterNum) {
               maxByManga.set(action.sourceManga.mangaId, {
                 sourceManga: action.sourceManga,
@@ -292,9 +327,11 @@ const processReadActionsEffect = (
               });
             }
           }
+
           return action.id;
         }),
       );
+
       if (outcome._tag === "Success") {
         successfulItems.push(outcome.success);
       } else {
@@ -306,11 +343,14 @@ const processReadActionsEffect = (
     }
 
     const attempted = new Set<string>();
+
     for (const [mangaId, max] of maxByManga) {
       attempted.add(mangaId);
+
       const outcome = yield* Effect.result(
         fromPromise(() => deps.pushProgress(max.sourceManga, max.chapterNum)),
       );
+
       if (outcome._tag === "Success") {
         if (outcome.success) {
           acknowledgeProgress(mangaId, max.chapterNum);

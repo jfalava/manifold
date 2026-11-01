@@ -78,9 +78,9 @@ describe("upgrade command helpers", () => {
 
   test("only accepts the compiled executable as its replacement target", () => {
     expect(() => executablePath("/repo/index.ts", "/usr/bin/bun")).toThrow("compiled");
-    expect(
-      executablePath("/$bunfs/root/manifold", "/Users/test/.local/bin/manifold"),
-    ).toBe("/Users/test/.local/bin/manifold");
+    expect(executablePath("/$bunfs/root/manifold", "/Users/test/.local/bin/manifold")).toBe(
+      "/Users/test/.local/bin/manifold",
+    );
     expect(
       executablePath("B:\\~BUN\\root\\manifold.exe", "C:\\Users\\test\\.local\\bin\\manifold.exe"),
     ).toBe("C:\\Users\\test\\.local\\bin\\manifold.exe");

@@ -46,6 +46,9 @@ export const agentIgnores = [
 // Remaining unknown params and Record<string, unknown> are errors: parse at I/O
 // into JsonObject / named domain types (`@manifold/json`).
 export const antiSlopRules: Record<string, DummyRule> = {
+  "oxc/no-accumulating-spread": "error",
+  "anti-slop/no-reduce-accumulator-copy": "error",
+  "anti-slop/require-readable-spacing": "error",
   "anti-slop/no-chained-type-assertions": "error",
   "anti-slop/no-conditional-empty-object-spread": "error",
   "anti-slop/no-known-value-widening": "error",
@@ -64,6 +67,7 @@ export const antiSlopRules: Record<string, DummyRule> = {
 };
 
 export const antiSlopEffectRules: Record<string, DummyRule> = {
+  "anti-slop-effect/no-manual-effect-error-tag": "error",
   "anti-slop-effect/no-service-constructor-imports": "error",
 };
 
@@ -192,10 +196,6 @@ export const baseConfig: OxlintConfig = {
   rules: {
     ...builtinRules,
     ...antiSlopRules,
-  },
-  options: {
-    typeAware: true,
-    typeCheck: true,
   },
 };
 

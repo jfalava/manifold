@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 // Root /llms.txt — sectioned index for AI agents.
 import { getIndexedTopLevel } from "@cloudflare/nimbus-docs";
 import { config } from "virtual:nimbus/config";
@@ -26,6 +21,7 @@ export async function GET() {
 
   // Sort leaves + groups alphabetically into a single stable list.
   type Row = { key: string; line: string };
+
   const rows: Row[] = [];
 
   for (const leaf of leaves) {
@@ -41,6 +37,7 @@ export async function GET() {
     if (group.kind === "version") {
       continue;
     }
+
     rows.push({
       key: `/${group.slug}`,
       line: `- [${group.label}](${new URL(withBase(`/${group.slug}/llms.txt`), config.site).href})`,
@@ -48,6 +45,7 @@ export async function GET() {
   }
 
   rows.sort((a, b) => a.key.localeCompare(b.key));
+
   for (const row of rows) {
     lines.push(row.line);
   }

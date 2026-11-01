@@ -13,6 +13,9 @@
     "/cli/anilist/wipe-manga",
     "/cli/anilist/wipe-manga/index.md",
     "/cli/anilist/wipe-manga/index.mdx",
+    "/cli/debug-program-status",
+    "/cli/debug-program-status/index.md",
+    "/cli/debug-program-status/index.mdx",
     "/cli/index.md",
     "/cli/index.mdx",
     "/cli/llms.txt",
@@ -87,11 +90,15 @@
     "/favicon.ico",
     "/fonts/IBMPlexSans-Bold.ttf",
     "/index.md",
+    "/licenses",
+    "/licenses/index.md",
+    "/licenses/index.mdx",
     "/llms-full.txt",
     "/llms.txt",
     "/og.png",
     "/og/cli.png",
     "/og/cli/anilist/wipe-manga.png",
+    "/og/cli/debug-program-status.png",
     "/og/cli/login/anilist.png",
     "/og/cli/login/mal.png",
     "/og/cli/login/manifold.png",
@@ -114,11 +121,16 @@
     "/og/cli/registry/manganato.png",
     "/og/cli/registry/xcomic.png",
     "/og/cli/upgrade.png",
+    "/og/licenses.png",
     "/robots.txt",
     "/site.webmanifest"
   ],
   "redirects": [],
   "redirectPages": [],
   "redirectRules": "cloudflare",
-  "opaqueNamespaces": []
+  "mounts": {
+    "docs": ""
+  },
+  "opaqueNamespaces": [],
+  "builtAt": "2026-11-01T21:08:21.775Z"
 }

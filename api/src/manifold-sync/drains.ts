@@ -72,6 +72,7 @@ export const readMalBackupEntry = (host: SyncHost, entryId: string): RegistryEnt
       entryId,
     )
     .toArray()[0];
+
   return active ? readEntry(host, entryId, false) : undefined;
 };
 
@@ -82,44 +83,58 @@ const drainMalBackupsEffect = (host: SyncHost): Effect.Effect<void> =>
         "SELECT * FROM sync_ops WHERE target = 'mal' AND state = 'pending' ORDER BY id LIMIT 5",
       )
       .toArray();
+
     for (const row of rows) {
       yield* Effect.gen(function* () {
         const parsed = yield* Schema.decodeEffect(JsonString)(row.payload);
         const decodedPayload = Schema.decodeUnknownOption(MalBackupPayload)(parsed);
+
         if (Option.isNone(decodedPayload)) {
           return yield* apiError("Invalid mal backup payload");
         }
+
         const payload = decodedPayload.value;
         const entry = readMalBackupEntry(host, payload.entryId);
+
         if (entry && readListState(host, entry.id)?.status) {
           const accessToken = yield* fromPromise(() => getAuthAccessToken(host, "mal"));
+
           const match = yield* fromPromise(() =>
             resolveMalBackup(host.env, entry, payload.backupIdentity),
           );
+
           // Network awaits can outlive an update, unlink, or nuke. Re-check
           // ownership and status immediately before applying the projection.
           const current = readMalBackupEntry(host, entry.id);
+
           const pending = host.ctx.storage.sql
             .exec<OpRow>("SELECT * FROM sync_ops WHERE id = ? AND state = 'pending'", row.id)
             .toArray()[0];
+
           if (!pending) {
             return;
           }
+
           const status = readListState(host, entry.id)?.status;
+
           if (current && status) {
             const existing = current.providers.find((link) => link.provider === "mal");
+
             if (match.method === "binding" && !existing) {
               return yield* apiError("MAL backup binding removed during resolution");
             }
+
             if (
               current.providers.find((link) => link.provider === "anilist")?.externalId !==
               entry.providers.find((link) => link.provider === "anilist")?.externalId
             ) {
               return yield* apiError("AniList identity changed during MAL resolution");
             }
+
             if (existing && existing.externalId !== match.externalId) {
               return yield* apiError("MAL backup binding changed during resolution");
             }
+
             const owner = host.ctx.storage.sql
               .exec<{ entry_id: string }>(
                 "SELECT entry_id FROM provider_links WHERE provider = 'mal' AND external_id = ? AND entry_id <> ?",
@@ -127,9 +142,11 @@ const drainMalBackupsEffect = (host: SyncHost): Effect.Effect<void> =>
                 entry.id,
               )
               .toArray()[0];
+
             if (owner) {
               return yield* apiError("MAL backup match already belongs to another registry entry");
             }
+
             if (!existing) {
               // Unlike manual linkProvider, automatic backups must never steal
               // a binding or change the canonical entry's provider/title.
@@ -145,9 +162,11 @@ const drainMalBackupsEffect = (host: SyncHost): Effect.Effect<void> =>
                 method: match.method,
               });
             }
+
             yield* fromPromise(() => writeMalBackupStatus(match.externalId, status, accessToken));
           }
         }
+
         host.ctx.storage.sql.exec(
           "DELETE FROM sync_ops WHERE id = ? AND state = 'pending'",
           row.id,
@@ -176,6 +195,7 @@ const drainMangaDexOutboxEffect = (host: SyncHost, rows: readonly OpRow[]) =>
     const { groups, invalid } = groupOutboxForDrain(
       rows.map((row) => ({ id: row.id, payload: row.payload, attempts: row.attempts })),
     );
+
     for (const row of invalid) {
       failOps(host, [row], new Error(`Undecodable outbox payload`));
     }
@@ -183,13 +203,17 @@ const drainMangaDexOutboxEffect = (host: SyncHost, rows: readonly OpRow[]) =>
     for (const group of groups) {
       yield* Effect.gen(function* () {
         const entry = getEntry(host, group.entryId);
+
         const mangaDexId = entry?.providers.find(
           (provider) => provider.provider === "mangadex",
         )?.externalId;
+
         if (!mangaDexId) {
           return yield* apiError(`No MangaDex provider link for entry ${group.entryId}`);
         }
+
         yield* client.markChaptersRead(mangaDexId, [...group.chapters]);
+
         for (const row of group.rows) {
           host.ctx.storage.sql.exec(
             "DELETE FROM sync_ops WHERE id = ? AND state = 'pending'",
@@ -222,6 +246,7 @@ const drainMangaDexStatusQueueEffect = (host: SyncHost): Effect.Effect<void> =>
        LIMIT ${MD_STATUS_DRAIN_LIMIT}`,
       )
       .toArray();
+
     if (pending.length === 0) {
       return;
     }
@@ -240,18 +265,22 @@ const drainMangaDexStatusQueueEffect = (host: SyncHost): Effect.Effect<void> =>
               row.entry_id,
             )
             .toArray()[0];
+
           if (!mdLink) {
             // Link disappeared; nothing to mirror.
             host.ctx.storage.sql.exec(
               "DELETE FROM md_status_queue WHERE entry_id = ?",
               row.entry_id,
             );
+
             return;
           }
+
           if (!known.has(mdLink.external_id)) {
             yield* client.updateReadingStatus(mdLink.external_id, "reading");
             known.add(mdLink.external_id);
           }
+
           host.ctx.storage.sql.exec("DELETE FROM md_status_queue WHERE entry_id = ?", row.entry_id);
         }).pipe(
           Effect.catch((error) =>
@@ -280,7 +309,9 @@ const alarmEffect = (host: SyncHost) =>
     if (host.ctx.storage.kv.get("registry_sync_paused")) {
       return;
     }
+
     yield* drainMalBackupsEffect(host);
+
     const rows = host.ctx.storage.sql
       .exec<OpRow>(
         `SELECT * FROM sync_ops

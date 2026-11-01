@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 /**
  * Per-page `/<slug>/index.mdx` — the raw authored source for every
  * indexable entry of the primary `docs` collection that has a string body.
@@ -31,6 +26,7 @@ interface SlugProps {
 
 export async function getStaticPaths() {
   const indexed = await getIndexedEntries();
+
   return indexed
     .filter(
       (item) =>
@@ -50,6 +46,7 @@ export async function getStaticPaths() {
 export async function GET({ props }: { props: SlugProps }) {
   const { item } = props;
   const { entry, title, description, version } = item;
+
   const socialImage =
     (isEntryData(entry.data) ? entrySocialImage(entry.data) : undefined) ??
     config.socialImage;

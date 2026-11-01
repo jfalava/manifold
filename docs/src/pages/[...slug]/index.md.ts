@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 /**
  * Per-page `/<slug>/index.md` — the clean-markdown alternate for every
  * indexable entry of the primary `docs` collection.
@@ -33,6 +28,7 @@ interface SlugProps {
 
 export async function getStaticPaths() {
   const indexed = await getIndexedEntries();
+
   return indexed
     .filter((item) => item.collection === PRIMARY_COLLECTION)
     .map((item) => ({
@@ -51,6 +47,7 @@ export async function getStaticPaths() {
 export async function GET({ props }: { props: SlugProps }) {
   const { item } = props;
   const { entry, title, description, markdownUrl, sourceUrl, version } = item;
+
   const socialImage =
     (isEntryData(entry.data) ? entrySocialImage(entry.data) : undefined) ??
     config.socialImage;

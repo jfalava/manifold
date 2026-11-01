@@ -1,4 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Form } from "@paperback/types";
 
@@ -45,15 +44,18 @@ const installApplication = (responseStatus = 200) => {
       requests.push(request);
       // SAFETY: TextEncoder returns an ArrayBuffer-backed Uint8Array here.
       const body = new TextEncoder().encode('{"entries":[]}').buffer as ArrayBuffer;
+
       return [{ status: responseStatus, headers: {} }, body];
     },
   });
+
   return { secureState, state, requests };
 };
 
 const settingsForm = async (): Promise<SettingsCallbacks> => {
   const { ManifoldTrackerSource } = await import("../src/MANIFOLD/main");
   const form = await new ManifoldTrackerSource().getSettingsForm();
+
   // SAFETY: this settings form declares both callbacks in its selector configuration.
   return form as SettingsCallbacks;
 };
@@ -104,6 +106,7 @@ describe("Manifold API settings authentication", () => {
     secureState.set(API_TOKEN_KEY, "stale-token");
     const form = await settingsForm();
     state.set(API_STATUS_KEY, "Configured");
+
     const statusBeforeSave = form
       .getSections()
       .find((section) => section.id === "tracker-personal-api")
@@ -119,10 +122,12 @@ describe("Manifold API settings authentication", () => {
 
     expect(secureState.get(API_TOKEN_KEY)).toBe("expired-token");
     expect(state.get(API_STATUS_KEY)).toBe("Token rejected: check it or log in again");
+
     const statusAfterSave = form
       .getSections()
       .find((section) => section.id === "tracker-personal-api")
       ?.items.find((item) => item.id === "tracker-personal-api-status");
+
     expect(statusAfterSave).toMatchObject({ style: "error" });
   });
 

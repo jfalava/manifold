@@ -1,9 +1,4 @@
-/** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
 import { Badge, Banner, SkeletonLine, Surface, Table, Text } from "@cloudflare/kumo";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
@@ -191,8 +186,10 @@ function formatBytes(value: number | null): string {
   if (value === null || value <= 0) {
     return "—";
   }
+
   if (value < 1024 * 1024) {
     return `${(value / 1024).toFixed(1)} KB`;
   }
+
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }

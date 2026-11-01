@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics schemaSync:off */
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
@@ -131,11 +130,14 @@ describe("Manifold GitHub OAuth callback", () => {
     readonly accountMismatch?: boolean;
   }): Promise<Response> => {
     const url = new URL("https://manifold.example/v1/oauth/github/callback?state=callback-state");
+
     const callbackStub: Pick<ManifoldSyncStub, "completeGithubOAuth"> = {
       completeGithubOAuth: async () => completeResult,
     };
+
     // SAFETY: this callback route only calls completeGithubOAuth on the stub.
     const sync = callbackStub as ManifoldSyncStub;
+
     const env = {
       // SAFETY: the route only reads MANIFOLD_SYNC on this callback path.
       ...({} as Env),
@@ -143,6 +145,7 @@ describe("Manifold GitHub OAuth callback", () => {
         getByName: () => sync,
       },
     } satisfies Env;
+
     const response = await Effect.runPromise(
       handleOAuth({
         request: new Request(url),
@@ -151,9 +154,11 @@ describe("Manifold GitHub OAuth callback", () => {
         path: ["v1", "oauth", "github", "callback"],
       }),
     );
+
     if (!response) {
       throw new Error("GitHub OAuth callback returned no response");
     }
+
     return response;
   };
 
@@ -164,6 +169,7 @@ describe("Manifold GitHub OAuth callback", () => {
       error: "access_denied",
       accountMismatch: true,
     });
+
     const body = await response.text();
 
     expect(response.status).toBe(403);

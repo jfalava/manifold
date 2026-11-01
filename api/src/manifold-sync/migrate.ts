@@ -12,6 +12,7 @@ export function migrate(host: SyncHost): void {
       updated_at INTEGER NOT NULL
     );
   `);
+
   // Big-bang registry: entries are provider-neutral rows keyed by a minted
   // UUID; the provider columns record the minting source only.
   try {
@@ -19,16 +20,19 @@ export function migrate(host: SyncHost): void {
   } catch {
     // Column already exists.
   }
+
   try {
     host.ctx.storage.sql.exec("ALTER TABLE canonical_entries DROP COLUMN chapter_source");
   } catch {
     // Column is absent on source-free registries.
   }
+
   try {
     host.ctx.storage.sql.exec("ALTER TABLE oauth_sessions ADD COLUMN return_path TEXT");
   } catch {
     // Column already exists.
   }
+
   host.ctx.storage.sql.exec(`
     CREATE TABLE IF NOT EXISTS provider_links (
       entry_id TEXT NOT NULL REFERENCES canonical_entries(id) ON DELETE CASCADE,
@@ -166,16 +170,19 @@ export function migrate(host: SyncHost): void {
 
     DROP TABLE IF EXISTS update_probe_failures;
   `);
+
   try {
     host.ctx.storage.sql.exec("ALTER TABLE md_status_queue ADD COLUMN last_error TEXT");
   } catch {
     // Column already exists.
   }
+
   try {
     host.ctx.storage.sql.exec("ALTER TABLE provider_links ADD COLUMN source_name TEXT");
   } catch {
     // Column already exists.
   }
+
   migrateLegacyOutbox(host);
   retireComix(host);
 }
@@ -205,9 +212,11 @@ export function migrateLegacyOutbox(host: SyncHost): void {
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_outbox'",
     )
     .toArray()[0];
+
   if (!legacy) {
     return;
   }
+
   const timestamp = now();
   host.ctx.storage.sql.exec(
     `INSERT OR IGNORE INTO sync_ops

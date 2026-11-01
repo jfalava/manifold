@@ -1,9 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics newPromise:off */
-/** @effect-diagnostics globalTimers:off */
 import { Button, cn } from "@cloudflare/kumo";
 import type { ReactNode } from "react";
 
@@ -38,6 +32,7 @@ export const TOGGLE_VARIANT_STYLES = {
 
 export function toggleClassesForVariant(variant: FilterToggleVariant, active: boolean): string {
   const bucket = TOGGLE_VARIANT_STYLES[variant] ?? TOGGLE_VARIANT_STYLES.neutral;
+
   return active ? bucket.active : bucket.idle;
 }
 

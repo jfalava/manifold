@@ -2,9 +2,7 @@
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
 /* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
 
-/** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
 import {
   ContentRating,
   type ManagedCollection,
@@ -90,36 +88,46 @@ const isMalBackupIdentity = (value: unknown): value is MalBackupIdentity => {
   if (!isJsonObject(value) || !isNonEmptyString(value["anilistId"])) {
     return false;
   }
+
   if (value["malId"] !== undefined && !isNonEmptyString(value["malId"])) {
     return false;
   }
+
   return isJsonArray(value["titles"]) && value["titles"].every(isNonEmptyString);
 };
 
 const readPendingReconciles = (): PendingReconciles => {
   const raw = Application.getState(PENDING_RECONCILES_KEY);
+
   if (!isString(raw)) {
     return {};
   }
+
   try {
     const parsed: unknown = JSON.parse(raw);
+
     if (!isJsonObject(parsed)) {
       return {};
     }
+
     const reconciles: [string, PendingReconcile][] = [];
+
     for (const [entryId, value] of Object.entries(parsed)) {
       if (!isJsonObject(value) || !isFiniteNumber(value["at"]) || value["at"] < 0) {
         continue;
       }
+
       if (
         value["kind"] === "setListState" &&
         isString(value["entryId"]) &&
         value["entryId"] === entryId
       ) {
         const status = parseAniListReadingStatus(isString(value["status"]) ? value["status"] : "");
+
         if (status === undefined) {
           continue;
         }
+
         const backup = value["backupIdentity"];
         reconciles.push([
           entryId,
@@ -139,6 +147,7 @@ const readPendingReconciles = (): PendingReconciles => {
         reconciles.push([entryId, { kind: "nukeEntry", entryId, at: value["at"] }]);
       }
     }
+
     return Object.fromEntries(reconciles);
   } catch {
     return {};
@@ -160,9 +169,11 @@ const enqueueReconcile = (reconcile: PendingReconcile): void => {
 const acknowledgeReconcile = (reconcile: PendingReconcile): void => {
   const pending = readPendingReconciles();
   const current = pending[reconcile.entryId];
+
   if (current === undefined || JSON.stringify(current) !== JSON.stringify(reconcile)) {
     return;
   }
+
   delete pending[reconcile.entryId];
   writePendingReconciles(pending);
 };
@@ -178,15 +189,20 @@ type ResolvedRegistryRow = {
 
 const readPendingNukes = (): PendingNukes => {
   const raw = Application.getState(PENDING_NUKES_KEY);
+
   if (!isString(raw)) {
     return {};
   }
+
   try {
     const parsed: unknown = JSON.parse(raw);
+
     if (!isJsonObject(parsed)) {
       return {};
     }
+
     const pending: PendingNukes = {};
+
     for (const [key, value] of Object.entries(parsed)) {
       if (
         !isJsonObject(value) ||
@@ -201,6 +217,7 @@ const readPendingNukes = (): PendingNukes => {
       ) {
         continue;
       }
+
       pending[key] = {
         entryId: value["entryId"],
         anilistId: value["anilistId"],
@@ -208,6 +225,7 @@ const readPendingNukes = (): PendingNukes => {
         at: value["at"],
       };
     }
+
     return pending;
   } catch {
     return {};
@@ -220,26 +238,33 @@ const writePendingNukes = (pending: PendingNukes): void => {
 
 const aniListToken = (): string => {
   const token = Application.getSecureState(ANILIST_SESSION_KEY);
+
   if (!isString(token) || token.trim().length === 0) {
     throw trackerError("Connect AniList in the manifold: tracker settings first");
   }
+
   return token.trim();
 };
 
 const aniListUserId = (): number => {
   const raw = Application.getState(ANILIST_VIEWER_ID_KEY);
+
   if (!isString(raw) && !isFiniteNumber(raw)) {
     throw trackerError("AniList session is incomplete, reconnect in settings");
   }
+
   const userId = Number(raw);
+
   if (!Number.isSafeInteger(userId) || userId < 1) {
     throw trackerError("AniList session is incomplete, reconnect in settings");
   }
+
   return userId;
 };
 
 export const aniListSessionToken = (): string | undefined => {
   const token = Application.getSecureState(ANILIST_SESSION_KEY);
+
   return isString(token) && token.trim().length > 0 ? token.trim() : undefined;
 };
 
@@ -262,18 +287,23 @@ const anilistIdOfEffect = (
   Effect.gen(function* () {
     const entryId = sourceManga.mangaId;
     const stamped = sourceManga.mangaInfo.additionalInfo?.["AniList ID"];
+
     if (stamped) {
       return { entryId, anilistId: stamped };
     }
+
     const entry = yield* fromPromise(() => configuredPersonalApi().getEntry(entryId));
+
     const anilistId = entry?.providers.find(
       (provider) => provider.provider === "anilist",
     )?.externalId;
+
     return anilistId ? { entryId, anilistId } : undefined;
   });
 
 export const getManagedLibraryCollections = (): Promise<ManagedCollection[]> => {
   console.log("[manifold] collections:list");
+
   return Promise.resolve([...MANAGED_COLLECTIONS]);
 };
 
@@ -283,8 +313,10 @@ const resolveManagedCollectionEntriesEffect = (
 ): Effect.Effect<ReadonlyMap<string, ResolvedRegistryRow>> =>
   Effect.gen(function* () {
     const byAnilist = new Map<string, ResolvedRegistryRow>();
+
     for (let index = 0; index < items.length; index += REGISTRY_RESOLVE_BATCH_SIZE) {
       const chunk = items.slice(index, index + REGISTRY_RESOLVE_BATCH_SIZE);
+
       const outcome = yield* Effect.result(
         fromPromise(() =>
           api.resolveEntries(
@@ -296,21 +328,26 @@ const resolveManagedCollectionEntriesEffect = (
           ),
         ),
       );
+
       if (outcome._tag === "Failure") {
         const detail =
           outcome.failure instanceof Error ? outcome.failure.message : String(outcome.failure);
+
         yield* Effect.logError(
           `[manifold] registry resolve batch failed:${index}-${index + chunk.length - 1}:` + detail,
         );
         continue;
       }
+
       for (const entry of outcome.success) {
         const link = entry.providers.find((provider) => provider.provider === "anilist");
+
         if (link) {
           byAnilist.set(link.externalId, entry);
         }
       }
     }
+
     return byAnilist;
   });
 
@@ -325,9 +362,11 @@ const getSourceMangaInManagedCollectionEffect = (
 ): Effect.Effect<SourceManga[], TrackerEffectError> =>
   Effect.gen(function* () {
     const status = parseAniListReadingStatus(managedCollection.id);
+
     if (status === undefined) {
       return [];
     }
+
     yield* Effect.logInfo(`[manifold] collection:fetch:${managedCollection.id}:start`);
 
     const token = aniListToken();
@@ -341,12 +380,14 @@ const getSourceMangaInManagedCollectionEffect = (
     return items.flatMap((item) => {
       const entry = byAnilist.get(item.anilistId);
       const uuid = entry?.id;
+
       if (!uuid) {
         // A provider candidate ID cannot be used by registry mutations. Do
         // not expose a card that cannot be read or moved until reconciliation
         // resolves it to a registry UUID.
         return [];
       }
+
       return [
         {
           mangaId: uuid,
@@ -383,6 +424,7 @@ const commitManagedCollectionChangesEffect = (
         `add=[${addedIds.join(",")}]:del=[${deletedIds.join(",")}]`,
     );
     const status = parseAniListReadingStatus(changeset.collection.id);
+
     if (status === undefined) {
       return yield* trackerError(`Unknown manifold collection: ${changeset.collection.id}`);
     }
@@ -393,9 +435,11 @@ const commitManagedCollectionChangesEffect = (
 
     for (const addition of changeset.additions ?? []) {
       const resolved = yield* anilistIdOfEffect(addition);
+
       if (!resolved) {
         return yield* trackerError(`No AniList link for ${addition.mangaId}`);
       }
+
       // An addition for a pending-nuked title means the deletion was one half
       // of a move — cancel the nuke.
       delete pending[resolved.anilistId];
@@ -404,6 +448,7 @@ const commitManagedCollectionChangesEffect = (
       yield* Effect.logInfo(
         `[manifold] collection:add:${resolved.anilistId}:${status}:entry=${result.mediaListEntryId ?? "?"}`,
       );
+
       // Device applied it directly; the registry records the new truth without
       // enqueueing a redundant op. The reconcile persists until acknowledged so
       // a failed API call retries across flushes and restarts.
@@ -414,7 +459,9 @@ const commitManagedCollectionChangesEffect = (
         ...(result.backupIdentity && { backupIdentity: result.backupIdentity }),
         at: yield* Clock.currentTimeMillis,
       };
+
       enqueueReconcile(reconcile);
+
       const setOutcome = yield* Effect.result(
         fromPromise(() =>
           api.setListState(resolved.entryId, {
@@ -425,6 +472,7 @@ const commitManagedCollectionChangesEffect = (
           }),
         ),
       );
+
       if (setOutcome._tag === "Success") {
         acknowledgeReconcile(reconcile);
       } else {
@@ -439,9 +487,11 @@ const commitManagedCollectionChangesEffect = (
 
     for (const deletion of changeset.deletions ?? []) {
       const resolved = yield* anilistIdOfEffect(deletion);
+
       if (!resolved) {
         continue;
       }
+
       pending[resolved.anilistId] = {
         entryId: resolved.entryId,
         anilistId: resolved.anilistId,
@@ -449,6 +499,7 @@ const commitManagedCollectionChangesEffect = (
         at: yield* Clock.currentTimeMillis,
       };
     }
+
     writePendingNukes(pending);
 
     yield* flushPendingNukesEffect();
@@ -470,6 +521,7 @@ const flushPendingNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
     const executed = yield* flushDueNukesEffect();
     // Reconcile retries run on every flush, even when no nukes were due.
     yield* flushPendingReconcilesEffect();
+
     return executed;
   });
 
@@ -481,14 +533,17 @@ const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
     const pending = readPendingNukes();
     const nowMs = yield* Clock.currentTimeMillis;
     const due = Object.entries(pending).filter(([, nuke]) => nowMs - nuke.at >= NUKE_QUIET_MS);
+
     if (due.length === 0) {
       return 0;
     }
 
     const token = aniListSessionToken();
+
     if (!token) {
       return 0;
     }
+
     const api = configuredPersonalApi();
 
     const userIdOutcome = yield* Effect.result(
@@ -497,58 +552,73 @@ const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
         catch: (cause) => trackerError(errorMessage(cause)),
       }),
     );
+
     if (userIdOutcome._tag === "Failure") {
       return 0;
     }
+
     const userId = userIdOutcome.success;
 
     const libraryOutcome = yield* Effect.result(
       fromPromise(() => fetchAniListLibrary(token, userId)),
     );
+
     if (libraryOutcome._tag === "Failure") {
       yield* Effect.logError(
         `[manifold] nuke flush library fetch failed:${libraryOutcome.failure instanceof Error ? libraryOutcome.failure.message : String(libraryOutcome.failure)}`,
       );
+
       return 0;
     }
+
     const library = new Map(
       libraryOutcome.success.map((item) => [item.anilistId, item.status] as const),
     );
 
     let executed = 0;
+
     for (const [anilistId, nuke] of due) {
       const live = library.get(anilistId);
+
       if (live !== undefined && live !== nuke.collectionId) {
         // The entry moved to another collection — not a removal.
         delete pending[anilistId];
         continue;
       }
+
       const nukeOutcome = yield* Effect.result(
         Effect.gen(function* () {
           let listEntryId = mediaListEntryIds.get(anilistId);
+
           if (listEntryId === undefined) {
             const ids = yield* fromPromise(() => fetchAniListMediaListEntryIds(token, userId));
             listEntryId = ids[anilistId];
           }
+
           if (listEntryId !== undefined) {
             yield* fromPromise(() => deleteAniListEntry(token, listEntryId));
             mediaListEntryIds.delete(anilistId);
           } else {
             yield* Effect.logInfo(`[manifold] nuke skipped, unlisted:${anilistId}`);
           }
+
           // The AniList side is resolved; drop the pending nuke now. The registry
           // reconciliation persists separately until nukeEntry is acknowledged.
           delete pending[anilistId];
           executed += 1;
+
           const reconcile: PendingReconcile = {
             kind: "nukeEntry",
             entryId: nuke.entryId,
             at: nowMs,
           };
+
           enqueueReconcile(reconcile);
+
           const registryOutcome = yield* Effect.result(
             fromPromise(() => api.nukeEntry(nuke.entryId)),
           );
+
           if (registryOutcome._tag === "Success") {
             acknowledgeReconcile(reconcile);
           } else {
@@ -559,9 +629,11 @@ const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
                   : String(registryOutcome.failure)),
             );
           }
+
           yield* Effect.logInfo(`[manifold] nuked:${anilistId}:${nuke.entryId}`);
         }),
       );
+
       if (nukeOutcome._tag === "Failure") {
         // Keep it pending; the next flush retries.
         yield* Effect.logError(
@@ -569,7 +641,9 @@ const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
         );
       }
     }
+
     writePendingNukes(pending);
+
     return executed;
   });
 
@@ -584,6 +658,7 @@ const flushPendingReconcilesEffect = (
   Effect.gen(function* () {
     const pending = readPendingReconciles();
     let acknowledged = 0;
+
     for (const [entryId, reconcile] of Object.entries(pending)) {
       const outcome = yield* Effect.result(
         Effect.gen(function* () {
@@ -601,6 +676,7 @@ const flushPendingReconcilesEffect = (
           }
         }),
       );
+
       if (outcome._tag === "Success") {
         acknowledgeReconcile(reconcile);
         acknowledged += 1;
@@ -615,6 +691,7 @@ const flushPendingReconcilesEffect = (
         );
       }
     }
+
     return acknowledged;
   });
 

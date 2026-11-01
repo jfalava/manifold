@@ -9,6 +9,7 @@ import {
 } from "../lib/registry-filters";
 
 type FilterKind = "status" | "has" | "missing" | "unlinked";
+
 type FilterOption = { readonly kind: FilterKind; readonly value: string; readonly label: string };
 
 const FIELDS = [
@@ -34,6 +35,7 @@ export function RegistryFilterBar({
   const [query, setQuery] = useState("");
   const bar = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
+
   const options = useMemo<FilterOption[]>(
     () => [
       ...statuses.map((value): FilterOption => ({
@@ -49,6 +51,7 @@ export function RegistryFilterBar({
     ],
     [statuses, providers],
   );
+
   const visibleOptions = options.filter((option) => field === "all" || option.kind === field);
 
   function edit(kind: FilterKind | "all") {
@@ -62,7 +65,9 @@ export function RegistryFilterBar({
     if (!option) {
       return;
     }
+
     const text = query === "" ? filters.text : "";
+
     if (option.kind === "status") {
       onChange({
         ...filters,
@@ -90,6 +95,7 @@ export function RegistryFilterBar({
           : [...filters.bindings, binding],
       });
     }
+
     setQuery("");
     setOpen(false);
     input.current?.focus();
@@ -99,9 +105,11 @@ export function RegistryFilterBar({
     if (option.kind === "status") {
       return filters.statuses.includes(option.value);
     }
+
     if (option.kind === "unlinked") {
       return filters.unlinked;
     }
+
     return filters.bindings.some(
       (item) => item.provider === option.value && item.present === (option.kind === "has"),
     );
@@ -111,9 +119,11 @@ export function RegistryFilterBar({
     if (option.kind === "has" && filters.unlinked) {
       return "Remove Bindings: None first";
     }
+
     if (option.kind === "unlinked" && filters.bindings.some((item) => item.present)) {
       return "Remove Has binding filters first";
     }
+
     return undefined;
   }
 
@@ -246,9 +256,11 @@ export function RegistryFilterBar({
                 event.preventDefault();
                 edit("all");
               }
+
               if (event.key === "Backspace" && filters.text === "") {
                 const buttons =
                   bar.current?.querySelectorAll<HTMLButtonElement>("[data-registry-pill]");
+
                 buttons?.[buttons.length - 1]?.focus();
               }
             }}

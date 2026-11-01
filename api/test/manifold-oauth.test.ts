@@ -1,5 +1,4 @@
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics nodeBuiltinImport:off */
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { requestHref, requestInitText } from "@manifold/json";
@@ -28,24 +27,31 @@ const environment = {
 
 const makeHost = () => {
   const database = new DatabaseSync(":memory:");
+
   const sql = {
     exec<T>(query: string, ...parameters: (string | number)[]) {
       if (parameters.length === 0 && query.includes(";")) {
         database.exec(query);
         const empty: T[] = [];
+
         return { toArray: () => empty };
       }
+
       // SAFETY: test queries only select the fields represented by the requested row type.
       const rows = database.prepare(query).all(...parameters) as T[];
+
       return { toArray: () => rows };
     },
   };
+
   // SAFETY: this adapter implements the subset of DurableObjectState storage used by the OAuth module.
   const host = {
     ctx: { storage: { sql } },
     env: environment,
   } as SyncHost;
+
   migrate(host);
+
   return { host, close: () => database.close() };
 };
 
@@ -57,9 +63,11 @@ afterEach(() => {
 describe("Manifold GitHub OAuth", () => {
   it("exchanges a GitHub callback into a one-time PKCE session", async () => {
     const { host, close } = makeHost();
+
     try {
       const verifier = "paperback-verifier";
       const challenge = await createPkceChallenge(verifier);
+
       const start = await createManifoldOAuthAuthorization(host, {
         clientId: MANIFOLD_OAUTH_CLIENT_ID,
         redirectUri: MANIFOLD_OAUTH_REDIRECT_URI,
@@ -68,6 +76,7 @@ describe("Manifold GitHub OAuth", () => {
         codeChallenge: challenge,
         codeChallengeMethod: "S256",
       });
+
       const authorizationUrl = new URL(start.authorizationUrl);
       const providerState = authorizationUrl.searchParams.get("state");
       expect(providerState).toBeTruthy();
@@ -76,20 +85,26 @@ describe("Manifold GitHub OAuth", () => {
 
       const githubFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = requestHref(input);
+
         if (url === "https://github.com/login/oauth/access_token") {
           const body =
             init?.body instanceof URLSearchParams
               ? init.body.toString()
               : (requestInitText(init) ?? "");
+
           const form = new URLSearchParams(body);
           expect(form.get("client_secret")).toBe("github-client-secret");
           expect(form.get("code_verifier")).toBeTruthy();
+
           return Response.json({ access_token: "github-access-token" });
         }
+
         expect(url).toBe("https://api.github.com/user");
         expect(new Headers(init?.headers).get("authorization")).toBe("Bearer github-access-token");
+
         return Response.json({ id: 12345 });
       });
+
       vi.stubGlobal("fetch", githubFetch);
 
       const callback = await completeGithubOAuth(host, providerState!, "github-code");
@@ -106,6 +121,7 @@ describe("Manifold GitHub OAuth", () => {
         code: authorizationCode!,
         codeVerifier: verifier,
       });
+
       expect(session.access_token).toMatch(/^mf_access_/);
       expect(session.refresh_token).toMatch(/^mf_refresh_/);
       expect(await authorizeManifoldAccessToken(host, session.access_token)).toBe(true);
@@ -127,9 +143,11 @@ describe("Manifold GitHub OAuth", () => {
 
   it("consumes refresh tokens by rotation and revokes the active session", async () => {
     const { host, close } = makeHost();
+
     try {
       const verifier = "refresh-verifier";
       const challenge = await createPkceChallenge(verifier);
+
       const start = await createManifoldOAuthAuthorization(host, {
         clientId: MANIFOLD_OAUTH_CLIENT_ID,
         redirectUri: MANIFOLD_OAUTH_REDIRECT_URI,
@@ -138,15 +156,18 @@ describe("Manifold GitHub OAuth", () => {
         codeChallenge: challenge,
         codeChallengeMethod: "S256",
       });
+
       const providerState = new URL(start.authorizationUrl).searchParams.get("state");
       vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
         if (requestHref(input).includes("access_token")) {
           return Response.json({ access_token: "github-access-token" });
         }
+
         return Response.json({ id: 12345 });
       });
       const callback = await completeGithubOAuth(host, providerState!, "github-code");
       const code = new URL(callback.redirectUri).searchParams.get("code");
+
       const original = await exchangeManifoldOAuthToken(host, {
         grantType: "authorization_code",
         clientId: MANIFOLD_OAUTH_CLIENT_ID,
@@ -160,6 +181,7 @@ describe("Manifold GitHub OAuth", () => {
         clientId: MANIFOLD_OAUTH_CLIENT_ID,
         refreshToken: original.refresh_token,
       });
+
       expect(replacement.refresh_token).not.toBe(original.refresh_token);
       expect(await authorizeManifoldAccessToken(host, original.access_token)).toBe(false);
       expect(await authorizeManifoldAccessToken(host, replacement.access_token)).toBe(true);
@@ -180,9 +202,11 @@ describe("Manifold GitHub OAuth", () => {
 
   it("rejects GitHub accounts outside the configured personal allowlist", async () => {
     const { host, close } = makeHost();
+
     try {
       const verifier = "blocked-verifier";
       const challenge = await createPkceChallenge(verifier);
+
       const start = await createManifoldOAuthAuthorization(host, {
         clientId: MANIFOLD_OAUTH_CLIENT_ID,
         redirectUri: MANIFOLD_OAUTH_REDIRECT_URI,
@@ -191,6 +215,7 @@ describe("Manifold GitHub OAuth", () => {
         codeChallenge: challenge,
         codeChallengeMethod: "S256",
       });
+
       const providerState = new URL(start.authorizationUrl).searchParams.get("state");
       vi.stubGlobal("fetch", async (input: RequestInfo | URL) =>
         requestHref(input).includes("access_token")
@@ -210,8 +235,10 @@ describe("Manifold GitHub OAuth", () => {
 
   it("keeps CLI account-mismatch failures on the loopback OAuth redirect", async () => {
     const { host, close } = makeHost();
+
     try {
       const challenge = await createPkceChallenge("cli-blocked-verifier");
+
       const start = await createManifoldOAuthAuthorization(host, {
         clientId: MANIFOLD_CLI_OAUTH_CLIENT_ID,
         redirectUri: MANIFOLD_CLI_OAUTH_REDIRECT_URI,
@@ -220,6 +247,7 @@ describe("Manifold GitHub OAuth", () => {
         codeChallenge: challenge,
         codeChallengeMethod: "S256",
       });
+
       const providerState = new URL(start.authorizationUrl).searchParams.get("state");
       vi.stubGlobal("fetch", async (input: RequestInfo | URL) =>
         requestHref(input).includes("access_token")

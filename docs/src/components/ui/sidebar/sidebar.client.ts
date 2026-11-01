@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 /** Sidebar runtime: filter, persistence, "/" shortcut. */
 
 import { mount } from "@cloudflare/nimbus-docs/client";
@@ -20,12 +15,14 @@ function initSidebar(root: HTMLElement): () => void {
   const persist = root.hasAttribute("data-nb-sidebar-persist");
 
   const filterTeardown = initFilter(root);
+
   if (filterTeardown) {
     teardowns.push(filterTeardown);
   }
 
   if (persist) {
     const persistTeardown = initPersistence(root);
+
     if (persistTeardown) {
       teardowns.push(persistTeardown);
     }
@@ -42,6 +39,7 @@ function initFilter(root: HTMLElement): (() => void) | null {
   const input = root.querySelector<HTMLInputElement>(
     "[data-nb-sidebar-filter-input]",
   );
+
   // SidebarFilter is rendered *next to* Sidebar (sibling), so also look in
   // the parent — preserves the existing layout where filter sits above.
   const inputElement =
@@ -50,16 +48,20 @@ function initFilter(root: HTMLElement): (() => void) | null {
       "[data-nb-sidebar-filter-input]",
     ) ??
     null;
+
   if (!inputElement) {
     return null;
   }
 
   function handleInput() {
     const query = inputElement!.value.trim().toLowerCase();
+
     if (!query) {
       resetFilter(root);
+
       return;
     }
+
     applyFilter(root, query);
   }
 
@@ -96,6 +98,7 @@ function resetFilter(root: HTMLElement): void {
       const trigger = group.querySelector<HTMLElement>(
         "[data-nb-collapsible-trigger]",
       );
+
       trigger?.click();
       group.removeAttribute("data-nb-opened-by-filter");
     });
@@ -110,9 +113,11 @@ function applyFilter(root: HTMLElement, query: string): void {
 
   links.forEach((link) => {
     const text = link.textContent?.toLowerCase() ?? "";
+
     if (!text.includes(query)) {
       return;
     }
+
     link.removeAttribute("data-nb-sidebar-hidden");
     revealAncestors(link, root);
   });
@@ -120,9 +125,11 @@ function applyFilter(root: HTMLElement, query: string): void {
   groups.forEach((group) => {
     const label = group.querySelector("[data-nb-sidebar-group-label]");
     const text = label?.textContent?.toLowerCase() ?? "";
+
     if (!text.includes(query)) {
       return;
     }
+
     group.removeAttribute("data-nb-sidebar-hidden");
     openGroup(group);
     group
@@ -135,11 +142,13 @@ function applyFilter(root: HTMLElement, query: string): void {
 
 function revealAncestors(el: HTMLElement, scope: Element): void {
   let ancestor: HTMLElement | null = el.parentElement;
+
   while (ancestor && ancestor !== scope) {
     if (ancestor.hasAttribute("data-nb-sidebar-group")) {
       ancestor.removeAttribute("data-nb-sidebar-hidden");
       openGroup(ancestor);
     }
+
     ancestor = ancestor.parentElement;
   }
 }
@@ -148,12 +157,15 @@ function openGroup(group: HTMLElement): void {
   const trigger = group.querySelector<HTMLElement>(
     "[data-nb-collapsible-trigger]",
   );
+
   if (!trigger) {
     return;
   }
+
   if (trigger.getAttribute("data-nb-state") === "open") {
     return;
   }
+
   group.setAttribute("data-nb-opened-by-filter", "");
   trigger.click();
 }
@@ -171,13 +183,16 @@ function initPersistence(root: HTMLElement): (() => void) | null {
     const groups = root.querySelectorAll<HTMLElement>(
       "[data-nb-sidebar-group]",
     );
+
     const opened: boolean[] = [];
     groups.forEach((group) => {
       const trigger = group.querySelector<HTMLElement>(
         "[data-nb-collapsible-trigger]",
       );
+
       opened.push(trigger?.getAttribute("data-nb-state") === "open");
     });
+
     return { hash, open: opened, scroll: scrollHost.scrollTop };
   }
 
@@ -203,14 +218,17 @@ function initPersistence(root: HTMLElement): (() => void) | null {
       save();
     }
   }
+
   document.addEventListener("visibilitychange", handleVisibility);
   window.addEventListener("pagehide", save);
 
   let raf = 0;
+
   function handleScroll() {
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(save);
   }
+
   scrollHost.addEventListener("scroll", handleScroll);
 
   return () => {
@@ -230,14 +248,17 @@ function initPersistence(root: HTMLElement): (() => void) | null {
   if (document.documentElement.hasAttribute("data-nb-sidebar-shortcut-bound")) {
     return;
   }
+
   document.documentElement.setAttribute("data-nb-sidebar-shortcut-bound", "");
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "/") {
       return;
     }
+
     // SAFETY: DOM query returns the expected element type in this document
     const active = document.activeElement as HTMLElement | null;
+
     if (
       active &&
       (active.tagName === "INPUT" ||
@@ -246,12 +267,15 @@ function initPersistence(root: HTMLElement): (() => void) | null {
     ) {
       return;
     }
+
     const desktopInput = document.querySelector<HTMLInputElement>(
       "[data-nb-sidebar-persist] ~ * [data-nb-sidebar-filter-input], [data-nb-desktop-sidebar] [data-nb-sidebar-filter-input]",
     );
+
     if (!desktopInput) {
       return;
     }
+
     e.preventDefault();
     desktopInput.focus();
   });

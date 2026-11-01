@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 /**
  * Sync key `ui-pm-tab` (sessionStorage) is shared with the
  * `<nb-pm-restore>` early-paint element to avoid flash across navigations.
@@ -24,6 +19,7 @@ function initPackageManager(container: HTMLElement): () => void {
   const copyTpl = container.querySelector<HTMLTemplateElement>(
     "[data-nb-pm-icon-copy]",
   );
+
   const checkTpl = container.querySelector<HTMLTemplateElement>(
     "[data-nb-pm-icon-check]",
   );
@@ -49,15 +45,19 @@ function initPackageManager(container: HTMLElement): () => void {
           } catch {
             return;
           }
+
           btn.replaceChildren(cloneIcon(checkTpl));
+
           if (handlerInfo.timer) {
             window.clearTimeout(handlerInfo.timer);
           }
+
           handlerInfo.timer = window.setTimeout(() => {
             btn.replaceChildren(cloneIcon(copyTpl));
           }, 1500);
         },
       };
+
       btn.addEventListener("click", handlerInfo.handler);
       copyHandlers.push(handlerInfo);
     });
@@ -66,6 +66,7 @@ function initPackageManager(container: HTMLElement): () => void {
     tabs.destroy();
     copyHandlers.forEach(({ btn, handler, timer }) => {
       btn.removeEventListener("click", handler);
+
       if (timer) {
         window.clearTimeout(timer);
       }

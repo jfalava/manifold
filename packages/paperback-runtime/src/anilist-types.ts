@@ -2,33 +2,11 @@
 /* Copyright © 2026 Jorge Fernando Álava. */
 /* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
 
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalTimers:off */
-/** @effect-diagnostics newPromise:off */
-export type AniListReadingStatus =
-  | "reading"
-  | "on_hold"
-  | "plan_to_read"
-  | "dropped"
-  | "re_reading"
-  | "completed";
+import { parseListStatus, type ListStatus } from "@manifold/contract";
 
-export const parseAniListReadingStatus = (value: string): AniListReadingStatus | undefined => {
-  switch (value) {
-    case "reading":
-    case "on_hold":
-    case "plan_to_read":
-    case "dropped":
-    case "re_reading":
-    case "completed":
-      return value;
-    default:
-      return undefined;
-  }
-};
+export type AniListReadingStatus = ListStatus;
+
+export const parseAniListReadingStatus = parseListStatus;
 
 export const ANILIST_SESSION_KEY = "manifold.anilist-session";
 export const ANILIST_VIEWER_ID_KEY = "manifold.anilist-viewer-id";

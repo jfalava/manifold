@@ -1,28 +1,11 @@
-/**
- * Parses pending anilist:* outbox ops for the CLI drain path.
- *
- * Mirrors packages/paperback-runtime/src/op-payload.ts semantics without
- * importing that GPL package (CLI stays MIT). Keep in lockstep when op kinds
- * or payload fields change.
- */
-import {
-  isFiniteNumber,
-  isString,
-  type JsonObject,
-  type JsonValue,
-} from "@manifold/json";
+/** Parses pending anilist.* outbox ops. Shared by the CLI and Paperback drains. */
+import { isFiniteNumber, isString, type JsonObject, type JsonValue } from "@manifold/json";
+import { Schema } from "effect";
 
-/** Registry vocabulary used in list_state / outbox payloads. */
-export type AniListReadingStatus =
-  | "reading"
-  | "on_hold"
-  | "plan_to_read"
-  | "dropped"
-  | "re_reading"
-  | "completed";
+import { ListStatus } from "./literals";
 
 export type AniListFieldChange = {
-  readonly status?: AniListReadingStatus | null;
+  readonly status?: ListStatus | null;
   readonly score?: number | null;
   readonly notes?: string | null;
   readonly startedAt?: string | null;
@@ -42,7 +25,7 @@ export type ParsedAniListOp =
       readonly kind: "anilist.status";
       readonly opId: string;
       readonly anilistId: string;
-      readonly status: AniListReadingStatus | null;
+      readonly status: ListStatus | null;
     }
   | {
       readonly kind: "anilist.progress";
@@ -64,25 +47,14 @@ export type ParsedAniListOp =
       readonly mediaListEntryId?: number;
     };
 
-export const parseAniListReadingStatus = (
-  value: string,
-): AniListReadingStatus | undefined => {
-  switch (value) {
-    case "reading":
-    case "on_hold":
-    case "plan_to_read":
-    case "dropped":
-    case "re_reading":
-    case "completed":
-      return value;
-    default:
-      return undefined;
-  }
-};
+const isListStatus = Schema.is(ListStatus);
 
-/** Registry list status → AniList MediaListStatus enum. */
+export const parseListStatus = (value: string): ListStatus | undefined =>
+  isListStatus(value) ? value : undefined;
+
+/** Registry list status → AniList MediaListStatus enum. Only dropped/completed match by case; reading is CURRENT, on_hold PAUSED, plan_to_read PLANNING, re_reading REPEATING. */
 export const toAniListGraphqlStatus = (
-  status: AniListReadingStatus,
+  status: ListStatus,
 ): "CURRENT" | "PLANNING" | "COMPLETED" | "DROPPED" | "PAUSED" | "REPEATING" => {
   switch (status) {
     case "reading":
@@ -102,9 +74,11 @@ export const toAniListGraphqlStatus = (
 
 const requiredString = (payload: JsonObject, key: string, opId: string): string => {
   const value = payload[key];
+
   if (!isString(value) || value.trim().length === 0) {
     throw new Error(`op ${opId} has invalid ${key}`);
   }
+
   return value.trim();
 };
 
@@ -114,12 +88,15 @@ const nullableString = (
   opId: string,
 ): string | null | undefined => {
   const value = payload[key];
+
   if (value === undefined || value === null) {
     return value;
   }
+
   if (!isString(value)) {
     throw new Error(`op ${opId} has invalid ${key}`);
   }
+
   return value;
 };
 
@@ -129,45 +106,56 @@ const nullableNumber = (
   opId: string,
 ): number | null | undefined => {
   const value = payload[key];
+
   if (value === undefined || value === null) {
     return value;
   }
+
   if (!isFiniteNumber(value)) {
     throw new Error(`op ${opId} has invalid ${key}`);
   }
+
   return value;
 };
 
 const optionalNumber = (payload: JsonObject, key: string, opId: string): number | undefined => {
   const value = nullableNumber(payload, key, opId);
+
   if (value === null) {
     throw new Error(`op ${opId} has invalid ${key}`);
   }
+
   return value;
 };
 
 const optionalListEntryId = (payload: JsonObject, opId: string): number | undefined => {
   const value = optionalNumber(payload, "mediaListEntryId", opId);
+
   if (value !== undefined && (!Number.isSafeInteger(value) || value < 1)) {
     throw new Error(`op ${opId} has invalid mediaListEntryId`);
   }
+
   return value;
 };
 
 const statusOrNull = (
   value: JsonValue | undefined,
   opId: string,
-): AniListReadingStatus | null | undefined => {
+): ListStatus | null | undefined => {
   if (value === undefined || value === null) {
     return value;
   }
+
   if (!isString(value)) {
     throw new Error(`op ${opId} has invalid status`);
   }
-  const status = parseAniListReadingStatus(value);
+
+  const status = parseListStatus(value);
+
   if (status === undefined) {
     throw new Error(`op ${opId} has invalid status`);
   }
+
   return status;
 };
 
@@ -178,18 +166,24 @@ export const parsePendingAniListOp = (op: PendingAniListOp): ParsedAniListOp => 
   switch (op.kind) {
     case "anilist.status": {
       const status = statusOrNull(payload["status"], op.opId);
+
       if (status === undefined) {
         throw new Error(`op ${op.opId} has no status`);
       }
+
       return { kind: op.kind, opId: op.opId, anilistId, status };
     }
+
     case "anilist.progress": {
       const progress = optionalNumber(payload, "progress", op.opId);
+
       if (progress === undefined) {
         throw new Error(`op ${op.opId} has no progress`);
       }
+
       return { kind: op.kind, opId: op.opId, anilistId, progress };
     }
+
     case "anilist.fields": {
       const status = statusOrNull(payload["status"], op.opId);
       const score = nullableNumber(payload, "score", op.opId);
@@ -198,6 +192,7 @@ export const parsePendingAniListOp = (op: PendingAniListOp): ParsedAniListOp => 
       const completedAt = nullableString(payload, "completedAt", op.opId);
       const volumeProgress = nullableNumber(payload, "volumeProgress", op.opId);
       const mediaListEntryId = optionalListEntryId(payload, op.opId);
+
       return {
         kind: op.kind,
         opId: op.opId,
@@ -213,8 +208,10 @@ export const parsePendingAniListOp = (op: PendingAniListOp): ParsedAniListOp => 
         ...(mediaListEntryId !== undefined && { mediaListEntryId }),
       };
     }
+
     case "anilist.delete": {
       const mediaListEntryId = optionalListEntryId(payload, op.opId);
+
       return {
         kind: op.kind,
         opId: op.opId,
@@ -222,6 +219,7 @@ export const parsePendingAniListOp = (op: PendingAniListOp): ParsedAniListOp => 
         ...(mediaListEntryId !== undefined && { mediaListEntryId }),
       };
     }
+
     default:
       throw new Error(`op ${op.opId}: unknown kind ${op.kind}`);
   }

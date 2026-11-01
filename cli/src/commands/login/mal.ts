@@ -44,6 +44,7 @@ export const malLoginCommand = Command.make("mal", {
       try: async () => {
         openFrame("login mal");
         const wizard = isBareLoginInvocation(clientId, clientSecret, pasteOnly);
+
         const oauth = await resolveOAuthClient({
           kind: "mal",
           clientIdFlag: clientId,
@@ -51,8 +52,10 @@ export const malLoginCommand = Command.make("mal", {
           requireSecret: false,
           wizard,
         });
+
         const usePasteOnly = await resolvePasteOnlyWizard(pasteOnly, wizard);
         const auth = createMalAuthorization(oauth.clientId);
+
         const code = await awaitOAuthAuthorizationCode({
           providerLabel: "MAL",
           authorizeUrl: auth.url,
@@ -60,6 +63,7 @@ export const malLoginCommand = Command.make("mal", {
           expectedState: auth.state,
           pasteOnly: usePasteOnly,
         });
+
         const session = await requestMalTokens(
           oauth.clientId,
           oauth.clientSecret,
@@ -70,6 +74,7 @@ export const malLoginCommand = Command.make("mal", {
             redirect_uri: MAL_REDIRECT_URI,
           }),
         );
+
         const profile = await createMalClient({ accessToken: session.accessToken }).profile();
         await saveMalSession(session);
         closeFrame(

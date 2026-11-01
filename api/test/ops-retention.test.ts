@@ -83,11 +83,18 @@ describe("sync outbox retention and summary", () => {
       platform: "browser",
       external: ["cloudflare:workers"],
     });
+
+    const [output] = built.outputFiles;
+
+    if (!output) {
+      throw new Error("esbuild produced no output");
+    }
+
     worker = new Miniflare(
       convertV4MiniflareOptions({
         name: "ops-retention-test",
         modules: true,
-        script: built.outputFiles[0].text,
+        script: output.text,
         compatibilityDate: "2026-08-28",
         durableObjects: { MANIFOLD_SYNC: { className: "TestSync", useSQLite: true } },
       }),
@@ -127,18 +134,21 @@ describe("sync outbox retention and summary", () => {
   const readOps = async (nonce: string): Promise<readonly SyncOp[]> => {
     const response = await dispatch({ op: "read", nonce });
     expect(response.status).toBe(200);
+
     return Schema.decodeUnknownSync(ReadResponse)(await response.json()).ops;
   };
 
   const complete = async (nonce: string, results: readonly CompleteResult[]): Promise<number> => {
     const response = await dispatch({ op: "complete", nonce, results });
     expect(response.status).toBe(200);
+
     return Schema.decodeUnknownSync(CompleteResponse)(await response.json()).updated;
   };
 
   const summarize = async (nonce: string): Promise<OpsSummary> => {
     const response = await dispatch({ op: "summary", nonce });
     expect(response.status).toBe(200);
+
     return Schema.decodeUnknownSync(OpsSummary)(await response.json());
   };
 

@@ -1,6 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
 import { cliError, envString, runHost, sleepPromise } from "@/effect-kit";
-import { Effect, Option } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
 import { errorMessage, isJsonObject, manifoldUserAgent, numberField } from "@manifold/json";
@@ -18,7 +18,7 @@ import {
 import {
   createMangaDexClient,
   MANGADEX_CONTENT_RATINGS,
-  type MangaDexReadingStatus,
+  MangaDexReadingStatus,
 } from "@manifold/mangadex";
 
 interface UnfollowCtx extends RunContext {
@@ -33,14 +33,8 @@ const TITLE_BATCH_SIZE = 100;
 const DETAIL_LINE_CAP = 40;
 const TOKEN_CACHE_PATH = ".tmp/mangadex-token.json";
 
-const VALID_STATUSES: readonly MangaDexReadingStatus[] = [
-  "reading",
-  "on_hold",
-  "plan_to_read",
-  "dropped",
-  "re_reading",
-  "completed",
-];
+const VALID_STATUSES = MangaDexReadingStatus.literals;
+const isReadingStatus = Schema.is(MangaDexReadingStatus);
 
 const optional = (name: string, description: string) =>
   Flag.String(name).pipe(Flag.optional, Flag.withDescription(description));
@@ -81,15 +75,19 @@ export const unfollowDroppedCommand = Command.make(
         ...names: readonly string[]
       ): string | undefined => {
         const direct = Option.getOrUndefined(flagValue);
+
         if (direct !== undefined) {
           return direct;
         }
+
         for (const name of names) {
           const value = envString(name);
+
           if (value !== undefined && value !== "") {
             return value;
           }
         }
+
         return undefined;
       };
 
@@ -99,9 +97,11 @@ export const unfollowDroppedCommand = Command.make(
         username: resolveValue(mangadexUsername, "MANIFOLD_MANGADEX_USERNAME") ?? "",
         password: resolveValue(mangadexPassword, "MANIFOLD_MANGADEX_PASSWORD") ?? "",
       };
+
       const missing = Object.entries(credentials)
         .filter(([, value]) => !value)
         .map(([key]) => key);
+
       if (missing.length > 0) {
         return yield* cliError(
           `Missing MangaDex credentials: ${missing.join(", ")}. Pass them as flags or set MANGADEX_*.`,
@@ -109,15 +109,15 @@ export const unfollowDroppedCommand = Command.make(
       }
 
       const targetStatuses = parseList(status);
-      const invalid = targetStatuses.filter(
-        // SAFETY: value matches MangaDexReadingStatus at this call site
-        (s) => !VALID_STATUSES.includes(s as MangaDexReadingStatus),
-      );
+
+      const invalid = targetStatuses.filter((s) => !isReadingStatus(s));
+
       if (invalid.length > 0) {
         return yield* cliError(
           `Invalid --status values: ${invalid.join(", ")}. Choose from: ${VALID_STATUSES.join(", ")}.`,
         );
       }
+
       if (targetStatuses.length === 0) {
         return yield* cliError("--status cannot be empty.");
       }
@@ -132,15 +132,18 @@ export const unfollowDroppedCommand = Command.make(
             credentials,
             cachePath: TOKEN_CACHE_PATH,
           });
+
           let client = createMangaDexClient({
             accessToken: await manager.current(),
             userAgent: manifoldUserAgent("cli"),
           });
+
           const refreshClient = async () => {
             client = createMangaDexClient({
               accessToken: await manager.current(),
               userAgent: manifoldUserAgent("cli"),
             });
+
             return client;
           };
 
@@ -148,12 +151,14 @@ export const unfollowDroppedCommand = Command.make(
             title: "Fetch reading statuses",
             task: async (ctx, task) => {
               const statuses = await runHost(client.readingStatuses());
+
               const droppedIds = Object.entries(statuses)
                 .filter(([, s]) => targetStatuses.includes(s))
                 .map(([id]) => id);
+
               ctx.droppedIds = droppedIds;
               makePhaseReporter(task).note(
-                `❖ ${Object.keys(statuses).length} library entries · ${droppedIds.length} with status ${targetStatuses.join(", ")}.`,
+                `${Object.keys(statuses).length} library entries · ${droppedIds.length} with status ${targetStatuses.join(", ")}.`,
               );
             },
             rendererOptions: { outputBar: Infinity },
@@ -163,45 +168,58 @@ export const unfollowDroppedCommand = Command.make(
             title: "Resolve followed state for dropped entries",
             task: async (ctx, task) => {
               const reporter = makePhaseReporter(task);
+
               if (ctx.droppedIds.length === 0) {
                 ctx.followedDroppedIds = [];
                 ctx.titles = {};
                 reporter.note("No entries match --status; nothing to do.");
+
                 return;
               }
+
               // Paginate the full followed-manga list and intersect with droppedIds.
               // This is cheaper than N individual isFollowingManga checks and lets
               // the dry run list be exact. DELETE /manga/{id}/follow is idempotent
               // (404 is swallowed), but reporting needs the real followed set.
               const followed = new Set<string>();
               let offset = 0;
+
               while (true) {
                 const page = await runHost(client.followedManga({ limit: 100, offset }));
+
                 for (const manga of page.items) {
                   followed.add(manga.id);
                 }
+
                 offset += page.items.length;
                 const total = page.total ?? offset;
                 reporter.progress(followed.size, total, [["followed", followed.size]] as const);
+
                 if (page.items.length === 0 || offset >= total) {
                   break;
                 }
+
                 await sleep(READ_SPACING_MS);
               }
+
               const followedDroppedIds = ctx.droppedIds.filter((id) => followed.has(id));
               ctx.followedDroppedIds = followedDroppedIds;
               reporter.note(
-                `❖ ${followedDroppedIds.length} followed of ${ctx.droppedIds.length} ${targetStatuses.join(", ")} entries.` +
+                `${followedDroppedIds.length} followed of ${ctx.droppedIds.length} ${targetStatuses.join(", ")} entries.` +
                   (followedDroppedIds.length === 0 ? " Nothing to unfollow." : ""),
               );
 
               if (followedDroppedIds.length === 0) {
                 ctx.titles = {};
+
                 return;
               }
+
               const titles: Record<string, string> = {};
+
               for (let start = 0; start < followedDroppedIds.length; start += TITLE_BATCH_SIZE) {
                 const batch = followedDroppedIds.slice(start, start + TITLE_BATCH_SIZE);
+
                 const page = await runHost(
                   client.listManga({
                     ids: batch,
@@ -209,11 +227,14 @@ export const unfollowDroppedCommand = Command.make(
                     limit: 100,
                   }),
                 );
+
                 for (const manga of page.items) {
                   titles[manga.id] = manga.title;
                 }
+
                 await sleep(READ_SPACING_MS);
               }
+
               ctx.titles = titles;
             },
             rendererOptions: { outputBar: 1, persistentOutput: true },
@@ -228,20 +249,26 @@ export const unfollowDroppedCommand = Command.make(
                     title: `Unfollow ${targetStatuses.join(", ")} entries`,
                     task: async (ctx, task) => {
                       const reporter = makePhaseReporter(task);
+
                       if (ctx.followedDroppedIds.length === 0) {
                         reporter.note("Nothing to do.");
+
                         return;
                       }
+
                       await refreshClient();
                       const failures: string[] = [];
                       let done = 0;
+
                       for (const mangaId of ctx.followedDroppedIds) {
                         try {
                           await runHost(client.unfollowManga(mangaId));
                         } catch (cause) {
                           const msg = errorMessage(cause);
+
                           const isAuth =
                             isJsonObject(cause) && numberField(cause, "status") === 401;
+
                           if (isAuth) {
                             try {
                               await refreshClient();
@@ -250,9 +277,11 @@ export const unfollowDroppedCommand = Command.make(
                               reporter.progress(done, ctx.followedDroppedIds.length, [
                                 ["failed", failures.length],
                               ] as const);
+
                               if (done < ctx.followedDroppedIds.length) {
                                 await sleep(WRITE_SPACING_MS);
                               }
+
                               continue;
                             } catch (retryCause) {
                               failures.push(
@@ -263,22 +292,28 @@ export const unfollowDroppedCommand = Command.make(
                             failures.push(`${ctx.titles[mangaId] ?? mangaId}: ${msg}`);
                           }
                         }
+
                         done += 1;
                         reporter.progress(done, ctx.followedDroppedIds.length, [
                           ["failed", failures.length],
                         ] as const);
                         frameDetail(`  ${ctx.titles[mangaId] ?? mangaId} unfollowed`);
+
                         if (done < ctx.followedDroppedIds.length) {
                           await sleep(WRITE_SPACING_MS);
                         }
                       }
+
                       for (const failure of failures.slice(0, DETAIL_LINE_CAP)) {
                         reporter.problem(failure);
                       }
+
                       if (failures.length > DETAIL_LINE_CAP) {
                         reporter.problem(`…and ${failures.length - DETAIL_LINE_CAP} more failures`);
                       }
-                      reporter.note(`❖ ${done - failures.length}/${done} unfollowed.`);
+
+                      reporter.note(`${done - failures.length}/${done} unfollowed.`);
+
                       if (failures.length > 0) {
                         process.exitCode = 1;
                       }
@@ -293,16 +328,19 @@ export const unfollowDroppedCommand = Command.make(
                     title: "Preview",
                     task: async (ctx, task) => {
                       const reporter = makePhaseReporter(task);
+
                       for (const mangaId of ctx.followedDroppedIds.slice(0, DETAIL_LINE_CAP)) {
-                        reporter.detail(`❖ ${ctx.titles[mangaId] ?? "(untitled)"} [${mangaId}]`);
+                        reporter.note(`${ctx.titles[mangaId] ?? "(untitled)"} [${mangaId}]`);
                       }
+
                       if (ctx.followedDroppedIds.length > DETAIL_LINE_CAP) {
-                        reporter.detail(
-                          `❖ …and ${ctx.followedDroppedIds.length - DETAIL_LINE_CAP} more`,
+                        reporter.note(
+                          `…and ${ctx.followedDroppedIds.length - DETAIL_LINE_CAP} more`,
                         );
                       }
+
                       reporter.note(
-                        `❖ Dry run: would unfollow ${ctx.followedDroppedIds.length} entries (${targetStatuses.join(", ")}). Re-run with --apply.`,
+                        `Dry run: would unfollow ${ctx.followedDroppedIds.length} entries (${targetStatuses.join(", ")}). Re-run with --apply.`,
                       );
                     },
                     rendererOptions: { outputBar: Infinity, persistentOutput: true },

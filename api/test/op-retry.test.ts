@@ -50,11 +50,18 @@ describe("manual operation retry scheduling", () => {
       platform: "browser",
       external: ["cloudflare:workers"],
     });
+
+    const [output] = built.outputFiles;
+
+    if (!output) {
+      throw new Error("esbuild produced no output");
+    }
+
     worker = new Miniflare(
       convertV4MiniflareOptions({
         name: "op-retry-test",
         modules: true,
-        script: built.outputFiles[0].text,
+        script: output.text,
         compatibilityDate: "2026-08-28",
         durableObjects: { MANIFOLD_SYNC: { className: "TestSync", useSQLite: true } },
       }),
@@ -77,6 +84,7 @@ describe("manual operation retry scheduling", () => {
         method: "POST",
         body: JSON.stringify({ target, paused }),
       });
+
       expect(response.status).toBe(200);
       const result = Schema.decodeUnknownSync(RetryResult)(await response.json());
       expect(result.before).toBeNull();

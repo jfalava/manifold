@@ -2,9 +2,6 @@
 /* Copyright © 2026 Jorge Fernando Álava. */
 /* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
 
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalDate:off */
 import type { CanonicalEntry, CanonicalSearchResult } from "@manifold/canonical";
 import type { PersonalEntry } from "@manifold/paperback-runtime";
 
@@ -24,6 +21,7 @@ export const canonicalResultForRegistryEntry = (
 
   const anilist = entry.providers.find((provider) => provider.provider === "anilist");
   const mal = entry.providers.find((provider) => provider.provider === "mal");
+
   return {
     id: entry.id,
     provider: anilist ? "anilist" : mal ? "mal" : entry.provider,

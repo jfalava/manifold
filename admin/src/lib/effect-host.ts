@@ -1,8 +1,6 @@
+import { isJsonObject, isString } from "@manifold/json";
 /** @effect-diagnostics globalFetch:off */
 import { Effect, Schema } from "effect";
-
-import { isFunctionValue, isJsonObject, isStringValue } from "./guards";
-import { trusted } from "./trusted-cast";
 
 const WORKERS_MODULE = "cloudflare:workers";
 
@@ -13,18 +11,23 @@ export interface AdminWorkersRuntime {
   readonly waitUntil: ((promise: Promise<unknown>) => void) | null;
 }
 
-export class AdminError extends Schema.TaggedError<AdminError>()("AdminError", {
-  message: Schema.String,
-}) {}
+export class AdminError extends Schema.TaggedError<AdminError, { readonly brand: unique symbol }>()(
+  "AdminError",
+  {
+    message: Schema.String,
+  },
+) {}
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: host-boundary failures are normalized before entering the Effect error channel
 export const toError = (cause: unknown): AdminError => {
   if (Schema.is(AdminError)(cause)) {
     return cause;
   }
-  if (isJsonObject(cause) && isStringValue(cause.message)) {
+
+  if (isJsonObject(cause) && isString(cause.message)) {
     return new AdminError({ message: cause.message });
   }
+
   return new AdminError({ message: String(cause) });
 };
 
@@ -39,19 +42,48 @@ export const runHost = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect
 export const platformFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
   globalThis.fetch(input, init);
 
+interface WorkersModule {
+  readonly env: AdminWorkersEnv;
+  readonly waitUntil?: (promise: Promise<unknown>) => void;
+}
+
+/** workerd owns this module's shape; check only what the admin reads. */
+const isWorkersModule = (value: unknown): value is WorkersModule =>
+  typeof value === "object" &&
+  value !== null &&
+  "env" in value &&
+  typeof value.env === "object" &&
+  (!("waitUntil" in value) || typeof value.waitUntil === "function");
+
+/** Read a secret binding that Alchemy may expose as a plain string or a handle. */
+export const resolveSecret = Effect.fnUntraced(function* (
+  binding: string | AlchemySecret,
+): Effect.fn.Return<string | null, AdminError> {
+  if (isString(binding)) {
+    return binding;
+  }
+
+  const { get } = binding;
+
+  if (get) {
+    const value = yield* tryPromise(() => get.call(binding));
+
+    return isString(value) ? value : null;
+  }
+
+  return isString(binding.value) ? binding.value : null;
+});
+
 /** Load Cloudflare's Worker host module without making it a build-time dependency. */
 export const workersRuntime = Effect.fnUntraced(function* () {
   const mod: unknown = yield* tryPromise(() => import(/* @vite-ignore */ WORKERS_MODULE));
-  if (!isJsonObject(mod) || !("env" in mod)) {
+
+  if (!isWorkersModule(mod)) {
     return yield* new AdminError({ message: "cloudflare:workers module unavailable" });
   }
-  // SAFETY: workerd owns the cloudflare:workers module shape; env is validated above and waitUntil is guarded below
-  const runtime = trusted<{
-    readonly env: AdminWorkersEnv;
-    readonly waitUntil?: (promise: Promise<unknown>) => void;
-  }>(mod);
+
   return {
-    env: runtime.env,
-    waitUntil: isFunctionValue(runtime.waitUntil) ? runtime.waitUntil : null,
+    env: mod.env,
+    waitUntil: mod.waitUntil ?? null,
   } satisfies AdminWorkersRuntime;
 });

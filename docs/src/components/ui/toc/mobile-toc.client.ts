@@ -1,8 +1,3 @@
-/** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics globalDate:off */
-/** @effect-diagnostics globalFetch:off */
-/** @effect-diagnostics globalConsole:off */
-/** @effect-diagnostics globalTimers:off */
 /**
  * Mobile TOC — keeps the "jump to section" <select> in sync with the page.
  *
@@ -37,12 +32,14 @@ function initMobileToc(root: HTMLElement): () => void {
   const select = root.querySelector<HTMLSelectElement>(
     "[data-nb-mobile-toc-select]",
   );
+
   if (!select) {
     return () => undefined;
   }
 
   // Paired so slug/element indices stay aligned; `inBand` indexes into this.
   type Heading = { slug: string; el: HTMLElement };
+
   const headings: Heading[] = Array.from(select.options)
     .map((o) => o.value)
     .filter((v) => v !== "_top")
@@ -76,10 +73,13 @@ function initMobileToc(root: HTMLElement): () => void {
       const behavior: ScrollBehavior = prefersReducedMotion()
         ? "auto"
         : "smooth";
+
       if (slug === "_top") {
         window.scrollTo({ top: 0, behavior });
+
         return;
       }
+
       document.getElementById(slug)?.scrollIntoView({ behavior });
     },
     { signal: controller.signal },
@@ -104,6 +104,7 @@ function initMobileToc(root: HTMLElement): () => void {
     if (inBand.size > 0) {
       // Topmost in-band heading (smallest document-order index).
       setActive(headings[Math.min(...inBand)].slug);
+
       return;
     }
 
@@ -112,8 +113,10 @@ function initMobileToc(root: HTMLElement): () => void {
     // current value (we're mid-section between two headings).
     const bandTop = window.innerHeight * BAND_TOP;
     const firstTop = headings[0].el.getBoundingClientRect().top;
+
     const lastTop =
       headings[headings.length - 1].el.getBoundingClientRect().top;
+
     if (firstTop > bandTop) {
       setActive("_top");
     } else if (lastTop < bandTop) {
@@ -125,15 +128,18 @@ function initMobileToc(root: HTMLElement): () => void {
     (entries) => {
       for (const entry of entries) {
         const i = headings.findIndex((h) => h.el === entry.target);
+
         if (i === -1) {
           continue;
         }
+
         if (entry.isIntersecting) {
           inBand.add(i);
         } else {
           inBand.delete(i);
         }
       }
+
       resolve();
     },
     { rootMargin: ROOT_MARGIN, threshold: 0 },
@@ -142,6 +148,7 @@ function initMobileToc(root: HTMLElement): () => void {
   for (const { el } of headings) {
     observer.observe(el);
   }
+
   resolve(); // initial sync before the observer's first async callback
 
   return () => {
