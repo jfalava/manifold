@@ -572,7 +572,7 @@ interface ListFieldDiff {
  * remote failures leave the change in the registry with a pending retry.
  */
 class TrackerStatusForm extends Form {
-  readonly requiresExplicitSubmission = true;
+  override readonly requiresExplicitSubmission = true;
 
   private readonly entryId: string;
   private statusText = "Loading…";
@@ -587,7 +587,7 @@ class TrackerStatusForm extends Form {
   private pendingCompletedAt?: string;
   private pendingNotes?: string;
 
-  constructor(private readonly sourceManga: SourceManga) {
+  constructor(sourceManga: SourceManga) {
     super();
     this.entryId = sourceManga.mangaId;
     this.anilistId = sourceManga.mangaInfo.additionalInfo?.["AniList ID"];
@@ -1032,7 +1032,7 @@ class TrackerStatusForm extends Form {
 }
 
 class TrackerSettingsForm extends Form {
-  readonly requiresExplicitSubmission = true;
+  override readonly requiresExplicitSubmission = true;
 
   private pendingManifoldToken?: string;
   private pendingAniListToken?: string;

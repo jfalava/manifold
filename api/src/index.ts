@@ -103,7 +103,7 @@ const app: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
       return jsonEncoded(ErrorBody, { error: "Not found" }, 404);
     }
 
-    await next();
+    return next();
   })
   .route("/", catalogApp)
   .all("*", async (c) => {

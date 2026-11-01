@@ -104,7 +104,7 @@ export const json = (body: JsonResponseBody, status = 200): Response =>
 export class ResponseEncodeError extends Data.TaggedError("ResponseEncodeError")<{
   readonly details: string;
 }> {
-  get message() {
+  override get message() {
     return `Response encode failed: ${this.details}`;
   }
 }
@@ -132,7 +132,7 @@ export class ParseRequestError extends Data.TaggedError("ParseRequestError")<{
 export class HttpRequestError extends Data.TaggedError("HttpRequestError")<{
   readonly cause: Error;
 }> {
-  get message() {
+  override get message() {
     return this.cause.message;
   }
 }

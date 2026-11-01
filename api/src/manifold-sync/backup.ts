@@ -64,7 +64,7 @@ const backupRegistryEffect = (host: SyncHost) =>
       }),
     );
 
-    return backupMetadata(host, backup, key, object.uploaded.getTime(), size);
+    return backupMetadata(backup, key, object.uploaded.getTime(), size);
   });
 
 export const backupRegistry = (host: SyncHost): Promise<RegistryBackupMetadata> =>
@@ -156,7 +156,7 @@ const restoreBackupEffect = (host: SyncHost, key: string) =>
     yield* fromPromise(() => backupRegistry(host));
     applyRegistryBackup(host, backup);
 
-    return backupMetadata(host, backup, key, object.uploaded.getTime(), object.size);
+    return backupMetadata(backup, key, object.uploaded.getTime(), object.size);
   });
 
 export const restoreBackup = (host: SyncHost, key: string): Promise<RegistryBackupMetadata> =>
@@ -354,7 +354,6 @@ export function restoreRegistry(host: SyncHost, backup: RegistryBackup): void {
 }
 
 export function backupMetadata(
-  host: SyncHost,
   backup: RegistryBackup,
   key: string,
   uploadedAt: number,

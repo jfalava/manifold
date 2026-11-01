@@ -34,11 +34,13 @@ export class ProgressRenderer implements ListrRenderer {
   private progress = "";
   private ended = false;
   private disposers: (() => void)[] = [];
+  private readonly tasks: RenderTask[];
+  private readonly options: ProgressOptions;
 
-  constructor(
-    private readonly tasks: RenderTask[],
-    private readonly options: ProgressOptions,
-  ) {}
+  constructor(tasks: RenderTask[], options: ProgressOptions) {
+    this.tasks = tasks;
+    this.options = options;
+  }
 
   render(): void {
     this.live = new LiveProgress(this.options);

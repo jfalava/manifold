@@ -65,7 +65,7 @@ export class ResponseDecodeError extends Data.TaggedError("ResponseDecodeError")
   readonly label: string;
   readonly details: string;
 }> {
-  get message() {
+  override get message() {
     return `Response decode failed (${this.label}): ${this.details}`;
   }
 }

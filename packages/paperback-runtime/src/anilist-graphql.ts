@@ -119,7 +119,7 @@ const decodeGraphQLResponse = (value: unknown): GraphQLResponse | undefined => {
 
 /** Thrown when AniList rejects the credentials (HTTP 401/403). */
 export class AniListUnauthorizedError extends Data.TaggedError("AniListUnauthorizedError")<{}> {
-  get message() {
+  override get message() {
     return "AniList rejected this token";
   }
 }

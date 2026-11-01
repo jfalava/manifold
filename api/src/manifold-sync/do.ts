@@ -358,7 +358,7 @@ export class ManifoldSync extends DurableObject<Env> {
     return backfillMangaDexShelf(this.host());
   }
 
-  async alarm(): Promise<void> {
+  override async alarm(): Promise<void> {
     return runAlarm(this.host());
   }
 

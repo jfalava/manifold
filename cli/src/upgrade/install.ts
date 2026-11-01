@@ -19,11 +19,11 @@ const RETRY_DELAYS_MS = [250, 500] as const;
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 class DownloadError extends Error {
-  constructor(
-    message: string,
-    readonly retryable: boolean,
-  ) {
+  readonly retryable: boolean;
+
+  constructor(message: string, retryable: boolean) {
     super(message);
+    this.retryable = retryable;
   }
 }
 
