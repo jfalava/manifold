@@ -121,12 +121,37 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: manifold-cli-*
           merge-multiple: true
           path: dist
+
+      # The binaries bundle GPL-3.0-or-later and MIT/ISC code, so each archive
+      # ships the license texts, attributions, and the bundled packages' notices.
+      - name: Add license notices to archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p notices
+          (cd cli && bun scripts/third-party-notices.ts ../notices/THIRD-PARTY-NOTICES.md \
+            "https://github.com/${GITHUB_REPOSITORY}/tree/${GITHUB_REF_NAME}")
+          cp LICENSE LICENSE-MIT ATTRIBUTIONS.md notices/
+          cd dist
+          for ARCHIVE in *.zip; do
+            zip -j "${ARCHIVE}" ../notices/*
+            sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
+          done
 
       - name: Create release
         uses: softprops/action-gh-release@v2

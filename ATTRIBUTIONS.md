@@ -43,7 +43,9 @@ the generated Paperback bundles served by the Manifold catalog.
 The API and CLI are MIT-licensed as Manifold source. They import and use the
 GPL-derived MangaDex package; when those components are conveyed together as a
 single combined executable, the applicable GPL requirements still apply to
-that combined work.
+that combined work. Each CLI release archive therefore ships `LICENSE`,
+`LICENSE-MIT`, this file, and a generated `THIRD-PARTY-NOTICES.md` that lists
+every bundled npm package with its license text and links the tagged source.
 
 The Inkdex extension registry at
 [`inkdex/extensions`](https://github.com/inkdex/extensions) is only a generated
