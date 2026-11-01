@@ -7,6 +7,11 @@ import { errorMessage } from "@manifold/json";
 import { resolveAniListToken } from "@/login/anilist";
 import { createMangaDexTokenManager } from "@/mangadex-token";
 import {
+  mangadexCredentialFlags,
+  missingMangaDexCredentials,
+  resolveMangaDexCredentials,
+} from "@/mangadex-session";
+import {
   abortFrame,
   closeFrame,
   createRun,
@@ -72,22 +77,7 @@ export const md2alCommand = Command.make(
       Flag.withDefault("all"),
       Flag.withDescription("Run a single phase: all | export | match | push."),
     ),
-    mangadexClientId: Flag.String("mangadex-client-id").pipe(
-      Flag.optional,
-      Flag.withDescription("Falls back to MANIFOLD_MANGADEX_CLIENT_ID."),
-    ),
-    mangadexClientSecret: Flag.String("mangadex-client-secret").pipe(
-      Flag.optional,
-      Flag.withDescription("Falls back to MANIFOLD_MANGADEX_CLIENT_SECRET."),
-    ),
-    mangadexUsername: Flag.String("mangadex-username").pipe(
-      Flag.optional,
-      Flag.withDescription("Falls back to MANIFOLD_MANGADEX_USERNAME."),
-    ),
-    mangadexPassword: Flag.String("mangadex-password").pipe(
-      Flag.optional,
-      Flag.withDescription("Falls back to MANIFOLD_MANGADEX_PASSWORD."),
-    ),
+    ...mangadexCredentialFlags,
   },
   ({
     anilistToken,
@@ -97,10 +87,7 @@ export const md2alCommand = Command.make(
     useCache,
     limit,
     phase,
-    mangadexClientId,
-    mangadexClientSecret,
-    mangadexUsername,
-    mangadexPassword,
+    ...credentialFlags
   }) =>
     Effect.gen(function* () {
       validateNonNegativeLimit(Option.getOrUndefined(limit));
@@ -114,12 +101,7 @@ export const md2alCommand = Command.make(
 
       const anilist = yield* Effect.tryPromise(() => resolveAniListToken(flag(anilistToken)));
 
-      const credentials = {
-        clientId: flag(mangadexClientId) || env("MANIFOLD_MANGADEX_CLIENT_ID"),
-        clientSecret: flag(mangadexClientSecret) || env("MANIFOLD_MANGADEX_CLIENT_SECRET"),
-        username: flag(mangadexUsername) || env("MANIFOLD_MANGADEX_USERNAME"),
-        password: flag(mangadexPassword) || env("MANIFOLD_MANGADEX_PASSWORD"),
-      };
+      const credentials = resolveMangaDexCredentials(credentialFlags);
 
       if (!anilist) {
         return yield* cliError(
@@ -130,13 +112,7 @@ export const md2alCommand = Command.make(
       let mdToken = flag(mangadexToken) || env("MANIFOLD_MANGADEX_TOKEN");
       let mdTokenManager: ReturnType<typeof createMangaDexTokenManager> | undefined;
 
-      if (
-        !mdToken &&
-        credentials.clientId &&
-        credentials.clientSecret &&
-        credentials.username &&
-        credentials.password
-      ) {
+      if (!mdToken && missingMangaDexCredentials(credentials).length === 0) {
         // Mint via the personal-client password grant and keep the manager
         // alive so long runs refresh before MD's ~15 min session expiry.
         mdTokenManager = createMangaDexTokenManager({ credentials });

@@ -3,17 +3,16 @@
 import { Badge, Banner, Button, Dialog, Input, Select, Text } from "@cloudflare/kumo";
 import { XIcon } from "@phosphor-icons/react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useTable, type ColumnDef, type SortingState } from "@tanstack/react-table";
+import type { ColumnDef, SortingState } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import {
   adminTableFeatures,
   DataTable,
   HoverCoverRow,
-  TablePagination,
-  useClientPagination,
-  type ClientPagination,
   type FilterToggleVariant,
+  usePagedTable,
+  useSearchPagination,
 } from "../components/data-table";
 import { RegistryFilterBar } from "../components/registry-filters";
 import { proxiedCoverUrl } from "../lib/mangadex";
@@ -33,7 +32,8 @@ import {
   REGISTRY_STATUSES as STATUSES,
   type RegistryFilters,
 } from "../lib/registry-filters";
-import { parseTablePaginationSearch } from "../lib/table-view-state";
+import { parseTablePaginationSearch, type TablePaginationSearch } from "../lib/table-view-state";
+import { useRefreshingLoad, type Act } from "../lib/use-load";
 
 export const Route = createFileRoute("/registry")({
   validateSearch: parseTablePaginationSearch,
@@ -60,47 +60,8 @@ interface RegistryData {
   readonly error?: string;
 }
 
-type Act = (action: () => Promise<void>) => Promise<void>;
-
 function RegistryPage() {
-  const [data, setData] = useState<RegistryData>();
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const refresh = useCallback(async () => {
-    setBusy(true);
-
-    try {
-      setData(await loadRegistry());
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    // oxlint-disable-next-line react/set-state-in-effect -- fetch-on-mount syncs with the registry API; busy must flip before the await
-    void refresh();
-  }, [refresh]);
-
-  const act = useCallback(
-    async (action: () => Promise<void>): Promise<void> => {
-      setBusy(true);
-
-      try {
-        await action();
-        await refresh();
-        setError(null);
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [refresh],
-  );
+  const { data, error, busy, refresh, act } = useRefreshingLoad(loadRegistry);
 
   return (
     <div className="grid gap-6">
@@ -365,33 +326,14 @@ function EntriesTable({
   const [editingId, setEditingId] = useState<string>();
   const [editorOpen, setEditorOpen] = useState(false);
 
-  const controlledPagination = useMemo<ClientPagination>(
-    () => ({
-      pageIndex: Math.max(0, (search.page ?? 1) - 1),
-      pageSize: search.pageSize ?? 25,
-    }),
-    [search.page, search.pageSize],
-  );
-
-  const handlePaginationChange = useCallback(
-    (next: ClientPagination) => {
-      void navigate({
-        search: (current) => ({
-          ...current,
-          page: next.pageIndex === 0 ? undefined : next.pageIndex + 1,
-          pageSize: next.pageSize === 25 ? undefined : next.pageSize,
-        }),
-        resetScroll: false,
-      });
+  const writePagination = useCallback(
+    (next: TablePaginationSearch) => {
+      void navigate({ search: (current) => ({ ...current, ...next }), resetScroll: false });
     },
     [navigate],
   );
 
-  const { pagination, setPagination, goToPage, changePageSize, safePageIndex } =
-    useClientPagination(25, {
-      controlledPagination,
-      onPaginationChange: handlePaginationChange,
-    });
+  const paging = useSearchPagination(search, writePagination);
 
   const entries = useMemo(() => [...(data?.entries ?? [])], [data]);
 
@@ -480,17 +422,15 @@ function EntriesTable({
     [entries, filters],
   );
 
-  const pageIndex = safePageIndex(filtered.length);
-
   const changeFilters = useCallback(
     (next: RegistryFilters) => {
       setFilters(next);
 
-      if (pagination.pageIndex !== 0) {
-        goToPage(1);
+      if (paging.pagination.pageIndex !== 0) {
+        paging.goToPage(1);
       }
     },
-    [pagination.pageIndex, goToPage],
+    [paging],
   );
 
   const columns = useMemo<ColumnDef<typeof adminTableFeatures, RegistryEntry>[]>(
@@ -635,26 +575,14 @@ function EntriesTable({
     [],
   );
 
-  // oxlint-disable-next-line react/incompatible-library -- TanStack Table's instance getters are inherently non-memoizable; the compiler already skips this component
-  const table = useTable({
-    features: adminTableFeatures,
+  const { table, pager } = usePagedTable({
     data: filtered,
     columns,
-    state: { sorting, pagination: { ...pagination, pageIndex } },
+    sorting,
     onSortingChange: setSorting,
-    onPaginationChange: setPagination,
-    autoResetPageIndex: false,
+    paging,
+    rowCount: filtered.length,
   });
-
-  const pager = (
-    <TablePagination
-      page={pageIndex + 1}
-      pageSize={pagination.pageSize}
-      totalCount={filtered.length}
-      onPageChange={goToPage}
-      onPageSizeChange={changePageSize}
-    />
-  );
 
   return (
     <div className="grid gap-4">

@@ -1,5 +1,5 @@
 /** @effect-diagnostics asyncFunction:off */
-import { cliError, envString } from "@/effect-kit";
+import { cliError } from "@/effect-kit";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 import { errorMessage } from "@manifold/json";
@@ -8,6 +8,7 @@ import { ANILIST_REDIRECT_URI, resolveAniListToken } from "@/login/anilist";
 import { fetchAniListMangaEntries, type AniListEntry } from "@/anilist";
 import { runMigration } from "@/migration";
 import { createMangaDexTokenManager } from "@/mangadex-token";
+import { mangadexCredentialFlags, requireMangaDexCredentials } from "@/mangadex-session";
 import {
   abortFrame,
   closeFrame,
@@ -39,57 +40,14 @@ export const al2mdCommand = Command.make(
       Flag.withDefault(false),
       Flag.withDescription("Do not backfill chapter read markers."),
     ),
-    mangadexClientId: optional("mangadex-client-id", "Falls back to MANIFOLD_MANGADEX_CLIENT_ID."),
-    mangadexClientSecret: optional(
-      "mangadex-client-secret",
-      "Falls back to MANIFOLD_MANGADEX_CLIENT_SECRET.",
-    ),
-    mangadexUsername: optional("mangadex-username", "Falls back to MANIFOLD_MANGADEX_USERNAME."),
-    mangadexPassword: optional("mangadex-password", "Falls back to MANIFOLD_MANGADEX_PASSWORD."),
+    ...mangadexCredentialFlags,
   },
-  ({
-    anilistToken,
-    apply,
-    skipProgress,
-    mangadexClientId,
-    mangadexClientSecret,
-    mangadexUsername,
-    mangadexPassword,
-  }) =>
+  ({ anilistToken, apply, skipProgress, ...credentialFlags }) =>
     Effect.gen(function* () {
-      // Lookup order per value: flag > MANIFOLD_* env name.
-      const resolveValue = (
-        flagValue: Option.Option<string>,
-        ...names: readonly string[]
-      ): string | undefined => {
-        const direct = Option.getOrUndefined(flagValue);
-
-        if (direct !== undefined) {
-          return direct;
-        }
-
-        for (const name of names) {
-          const value = envString(name);
-
-          if (value !== undefined && value !== "") {
-            return value;
-          }
-        }
-
-        return undefined;
-      };
-
       const token =
         (yield* Effect.tryPromise(() =>
           resolveAniListToken(Option.getOrUndefined(anilistToken)),
         )) ?? "";
-
-      const credentials = {
-        clientId: resolveValue(mangadexClientId, "MANIFOLD_MANGADEX_CLIENT_ID") ?? "",
-        clientSecret: resolveValue(mangadexClientSecret, "MANIFOLD_MANGADEX_CLIENT_SECRET") ?? "",
-        username: resolveValue(mangadexUsername, "MANIFOLD_MANGADEX_USERNAME") ?? "",
-        password: resolveValue(mangadexPassword, "MANIFOLD_MANGADEX_PASSWORD") ?? "",
-      };
 
       if (!token) {
         return yield* cliError(
@@ -98,15 +56,7 @@ export const al2mdCommand = Command.make(
         );
       }
 
-      const missing = Object.entries(credentials)
-        .filter(([, value]) => !value)
-        .map(([key]) => key);
-
-      if (missing.length > 0) {
-        return yield* cliError(
-          `Missing MangaDex credentials: ${missing.join(", ")}. Pass them as flags or set MANGADEX_*.`,
-        );
-      }
+      const credentials = yield* requireMangaDexCredentials(credentialFlags);
 
       yield* Effect.tryPromise({
         try: async () => {

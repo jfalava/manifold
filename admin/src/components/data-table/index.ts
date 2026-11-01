@@ -13,6 +13,8 @@ export {
 
 export { TablePagination } from "./table-pagination";
 
+export { usePagedTable, useSearchPagination, type PagedTableOptions } from "./use-paged-table";
+
 export {
   useClientPagination,
   type ClientPagination,

@@ -2,7 +2,7 @@
 /** @effect-diagnostics globalDate:off */
 import { Badge, Banner, Button, Select, Text } from "@cloudflare/kumo";
 import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useTable, type ColumnDef, type SortingState } from "@tanstack/react-table";
+import type { ColumnDef, SortingState } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -10,10 +10,9 @@ import {
   DataTable,
   FilterToggle,
   HoverCoverRow,
-  TablePagination,
-  useClientPagination,
-  type ClientPagination,
   type FilterToggleVariant,
+  usePagedTable,
+  useSearchPagination,
 } from "../components/data-table";
 import { MangaDexLibraryPending } from "../components/loading";
 import {
@@ -33,7 +32,7 @@ import {
   type MangaDexLibrarySnapshotMeta,
 } from "../lib/mangadex-idb";
 import { loadMangaDexLibrary, loadMangaDexStats, setMangaDexStatus } from "../lib/registry";
-import { parseTablePaginationSearch } from "../lib/table-view-state";
+import { parseTablePaginationSearch, type TablePaginationSearch } from "../lib/table-view-state";
 
 export const Route = createFileRoute("/mangadex-library")({
   validateSearch: parseTablePaginationSearch,
@@ -173,33 +172,15 @@ function MangaDexLibraryPage() {
     undefined,
   );
 
-  const controlledPagination = useMemo<ClientPagination>(
-    () => ({
-      pageIndex: Math.max(0, (search.page ?? 1) - 1),
-      pageSize: search.pageSize ?? 25,
-    }),
-    [search.page, search.pageSize],
-  );
-
-  const handlePaginationChange = useCallback(
-    (next: ClientPagination) => {
-      void navigate({
-        search: (current) => ({
-          ...current,
-          page: next.pageIndex === 0 ? undefined : next.pageIndex + 1,
-          pageSize: next.pageSize === 25 ? undefined : next.pageSize,
-        }),
-        resetScroll: false,
-      });
+  const writePagination = useCallback(
+    (next: TablePaginationSearch) => {
+      void navigate({ search: (current) => ({ ...current, ...next }), resetScroll: false });
     },
     [navigate],
   );
 
-  const { pagination, setPagination, goToPage, changePageSize, safePageIndex } =
-    useClientPagination(25, {
-      controlledPagination,
-      onPaginationChange: handlePaginationChange,
-    });
+  const paging = useSearchPagination(search, writePagination);
+  const { pagination, safePageIndex } = paging;
 
   const inflightStats = useRef<Set<string>>(new Set());
   const bootstrapped = useRef(false);
@@ -521,21 +502,13 @@ function MangaDexLibraryPage() {
     // oxlint-disable-next-line react/set-state-in-effect -- lazy page-slice fetch mirrors the refresh-on-mount pattern above
   }, [loading, pagedData, stats]);
 
-  // TanStack Table's instance getters are inherently non-memoizable; the compiler already skips this component
-  // oxlint-disable-next-line react/incompatible-library
-  const table = useTable({
-    features: adminTableFeatures,
+  const { table, pager } = usePagedTable({
     data,
     columns,
-    state: { sorting, pagination: { ...pagination, pageIndex } },
+    sorting,
     onSortingChange: setSorting,
-    onPaginationChange: setPagination,
-    // Lazy stat enrichment and status mutations replace `data` references
-    // without changing pagination intent — disable TanStack's default
-    // auto-reset (core/sorted models call `table_autoResetPageIndex` on
-    // every `data` reference change) and keep the externally-controlled
-    // pageIndex clamping as the single source of truth.
-    autoResetPageIndex: false,
+    paging,
+    rowCount: filtered.length,
   });
 
   const byStatus = useMemo(() => {
@@ -579,16 +552,6 @@ function MangaDexLibraryPage() {
       ...(byStatus.has("unset") ? [] : ["unset"]),
     ];
   }, [byStatus]);
-
-  const pager = (
-    <TablePagination
-      page={pageIndex + 1}
-      pageSize={pagination.pageSize}
-      totalCount={filtered.length}
-      onPageChange={goToPage}
-      onPageSizeChange={changePageSize}
-    />
-  );
 
   if (loading && items.length === 0) {
     return <MangaDexLibraryPending />;

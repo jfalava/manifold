@@ -2,17 +2,16 @@
 /** @effect-diagnostics globalDate:off */
 import { Badge, Banner, Button, Input, Tabs, Text } from "@cloudflare/kumo";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useTable, type ColumnDef, type SortingState } from "@tanstack/react-table";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import type { ColumnDef, SortingState } from "@tanstack/react-table";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import {
   adminTableFeatures,
   DataTable,
   FilterToggle,
-  TablePagination,
-  useClientPagination,
-  type ClientPagination,
   type FilterToggleVariant,
+  usePagedTable,
+  useSearchPagination,
 } from "../components/data-table";
 import {
   loadOperations,
@@ -21,7 +20,8 @@ import {
   type LoadOperationsResult,
   type SyncOpItem,
 } from "../lib/registry";
-import { parseTablePaginationSearch } from "../lib/table-view-state";
+import { parseTablePaginationSearch, type TablePaginationSearch } from "../lib/table-view-state";
+import { useRefreshingLoad, type Act } from "../lib/use-load";
 
 type OperationsSearch = {
   readonly tab?: "operations" | "logs";
@@ -68,14 +68,10 @@ function variantForOpState(state: string): FilterToggleVariant {
   return Object.entries(OP_STATE_BADGES).find(([key]) => key === state)?.[1] ?? "neutral";
 }
 
-type Act = (action: () => Promise<void>) => Promise<void>;
-
 function OperationsPage() {
   const search = useSearch({ from: "/operations" });
   const navigate = useNavigate({ from: "/operations" });
-  const [data, setData] = useState<LoadOperationsResult>();
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { data, error, busy, refresh, act } = useRefreshingLoad(loadOperations);
   const tab: OperationsTab = search.tab ?? "operations";
 
   const handleTabChange = useCallback(
@@ -93,41 +89,6 @@ function OperationsPage() {
       });
     },
     [navigate],
-  );
-
-  const refresh = useCallback(async () => {
-    setBusy(true);
-
-    try {
-      setData(await loadOperations());
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    // oxlint-disable-next-line react/set-state-in-effect -- fetch-on-mount syncs with the ops API; busy must flip before the await
-    void refresh();
-  }, [refresh]);
-
-  const act = useCallback(
-    async (action: () => Promise<void>): Promise<void> => {
-      setBusy(true);
-
-      try {
-        await action();
-        await refresh();
-        setError(null);
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [refresh],
   );
 
   const loadErrors = data?.errors;
@@ -190,33 +151,20 @@ function OpsTable({
   const [stateFilters, setStateFilters] = useState<ReadonlySet<string>>(() => new Set());
   const [sorting, setSorting] = useState<SortingState>([]);
 
-  const controlledPagination = useMemo<ClientPagination>(
-    () => ({
-      pageIndex: Math.max(0, (search.opsPage ?? 1) - 1),
-      pageSize: search.opsPageSize ?? 25,
-    }),
-    [search.opsPage, search.opsPageSize],
-  );
-
-  const handlePaginationChange = useCallback(
-    (next: ClientPagination) => {
+  const writePagination = useCallback(
+    (next: TablePaginationSearch) => {
       void navigate({
-        search: (current) => ({
-          ...current,
-          opsPage: next.pageIndex === 0 ? undefined : next.pageIndex + 1,
-          opsPageSize: next.pageSize === 25 ? undefined : next.pageSize,
-        }),
+        search: (current) => ({ ...current, opsPage: next.page, opsPageSize: next.pageSize }),
         resetScroll: false,
       });
     },
     [navigate],
   );
 
-  const { pagination, setPagination, goToPage, changePageSize, safePageIndex } =
-    useClientPagination(25, {
-      controlledPagination,
-      onPaginationChange: handlePaginationChange,
-    });
+  const paging = useSearchPagination(
+    { page: search.opsPage, pageSize: search.opsPageSize },
+    writePagination,
+  );
 
   const ops = useMemo(() => [...(data?.ops ?? [])], [data]);
 
@@ -245,8 +193,6 @@ function OpsTable({
 
     return ops.filter((op) => stateFilters.has(op.state));
   }, [ops, stateFilters]);
-
-  const pageIndex = safePageIndex(filtered.length);
 
   const toggleStateFilter = useCallback((value: string) => {
     setStateFilters((current) => {
@@ -306,26 +252,14 @@ function OpsTable({
     [onAct],
   );
 
-  // oxlint-disable-next-line react/incompatible-library -- TanStack Table's instance getters are inherently non-memoizable; the compiler already skips this component
-  const table = useTable({
-    features: adminTableFeatures,
+  const { table, pager } = usePagedTable({
     data: filtered,
     columns,
-    state: { sorting, pagination: { ...pagination, pageIndex } },
+    sorting,
     onSortingChange: setSorting,
-    onPaginationChange: setPagination,
-    autoResetPageIndex: false,
+    paging,
+    rowCount: filtered.length,
   });
-
-  const pager = (
-    <TablePagination
-      page={pageIndex + 1}
-      pageSize={pagination.pageSize}
-      totalCount={filtered.length}
-      onPageChange={goToPage}
-      onPageSizeChange={changePageSize}
-    />
-  );
 
   return (
     <div className="grid gap-4">
@@ -395,33 +329,20 @@ function EventsTable({
   const [filter, setFilter] = useState("");
   const [sorting, setSorting] = useState<SortingState>([{ id: "createdAt", desc: true }]);
 
-  const controlledPagination = useMemo<ClientPagination>(
-    () => ({
-      pageIndex: Math.max(0, (search.logsPage ?? 1) - 1),
-      pageSize: search.logsPageSize ?? 25,
-    }),
-    [search.logsPage, search.logsPageSize],
-  );
-
-  const handlePaginationChange = useCallback(
-    (next: ClientPagination) => {
+  const writePagination = useCallback(
+    (next: TablePaginationSearch) => {
       void navigate({
-        search: (current) => ({
-          ...current,
-          logsPage: next.pageIndex === 0 ? undefined : next.pageIndex + 1,
-          logsPageSize: next.pageSize === 25 ? undefined : next.pageSize,
-        }),
+        search: (current) => ({ ...current, logsPage: next.page, logsPageSize: next.pageSize }),
         resetScroll: false,
       });
     },
     [navigate],
   );
 
-  const { pagination, setPagination, goToPage, changePageSize, safePageIndex } =
-    useClientPagination(25, {
-      controlledPagination,
-      onPaginationChange: handlePaginationChange,
-    });
+  const paging = useSearchPagination(
+    { page: search.logsPage, pageSize: search.logsPageSize },
+    writePagination,
+  );
 
   const events = useMemo(() => [...(data?.events ?? [])], [data]);
 
@@ -443,8 +364,6 @@ function EventsTable({
       );
     });
   }, [events, filter]);
-
-  const pageIndex = safePageIndex(filtered.length);
 
   const columns = useMemo<ColumnDef<typeof adminTableFeatures, ListEventItem>[]>(
     () => [
@@ -480,26 +399,14 @@ function EventsTable({
     [],
   );
 
-  // oxlint-disable-next-line react/incompatible-library -- TanStack Table's instance getters are inherently non-memoizable; the compiler already skips this component
-  const table = useTable({
-    features: adminTableFeatures,
+  const { table, pager } = usePagedTable({
     data: filtered,
     columns,
-    state: { sorting, pagination: { ...pagination, pageIndex } },
+    sorting,
     onSortingChange: setSorting,
-    onPaginationChange: setPagination,
-    autoResetPageIndex: false,
+    paging,
+    rowCount: filtered.length,
   });
-
-  const pager = (
-    <TablePagination
-      page={pageIndex + 1}
-      pageSize={pagination.pageSize}
-      totalCount={filtered.length}
-      onPageChange={goToPage}
-      onPageSizeChange={changePageSize}
-    />
-  );
 
   return (
     <div className="grid gap-4">
