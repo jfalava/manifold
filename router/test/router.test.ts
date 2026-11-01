@@ -95,7 +95,14 @@ test("paperback paths forward to sync api with prefix stripped", async () => {
 });
 
 test("known docs paths forward untouched to docs", async () => {
-  for (const path of ["/cli", "/cli/", "/cli/pas5/", "/cli/login/manifold/index.md"]) {
+  for (const path of [
+    "/cli",
+    "/cli/",
+    "/cli/pas5/",
+    "/cli/login/manifold/index.md",
+    "/licenses/",
+    "/licenses/index.md",
+  ]) {
     const { response, calls } = request(`https://df.example${path}`);
     await response;
     expect(calls.DOCS_WORKER.map((call) => call.pathname)).toEqual([path]);
@@ -110,6 +117,7 @@ test("removed guides and lookalike CLI paths do not forward to docs", async () =
     "/development",
     "/install",
     "/cli-old",
+    "/licenses-old",
   ]) {
     for (const suffix of ["", "/", "/index.md"]) {
       const { response, calls } = request(`https://df.example${prefix}${suffix}`);
