@@ -355,7 +355,7 @@ const confirmedWorks = new Map<
 ]);
 
 export const hasManganatoTitle = (titles: readonly string[], names: readonly string[]): boolean => {
-  const keys = new Set(titles.map(titleKey).filter(Boolean));
+  const keys = new Set(titles.values().map(titleKey).filter(Boolean));
 
   return names.some((name) => keys.has(titleKey(name)));
 };
@@ -370,7 +370,12 @@ export const hasManganatoAuthor = (
     return authorAliases.get(key) ?? key;
   };
 
-  const keys = new Set(expected.map(keyFor).filter((key) => key && !missingAuthorKeys.has(key)));
+  const keys = new Set(
+    expected
+      .values()
+      .map(keyFor)
+      .filter((key) => key && !missingAuthorKeys.has(key)),
+  );
 
   return actual.some((author) => keys.has(keyFor(author)));
 };
@@ -555,10 +560,11 @@ export const selectManganatoCandidate = (
   const plausible = [
     ...new Map(
       candidates
+        .values()
         .filter((candidate) =>
           hasManganatoTitle(identity.titles, [candidate.title, ...candidate.aliases]),
         )
-        .map((candidate) => [candidate.id, candidate]),
+        .map((candidate) => [candidate.id, candidate] as const),
     ).values(),
   ];
 
@@ -634,12 +640,14 @@ export const selectManganatoCandidate = (
       selection: {
         basis: "active-listing",
         lostPositions: plausible
+          .values()
           .filter((item) => item.id !== active.id)
           .map((item) => ({
             candidateId: item.id,
             numbers: item.coverage!.numbers.filter((number) => !available.has(number)),
           }))
-          .filter((item) => item.numbers.length > 0),
+          .filter((item) => item.numbers.length > 0)
+          .toArray(),
       },
     };
   }
@@ -803,6 +811,7 @@ export const manganatoRescueQueries = (
   const seenTitles = new Set<string>();
 
   const words = titles
+    .values()
     .map((title) => manganatoSearchWords(title).filter((word) => !seen.has(word)))
     .filter((titleWords) => {
       const key = titleWords.join("|");
@@ -814,7 +823,8 @@ export const manganatoRescueQueries = (
       seenTitles.add(key);
 
       return true;
-    });
+    })
+    .toArray();
 
   const queries: string[] = [];
 
@@ -925,8 +935,10 @@ export const loadManganatoIdentity = async (
 
     // Search English/romanized aliases only. Other translations still count as identity evidence.
     const discoveryTitles = aliases
+      .values()
       .filter(([language]) => ["en", "ja-ro", "ko-ro", "zh-ro"].includes(language))
-      .map(([, title]) => title);
+      .map(([, title]) => title)
+      .toArray();
 
     // Without tagged aliases the registry title is the only discovery evidence available.
     if (!discoveryTitles.length) {

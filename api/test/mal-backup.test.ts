@@ -1,7 +1,11 @@
 /** @effect-diagnostics asyncFunction:off */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Effect } from "effect";
-import type { CanonicalSearchResult, CanonicalSearchSource } from "@manifold/canonical";
+import {
+  CanonicalSourceError,
+  type CanonicalSearchResult,
+  type CanonicalSearchSource,
+} from "@manifold/canonical";
 import type { ListStatus, RegistryEntry } from "@manifold/contract";
 import { chooseMalMatch, resolveMalBackup, writeMalBackupStatus } from "../src/mal-backup";
 import type { Env } from "../src/types";
@@ -167,12 +171,9 @@ describe("MAL backup matching", () => {
       search: (term) =>
         term === "English title"
           ? Effect.succeed([candidate("7", "English title")])
-          : Effect.fail({
-              _tag: "CanonicalSourceError",
-              provider: "mal",
-              message: "rate limited",
-              status: 429,
-            }),
+          : Effect.fail(
+              new CanonicalSourceError({ provider: "mal", message: "rate limited", status: 429 }),
+            ),
     };
 
     await expect(

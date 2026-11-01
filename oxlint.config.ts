@@ -48,6 +48,7 @@ export const agentIgnores = [
 export const antiSlopRules: Record<string, DummyRule> = {
   "oxc/no-accumulating-spread": "error",
   "anti-slop/no-reduce-accumulator-copy": "error",
+  "anti-slop/no-array-filter-map": "error",
   "anti-slop/require-readable-spacing": "error",
   "anti-slop/no-chained-type-assertions": "error",
   "anti-slop/no-conditional-empty-object-spread": "error",
@@ -68,6 +69,9 @@ export const antiSlopRules: Record<string, DummyRule> = {
 
 export const antiSlopEffectRules: Record<string, DummyRule> = {
   "anti-slop-effect/no-manual-effect-error-tag": "error",
+  "anti-slop-effect/no-manual-tag-comparison": "error",
+  "anti-slop-effect/no-manual-tagged-construction": "error",
+  "anti-slop-effect/prefer-effect-match": "error",
   "anti-slop-effect/no-service-constructor-imports": "error",
 };
 

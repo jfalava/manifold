@@ -16,7 +16,7 @@ import {
   MANGADEX_TOKEN_ENDPOINT,
   type MangaDexPersonalClientCredentials,
 } from "@manifold/mangadex";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import {
   cliError,
   epochMillisNow,
@@ -94,7 +94,7 @@ const loadPersistedTokensEffect = (cachePath: string | undefined): Effect.Effect
       } satisfies PersistedTokens;
     }).pipe(Effect.option);
 
-    if (outcome._tag === "None") {
+    if (Option.isNone(outcome)) {
       return {};
     }
 

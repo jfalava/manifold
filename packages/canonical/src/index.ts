@@ -1,3 +1,4 @@
+import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 
 export type CanonicalProvider = "anilist" | "mal" | "local";
@@ -85,12 +86,11 @@ export interface CanonicalListStateChange {
   readonly volumeProgress?: number | null;
 }
 
-export interface CanonicalSourceError {
-  readonly _tag: "CanonicalSourceError";
+export class CanonicalSourceError extends Data.TaggedError("CanonicalSourceError")<{
   readonly provider: Exclude<CanonicalProvider, "local">;
   readonly message: string;
   readonly status?: number;
-}
+}> {}
 
 export interface CanonicalSource {
   readonly provider: Exclude<CanonicalProvider, "local">;

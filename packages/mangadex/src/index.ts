@@ -3,6 +3,7 @@
 /* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
 
 /** @effect-diagnostics globalFetch:off */
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import { Schema } from "effect";
 import {
@@ -95,11 +96,10 @@ export interface MangaDexChapterDetails {
   readonly pages: readonly MangaDexPage[];
 }
 
-export interface MangaDexSourceError {
-  readonly _tag: "MangaDexSourceError";
+export class MangaDexSourceError extends Data.TaggedError("MangaDexSourceError")<{
   readonly message: string;
   readonly status?: number;
-}
+}> {}
 
 export interface MangaDexMangaListOptions {
   readonly ids?: readonly MangaDexMangaId[];
@@ -388,18 +388,15 @@ const pageFromValue = (
   };
 };
 
-const errorFrom = (cause: unknown, status?: number): MangaDexSourceError => ({
-  _tag: "MangaDexSourceError",
-  message: isString(cause)
-    ? cause
-    : cause instanceof Error
-      ? cause.message
-      : "MangaDex request failed",
-  ...(status !== undefined && { status }),
-});
-
-const isSourceError = (value: unknown): value is MangaDexSourceError =>
-  isJsonObject(value) && value._tag === "MangaDexSourceError" && isString(value.message);
+const errorFrom = (cause: unknown, status?: number): MangaDexSourceError =>
+  new MangaDexSourceError({
+    message: isString(cause)
+      ? cause
+      : cause instanceof Error
+        ? cause.message
+        : "MangaDex request failed",
+    status,
+  });
 
 const normalizedLimit = (value: number | undefined, max = 100): number => {
   if (value === undefined || !Number.isFinite(value)) {
@@ -503,13 +500,12 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
           catch: () => errorFrom("failed to read error body"),
         }).pipe(Effect.orElseSucceed(() => ""));
 
-        return yield* Effect.fail({
-          _tag: "MangaDexSourceError",
+        return yield* new MangaDexSourceError({
           message:
             `MangaDex returned HTTP ${response.status}` +
             (detail ? `: ${detail.slice(0, 300)}` : ""),
           status: response.status,
-        } satisfies MangaDexSourceError);
+        });
       }
 
       return response;
@@ -529,7 +525,7 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
       );
 
       if (!isJsonObject(body)) {
-        return yield* Effect.fail(errorFrom("MangaDex returned a non-object JSON body"));
+        return yield* errorFrom("MangaDex returned a non-object JSON body");
       }
 
       return body;
@@ -593,7 +589,7 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         const normalized = query.trim();
 
         if (!normalized) {
-          return yield* Effect.fail(errorFrom("MangaDex search query cannot be empty"));
+          return yield* errorFrom("MangaDex search query cannot be empty");
         }
 
         // MangaDex defaults title search to safe+suggestive and silently
@@ -660,7 +656,7 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         const manga = mangaFromResource(body.data);
 
         if (!manga) {
-          return yield* Effect.fail(errorFrom(`MangaDex manga not found: ${mangaId}`, 404));
+          return yield* errorFrom(`MangaDex manga not found: ${mangaId}`, 404);
         }
 
         return manga;
@@ -727,9 +723,7 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         const hash = stringValue(chapter?.hash);
 
         if (!baseUrl || !hash) {
-          return yield* Effect.fail(
-            errorFrom(`MangaDex page server returned no hash: ${chapterId}`),
-          );
+          return yield* errorFrom(`MangaDex page server returned no hash: ${chapterId}`);
         }
 
         const filenames = chapter !== undefined && isJsonArray(chapter.data) ? chapter.data : [];
@@ -788,7 +782,7 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
       const id = stringValue(data?.id);
 
       if (!id) {
-        return yield* Effect.fail(errorFrom("MangaDex returned no current user", 401));
+        return yield* errorFrom("MangaDex returned no current user", 401);
       }
 
       const attributes = asObject(data?.attributes);
@@ -887,7 +881,7 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
       request(`/manga/${encodeURIComponent(mangaId)}/follow`, "DELETE").pipe(
         Effect.asVoid,
         Effect.catchIf(
-          (cause): cause is MangaDexSourceError => isSourceError(cause) && cause.status === 404,
+          (cause) => cause.status === 404,
           () => Effect.void,
         ),
       ),
@@ -895,7 +889,7 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
       request(`/user/follows/manga/${encodeURIComponent(mangaId)}`).pipe(
         Effect.as(true),
         Effect.catchIf(
-          (cause): cause is MangaDexSourceError => isSourceError(cause) && cause.status === 404,
+          (cause) => cause.status === 404,
           () => Effect.succeed(false),
         ),
       ),

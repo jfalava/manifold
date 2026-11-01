@@ -12,6 +12,13 @@ type FilterKind = "status" | "has" | "missing" | "unlinked";
 
 type FilterOption = { readonly kind: FilterKind; readonly value: string; readonly label: string };
 
+const PILL_CLASSES = {
+  status: "border-kumo-info/25 bg-kumo-info-tint text-kumo-info",
+  missing: "border-kumo-warning/25 bg-kumo-warning-tint text-kumo-warning",
+  has: "border-kumo-line bg-kumo-fill text-kumo-default",
+  unlinked: "border-kumo-line bg-kumo-fill text-kumo-default",
+} as const satisfies Record<FilterKind, string>;
+
 const FIELDS = [
   { value: "all", label: "All" },
   { value: "status", label: "Status" },
@@ -201,11 +208,7 @@ export function RegistryFilterBar({
               <div
                 className={cn(
                   "flex min-w-0 items-center rounded-full border text-sm",
-                  pill.kind === "status"
-                    ? "border-kumo-info/25 bg-kumo-info-tint text-kumo-info"
-                    : pill.kind === "missing"
-                      ? "border-kumo-warning/25 bg-kumo-warning-tint text-kumo-warning"
-                      : "border-kumo-line bg-kumo-fill text-kumo-default",
+                  PILL_CLASSES[pill.kind],
                 )}
               >
                 <button

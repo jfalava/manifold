@@ -310,7 +310,11 @@ const chooseTitleMatch = (
 
   // Single partial: one hit whose normalized title starts with / is started by a candidate.
   const partial = hits.filter((hit) => {
-    const names = [hit.title, ...hit.aliases].map(normalizeTitle).filter(Boolean);
+    const names = [hit.title, ...hit.aliases]
+      .values()
+      .map(normalizeTitle)
+      .filter(Boolean)
+      .toArray();
 
     return names.some((name) =>
       [...wanted].some((want) => name.startsWith(want) || want.startsWith(name)),

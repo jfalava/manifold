@@ -313,18 +313,22 @@ export const kaganePrefillCommand = Command.make("kagane", {
                 (await client.sources()).sources.map((source) => [source.source_id, source.title]),
               );
 
-              const allowedSources = [...sources]
+              const allowedSources = sources
+                .entries()
                 .filter(([, title]) => title.trim().toLowerCase() !== "mangadex")
-                .map(([id]) => id);
+                .map(([id]) => id)
+                .toArray();
 
               if (allowedSources.length === 0) {
                 throw cliError("No non-MangaDex Kagane sources are available.");
               }
 
               for (const name of priority) {
-                const ids = [...sources]
+                const ids = sources
+                  .entries()
                   .filter(([, title]) => title.toLowerCase() === name.toLowerCase())
-                  .map(([id]) => id);
+                  .map(([id]) => id)
+                  .toArray();
 
                 if (ids.length === 0) {
                   throw cliError(

@@ -47,7 +47,7 @@ test("status alternatives are ORed, but text and all binding conditions are ANDe
   };
 
   expect(
-    entries.filter((entry) => matchesRegistryFilters(entry, filters)).map((entry) => entry.id),
+    entries.flatMap((entry) => (matchesRegistryFilters(entry, filters) ? [entry.id] : [])),
   ).toEqual(["entry-orbit", "hold"]);
   expect(entries.filter((entry) => matchesRegistryFilters(entry, EMPTY_REGISTRY_FILTERS))).toEqual(
     entries,

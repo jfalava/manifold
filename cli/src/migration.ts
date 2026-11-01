@@ -11,7 +11,7 @@ import {
   type MangaDexChapter,
   type MangaDexClient,
   type MangaDexReadingStatus,
-  type MangaDexSourceError,
+  MangaDexSourceError,
 } from "@manifold/mangadex";
 
 import type { AniListEntry } from "./anilist";
@@ -138,7 +138,7 @@ const toMatch = (
   manga: { id: string; title: string },
   normalizedTarget: string,
 ): TitleMatch | undefined => {
-  const candidates = [manga.title].filter(Boolean).map(normalizeTitle);
+  const candidates = manga.title ? [normalizeTitle(manga.title)] : [];
 
   if (candidates.includes(normalizedTarget)) {
     return { manga, method: "title-exact" };
@@ -244,10 +244,12 @@ export const chapterIdsUpTo = (
     chapterIdsUpToEffect(
       (id) =>
         fromPromise(() => client.getChapters(id)).pipe(
-          Effect.mapError((cause): MangaDexSourceError => ({
-            _tag: "MangaDexSourceError",
-            message: cause instanceof Error ? cause.message : errorMessage(cause),
-          })),
+          Effect.mapError(
+            (cause) =>
+              new MangaDexSourceError({
+                message: cause instanceof Error ? cause.message : errorMessage(cause),
+              }),
+          ),
         ),
       mangaId,
       progress,

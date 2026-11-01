@@ -45,7 +45,7 @@ import {
   requestInitText,
   type FetchResponse,
 } from "@manifold/json";
-import { Clock, DateTime } from "effect";
+import { Clock, DateTime, Result } from "effect";
 import * as Effect from "effect/Effect";
 import type { CanonicalFetcher } from "@manifold/canonical/sources";
 import { createMangaDexClient, type MangaDexSourceError } from "@manifold/mangadex";
@@ -901,7 +901,7 @@ class TrackerStatusForm extends Form {
             ),
           );
 
-          if (fieldsOutcome._tag === "Success") {
+          if (Result.isSuccess(fieldsOutcome)) {
             appliedRemotely = true;
           } else {
             yield* Effect.logWarning(
@@ -987,7 +987,7 @@ class TrackerStatusForm extends Form {
             fromPromise(() => saveAniListStatus(token, anilistId, status)),
           );
 
-          if (statusOutcome._tag === "Success") {
+          if (Result.isSuccess(statusOutcome)) {
             result = statusOutcome.success;
           } else {
             yield* Effect.logWarning(
@@ -1187,7 +1187,7 @@ class TrackerSettingsForm extends Form {
           fromPromise(() => aniListRequest(aniListToken, viewerQuery, {}, decodeAniListViewer)),
         );
 
-        if (outcome._tag === "Success") {
+        if (Result.isSuccess(outcome)) {
           Application.setSecureState(aniListToken, ANILIST_SESSION_KEY);
           Application.setState(outcome.success.Viewer.id, ANILIST_VIEWER_ID_KEY);
           Application.setState("Connected", ANILIST_STATUS_KEY);
@@ -1231,7 +1231,7 @@ class TrackerSettingsForm extends Form {
             ),
           );
 
-          if (validation._tag === "Success") {
+          if (Result.isSuccess(validation)) {
             const { status } = validation.success;
             Application.setState(
               status >= 200 && status < 300
@@ -1255,7 +1255,7 @@ class TrackerSettingsForm extends Form {
             fromPromise(() => aniListRequest(aniListToken, viewerQuery, {}, decodeAniListViewer)),
           );
 
-          if (outcome._tag === "Success") {
+          if (Result.isSuccess(outcome)) {
             Application.setSecureState(aniListToken, ANILIST_SESSION_KEY);
             Application.setState(outcome.success.Viewer.id, ANILIST_VIEWER_ID_KEY);
             Application.setState("Connected", ANILIST_STATUS_KEY);

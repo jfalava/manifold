@@ -4,6 +4,13 @@ import type { ReactNode } from "react";
 
 import type { AdminTableFeatures } from "./features";
 
+/** Header rendering per TanStack sort state (`getIsSorted()` is false when unsorted). */
+const SORT_STATES = {
+  asc: { description: "ascending", ariaSort: "ascending", glyph: "↑" },
+  desc: { description: "descending", ariaSort: "descending", glyph: "↓" },
+  none: { description: "not sorted", ariaSort: "none", glyph: "↕" },
+} as const;
+
 export function DataTable<TData extends RowData>({
   table,
   emptyText,
@@ -36,16 +43,12 @@ export function DataTable<TData extends RowData>({
                   ? undefined
                   : flexRender(header.column.columnDef.header, header.getContext());
 
-                const sortDescription =
-                  sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "not sorted";
-
-                const ariaSort =
-                  sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "none";
+                const sortState = SORT_STATES[sort === false ? "none" : sort];
 
                 return (
                   <Table.Head
                     key={header.id}
-                    aria-sort={canSort ? ariaSort : undefined}
+                    aria-sort={canSort ? sortState.ariaSort : undefined}
                     className={canSort ? "select-none" : undefined}
                     style={{
                       width: header.getSize() !== 150 ? header.getSize() : undefined,
@@ -55,12 +58,12 @@ export function DataTable<TData extends RowData>({
                       <button
                         type="button"
                         className="flex w-full items-center justify-between gap-2 text-left"
-                        aria-label={`Sort by ${String(header.column.columnDef.header)} (${sortDescription})`}
+                        aria-label={`Sort by ${String(header.column.columnDef.header)} (${sortState.description})`}
                         onClick={header.column.getToggleSortingHandler()}
                       >
                         {headerContent}
                         <span aria-hidden="true" className="text-xs opacity-60">
-                          {sort === "asc" ? "↑" : sort === "desc" ? "↓" : "↕"}
+                          {sortState.glyph}
                         </span>
                       </button>
                     ) : (

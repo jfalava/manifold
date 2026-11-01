@@ -51,16 +51,7 @@ function DurableObjectsPage() {
 
       <DoInstancesCard state={analytics} />
       <OutboxHealthCard
-        state={
-          library.status === "loading"
-            ? { status: "loading" }
-            : library.status === "error"
-              ? { status: "error", message: library.message }
-              : {
-                  status: "ready",
-                  value: library.value.ops,
-                }
-        }
+        state={library.status === "ready" ? { status: "ready", value: library.value.ops } : library}
       />
     </div>
   );

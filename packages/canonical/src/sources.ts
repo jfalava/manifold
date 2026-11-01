@@ -21,7 +21,7 @@ import {
   type CanonicalSearchOptions,
   type CanonicalSearchResult,
   type CanonicalSearchSource,
-  type CanonicalSourceError,
+  CanonicalSourceError,
 } from "./index";
 
 export const ANILIST_GRAPHQL_ENDPOINT = "https://graphql.anilist.co";
@@ -135,18 +135,7 @@ const sourceError = (
   provider: CanonicalSourceError["provider"],
   message: string,
   status?: number,
-): CanonicalSourceError => ({
-  _tag: "CanonicalSourceError",
-  provider,
-  message,
-  ...(status !== undefined && { status }),
-});
-
-const isSourceError = (value: unknown): value is CanonicalSourceError =>
-  isJsonObject(value) &&
-  value._tag === "CanonicalSourceError" &&
-  (value.provider === "anilist" || value.provider === "mal") &&
-  isString(value.message);
+): CanonicalSourceError => new CanonicalSourceError({ provider, message, status });
 
 const requestJson = (
   provider: CanonicalSourceError["provider"],
@@ -188,7 +177,7 @@ const requestJson = (
       const message = `Canonical provider returned HTTP ${response.status}${diagnostics ? `: ${diagnostics}` : ""}`;
       yield* Effect.logError(`[Canonical:${provider}] ${message}`);
 
-      return yield* Effect.fail(sourceError(provider, message, response.status));
+      return yield* sourceError(provider, message, response.status);
     }
 
     const text = yield* Effect.tryPromise({
@@ -205,9 +194,7 @@ const requestJson = (
     );
 
     if (!isJsonObject(body)) {
-      return yield* Effect.fail(
-        sourceError(provider, "Canonical provider returned a non-object JSON body"),
-      );
+      return yield* sourceError(provider, "Canonical provider returned a non-object JSON body");
     }
 
     return body;
@@ -226,10 +213,14 @@ const dateFromParts = (value: JsonValue | undefined): string | undefined => {
     return undefined;
   }
 
-  return [year, month, day]
-    .filter((part): part is number => part !== undefined)
-    .map((part, index) => (index === 0 ? String(part) : String(part).padStart(2, "0")))
-    .join("-");
+  // A day without a month cannot be placed, so the date stops at the year.
+  if (month === undefined) {
+    return String(year);
+  }
+
+  const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
+
+  return day === undefined ? yearMonth : `${yearMonth}-${String(day).padStart(2, "0")}`;
 };
 
 const metadata = (value: JsonObject): CanonicalMetadata => {
@@ -437,7 +428,8 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
         const body = yield* request(anilistSearchQuery, {
           search: yield* Effect.try({
             try: () => requireQuery(query, "anilist"),
-            catch: (e) => (isSourceError(e) ? e : sourceError("anilist", "bad query")),
+            catch: (e) =>
+              e instanceof CanonicalSourceError ? e : sourceError("anilist", "bad query"),
           }),
           page: 1,
           perPage: limitFrom(searchOptions),
@@ -446,7 +438,7 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
         const graphQLError = anilistGraphQLError(body);
 
         if (graphQLError) {
-          return yield* Effect.fail(graphQLError);
+          return yield* graphQLError;
         }
 
         const data = objectField(body, "data");
@@ -454,9 +446,7 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
         const media = page === undefined ? undefined : arrayField(page, "media");
 
         if (!media) {
-          return yield* Effect.fail(
-            sourceError("anilist", "AniList search returned no media array"),
-          );
+          return yield* sourceError("anilist", "AniList search returned no media array");
         }
 
         return media.flatMap((item) => {
@@ -470,16 +460,14 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
         const id = Number.parseInt(providerId, 10);
 
         if (!Number.isSafeInteger(id)) {
-          return yield* Effect.fail(
-            sourceError("anilist", `Invalid AniList manga id: ${providerId}`),
-          );
+          return yield* sourceError("anilist", `Invalid AniList manga id: ${providerId}`);
         }
 
         const body = yield* request(anilistGetQuery, { id });
         const graphQLError = anilistGraphQLError(body);
 
         if (graphQLError) {
-          return yield* Effect.fail(graphQLError);
+          return yield* graphQLError;
         }
 
         const data = objectField(body, "data");
@@ -491,9 +479,7 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
         const id = Number.parseInt(idMal, 10);
 
         if (!Number.isSafeInteger(id)) {
-          return yield* Effect.fail(
-            sourceError("anilist", `Invalid MyAnimeList manga id: ${idMal}`),
-          );
+          return yield* sourceError("anilist", `Invalid MyAnimeList manga id: ${idMal}`);
         }
 
         const body = yield* request(anilistGetByMalQuery, { idMal: id });
@@ -504,7 +490,7 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
             return undefined;
           }
 
-          return yield* Effect.fail(graphQLError);
+          return yield* graphQLError;
         }
 
         const data = objectField(body, "data");
@@ -610,17 +596,19 @@ export const createMyAnimeListSource = (
     search: (query, searchOptions) =>
       Effect.gen(function* () {
         if (!options.clientId || options.clientId === "not-configured") {
-          return yield* Effect.fail(sourceError("mal", "MyAnimeList client id is not configured"));
+          return yield* sourceError("mal", "MyAnimeList client id is not configured");
         }
 
         const normalized = yield* Effect.try({
           try: () => requireQuery(query, "mal"),
-          catch: (e) => (isSourceError(e) ? e : sourceError("mal", "bad query")),
+          catch: (e) => (e instanceof CanonicalSourceError ? e : sourceError("mal", "bad query")),
         });
 
         if (Array.from(normalized).length < 3) {
-          return yield* Effect.fail(
-            sourceError("mal", "MyAnimeList search requires at least 3 characters", 400),
+          return yield* sourceError(
+            "mal",
+            "MyAnimeList search requires at least 3 characters",
+            400,
           );
         }
 
@@ -632,9 +620,7 @@ export const createMyAnimeListSource = (
         const data = arrayField(body, "data");
 
         if (!data) {
-          return yield* Effect.fail(
-            sourceError("mal", "MyAnimeList search returned no data array"),
-          );
+          return yield* sourceError("mal", "MyAnimeList search returned no data array");
         }
 
         return data.flatMap((item) => {
@@ -646,7 +632,7 @@ export const createMyAnimeListSource = (
     getById: (providerId) =>
       Effect.gen(function* () {
         if (!options.clientId || options.clientId === "not-configured") {
-          return yield* Effect.fail(sourceError("mal", "MyAnimeList client id is not configured"));
+          return yield* sourceError("mal", "MyAnimeList client id is not configured");
         }
 
         const href = `${endpoint}/${encodeURIComponent(providerId)}?fields=${encodeURIComponent(malFields)}`;

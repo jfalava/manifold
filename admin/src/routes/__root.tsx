@@ -14,6 +14,7 @@ import {
   MoonIcon,
   QueueIcon,
   SunIcon,
+  type Icon,
 } from "@phosphor-icons/react";
 import { formatForDisplay, HotkeysProvider, useHotkey } from "@tanstack/react-hotkeys";
 import {
@@ -398,6 +399,12 @@ const themeLabels = {
   system: "System",
 } as const satisfies Record<ThemeMode, string>;
 
+const themeIcons = {
+  light: SunIcon,
+  dark: MoonIcon,
+  system: MonitorIcon,
+} as const satisfies Record<ThemeMode, Icon>;
+
 /** Header theme control — matches jfa ThemeToggle (icon + label, dropdown). */
 function ThemeToggle() {
   const preference: ThemeMode = useSyncExternalStore(
@@ -406,8 +413,7 @@ function ThemeToggle() {
     (): ThemeMode => "system",
   );
 
-  const ThemeIcon =
-    preference === "light" ? SunIcon : preference === "dark" ? MoonIcon : MonitorIcon;
+  const ThemeIcon = themeIcons[preference];
 
   const label = themeLabels[preference];
 
