@@ -20,6 +20,7 @@ export const filterPas5Providers = (
       ([, source]) => !excludedSourceIds.has(source.sourceId),
     ),
   );
+
   const libraries = Object.fromEntries(
     Object.entries(archive.__LIBRARY_MANGA_V5)
       .map(
@@ -36,14 +37,17 @@ export const filterPas5Providers = (
       )
       .filter(([, library]) => library.attachedSources.length > 0),
   );
+
   const infoIds = new Set(Object.values(sources).map((source) => String(source.mangaInfo.id)));
   const extraEntities: Record<string, JsonObject> = {};
   const removedChapterIds = new Set<string>();
+
   // Native backups split chapters/markers across numbered entity files.
   for (const [name, records] of Object.entries(archive)) {
     if (!/^__CHAPTER_V5(?:-\d+)?$/.test(name) || !isJsonObject(records)) {
       continue;
     }
+
     extraEntities[name] = Object.fromEntries(
       Object.entries(records).filter(([id, chapter]) => {
         if (
@@ -54,18 +58,23 @@ export const filterPas5Providers = (
         ) {
           return true;
         }
+
         removedChapterIds.add(id);
+
         if (isString(chapter.id)) {
           removedChapterIds.add(chapter.id);
         }
+
         return false;
       }),
     );
   }
+
   for (const [name, records] of Object.entries(archive)) {
     if (!/^__CHAPTER_PROGRESS_MARKER_V5(?:-\d+)?$/.test(name) || !isJsonObject(records)) {
       continue;
     }
+
     extraEntities[name] = Object.fromEntries(
       Object.entries(records).filter(
         ([, marker]) =>
@@ -76,6 +85,7 @@ export const filterPas5Providers = (
       ),
     );
   }
+
   return {
     ...archive,
     ...extraEntities,
@@ -91,6 +101,7 @@ export const filterPas5Providers = (
 const parsePas5Effect = (buf: Buffer): Effect.Effect<Pas5Entities> =>
   Effect.sync(() => {
     const files = readZipText(buf);
+
     // SAFETY: value matches Pas5Entities at this call site
     return Object.fromEntries(
       Object.entries(files).map(([name, text]) => [name, JSON.parse(text)]),

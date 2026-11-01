@@ -40,9 +40,11 @@ const STATUS_ORDER = [
 
 function orderedStatuses(statuses: Record<string, number>): [string, number][] {
   const known = new Set<string>(STATUS_ORDER);
+
   const rest = Object.entries(statuses)
     .filter(([status]) => !known.has(status))
     .toSorted((a, b) => b[1] - a[1]);
+
   return [
     ...STATUS_ORDER.flatMap<[string, number]>((status) =>
       status in statuses ? [[status, statuses[status] ?? 0]] : [],
@@ -107,9 +109,11 @@ function libraryParts(state: LoadState<LibraryOverview>): {
   if (state.status === "loading") {
     return null;
   }
+
   if (state.status === "error") {
     return { registry: null, ops: null, mangadex: null };
   }
+
   return {
     registry: state.value.registry,
     ops: state.value.ops,
@@ -121,6 +125,7 @@ function attentionCount(ops: OpsSummary | null): number {
   if (ops === null) {
     return 0;
   }
+
   return (
     (ops.states.pending ?? 0) +
     (ops.states.blocked ?? 0) +
@@ -132,14 +137,17 @@ function attentionCount(ops: OpsSummary | null): number {
 
 function LibrarySection({ state }: { readonly state: LoadState<LibraryOverview> }): ReactNode {
   const parts = libraryParts(state);
+
   if (parts === null) {
     return <LibraryWidgetsSkeleton />;
   }
 
   const { registry, ops, mangadex } = parts;
   const attention = attentionCount(ops);
+
   const coverage =
     registry !== null && registry.active > 0 ? percent(registry.fullyLinked, registry.active) : "—";
+
   const mangadexFooter =
     mangadex !== null && mangadex.rated > 0
       ? `${mangadex.rated.toLocaleString("en")} rated · mean ${(mangadex.meanRating ?? 0).toFixed(1)}/10`
@@ -245,6 +253,7 @@ function ProviderCoverageCard({ registry }: { registry: RegistrySummary | null }
   const providers = registry
     ? [...new Set([...TRACKER_PROVIDERS, ...Object.keys(registry.providerCounts)])]
     : [];
+
   return (
     <LayerCard className="px-5 py-4">
       <div className="grid content-start gap-3">
@@ -255,6 +264,7 @@ function ProviderCoverageCard({ registry }: { registry: RegistrySummary | null }
         {registry &&
           providers.map((provider) => {
             const linked = registry.providerCounts[provider] ?? 0;
+
             return (
               <Meter
                 key={provider}
@@ -360,6 +370,7 @@ function StatCard({
       <p className="text-sm opacity-60">{hint}</p>
     </div>
   );
+
   return (
     <LayerCard className="px-5 py-4">
       {to === undefined ? body : <Link to={to}>{body}</Link>}
@@ -445,6 +456,7 @@ function InfrastructureSection({
             <Table.Body>
               {WORKER_CATALOG.map((worker) => {
                 const traffic = snapshot.ok ? snapshot.workerTraffic[worker.logical] : undefined;
+
                 return (
                   <Table.Row key={worker.logical}>
                     <Table.Cell>{worker.logical}</Table.Cell>
@@ -477,6 +489,7 @@ function healthVariant(
   if (!traffic || traffic.requests === 0) {
     return "neutral";
   }
+
   return traffic.errors / traffic.requests < 0.01 ? "success" : "warning";
 }
 
@@ -484,6 +497,7 @@ function healthLabel(traffic: { requests: number; errors: number } | undefined):
   if (!traffic || traffic.requests === 0) {
     return "no traffic";
   }
+
   return traffic.errors / traffic.requests < 0.01 ? "healthy" : "degraded";
 }
 

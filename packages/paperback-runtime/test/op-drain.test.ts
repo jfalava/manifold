@@ -43,8 +43,10 @@ const makeHarness = () => {
         scheduleRequest: (request: ScheduledRequestLike): Promise<[ResponseLike, ArrayBuffer]> => {
           const callIndex = index++;
           urls.push(request.url);
+
           return Promise.resolve().then(() => {
             const outcome = respond(callIndex);
+
             return [{ status: outcome.status, headers: {} }, jsonBuffer(outcome.body)];
           });
         },
@@ -172,12 +174,14 @@ describe("AniList operation drain", () => {
           },
         };
       }
+
       if (index === 1) {
         return {
           status: 200,
           body: { data: { MediaListCollection: { lists: [] } } },
         };
       }
+
       return { status: 200, body: { updated: 1 } };
     }, 7);
     const { drainAniListOps } = await harness.loadDrain();

@@ -43,9 +43,11 @@ const isAccessCookieName = (name: string): boolean => ACCESS_COOKIE_NAMES.has(na
  */
 export const domainMatchesAdmin = (domain: string): boolean => {
   const normalized = domain.trim().replace(/^\./, "").toLowerCase();
+
   if (normalized.length === 0) {
     return true;
   }
+
   return normalized === ADMIN_HOST || normalized === "jfa.dev" || normalized.endsWith(".jfa.dev");
 };
 
@@ -53,30 +55,39 @@ const pinAdminDomain = (domain: string | undefined): string => {
   if (!domain || domain.trim().length === 0) {
     return ADMIN_HOST;
   }
+
   const normalized = domain.trim().replace(/^\./, "").toLowerCase();
+
   if (normalized === "jfa.dev" || normalized.endsWith(".jfa.dev")) {
     // Prefer the concrete admin host so CookieStorage-style matchers attach.
     if (normalized === ADMIN_HOST || normalized.endsWith(`.${ADMIN_HOST}`)) {
       return normalized;
     }
+
     return ADMIN_HOST;
   }
+
   return ADMIN_HOST;
 };
 
 /** Decode one JWT payload segment without verifying the signature (status/TTL only). */
 export const decodeJwtPayloadJson = (token: string): JsonObject | undefined => {
   const segment = token.split(".")[1];
+
   if (!segment) {
     return undefined;
   }
+
   const json = base64UrlToUtf8(segment);
+
   if (!json) {
     return undefined;
   }
+
   try {
     // SAFETY: boundary parse of untrusted JWT payload bytes for status/TTL only.
     const parsed: unknown = JSON.parse(json);
+
     return isJsonObject(parsed) ? parsed : undefined;
   } catch {
     return undefined;
@@ -91,6 +102,7 @@ const base64UrlToUtf8 = (segment: string): string | undefined => {
     // Prefer Paperback's decoder when the host injects Application.
     try {
       const decoded = Application.base64Decode(padded);
+
       if (isString(decoded)) {
         return decoded;
       }
@@ -104,21 +116,28 @@ const base64UrlToUtf8 = (segment: string): string | undefined => {
     const bytes: number[] = [];
     let buffer = 0;
     let bits = 0;
+
     for (const ch of cleaned) {
       const val = alphabet.indexOf(ch);
+
       if (val < 0) {
         return undefined;
       }
+
       buffer = (buffer << 6) | val;
       bits += 6;
+
       if (bits >= 8) {
         bits -= 8;
         bytes.push((buffer >> bits) & 0xff);
       }
     }
+
     let out = "";
+
     for (let i = 0; i < bytes.length;) {
       const c = bytes[i]!;
+
       if (c < 0x80) {
         out += String.fromCharCode(c);
         i += 1;
@@ -135,6 +154,7 @@ const base64UrlToUtf8 = (segment: string): string | undefined => {
         i += 1;
       }
     }
+
     return out;
   } catch {
     return undefined;
@@ -143,22 +163,29 @@ const base64UrlToUtf8 = (segment: string): string | undefined => {
 
 const expMsFromAuthorization = (value: string): number | undefined => {
   const payload = decodeJwtPayloadJson(value);
+
   if (!payload) {
     return undefined;
   }
+
   const exp = payload["exp"];
+
   if (!isFiniteNumber(exp) || exp <= 0) {
     return undefined;
   }
+
   return exp * 1000;
 };
 
 const emailFromAuthorization = (value: string): string | undefined => {
   const payload = decodeJwtPayloadJson(value);
+
   if (!payload) {
     return undefined;
   }
+
   const email = payload["email"];
+
   return isString(email) && email.trim().length > 0 ? email.trim() : undefined;
 };
 
@@ -176,14 +203,17 @@ export const filterAdminAccessCookies = (
     if (!isAccessCookieName(cookie.name) || cookie.value.trim().length === 0) {
       continue;
     }
+
     if (!domainMatchesAdmin(cookie.domain ?? "")) {
       continue;
     }
 
     let expires = cookie.expires instanceof Date ? cookie.expires : undefined;
+
     if (expires && Number.isNaN(expires.getTime())) {
       expires = undefined;
     }
+
     if (expires && expires.getTime() <= nowMs) {
       continue;
     }
@@ -191,6 +221,7 @@ export const filterAdminAccessCookies = (
     if (!expires) {
       const jwtExp =
         cookie.name === "CF_Authorization" ? expMsFromAuthorization(cookie.value) : undefined;
+
       const ttlEnd = jwtExp && jwtExp > nowMs ? jwtExp : nowMs + DEFAULT_ACCESS_TTL_MS;
       expires = new Date(ttlEnd);
     }
@@ -232,12 +263,15 @@ export const serializeAdminAccessCookies = (
         domain: cookie.domain,
         path: cookie.path ?? "/",
       };
+
       if (cookie.expires instanceof Date && !Number.isNaN(cookie.expires.getTime())) {
         return { ...base, expires: cookie.expires.toISOString() };
       }
+
       return base;
     },
   );
+
   return JSON.stringify(payload);
 };
 
@@ -248,32 +282,42 @@ export const deserializeAdminAccessCookies = (
   try {
     // SAFETY: I/O JSON.parse of the persisted Access cookie blob.
     const parsed: unknown = JSON.parse(raw);
+
     if (!Array.isArray(parsed)) {
       return [];
     }
+
     const restored: Cookie[] = [];
+
     for (const entry of parsed) {
       if (!isJsonObject(entry)) {
         continue;
       }
+
       if (!isString(entry["name"]) || !isString(entry["value"])) {
         continue;
       }
+
       let expires: Date | undefined;
+
       if (isString(entry["expires"])) {
         expires = new Date(entry["expires"]);
+
         if (Number.isNaN(expires.getTime())) {
           expires = undefined;
         }
       }
+
       const cookie: Cookie = {
         name: entry["name"],
         value: entry["value"],
         domain: isString(entry["domain"]) ? entry["domain"] : ADMIN_HOST,
         path: isString(entry["path"]) && entry["path"].length > 0 ? entry["path"] : "/",
       };
+
       restored.push(expires ? { ...cookie, expires } : cookie);
     }
+
     return filterAdminAccessCookies(restored, nowMs);
   } catch {
     return [];
@@ -285,28 +329,35 @@ export const formatAdminAccessStatus = (
   nowMs: number = Date.now(),
 ): string => {
   const live = filterAdminAccessCookies(cookies, nowMs);
+
   if (live.length === 0) {
     return "No session";
   }
+
   const auth = live.find((cookie) => cookie.name === "CF_Authorization");
   const email = auth ? emailFromAuthorization(auth.value) : undefined;
   const exp = auth?.expires instanceof Date ? auth.expires : undefined;
+
   const expLabel =
     exp && !Number.isNaN(exp.getTime())
       ? ` · exp ${exp.toISOString().slice(0, 16).replace("T", " ")}Z`
       : "";
+
   if (email) {
     return `${email}${expLabel}`;
   }
+
   return `Session · ${live.length} cookie(s)${expLabel}`;
 };
 
 /** Read stored Access cookies (empty when missing/expired). */
 export const restoreAdminAccessCookies = (nowMs: number = Date.now()): Cookie[] => {
   const raw = Application.getSecureState(ADMIN_ACCESS_PERSIST_KEY);
+
   if (!isString(raw) || raw.trim().length === 0) {
     return [];
   }
+
   return deserializeAdminAccessCookies(raw, nowMs);
 };
 
@@ -316,11 +367,14 @@ export const restoreAdminAccessCookies = (nowMs: number = Date.now()): Cookie[] 
  */
 export const persistAdminAccessCookies = (cookies: readonly Cookie[]): Cookie[] => {
   const live = filterAdminAccessCookies(cookies);
+
   if (live.length === 0) {
     return restoreAdminAccessCookies();
   }
+
   Application.setSecureState(serializeAdminAccessCookies(live), ADMIN_ACCESS_PERSIST_KEY);
   Application.setState(formatAdminAccessStatus(live), ADMIN_ACCESS_STATUS_KEY);
+
   return live;
 };
 
@@ -332,15 +386,20 @@ export const clearAdminAccessCookies = (): void => {
 
 export const readAdminAccessStatus = (): string => {
   const live = restoreAdminAccessCookies();
+
   if (live.length > 0) {
     const label = formatAdminAccessStatus(live);
     Application.setState(label, ADMIN_ACCESS_STATUS_KEY);
+
     return label;
   }
+
   const stored = Application.getState(ADMIN_ACCESS_STATUS_KEY);
+
   if (isString(stored) && stored.trim().length > 0) {
     return stored.trim();
   }
+
   return "No session";
 };
 
@@ -348,6 +407,7 @@ export const readAdminAccessStatus = (): string => {
 export const buildAdminWebViewRequest = (path: string = "/admin/"): Request => {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const cookies = adminAccessCookiesToRequestMap(restoreAdminAccessCookies());
+
   const request: Request = {
     url: `${MANIFOLD_ADMIN_ORIGIN}${normalizedPath}`,
     method: "GET",
@@ -355,8 +415,10 @@ export const buildAdminWebViewRequest = (path: string = "/admin/"): Request => {
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     },
   };
+
   if (Object.keys(cookies).length > 0) {
     return { ...request, cookies };
   }
+
   return request;
 };

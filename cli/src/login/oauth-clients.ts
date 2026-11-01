@@ -83,9 +83,11 @@ export const loadStoredOAuthClient = async (
   store: OAuthClientSecretStore = defaultStore(),
 ): Promise<StoredOAuthClient | undefined> => {
   const raw = await store.get(secretRef(kind));
+
   if (!raw) {
     return undefined;
   }
+
   try {
     return decodeJsonOrThrow(StoredClient, parseJsonValue(raw), `${kind}.oauth-client`);
   } catch {
@@ -101,9 +103,11 @@ export const saveStoredOAuthClient = async (
   store: OAuthClientSecretStore = defaultStore(),
 ): Promise<void> => {
   let value: StoredOAuthClient = { clientId: client.clientId };
+
   if (client.clientSecret !== undefined && client.clientSecret.length > 0) {
     value = { clientId: client.clientId, clientSecret: client.clientSecret };
   }
+
   await store.set({ ...secretRef(kind), value: JSON.stringify(value) });
 };
 
@@ -117,11 +121,13 @@ export const printOAuthClientWizardIntro = (kind: OAuthClientKind): void => {
   frameDetail(
     `3. Client id/secret: flags, ${names.clientId}/${names.clientSecret}, keychain, or prompts below`,
   );
+
   if (kind === "anilist") {
     frameDetail("Do not reuse app 49218 or Worker 49060 — need authorization-code + loopback.");
   } else {
     frameDetail("Do not reuse the deployed API MAL client — CLI needs its own redirect URI.");
   }
+
   frameDetail(`Usage: manifold login ${kind} [--client-id …] [--client-secret …] [--paste-only]`);
   frameDetail(`Also: manifold --wizard login ${kind}  (the CLI will walk every flag)`);
   frameDetail("Enter keeps a shown default. Ctrl+C cancels.");
@@ -156,6 +162,7 @@ const maskSecret = (value: string): string => {
   if (value.length <= 4) {
     return "****";
   }
+
   return `${value.slice(0, 2)}…${value.slice(-2)} (${value.length} chars)`;
 };
 
@@ -168,6 +175,7 @@ const persistClient = (
   if (clientSecret !== undefined && clientSecret.length > 0) {
     return fromPromise(() => saveStoredOAuthClient(kind, { clientId, clientSecret }, store));
   }
+
   return fromPromise(() => saveStoredOAuthClient(kind, { clientId }, store));
 };
 
@@ -188,10 +196,12 @@ const resolveOAuthClientEffect = (
 
     {
       const stored = yield* fromPromise(() => loadStoredOAuthClient(input.kind, store));
+
       if (stored) {
         clientId = clientId ?? stored.clientId;
         clientSecret = clientSecret ?? stored.clientSecret;
         fromKeychain = true;
+
         if (!wizard) {
           frameDetail(`${label(input.kind)} OAuth client loaded from the OS keychain.`);
         }
@@ -224,6 +234,7 @@ const resolveOAuthClientEffect = (
     }
 
     printOAuthClientWizardIntro(input.kind);
+
     if (fromKeychain || clientId || clientSecret) {
       frameDetail("Defaults from flag/env/keychain are shown — press Enter to keep.");
     }
@@ -233,9 +244,11 @@ const resolveOAuthClientEffect = (
       const next = (yield* fromPromise(() =>
         promptWithDefault(`${label(input.kind)} client id`, clientId),
       )).trim();
+
       if (next.length === 0) {
         return yield* cliError(`${label(input.kind)} client id is required.`);
       }
+
       clientId = next;
     }
 
@@ -244,9 +257,11 @@ const resolveOAuthClientEffect = (
       frameDetail(
         `${label(input.kind)} client secret on file: ${maskSecret(clientSecret)}. Blank keeps it.`,
       );
+
       const replacement = (yield* fromPromise(() =>
         promptSecret(`${label(input.kind)} client secret (blank keeps existing)`),
       )).trim();
+
       if (replacement.length > 0) {
         clientSecret = replacement;
       }
@@ -258,6 +273,7 @@ const resolveOAuthClientEffect = (
             : `${label(input.kind)} client secret (optional, Enter to skip)`,
         ),
       )).trim();
+
       if (asked.length > 0) {
         clientSecret = asked;
       } else if (input.requireSecret) {
@@ -294,14 +310,18 @@ export const resolvePasteOnlyWizard = async (
   if (!wizard) {
     return current;
   }
+
   const isTty = options?.isTty ?? Boolean(process.stdin.isTTY && process.stderr.isTTY);
+
   if (!isTty) {
     return current;
   }
+
   frameDetail(
     "paste-only: skip local callback server (SSH/headless). Open the authorize URL elsewhere, then paste code/URL.",
   );
   const confirm = options?.confirm ?? confirmInFrame;
+
   return confirm("Use --paste-only mode?");
 };
 

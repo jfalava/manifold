@@ -43,11 +43,14 @@ type ExtensionInfoBody = Schema.Schema.Type<typeof ExtensionInfoBody>;
 
 const asset = async (env: Env, pathname: string, contentType: string): Promise<Response> => {
   const response = await env.ASSETS.fetch(new Request(`https://assets.local${pathname}`));
+
   if (!response.ok) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
+
   const headers = new Headers(response.headers);
   headers.set("content-type", contentType);
+
   return new Response(response.body, { status: response.status, headers });
 };
 
@@ -58,12 +61,14 @@ const readExtensionInfo = async (
   const response = await env.ASSETS.fetch(
     new Request(`https://assets.local/${catalog.assetPath}/${catalog.extensionId}/info.json`),
   );
+
   if (!response.ok) {
     return undefined;
   }
 
   try {
     const raw: unknown = await response.json();
+
     return Schema.decodeUnknownOption(ExtensionInfoBody)(raw).pipe((option) =>
       option._tag === "Some" ? option.value : undefined,
     );
@@ -74,6 +79,7 @@ const readExtensionInfo = async (
 
 const versioningBody = async (env: Env, catalog: Catalog) => {
   const info = await readExtensionInfo(env, catalog);
+
   const sources =
     info === undefined
       ? []
@@ -108,6 +114,7 @@ const versioningBody = async (env: Env, catalog: Catalog) => {
 
 const homepage = async (env: Env, catalog: Catalog): Promise<Response> => {
   const info = await readExtensionInfo(env, catalog);
+
   const items =
     info === undefined
       ? "<li><em>No extension staged for this channel yet.</em></li>"
@@ -128,6 +135,7 @@ const homepage = async (env: Env, catalog: Catalog): Promise<Response> => {
   <ul>${items}</ul>
 </body>
 </html>`;
+
   return new Response(html, {
     headers: { "content-type": "text/html; charset=utf-8" },
   });
@@ -140,13 +148,17 @@ const addCatalogRoutes = (app: Hono<{ Bindings: Env }>, catalog: Catalog): void 
     )
     .get(`${catalog.basePath}/:id/info.json`, async (c) => {
       const id = c.req.param("id");
+
       if (id !== catalog.extensionId) {
         return c.json({ error: "Not found" }, 404);
       }
+
       const info = await readExtensionInfo(c.env, catalog);
+
       if (info === undefined) {
         return c.json({ error: "Not found" }, 404);
       }
+
       return c.json({ ...info, id: catalog.extensionId }, 200, { "cache-control": "no-store" });
     })
     .get(`${catalog.basePath}/:id/index.js`, (c) =>

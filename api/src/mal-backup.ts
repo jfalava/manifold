@@ -33,12 +33,15 @@ export interface RankedMalCandidate {
 
 const uniqueTitles = (titles: readonly string[]): string[] => {
   const values = new Map<string, string>();
+
   for (const title of titles) {
     const key = normalizeTitle(title);
+
     if (key && !values.has(key)) {
       values.set(key, title.trim());
     }
   }
+
   return [...values.values()];
 };
 
@@ -47,27 +50,34 @@ export const chooseMalMatch = (
   candidates: readonly RankedMalCandidate[],
 ): MalMatch | undefined => {
   const normalized = new Set(uniqueTitles(titles).map(normalizeTitle));
+
   const exact = candidates.filter(({ entry }) =>
     uniqueTitles([entry.title, ...entry.aliases]).some((title) =>
       normalized.has(normalizeTitle(title)),
     ),
   );
+
   // Conflicting exact matches must not be broken by semantic ranking.
   if (exact.length > 1) {
     return undefined;
   }
+
   const ordered = [...candidates].sort((left, right) => right.score - left.score);
   const best = exact[0] ?? ordered[0];
+
   if (!best) {
     return undefined;
   }
+
   const margin = ordered[1] === undefined ? 1 : best.score - ordered[1].score;
+
   if (
     exact.length === 0 &&
     !(best.score >= VECTOR_ACCEPT_SCORE && margin >= VECTOR_ACCEPT_MARGIN)
   ) {
     return undefined;
   }
+
   return {
     externalId: best.entry.providerId,
     title: best.entry.title,
@@ -96,51 +106,67 @@ export const resolveMalBackup = (
           fetcher: (input, init) =>
             platformFetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
         });
+
       const binding = entry.providers.find((link) => link.provider === "mal");
+
       if (binding) {
         return { externalId: binding.externalId, title: binding.title, method: "binding" as const };
       }
+
       const anilistId = entry.providers.find((link) => link.provider === "anilist")?.externalId;
       // An identity attached to another AniList title must never influence this entry.
       const observed = identity?.anilistId === anilistId ? identity : undefined;
+
       if (observed?.malId) {
         if (!/^[1-9]\d*$/.test(observed.malId)) {
           return yield* apiError("Invalid AniList MAL cross-link");
         }
+
         return { externalId: observed.malId, method: "anilist-id" as const };
       }
+
       const titles = uniqueTitles([
         entry.title,
         ...entry.providers.flatMap((link) => (link.title ? [link.title] : [])),
         ...(observed?.titles ?? []),
       ]);
+
       const candidates = new Map<string, CanonicalSearchResult>();
+
       // Search every title variant sequentially. Do not accept a partial search if
       // one request fails: the missing response may contain a competing match.
       for (const title of titles) {
         const found = yield* source.search(title, { limit: 25 });
+
         for (const candidate of found) {
           candidates.set(candidate.providerId, candidate);
         }
       }
+
       const entries = [...candidates.values()];
+
       const exact = chooseMalMatch(
         titles,
         entries.map((candidate) => ({ entry: candidate, score: 0 })),
       );
+
       if (exact) {
         return exact;
       }
+
       if (entries.length === 0) {
         return yield* apiError("MAL backup unmatched: no candidates");
       }
+
       const vectors = yield* fromPromise(() =>
         embedMangaTitles(env.AI, [
           embeddingText(titles),
           ...entries.map((candidate) => embeddingText([candidate.title, ...candidate.aliases])),
         ]),
       );
+
       const query = vectors[0] ?? [];
+
       const match = chooseMalMatch(
         titles,
         entries.map((candidate, index) => ({
@@ -148,9 +174,11 @@ export const resolveMalBackup = (
           score: cosineSimilarity(query, vectors[index + 1] ?? []),
         })),
       );
+
       if (!match) {
         return yield* apiError("MAL backup ambiguous: no unique confident match");
       }
+
       return match;
     }),
   );
@@ -166,6 +194,7 @@ export const writeMalBackupStatus = (
       if (!/^[1-9]\d*$/.test(externalId)) {
         return yield* apiError("Invalid MAL manga id");
       }
+
       const response = yield* fromPromise(() =>
         platformFetch(`https://api.myanimelist.net/v2/manga/${externalId}/my_list_status`, {
           method: "PATCH",
@@ -181,6 +210,7 @@ export const writeMalBackupStatus = (
           signal: AbortSignal.timeout(15_000),
         }),
       );
+
       if (!response.ok) {
         return yield* apiError(`MAL backup status failed: HTTP ${response.status}`);
       }

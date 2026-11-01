@@ -104,19 +104,23 @@ export const md2alCommand = Command.make(
   }) =>
     Effect.gen(function* () {
       validateNonNegativeLimit(Option.getOrUndefined(limit));
+
       if (!new Set(["all", "export", "match", "push"]).has(phase)) {
         return yield* cliError("--phase must be one of: all, export, match, push.");
       }
+
       const env = (key: string): string => envString(key) ?? "";
       const flag = <A>(value: Option.Option<A>): A | undefined => Option.getOrUndefined(value);
 
       const anilist = yield* Effect.tryPromise(() => resolveAniListToken(flag(anilistToken)));
+
       const credentials = {
         clientId: flag(mangadexClientId) || env("MANIFOLD_MANGADEX_CLIENT_ID"),
         clientSecret: flag(mangadexClientSecret) || env("MANIFOLD_MANGADEX_CLIENT_SECRET"),
         username: flag(mangadexUsername) || env("MANIFOLD_MANGADEX_USERNAME"),
         password: flag(mangadexPassword) || env("MANIFOLD_MANGADEX_PASSWORD"),
       };
+
       if (!anilist) {
         return yield* cliError(
           "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
@@ -125,6 +129,7 @@ export const md2alCommand = Command.make(
 
       let mdToken = flag(mangadexToken) || env("MANIFOLD_MANGADEX_TOKEN");
       let mdTokenManager: ReturnType<typeof createMangaDexTokenManager> | undefined;
+
       if (
         !mdToken &&
         credentials.clientId &&
@@ -141,11 +146,13 @@ export const md2alCommand = Command.make(
           catch: (cause) => cliError(`MangaDex token mint failed: ${errorMessage(cause)}`),
         });
       }
+
       if (!mdToken) {
         return yield* cliError(
           "Missing MangaDex token: pass --mangadex-token, set MANIFOLD_MANGADEX_TOKEN, or provide the password-grant flags.",
         );
       }
+
       const getMdToken = async (): Promise<string> =>
         // SAFETY: value is a string after the preceding runtime check
         mdTokenManager ? mdTokenManager.current() : (mdToken as string);
@@ -163,10 +170,13 @@ export const md2alCommand = Command.make(
                 if (phase === "all" || phase === "export") {
                   await phaseExport(getMdToken, tmpDir, makePhaseReporter(task));
                 }
+
                 const snapshot = loadSnapshot(tmpDir);
+
                 if (!snapshot) {
                   throw cliError("No snapshot found. Run with --phase export first.");
                 }
+
                 const max = Option.getOrUndefined(limit);
                 const limited = max === undefined ? snapshot.slice() : snapshot.slice(0, max);
                 // Scope cached matches to the limited slice so --limit also
@@ -204,6 +214,7 @@ export const md2alCommand = Command.make(
                 if ((phase === "match" || phase === "push") && ctx.matches.length === 0) {
                   throw cliError("No match results found. Run with --phase match first.");
                 }
+
                 return task.newListr(
                   [
                     {
@@ -218,13 +229,17 @@ export const md2alCommand = Command.make(
                       enabled: () => !skipProgress,
                       task: async (subCtx, subTask) => {
                         const entryByMdId = new Map(ctx.limited.map((e) => [e.mangaDexId, e]));
+
                         const markerEntries = ctx.matches.flatMap((m) => {
                           if (!m.anilistId) {
                             return [];
                           }
+
                           const e = entryByMdId.get(m.mangaDexId);
+
                           return e ? [e] : [];
                         });
+
                         subCtx.progressByMdId = await collectProgress(
                           getMdToken,
                           markerEntries,

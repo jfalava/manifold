@@ -10,9 +10,11 @@ import { createPersonalApiClient, PersonalApiError, type PersonalApiResponse } f
 describe("Paperback personal API client", () => {
   it("adds the secure bearer token and normalizes canonical search", async () => {
     const requests: Array<{ url: string; method: string; headers: Record<string, string> }> = [];
+
     const client = createPersonalApiClient(
       async (request) => {
         requests.push(request);
+
         return {
           status: 200,
           body: {
@@ -62,6 +64,7 @@ describe("Paperback personal API client", () => {
     const client = createPersonalApiClient(
       async (request) => {
         expect(request.url).toBe("https://personal.test/v1/entries/entry-42/canonical");
+
         return {
           status: 200,
           body: {
@@ -76,6 +79,7 @@ describe("Paperback personal API client", () => {
       },
       { origin: "https://personal.test", token: "secret" },
     );
+
     expect(await client.getRegistryCanonical("entry-42")).toMatchObject({
       id: "entry-42",
       provider: "mal",
@@ -108,6 +112,7 @@ describe("Paperback personal API client", () => {
       }),
       { token: "secret" },
     );
+
     await expect(client.searchCanonical("ab")).rejects.toEqual(
       new PersonalApiError({
         message: "AniList blocked; MyAnimeList search requires at least 3 characters",
@@ -118,9 +123,11 @@ describe("Paperback personal API client", () => {
 
   it("turns a missing entry into undefined and preserves other errors", async () => {
     let calls = 0;
+
     const client = createPersonalApiClient(
       async () => {
         calls += 1;
+
         return { status: calls === 1 ? 404 : 502, body: { error: "upstream unavailable" } };
       },
       { token: "secret" },
@@ -134,6 +141,7 @@ describe("Paperback personal API client", () => {
 
   it("searches, lists, and ingests registry candidates", async () => {
     const requests: Array<{ url: string; method: string; body?: string }> = [];
+
     const entry = {
       id: "11111111-1111-1111-1111-111111111111",
       provider: "local",
@@ -143,15 +151,19 @@ describe("Paperback personal API client", () => {
       updatedAt: 2,
       providers: [{ provider: "mangadex", externalId: "md-1", updatedAt: 2 }],
     };
+
     const client = createPersonalApiClient(
       async (request) => {
         requests.push(request);
+
         if (request.url.includes("/v1/registry/ingest")) {
           return { status: 200, body: entry };
         }
+
         if (request.url.includes("/v1/registry/search")) {
           return { status: 200, body: { entries: [entry] } };
         }
+
         return {
           status: 200,
           body: {
@@ -195,12 +207,15 @@ describe("Paperback personal API client", () => {
       headers: Record<string, string>;
       body?: string;
     }> = [];
+
     const client = createPersonalApiClient(
       async (request): Promise<PersonalApiResponse> => {
         requests.push(request);
+
         if (request.method === "GET") {
           return { status: 200, body: { progress: null } };
         }
+
         return {
           status: 200,
           body: {

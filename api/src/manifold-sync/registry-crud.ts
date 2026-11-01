@@ -38,9 +38,11 @@ export function upsertEntry(host: SyncHost, input: UpsertEntryInput): RegistryEn
     timestamp,
   );
   const stored = readEntry(host, input.id);
+
   if (!stored) {
     throw new Error(`Canonical entry not found after write: ${input.id}`);
   }
+
   return stored;
 }
 
@@ -48,6 +50,7 @@ export function listEntries(host: SyncHost): readonly RegistryEntry[] {
   const rows = host.ctx.storage.sql
     .exec<EntryRow>("SELECT * FROM canonical_entries ORDER BY updated_at DESC")
     .toArray();
+
   return rows
     .map((row) => readEntry(host, row.id))
     .filter((entry): entry is RegistryEntry => entry !== undefined);
@@ -61,6 +64,7 @@ export function getProgress(host: SyncHost, entryId: string): ReadingProgress | 
   const row = host.ctx.storage.sql
     .exec<ProgressRow>("SELECT * FROM progress_state WHERE entry_id = ?", entryId)
     .toArray()[0];
+
   return row ? toProgress(row) : undefined;
 }
 
@@ -70,12 +74,15 @@ export function searchRegistry(
   limit = 25,
 ): readonly RegistryEntry[] {
   const normalized = query.trim();
+
   if (!normalized) {
     return [];
   }
+
   const safeLimit = Math.min(50, Math.max(1, Math.trunc(limit)));
   const escaped = normalized.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
   const pattern = `%${escaped}%`;
+
   const rows = host.ctx.storage.sql
     .exec<EntryRow>(
       `SELECT DISTINCT ce.* FROM canonical_entries ce
@@ -91,8 +98,10 @@ export function searchRegistry(
       safeLimit,
     )
     .toArray();
+
   return rows.flatMap((row) => {
     const entry = readEntry(host, row.id, false);
+
     return entry ? [entry] : [];
   });
 }
@@ -104,11 +113,13 @@ export function listRegistry(
 ): readonly RegistryListEntry[] {
   const safeLimit = Math.min(5000, Math.max(1, Math.trunc(limit)));
   const safeOffset = Math.max(0, Math.trunc(offset));
+
   const results: (RegistryEntry & {
     state?: ListState;
     progress?: ReadingProgress;
     tombstoned?: boolean;
   })[] = [];
+
   for (const row of host.ctx.storage.sql
     .exec<EntryRow>(
       "SELECT * FROM canonical_entries ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
@@ -117,9 +128,11 @@ export function listRegistry(
     )
     .toArray()) {
     const entry = readEntry(host, row.id, false);
+
     if (!entry) {
       continue;
     }
+
     const state = readListState(host, row.id);
     const progress = getProgressSync(host, row.id);
     results.push({
@@ -129,6 +142,7 @@ export function listRegistry(
       ...(row.tombstoned_at !== null && { tombstoned: true }),
     });
   }
+
   return results;
 }
 
@@ -137,12 +151,14 @@ export function registrySummary(host: SyncHost): RegistrySummary {
     host.ctx.storage.sql
       .exec<{ count: number }>("SELECT COUNT(*) AS count FROM canonical_entries")
       .toArray()[0]?.count ?? 0;
+
   const tombstoned =
     host.ctx.storage.sql
       .exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM canonical_entries WHERE tombstoned_at IS NOT NULL",
       )
       .toArray()[0]?.count ?? 0;
+
   const active = total - tombstoned;
 
   const statusRows = host.ctx.storage.sql
@@ -154,7 +170,9 @@ export function registrySummary(host: SyncHost): RegistrySummary {
            GROUP BY ls.status`,
     )
     .toArray();
+
   const statuses: Record<string, number> = {};
+
   for (const row of statusRows) {
     const key = row.status && row.status.length > 0 ? row.status : "unset";
     statuses[key] = (statuses[key] ?? 0) + row.count;
@@ -169,7 +187,9 @@ export function registrySummary(host: SyncHost): RegistrySummary {
            GROUP BY pl.provider`,
     )
     .toArray();
+
   const providerCounts: Record<string, number> = {};
+
   for (const row of providerRows) {
     providerCounts[row.provider] = row.count;
   }
@@ -220,9 +240,11 @@ export function linkProvider(
       const target = host.ctx.storage.sql
         .exec<EntryRow>("SELECT * FROM canonical_entries WHERE id = ?", entryId)
         .toArray()[0];
+
       if (!target || target.tombstoned_at !== null) {
         throw new Error(`Active canonical entry not found: ${entryId}`);
       }
+
       const binding = host.ctx.storage.sql
         .exec<{ external_id: string }>(
           "SELECT external_id FROM provider_links WHERE entry_id = ? AND provider = ?",
@@ -230,11 +252,13 @@ export function linkProvider(
           input.provider,
         )
         .toArray()[0];
+
       if (binding && binding.external_id !== input.externalId) {
         throw new Error(
           `Provider link conflict: ${entryId} already has a different ${input.provider} binding`,
         );
       }
+
       // Do not join active entries: tombstoned owners still reserve their identities.
       const owner = host.ctx.storage.sql
         .exec<{ entry_id: string }>(
@@ -244,16 +268,19 @@ export function linkProvider(
           entryId,
         )
         .toArray()[0];
+
       if (owner) {
         throw new Error(
           `Provider link conflict: ${input.provider}:${input.externalId} is already owned by ${owner.entry_id}`,
         );
       }
+
       if (binding) {
         // Identity replay is a true no-op, including title, timestamps and events.
         return readEntry(host, entryId)!;
       }
     }
+
     return writeProviderLink(host, entryId, input);
   });
 }
@@ -265,6 +292,7 @@ function writeProviderLink(
 ): RegistryEntry {
   const timestamp = now();
   requireEntry(host, entryId);
+
   const stolen = host.ctx.storage.sql
     .exec<{ entry_id: string }>(
       "SELECT entry_id FROM provider_links WHERE provider = ? AND external_id = ? AND entry_id <> ?",
@@ -273,6 +301,7 @@ function writeProviderLink(
       entryId,
     )
     .toArray()[0];
+
   if (stolen) {
     host.ctx.storage.sql.exec(
       "DELETE FROM provider_links WHERE entry_id = ? AND provider = ?",
@@ -280,6 +309,7 @@ function writeProviderLink(
       input.provider,
     );
   }
+
   host.ctx.storage.sql.exec(
     `INSERT INTO provider_links
        (entry_id, provider, external_id, title, source_name, updated_at)
@@ -303,9 +333,11 @@ function writeProviderLink(
     externalId: input.externalId,
   });
   const stored = readEntry(host, entryId);
+
   if (!stored) {
     throw new Error(`Canonical entry not found after link: ${entryId}`);
   }
+
   return stored;
 }
 
@@ -318,8 +350,10 @@ export function unlinkProvider(host: SyncHost, entryId: string, provider: string
   );
   appendEvent(host, entryId, "link.remove", "admin", { provider });
   const stored = readEntry(host, entryId);
+
   if (!stored) {
     throw new Error(`Canonical entry not found after unlink: ${entryId}`);
   }
+
   return stored;
 }

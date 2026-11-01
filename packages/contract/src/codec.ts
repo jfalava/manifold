@@ -35,12 +35,14 @@ export const decodeResponseEffect = <T>(
     // does not fire a false positive.
     const untrusted: unknown = body;
     const decoded = Schema.decodeUnknownOption(schema)(untrusted);
+
     if (Option.isNone(decoded)) {
       return yield* new ResponseDecodeError({
         label,
         details: "schema rejected body",
       });
     }
+
     return decoded.value;
   });
 

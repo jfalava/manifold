@@ -72,10 +72,12 @@ function RatingBadge({
   if (hasRating === undefined) {
     return <span className="opacity-40">—</span>;
   }
+
   // Mirror StatusBadge variants: success when rated, neutral when unrated
   const variant = hasRating ? "success" : "neutral";
   const label = hasRating ? (rating !== undefined ? `Rated · ${rating}` : "Rated") : "Unrated";
   const title = hasRating && rating !== undefined ? `Rating: ${rating}/10` : undefined;
+
   return (
     <span title={title}>
       <Badge variant={variant}>{label}</Badge>
@@ -97,6 +99,7 @@ const formatChapterNumber = (value: number | null): string => {
   if (value === null) {
     return "—";
   }
+
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 };
 
@@ -109,18 +112,23 @@ const percentClass = (percent: number | null | undefined): string => {
   if (percent === null || percent === undefined) {
     return "";
   }
+
   if (percent >= 100) {
     return "bg-gradient-to-r from-fuchsia-500 via-amber-400 to-emerald-400 bg-clip-text font-semibold text-transparent";
   }
+
   if (percent >= 90) {
     return "font-medium text-kumo-success";
   }
+
   if (percent >= 60) {
     return "text-kumo-warning";
   }
+
   if (percent >= 25) {
     return "text-kumo-info";
   }
+
   return "text-kumo-subtle";
 };
 
@@ -128,18 +136,25 @@ const formatCacheAge = (fetchedAt: number | undefined): string | undefined => {
   if (fetchedAt === undefined) {
     return undefined;
   }
+
   const ageMs = Date.now() - fetchedAt;
+
   if (ageMs < 60_000) {
     return "just now";
   }
+
   const minutes = Math.floor(ageMs / 60_000);
+
   if (minutes < 60) {
     return `${minutes}m ago`;
   }
+
   const hours = Math.floor(minutes / 60);
+
   if (hours < 48) {
     return `${hours}h ago`;
   }
+
   return `${Math.floor(hours / 24)}d ago`;
 };
 
@@ -157,9 +172,11 @@ function MangaDexLibraryPage() {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [stats, setStats] = useState<Record<string, MangaDexStat>>({});
   const [cacheMeta, setCacheMeta] = useState<MangaDexLibrarySnapshotMeta | undefined>(undefined);
+
   const [refreshingStatus, setRefreshingStatus] = useState<MangaDexReadingStatus | undefined>(
     undefined,
   );
+
   const controlledPagination = useMemo<ClientPagination>(
     () => ({
       pageIndex: Math.max(0, (search.page ?? 1) - 1),
@@ -167,6 +184,7 @@ function MangaDexLibraryPage() {
     }),
     [search.page, search.pageSize],
   );
+
   const handlePaginationChange = useCallback(
     (next: ClientPagination) => {
       void navigate({
@@ -180,17 +198,20 @@ function MangaDexLibraryPage() {
     },
     [navigate],
   );
+
   const { pagination, setPagination, goToPage, changePageSize, safePageIndex } =
     useClientPagination(25, {
       controlledPagination,
       onPaginationChange: handlePaginationChange,
     });
+
   const inflightStats = useRef<Set<string>>(new Set());
   const bootstrapped = useRef(false);
 
   const refreshAll = useCallback(async () => {
     setSyncing(true);
     setError(undefined);
+
     try {
       const library = await loadMangaDexLibrary({ data: {} });
       const meta = await replaceMangaDexLibraryCache(library);
@@ -208,6 +229,7 @@ function MangaDexLibraryPage() {
   const refreshStatus = useCallback(async (status: MangaDexReadingStatus) => {
     setRefreshingStatus(status);
     setError(undefined);
+
     try {
       const shelf = await loadMangaDexLibrary({ data: { status } });
       const next = await mergeMangaDexStatusShelf(status, shelf);
@@ -225,32 +247,39 @@ function MangaDexLibraryPage() {
     if (bootstrapped.current) {
       return;
     }
+
     bootstrapped.current = true;
     // oxlint-disable-next-line react/set-state-in-effect -- hydrate from IndexedDB, network only when empty
     void (async () => {
       try {
         const cached = await readMangaDexLibraryCache();
+
         if (cached.items.length > 0) {
           setItems(cached.items);
           setCacheMeta(cached.meta);
           setLoading(false);
+
           return;
         }
       } catch {
         // IndexedDB unavailable — fall through to network.
       }
+
       await refreshAll();
     })();
   }, [refreshAll]);
 
   const changeStatus = useCallback(async (item: MangaDexLibraryItem, next: string) => {
     const isUnset = next === "" || next === "unset";
+
     if (!isUnset && !isMangaDexReadingStatus(next)) {
       return;
     }
+
     setSavingId(item.mangaDexId);
     setError(undefined);
     setNotice(undefined);
+
     try {
       await setMangaDexStatus({
         data: {
@@ -279,9 +308,11 @@ function MangaDexLibraryPage() {
   const toggleStatusFilter = useCallback((value: string) => {
     setStatusFilters((current) => {
       const next = new Set(current);
+
       if (!next.delete(value)) {
         next.add(value);
       }
+
       return next;
     });
   }, []);
@@ -291,6 +322,7 @@ function MangaDexLibraryPage() {
     () =>
       items.map((item) => {
         const stat = stats[item.mangaDexId];
+
         return stat === undefined ? item : { ...item, stat };
       }),
     [items, stats],
@@ -298,14 +330,17 @@ function MangaDexLibraryPage() {
 
   const filtered = useMemo(() => {
     let result = enrichedItems;
+
     if (statusFilters.size !== 0) {
       result = result.filter((item) => statusFilters.has(item.status || "unset"));
     }
+
     if (ratingFilter !== "all") {
       result = result.filter((item) =>
         ratingFilter === "rated" ? item.hasRating === true : item.hasRating === false,
       );
     }
+
     return result;
   }, [enrichedItems, ratingFilter, statusFilters]);
 
@@ -346,9 +381,11 @@ function MangaDexLibraryPage() {
         accessorFn: (row) => row.stat?.latestDate ?? "",
         cell: ({ row }) => {
           const stat = row.original.stat;
+
           if (stat?.latestChapter === null && stat?.latestDate === null) {
             return <span className="opacity-40">—</span>;
           }
+
           return (
             <span className="whitespace-nowrap tabular-nums">
               {formatChapterNumber(stat?.latestChapter ?? null)}
@@ -365,6 +402,7 @@ function MangaDexLibraryPage() {
         accessorFn: (row) => row.stat?.percent ?? -1,
         cell: ({ row }) => {
           const stat = row.original.stat;
+
           const tooltip =
             stat?.readChapters !== null &&
             stat?.readChapters !== undefined &&
@@ -372,6 +410,7 @@ function MangaDexLibraryPage() {
             stat?.totalListed !== undefined
               ? `${stat.readChapters} read of ${stat.totalListed} listed`
               : undefined;
+
           return (
             <span title={tooltip} className={`tabular-nums ${percentClass(stat?.percent)}`}>
               {formatPercent(stat)}
@@ -438,32 +477,41 @@ function MangaDexLibraryPage() {
     if (loading || pagedData.length === 0) {
       return undefined;
     }
+
     const missing = pagedData
       .map((item) => item.mangaDexId)
       .filter((id) => !(id in stats) && !inflightStats.current.has(id));
+
     if (missing.length === 0) {
       return undefined;
     }
+
     for (const id of missing) {
       inflightStats.current.add(id);
     }
+
     void loadMangaDexStats({ data: { ids: missing } })
       .then((result) => {
         setStats((current) => {
           const next = { ...current };
+
           for (const id of missing) {
             next[id] = result[id] ?? EMPTY_STAT;
           }
+
           return next;
         });
+
         return undefined;
       })
       .catch(() => {
         setStats((current) => {
           const next = { ...current };
+
           for (const id of missing) {
             next[id] = EMPTY_STAT;
           }
+
           return next;
         });
       })
@@ -472,6 +520,7 @@ function MangaDexLibraryPage() {
           inflightStats.current.delete(id);
         }
       });
+
     return undefined;
     // oxlint-disable-next-line react/set-state-in-effect -- lazy page-slice fetch mirrors the refresh-on-mount pattern above
   }, [loading, pagedData, stats]);
@@ -495,10 +544,12 @@ function MangaDexLibraryPage() {
 
   const byStatus = useMemo(() => {
     const counts = new Map<string, number>();
+
     for (const item of items) {
       const key = item.status || "unset";
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
+
     return counts;
   }, [items]);
 
@@ -506,6 +557,7 @@ function MangaDexLibraryPage() {
     let rated = 0;
     let unrated = 0;
     let unknown = 0;
+
     for (const item of items) {
       if (item.hasRating === true) {
         rated += 1;
@@ -515,6 +567,7 @@ function MangaDexLibraryPage() {
         unknown += 1;
       }
     }
+
     return { rated, unrated, unknown };
   }, [items]);
 
@@ -523,6 +576,7 @@ function MangaDexLibraryPage() {
   const statusChips = useMemo(() => {
     const known = new Set<string>(MANGADEX_STATUSES);
     const present = [...byStatus.keys()].filter((value) => !known.has(value));
+
     return [
       ...MANGADEX_STATUSES.filter((value) => byStatus.has(value)),
       ...present,
@@ -594,6 +648,7 @@ function MangaDexLibraryPage() {
             <Button
               onClick={() => {
                 const [only] = [...statusFilters];
+
                 if (only !== undefined && isMangaDexReadingStatus(only)) {
                   void refreshStatus(only);
                 }
@@ -615,6 +670,7 @@ function MangaDexLibraryPage() {
           </FilterToggle>
           {statusChips.map((value) => {
             const active = statusFilters.has(value);
+
             return (
               <FilterToggle
                 key={value}

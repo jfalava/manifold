@@ -24,6 +24,7 @@ export function useLoad<T>(load: () => Promise<T>): LoadState<T> {
     void (async () => {
       try {
         const value = await load();
+
         if (!cancelled) {
           setState({ status: "ready", value });
         }
@@ -36,6 +37,7 @@ export function useLoad<T>(load: () => Promise<T>): LoadState<T> {
         }
       }
     })();
+
     return () => {
       cancelled = true;
     };

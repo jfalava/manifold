@@ -43,6 +43,7 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
       const sync = env.MANIFOLD_SYNC.getByName("default");
       const limit = boundedInteger(url.searchParams.get("limit"), 500, 1, 5000);
       const offset = boundedInteger(url.searchParams.get("offset"), 0, 0, 1_000_000);
+
       return jsonEncoded(RegistryListResponse, {
         entries: yield* tryPromise(() => sync.listRegistry(limit, offset)),
       });
@@ -56,11 +57,14 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
       request.method === "GET"
     ) {
       const query = url.searchParams.get("q")?.trim() ?? "";
+
       if (!query) {
         return jsonEncoded(ErrorBody, { error: "Query parameter q is required" }, 400);
       }
+
       const sync = env.MANIFOLD_SYNC.getByName("default");
       const limit = boundedInteger(url.searchParams.get("limit"), 25, 1, 50);
+
       return jsonEncoded(RegistryEntriesResponse, {
         entries: yield* tryPromise(() => sync.searchRegistry(query, limit)),
       });
@@ -76,6 +80,7 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
       const sync = env.MANIFOLD_SYNC.getByName("default");
       const raw = yield* parseJson(request);
       const input = yield* Schema.decodeUnknownEffect(IngestCandidateInput)(raw);
+
       return jsonEncoded(RegistryEntry, yield* tryPromise(() => sync.ingestCandidate(input)));
     }
 
@@ -87,6 +92,7 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
       request.method === "GET"
     ) {
       const sync = env.MANIFOLD_SYNC.getByName("default");
+
       return jsonEncoded(RegistrySummaryResponse, {
         summary: yield* tryPromise(() => sync.registrySummary()),
       });
@@ -94,6 +100,7 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
 
     if (path[0] === "v1" && path[1] === "events" && path.length === 2 && request.method === "GET") {
       const sync = env.MANIFOLD_SYNC.getByName("default");
+
       return jsonEncoded(EventsListResponse, {
         events: yield* tryPromise(() =>
           sync.listEvents(
@@ -119,16 +126,19 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
     if (path.length === 2 && request.method === "POST") {
       const raw = yield* parseJson(request);
       const input = yield* Schema.decodeUnknownEffect(UpsertEntryInput)(raw);
+
       return jsonEncoded(RegistryEntry, yield* tryPromise(() => sync.upsertEntry(input)), 201);
     }
 
     if (path.length < 3) {
       return jsonEncoded(ErrorBody, { error: "Not found" }, 404);
     }
+
     const entryId = yield* routeId(path[2]);
 
     if (path[3] === "canonical" && path.length === 4 && request.method === "GET") {
       const entry = yield* tryPromise(() => sync.getEntry(entryId));
+
       return entry
         ? jsonEncoded(CanonicalIdentity, yield* tryPromise(() => getRegistryCanonical(env, entry)))
         : jsonEncoded(ErrorBody, { error: "Not found" }, 404);
@@ -136,6 +146,7 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
 
     if (path.length === 3 && request.method === "GET") {
       const entry = yield* tryPromise(() => sync.getEntry(entryId));
+
       return entry
         ? jsonEncoded(RegistryEntry, entry)
         : jsonEncoded(ErrorBody, { error: "Not found" }, 404);
@@ -144,14 +155,17 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
     if (path[3] === "providers" && path.length === 4 && request.method === "POST") {
       const raw = yield* parseJson(request);
       const input = yield* Schema.decodeUnknownEffect(SetProviderLinkInput)(raw);
+
       return jsonEncoded(RegistryEntry, yield* tryPromise(() => sync.linkProvider(entryId, input)));
     }
 
     if (path[3] === "unlink" && path.length === 5 && request.method === "POST") {
       const provider = path[4];
+
       if (!["anilist", "mal", "mangadex", "kagane", "manganato", "xcomic"].includes(provider)) {
         return jsonEncoded(ErrorBody, { error: "Unknown provider" }, 400);
       }
+
       return jsonEncoded(
         RegistryEntry,
         yield* tryPromise(() => sync.unlinkProvider(entryId, provider)),
@@ -160,23 +174,27 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
 
     if (path[3] === "progress" && path.length === 4 && request.method === "GET") {
       const progress = yield* tryPromise(() => sync.getProgress(entryId));
+
       return jsonEncoded(ProgressResponse, { progress: progress ?? null });
     }
 
     if (path[3] === "read" && path.length === 4 && request.method === "POST") {
       const raw = yield* parseJson(request);
       const input = yield* Schema.decodeUnknownEffect(RecordReadInput)(raw);
+
       return jsonEncoded(ReadingProgress, yield* tryPromise(() => sync.recordRead(entryId, input)));
     }
 
     if (path[3] === "list-state" && path.length === 4 && request.method === "GET") {
       const state = yield* tryPromise(() => sync.getListState(entryId));
+
       return jsonEncoded(ListStateResponse, { state: state ?? null });
     }
 
     if (path[3] === "list-state" && path.length === 4 && request.method === "POST") {
       const raw = yield* parseJson(request);
       const input = yield* Schema.decodeUnknownEffect(SetListStateInput)(raw);
+
       return jsonEncoded(ListState, yield* tryPromise(() => sync.setListState(entryId, input)));
     }
 
@@ -184,6 +202,7 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
       const raw = yield* parseJson(request).pipe(Effect.orElseSucceed(() => ({})));
       const input = yield* Schema.decodeUnknownEffect(NukeEntryInput)(raw);
       const state = yield* tryPromise(() => sync.nukeEntry(entryId, input));
+
       return jsonEncoded(OkWithListStateResponse, { ok: true as const, ...(state && { state }) });
     }
 

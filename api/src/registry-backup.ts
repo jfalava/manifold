@@ -10,6 +10,7 @@ import {
 
 export const REGISTRY_BACKUP_PREFIX = "registry/";
 export const REGISTRY_BACKUP_VERSION = 1 as const;
+
 // JSON is materialized for transactional restore. Reject larger inputs before
 // parsing rather than exhausting the Worker's memory during recovery.
 export const MAX_REGISTRY_BACKUP_BYTES = 16 * 1024 * 1024;
@@ -90,7 +91,9 @@ export const REGISTRY_BACKUP_TABLE_NAMES = [
 ] as const;
 
 export type RegistryBackupTableName = keyof typeof REGISTRY_BACKUP_TABLE_COLUMNS;
+
 export type BackupScalar = string | number | null;
+
 export type BackupRow = Readonly<Record<string, BackupScalar>>;
 
 export type RegistryBackupTables = {
@@ -114,6 +117,7 @@ export const isRegistryBackupKey = (key: string): boolean => {
   if (!key.startsWith(REGISTRY_BACKUP_PREFIX) || key.includes("..") || !key.endsWith(".json")) {
     return false;
   }
+
   return /^registry\/\d+-[0-9a-f-]+\.json$/u.test(key);
 };
 
@@ -124,13 +128,17 @@ export const toBackupRows = (
 ): readonly BackupRow[] =>
   rows.map((row) => {
     const copy: Record<string, BackupScalar> = {};
+
     for (const column of columns) {
       const value = row[column];
+
       if (value !== null && !isString(value) && !isFiniteNumber(value)) {
         throw new Error(`Backup column ${column} contains a non-JSON SQL value`);
       }
+
       copy[column] = value;
     }
+
     return copy;
   });
 
@@ -145,23 +153,32 @@ const parseShelfQueueRows = (value: JsonValue): readonly BackupRow[] => {
   if (!Array.isArray(value)) {
     throw new Error("Backup table md_status_queue is not an array");
   }
+
   return value.map((rawRow, index) => {
     if (!isJsonObject(rawRow)) {
       throw new Error(`Backup table md_status_queue row ${index} is not an object`);
     }
+
     const row: Record<string, BackupScalar> = {};
+
     for (const column of ["entry_id", "created_at", "attempts"] as const) {
       const cell: unknown = rawRow[column];
+
       if (!isBackupScalar(cell)) {
         throw new Error(`Backup table md_status_queue row ${index} is missing ${column}`);
       }
+
       row[column] = cell;
     }
+
     const lastError: unknown = rawRow.last_error ?? null;
+
     if (!isBackupScalar(lastError)) {
       throw new Error(`Backup table md_status_queue row ${index} is missing last_error`);
     }
+
     row.last_error = lastError;
+
     return row;
   });
 };
@@ -170,23 +187,30 @@ const parseRows = (value: JsonValue, table: RegistryBackupTableName): readonly B
   if (!Array.isArray(value)) {
     throw new Error(`Backup table ${table} is not an array`);
   }
+
   const columns = REGISTRY_BACKUP_TABLE_COLUMNS[table];
+
   return value.map((rawRow, index) => {
     if (!isJsonObject(rawRow)) {
       throw new Error(`Backup table ${table} row ${index} is not an object`);
     }
+
     const row: Record<string, BackupScalar> = {};
+
     for (const column of columns) {
       // Older v1 snapshots predate provider source names; restore them as unknown.
       const cell =
         table === "provider_links" && column === "source_name"
           ? (rawRow[column] ?? null)
           : rawRow[column];
+
       if (!isBackupScalar(cell)) {
         throw new Error(`Backup table ${table} row ${index} is missing ${column}`);
       }
+
       row[column] = cell;
     }
+
     return row;
   });
 };
@@ -195,15 +219,19 @@ export const parseRegistryBackup = (input: JsonValue): RegistryBackup => {
   if (!isJsonObject(input)) {
     throw new Error("Registry backup must be a JSON object");
   }
+
   if (input.version !== REGISTRY_BACKUP_VERSION || input.kind !== "manifold-sync") {
     throw new Error("Unsupported registry backup version");
   }
+
   if (!isFiniteNumber(input.createdAt) || !isString(input.bookmark)) {
     throw new Error("Registry backup metadata is invalid");
   }
+
   if (!isFiniteNumber(input.databaseSize) || !isJsonObject(input.tables)) {
     throw new Error("Registry backup tables are invalid");
   }
+
   if (!isString(input.tokenKeyHash) || !/^[a-f0-9]{64}$/u.test(input.tokenKeyHash)) {
     throw new Error("Registry backup encryption key fingerprint is invalid");
   }
@@ -236,6 +264,7 @@ export const sha256 = (value: string): Promise<string> =>
       const digest = yield* Effect.promise(() =>
         crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
       );
+
       return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
     }),
   );
@@ -249,39 +278,51 @@ export const readBackupBody = (
       const reader = body.getReader();
       const chunks: Uint8Array[] = [];
       let size = 0;
+
       try {
         for (;;) {
           const next = yield* Effect.promise(() => reader.read());
+
           if (next.done) {
             break;
           }
+
           size += next.value.byteLength;
+
           if (size > MAX_REGISTRY_BACKUP_BYTES) {
             yield* Effect.promise(() => reader.cancel());
             throw new Error("Registry backup exceeds the 16 MiB recovery limit");
           }
+
           chunks.push(next.value);
         }
       } finally {
         reader.releaseLock();
       }
+
       const bytes = new Uint8Array(size);
       let offset = 0;
+
       for (const chunk of chunks) {
         bytes.set(chunk, offset);
         offset += chunk.byteLength;
       }
+
       const text = new TextDecoder().decode(bytes);
+
       if (
         expectedChecksum !== undefined &&
         (yield* Effect.promise(() => sha256(text))) !== expectedChecksum
       ) {
         throw new Error("Registry backup checksum mismatch");
       }
+
       const parsed = yield* Schema.decodeEffect(JsonString)(text);
+
       if (!isJsonValue(parsed)) {
         throw new Error("Registry backup is not a JSON value");
       }
+
       return parseRegistryBackup(parsed);
     }),
   );

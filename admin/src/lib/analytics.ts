@@ -20,6 +20,7 @@ import { cachedJsonProgram, type ComputedSnapshot } from "./server-cache";
 const GRAPHQL_URL = "https://api.cloudflare.com/client/v4/graphql";
 const REST_URL = "https://api.cloudflare.com/client/v4";
 const WINDOW_HOURS = 24;
+
 // Zone-level HTTP analytics on the free plan reject time ranges wider than
 // 1d, so the cache window stays a hair under it.
 const CACHE_WINDOW_HOURS = 23;
@@ -93,7 +94,9 @@ function graphqlErrorMessage(value: JsonValue): string[] {
   if (!isJsonObject(value)) {
     return [];
   }
+
   const message = value.message;
+
   return isStringValue(message) ? [message] : [];
 }
 
@@ -119,38 +122,51 @@ const isFiniteValue = (value: unknown): value is number =>
 const accountRows = (data: JsonObject, key: string): readonly JsonObject[] | undefined => {
   const viewer = isRecord(data.viewer) ? data.viewer : undefined;
   const accounts = viewer?.accounts;
+
   if (!isJsonArray(accounts)) {
     return undefined;
   }
+
   const account = accounts[0];
+
   if (account === undefined) {
     return [];
   }
+
   if (!isRecord(account) || !isJsonArray(account[key]) || !account[key].every(isRecord)) {
     return undefined;
   }
+
   return account[key];
 };
 
 const decodeInvocationsRows = (data: JsonObject): InvocationsRow[] | undefined => {
   const rows = accountRows(data, "workersInvocationsAdaptive");
+
   if (rows === undefined) {
     return undefined;
   }
+
   const decoded: InvocationsRow[] = [];
+
   for (const row of rows) {
     const dimensions = row.dimensions;
     const sum = row.sum;
+
     if (!isRecord(dimensions) || !isRecord(sum) || !isStringValue(dimensions.scriptName)) {
       return undefined;
     }
+
     const datetimeHour = dimensions.datetimeHour;
+
     if (datetimeHour !== undefined && datetimeHour !== null && !isStringValue(datetimeHour)) {
       return undefined;
     }
+
     if (!isNumberValue(sum.requests) || !isNumberValue(sum.errors)) {
       return undefined;
     }
+
     decoded.push({
       dimensions: {
         scriptName: dimensions.scriptName,
@@ -159,67 +175,90 @@ const decodeInvocationsRows = (data: JsonObject): InvocationsRow[] | undefined =
       sum: { requests: sum.requests, errors: sum.errors },
     });
   }
+
   return decoded;
 };
 
 const decodeDoInvocationsRows = (data: JsonObject): DoInvocationsRow[] | undefined => {
   const rows = accountRows(data, "durableObjectsInvocationsAdaptiveGroups");
+
   if (rows === undefined) {
     return undefined;
   }
+
   const decoded: DoInvocationsRow[] = [];
+
   for (const row of rows) {
     const sum = row.sum;
+
     if (!isRecord(sum) || !isNumberValue(sum.requests)) {
       return undefined;
     }
+
     decoded.push({ sum: { requests: sum.requests } });
   }
+
   return decoded;
 };
 
 const decodeDoStorageRows = (data: JsonObject): DoStorageRow[] | undefined => {
   const rows = accountRows(data, "durableObjectsStorageGroups");
+
   if (rows === undefined) {
     return undefined;
   }
+
   const decoded: DoStorageRow[] = [];
+
   for (const row of rows) {
     const max = row.max;
+
     if (!isRecord(max) || (max.storedBytes !== null && !isNumberValue(max.storedBytes))) {
       return undefined;
     }
+
     decoded.push({ max: { storedBytes: max.storedBytes === null ? null : max.storedBytes } });
   }
+
   return decoded;
 };
 
 const decodeCacheRows = (data: JsonObject): CacheRows | undefined => {
   const viewer = isRecord(data.viewer) ? data.viewer : undefined;
   const zones = viewer?.zones;
+
   if (!isJsonArray(zones)) {
     return undefined;
   }
+
   const zone = zones[0];
+
   if (zone === undefined) {
     return { totals: [], paths: [] };
   }
+
   if (!isRecord(zone)) {
     return undefined;
   }
+
   const decodeRows = (value: JsonValue | undefined): CacheStatusRow[] | undefined => {
     if (!isJsonArray(value) || !value.every(isRecord)) {
       return undefined;
     }
+
     const decoded: CacheStatusRow[] = [];
+
     for (const row of value) {
       const dimensions = row.dimensions;
       const sum = row.sum;
+
       if (!isRecord(dimensions) || !isRecord(sum) || !isNumberValue(row.count)) {
         return undefined;
       }
+
       const cacheStatus = dimensions.cacheStatus;
       const path = dimensions.clientRequestPath;
+
       if (
         (cacheStatus !== undefined && cacheStatus !== null && !isStringValue(cacheStatus)) ||
         (path !== undefined && path !== null && !isStringValue(path)) ||
@@ -227,6 +266,7 @@ const decodeCacheRows = (data: JsonObject): CacheRows | undefined => {
       ) {
         return undefined;
       }
+
       decoded.push({
         count: row.count,
         sum: { edgeResponseBytes: sum.edgeResponseBytes },
@@ -236,10 +276,13 @@ const decodeCacheRows = (data: JsonObject): CacheRows | undefined => {
         },
       });
     }
+
     return decoded;
   };
+
   const totals = decodeRows(zone.totals);
   const paths = decodeRows(zone.paths);
+
   return totals === undefined || paths === undefined ? undefined : { totals, paths };
 };
 
@@ -248,7 +291,9 @@ const decodeAnalyticsSnapshot = (value: unknown): AnalyticsSnapshot | undefined 
   if (!isRecord(value)) {
     return undefined;
   }
+
   const reason = value.reason;
+
   if (
     !isStringValue(value.fetchedAt) ||
     !isBooleanValue(value.ok) ||
@@ -260,35 +305,49 @@ const decodeAnalyticsSnapshot = (value: unknown): AnalyticsSnapshot | undefined 
   ) {
     return undefined;
   }
+
   const workerTrafficValue = value.workerTraffic;
+
   if (!isRecord(workerTrafficValue)) {
     return undefined;
   }
+
   const workerTraffic: Partial<Record<LogicalWorker, WorkerTraffic>> = {};
+
   for (const [logical, traffic] of Object.entries(workerTrafficValue)) {
     const worker = LOGICAL_WORKERS.find((candidate) => candidate === logical);
+
     if (worker === undefined || !isRecord(traffic)) {
       return undefined;
     }
+
     if (!isFiniteValue(traffic.requests) || !isFiniteValue(traffic.errors)) {
       return undefined;
     }
+
     workerTraffic[worker] = {
       requests: traffic.requests,
       errors: traffic.errors,
     };
   }
+
   const hourlyValue = value.hourly;
+
   if (!isRecord(hourlyValue)) {
     return undefined;
   }
+
   const hourly = emptyHourly();
+
   for (const logical of LOGICAL_WORKERS) {
     const points = hourlyValue[logical];
+
     if (!isJsonArray(points)) {
       return undefined;
     }
+
     const decoded: HourlyPoint[] = [];
+
     for (const point of points) {
       if (
         !isRecord(point) ||
@@ -298,10 +357,13 @@ const decodeAnalyticsSnapshot = (value: unknown): AnalyticsSnapshot | undefined 
       ) {
         return undefined;
       }
+
       decoded.push({ hour: point.hour, requests: point.requests, errors: point.errors });
     }
+
     hourly[logical] = decoded;
   }
+
   return {
     ok: value.ok,
     reason,
@@ -323,16 +385,21 @@ const resolveSecret = Effect.fnUntraced(function* (
   if (isStringValue(binding)) {
     return binding;
   }
+
   if (isSecretHandleObject(binding)) {
     const handle: SecretHandle = binding;
+
     if (isFunctionValue(handle.get)) {
       const value = yield* tryPromise(() => handle.get!());
+
       return isStringValue(value) ? value : null;
     }
+
     if (isStringValue(handle.value)) {
       return handle.value;
     }
   }
+
   return null;
 });
 
@@ -361,29 +428,40 @@ const runGraphQL = Effect.fnUntraced(function* <T>(
       body: JSON.stringify({ query, variables }),
     }),
   );
+
   if (!response.ok) {
     return yield* new AdminError({ message: `GraphQL HTTP ${response.status}` });
   }
+
   const payload = yield* tryPromise<unknown>(() => response.json());
+
   if (!isJsonObject(payload) || Array.isArray(payload)) {
     return yield* new AdminError({ message: "GraphQL response was not an object" });
   }
+
   const errorsValue = payload.errors;
+
   // Cloudflare returns `errors: null` for successful GraphQL responses.
   if (errorsValue !== undefined && errorsValue !== null && !isJsonArray(errorsValue)) {
     return yield* new AdminError({ message: "GraphQL response errors were not an array" });
   }
+
   const messages = isJsonArray(errorsValue) ? errorsValue.flatMap(graphqlErrorMessage) : [];
+
   if (messages.length > 0) {
     return yield* new AdminError({ message: messages.join("; ") });
   }
+
   if (!isJsonObject(payload.data) || Array.isArray(payload.data)) {
     return yield* new AdminError({ message: "GraphQL response missing data" });
   }
+
   const decoded = decode(payload.data);
+
   if (decoded === undefined) {
     return yield* new AdminError({ message: "GraphQL response data had an unexpected shape" });
   }
+
   return decoded;
 });
 
@@ -431,6 +509,7 @@ const fetchSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<Analytics
         fetchedAt,
       );
     }
+
     const [invocationsData, doData, storageData] = yield* Effect.all(
       [
         runGraphQL(
@@ -503,9 +582,11 @@ const fetchSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<Analytics
       const matching = rows.filter((row) => row.dimensions.scriptName === scriptName);
       const requests = matching.reduce((acc, row) => acc + row.sum.requests, 0);
       const errors = matching.reduce((acc, row) => acc + row.sum.errors, 0);
+
       if (matching.length > 0) {
         workerTraffic[logical] = { requests, errors };
       }
+
       totalRequests += requests;
       totalErrors += errors;
       hourly[logical] = matching
@@ -523,6 +604,7 @@ const fetchSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<Analytics
     const storedValues = storageData
       .map((row) => row.max.storedBytes)
       .filter((value): value is number => isNumberValue(value));
+
     const doStoredBytes =
       storedValues && storedValues.length > 0 ? Math.max(...storedValues) : null;
 
@@ -592,6 +674,7 @@ export interface CacheSnapshot {
 
 /** cacheStatus values counted as served-from-cache. */
 const HIT_STATUSES: ReadonlySet<string> = new Set(["hit", "stale", "revalidated", "updating"]);
+
 /** cacheStatus values that never enter the cache (workers/dynamic/bypassed). */
 const UNCACHEABLE_STATUSES: ReadonlySet<string> = new Set(["none", "dynamic", "bypass", "unknown"]);
 
@@ -614,7 +697,9 @@ const decodeCacheStatusSlices = (value: JsonValue): CacheStatusSlice[] | undefin
   if (!isJsonArray(value)) {
     return undefined;
   }
+
   const statuses: CacheStatusSlice[] = [];
+
   for (const status of value) {
     if (
       !isRecord(status) ||
@@ -624,12 +709,14 @@ const decodeCacheStatusSlices = (value: JsonValue): CacheStatusSlice[] | undefin
     ) {
       return undefined;
     }
+
     statuses.push({
       status: status.status,
       requests: status.requests,
       bytes: status.bytes,
     });
   }
+
   return statuses;
 };
 
@@ -637,7 +724,9 @@ const decodeSurfaceCacheStats = (value: JsonValue): SurfaceCacheStat[] | undefin
   if (!isJsonArray(value)) {
     return undefined;
   }
+
   const surfaces: SurfaceCacheStat[] = [];
+
   for (const surface of value) {
     if (
       !isRecord(surface) ||
@@ -651,6 +740,7 @@ const decodeSurfaceCacheStats = (value: JsonValue): SurfaceCacheStat[] | undefin
     ) {
       return undefined;
     }
+
     surfaces.push({
       surface: surface.surface,
       pathPrefix: surface.pathPrefix,
@@ -661,6 +751,7 @@ const decodeSurfaceCacheStats = (value: JsonValue): SurfaceCacheStat[] | undefin
       bytes: surface.bytes,
     });
   }
+
   return surfaces;
 };
 
@@ -669,7 +760,9 @@ const decodeCacheSnapshot = (value: unknown): CacheSnapshot | undefined => {
   if (!isRecord(value)) {
     return undefined;
   }
+
   const reason = value.reason;
+
   if (
     !isBooleanValue(value.ok) ||
     !isStringValue(value.fetchedAt) ||
@@ -683,11 +776,14 @@ const decodeCacheSnapshot = (value: unknown): CacheSnapshot | undefined => {
   ) {
     return undefined;
   }
+
   const statuses = decodeCacheStatusSlices(value.statuses);
   const surfaces = decodeSurfaceCacheStats(value.surfaces);
+
   if (statuses === undefined || surfaces === undefined) {
     return undefined;
   }
+
   return {
     ok: value.ok,
     reason,
@@ -711,6 +807,7 @@ const resolveZoneTag = Effect.fnUntraced(function* (
   if (zoneTagCache !== null) {
     return zoneTagCache;
   }
+
   const response = yield* tryPromise(() =>
     platformFetch(`${REST_URL}/zones?name=${encodeURIComponent(ZONE_NAME)}`, {
       headers: {
@@ -719,20 +816,27 @@ const resolveZoneTag = Effect.fnUntraced(function* (
       },
     }),
   );
+
   if (!response.ok) {
     return yield* new AdminError({ message: `zone lookup HTTP ${response.status}` });
   }
+
   const payload = yield* tryPromise<unknown>(() => response.json());
+
   if (!isJsonObject(payload) || Array.isArray(payload) || !isJsonArray(payload.result)) {
     return yield* new AdminError({ message: "zone lookup returned an unexpected shape" });
   }
+
   const zone = payload.result.find(isRecord);
+
   if (!isJsonObject(zone) || !isStringValue(zone.id)) {
     return yield* new AdminError({
       message: `zone ${ZONE_NAME} not visible to the analytics token`,
     });
   }
+
   zoneTagCache = zone.id;
+
   return zone.id;
 });
 
@@ -765,6 +869,7 @@ const fetchCacheSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<Cach
   return yield* Effect.gen(function* () {
     const { env } = yield* workersRuntime();
     const apiToken = yield* resolveSecret(env.MANIFOLD_ADMIN_PANEL_ANALYTICS_API);
+
     if (!isStringValue(apiToken) || apiToken === "") {
       return emptyCacheSnapshot(
         "MANIFOLD_ADMIN_PANEL_ANALYTICS_API binding is not configured",
@@ -773,6 +878,7 @@ const fetchCacheSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<Cach
     }
 
     const zoneTag = yield* resolveZoneTag(apiToken);
+
     const data = yield* runGraphQL(
       apiToken,
 
@@ -822,12 +928,15 @@ const fetchCacheSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<Cach
     let cacheableRequests = 0;
     let cacheHits = 0;
     let cachedBytes = 0;
+
     for (const slice of statuses) {
       totalRequests += slice.requests;
       totalBytes += slice.bytes;
+
       if (!UNCACHEABLE_STATUSES.has(slice.status)) {
         cacheableRequests += slice.requests;
       }
+
       if (HIT_STATUSES.has(slice.status)) {
         cacheHits += slice.requests;
         cachedBytes += slice.bytes;
@@ -835,6 +944,7 @@ const fetchCacheSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<Cach
     }
 
     const bySurface = new Map<string, SurfaceCacheStat>();
+
     for (const { surface, pathPrefix } of SURFACE_PREFIXES) {
       bySurface.set(surface, {
         surface,
@@ -846,11 +956,13 @@ const fetchCacheSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<Cach
         bytes: 0,
       });
     }
+
     for (const row of pathRows) {
       const status = row.dimensions.cacheStatus ?? "unknown";
       const stat = bySurface.get(matchSurface(row.dimensions.clientRequestPath ?? "/").surface)!;
       stat.requests += row.count;
       stat.bytes += row.sum.edgeResponseBytes;
+
       if (HIT_STATUSES.has(status)) {
         stat.hits += row.count;
       } else if (UNCACHEABLE_STATUSES.has(status)) {

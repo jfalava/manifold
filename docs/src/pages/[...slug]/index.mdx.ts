@@ -31,6 +31,7 @@ interface SlugProps {
 
 export async function getStaticPaths() {
   const indexed = await getIndexedEntries();
+
   return indexed
     .filter(
       (item) =>
@@ -50,6 +51,7 @@ export async function getStaticPaths() {
 export async function GET({ props }: { props: SlugProps }) {
   const { item } = props;
   const { entry, title, description, version } = item;
+
   const socialImage =
     (isEntryData(entry.data) ? entrySocialImage(entry.data) : undefined) ??
     config.socialImage;

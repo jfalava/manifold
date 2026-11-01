@@ -68,6 +68,7 @@ function getSidebarShortcutServer(): string {
 function subscribeDesktopViewport(onChange: () => void): () => void {
   const media = window.matchMedia(SIDEBAR_DESKTOP_QUERY);
   media.addEventListener("change", onChange);
+
   return () => media.removeEventListener("change", onChange);
 }
 
@@ -217,15 +218,18 @@ function DashboardShell() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
+
   const isDesktop = useSyncExternalStore(
     subscribeDesktopViewport,
     getDesktopViewport,
     getDesktopViewportServer,
   );
+
   // Controlled so the full-bleed SiteHeader can toggle without nesting inside
   // Sidebar.Provider (contained mode positions the rail absolute to the wrapper).
   const [sidebarOverride, setSidebarOverride] = useState<boolean>();
   const sidebarOpen = sidebarOverride ?? isDesktop;
+
   const toggleSidebar = () => {
     setSidebarOverride((open) => !(open ?? isDesktop));
   };
@@ -235,6 +239,7 @@ function DashboardShell() {
   });
 
   const sidebarLabel = sidebarOpen ? "Collapse sidebar" : "Open sidebar";
+
   const sidebarShortcut = useSyncExternalStore(
     subscribeSidebarShortcut,
     getSidebarShortcut,
@@ -287,6 +292,7 @@ function DashboardShell() {
                         item.path === "/"
                           ? pathname === "/" || pathname === ""
                           : pathname.startsWith(item.path);
+
                       return (
                         <Sidebar.MenuItem key={item.path}>
                           <Sidebar.MenuButton
@@ -317,14 +323,17 @@ function DashboardShell() {
 }
 
 type ThemeMode = "light" | "dark" | "system";
+
 type ResolvedTheme = "light" | "dark";
 
 function getStoredTheme(): ThemeMode {
   try {
     const value = localStorage.getItem("theme-mode");
+
     if (value === "light" || value === "dark" || value === "system") {
       return value;
     }
+
     return "system";
   } catch {
     return "system";
@@ -335,6 +344,7 @@ function getResolvedTheme(preference: ThemeMode): ResolvedTheme {
   if (preference === "light" || preference === "dark") {
     return preference;
   }
+
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
@@ -342,11 +352,13 @@ function applyThemeMode(mode: ThemeMode) {
   const resolved = getResolvedTheme(mode);
   document.documentElement.dataset.mode = resolved;
   document.documentElement.style.colorScheme = resolved;
+
   try {
     localStorage.setItem("theme-mode", mode);
   } catch {
     // ignore private-browsing storage failures
   }
+
   window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
 }
 
@@ -354,14 +366,17 @@ const THEME_CHANGE_EVENT = "theme-mode-change";
 
 function subscribeThemeMode(onChange: () => void): () => void {
   const media = window.matchMedia("(prefers-color-scheme: dark)");
+
   const handleMediaChange = () => {
     if (getStoredTheme() === "system") {
       const resolved = media.matches ? "dark" : "light";
       document.documentElement.dataset.mode = resolved;
       document.documentElement.style.colorScheme = resolved;
     }
+
     onChange();
   };
+
   const handleStorage = (event: StorageEvent) => {
     if (event.key === null || event.key === "theme-mode") {
       const preference = getStoredTheme();
@@ -371,9 +386,11 @@ function subscribeThemeMode(onChange: () => void): () => void {
       onChange();
     }
   };
+
   media.addEventListener("change", handleMediaChange);
   window.addEventListener(THEME_CHANGE_EVENT, onChange);
   window.addEventListener("storage", handleStorage);
+
   return () => {
     media.removeEventListener("change", handleMediaChange);
     window.removeEventListener(THEME_CHANGE_EVENT, onChange);
@@ -397,6 +414,7 @@ function ThemeToggle() {
 
   const ThemeIcon =
     preference === "light" ? SunIcon : preference === "dark" ? MoonIcon : MonitorIcon;
+
   const label = themeLabels[preference];
 
   return (

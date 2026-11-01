@@ -25,6 +25,7 @@ describe("provider candidates", () => {
       externalIds: { mal: "77" },
       metadata: { coverUrl: "https://example.test/mal.jpg" },
     });
+
     expect(candidate).toMatchObject({ provider: "mal", providerId: "77", links: [] });
     expect(toProviderCandidateSearchResult(candidate)).toMatchObject({
       mangaId: "provider-candidate:mal:77",
@@ -68,6 +69,7 @@ describe("provider candidates", () => {
         ],
       },
     ]);
+
     expect(result[0]?.links).toEqual([
       { provider: "mangadex", externalId: "md-1", title: "Other language" },
       { provider: "anilist", externalId: "42" },
@@ -97,6 +99,7 @@ describe("provider candidates", () => {
         ],
       },
     ]);
+
     expect(result[0]?.links).toEqual([{ provider: "anilist", externalId: "99" }]);
   });
 
@@ -166,6 +169,7 @@ describe("provider candidates", () => {
         links: [{ provider: "anilist", externalId: "42" }],
       },
     ]);
+
     expect(candidates[0]?.links).toContainEqual({
       provider: "mangadex",
       externalId: "md-1",
@@ -178,6 +182,7 @@ describe("provider candidates", () => {
       { provider: "anilist", providerId: "42", title: "Example", aliases: [], imageUrl: "" },
       { provider: "mangadex", providerId: "md-1", title: "Example", aliases: [], imageUrl: "" },
     ]);
+
     expect(candidates[0]?.links).toBeUndefined();
   });
 
@@ -201,6 +206,7 @@ describe("provider candidates", () => {
         links: [{ provider: "anilist", externalId: "42" }],
       },
     ]);
+
     expect(candidates[0]?.links).toBeUndefined();
   });
 });

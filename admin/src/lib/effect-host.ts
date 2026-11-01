@@ -22,9 +22,11 @@ export const toError = (cause: unknown): AdminError => {
   if (Schema.is(AdminError)(cause)) {
     return cause;
   }
+
   if (isJsonObject(cause) && isStringValue(cause.message)) {
     return new AdminError({ message: cause.message });
   }
+
   return new AdminError({ message: String(cause) });
 };
 
@@ -42,14 +44,17 @@ export const platformFetch = (input: RequestInfo | URL, init?: RequestInit): Pro
 /** Load Cloudflare's Worker host module without making it a build-time dependency. */
 export const workersRuntime = Effect.fnUntraced(function* () {
   const mod: unknown = yield* tryPromise(() => import(/* @vite-ignore */ WORKERS_MODULE));
+
   if (!isJsonObject(mod) || !("env" in mod)) {
     return yield* new AdminError({ message: "cloudflare:workers module unavailable" });
   }
+
   // SAFETY: workerd owns the cloudflare:workers module shape; env is validated above and waitUntil is guarded below
   const runtime = trusted<{
     readonly env: AdminWorkersEnv;
     readonly waitUntil?: (promise: Promise<unknown>) => void;
   }>(mod);
+
   return {
     env: runtime.env,
     waitUntil: isFunctionValue(runtime.waitUntil) ? runtime.waitUntil : null,

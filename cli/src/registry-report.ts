@@ -38,31 +38,40 @@ export const openRegistryReport = (
 ) => {
   const previous = new Map<string, JsonObject>();
   const catalog = new Map<string, JsonObject>();
+
   if (resumePath) {
     const lines = readFileSync(resolve(resumePath), "utf8").split("\n");
     let header: JsonObject | undefined;
+
     for (const [index, line] of lines.entries()) {
       if (!line.trim()) {
         continue;
       }
+
       let value: JsonObject;
+
       try {
         const parsed = parseJsonValue(line);
+
         if (!isJsonObject(parsed)) {
           throw cliError("Expected a JSON object.");
         }
+
         value = parsed;
       } catch (error) {
         // An interrupted final write may be incomplete. Never ignore earlier corruption.
         if (index === lines.length - 1) {
           break;
         }
+
         throw cliError(`Invalid resume report line ${index + 1}: ${errorMessage(error)}`);
       }
+
       if (value.event === "run") {
         if (header) {
           throw cliError("Resume report contains multiple runs.");
         }
+
         header = value;
       } else if (
         (value.event === "entry" || value.event === "checkpoint") &&
@@ -71,6 +80,7 @@ export const openRegistryReport = (
         if (!header) {
           throw cliError("Resume report entries precede the run header.");
         }
+
         previous.set(value.entryId, {
           ...value,
           applied: value.applied ?? header.apply,
@@ -80,9 +90,11 @@ export const openRegistryReport = (
         catalog.set(jsonBodyString([value.origin ?? null, value.kind, value.key]), value);
       }
     }
+
     if (!header) {
       throw cliError("Resume report has no run header.");
     }
+
     // Recognize the original provider reports so existing long sweeps can resume too.
     const recordedProvider =
       header.provider ??
@@ -94,16 +106,21 @@ export const openRegistryReport = (
               /^https:\/\/(?:xcomic\.(?:me|net)|yona\.to|comik\.to)$/.test(header.origin)
             ? "xcomic"
             : undefined);
+
     if (recordedProvider !== provider) {
       throw cliError(`Resume report is not a ${provider} report.`);
     }
+
     if (header.reportVersion !== undefined && header.reportVersion !== 1) {
       throw cliError("Unsupported resume report version.");
     }
+
     const recordedSettings = isJsonObject(header.settings) ? header.settings : header;
+
     for (const [key, value] of Object.entries(settings)) {
       // Old reports did not record the API origin; all new reports do.
       const oldValue = recordedSettings[key] ?? (key === "auditExisting" ? false : undefined);
+
       if (
         oldValue === undefined &&
         ["apiOrigin", "anilistAliases"].includes(key) &&
@@ -111,6 +128,7 @@ export const openRegistryReport = (
       ) {
         continue;
       }
+
       if (jsonBodyString(oldValue ?? null) !== jsonBodyString(value)) {
         throw cliError(
           `Resume report ${key} differs; keep matching settings or start a fresh run.`,
@@ -132,14 +150,18 @@ export const openRegistryReport = (
     outputPath ??
       join(homedir(), ".manifold", "reports", `${provider}-${epochMillisNow()}-${newId()}.jsonl`),
   );
+
   if (resumePath && path === resolve(resumePath)) {
     throw cliError("--report must be a new file, not the --resume input.");
   }
+
   mkdirSync(dirname(path), { recursive: true });
   const file = openSync(path, "wx", 0o600);
+
   const record = (line: JsonObject): void => {
     writeSync(file, `${jsonBodyString(line)}\n`);
   };
+
   try {
     record({
       ...settings,
@@ -150,6 +172,7 @@ export const openRegistryReport = (
       settings,
       ...(resumePath && { resume: resolve(resumePath) }),
     });
+
     // Carry all latest outcomes, including failures, so chains do not resurrect old successes.
     for (const entry of previous.values()) {
       record({
@@ -180,6 +203,7 @@ export const openRegistryReport = (
         note: entry.note ?? null,
       });
     }
+
     for (const entry of catalog.values()) {
       record(entry);
     }
@@ -187,8 +211,10 @@ export const openRegistryReport = (
     closeSync(file);
     throw error;
   }
+
   const checkpoint = (row: RegistryRow): JsonObject | undefined => {
     const entry = previous.get(row.id);
+
     return entry &&
       (isString(entry.fingerprint)
         ? entry.fingerprint === fingerprint(row)
@@ -196,6 +222,7 @@ export const openRegistryReport = (
       ? entry
       : undefined;
   };
+
   return {
     path,
     record,
@@ -207,28 +234,34 @@ export const openRegistryReport = (
       const entry = previous.get(row.id);
       const ids = new Set<string>();
       const hints = catalog.get(jsonBodyString([null, "candidates", row.id]));
+
       for (const id of Array.isArray(hints?.data) ? hints.data : []) {
         if (isString(id)) {
           ids.add(id);
         }
       }
+
       for (const id of Array.isArray(entry?.candidateIds) ? entry.candidateIds : []) {
         if (isString(id)) {
           ids.add(id);
         }
       }
+
       for (const candidate of Array.isArray(entry?.candidates) ? entry.candidates : []) {
         if (isJsonObject(candidate) && isString(candidate.id)) {
           ids.add(candidate.id);
         }
       }
+
       return [...ids];
     },
     skip: (row: RegistryRow, retryWhen: JsonObject = {}): boolean => {
       const entry = checkpoint(row);
+
       if (!entry) {
         return false;
       }
+
       return (
         terminal(entry) &&
         (entry.outcome !== "ambiguous" ||

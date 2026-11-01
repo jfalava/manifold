@@ -172,20 +172,25 @@ const runTour = Effect.fnUntraced(function* (interval: number, terminator: Statu
   yield* Effect.gen(function* () {
     for (const [index, step] of tour.entries()) {
       yield* caption(`[${index + 1}/${tour.length}] ${step.caption}`);
+
       const root =
         step.reports.find((report) => report.id === undefined) ??
         ({
           state: "working",
           message: step.caption,
         } satisfies ProgramStatus);
+
       yield* emitTourRoot(step.caption, root, terminator);
+
       for (const report of step.reports) {
         if (report.id !== undefined) {
           yield* emitProgramStatus(report, terminator);
         }
       }
+
       yield* Effect.sleep(Duration.seconds(interval));
     }
+
     yield* emitProgramStatus({ state: "clear", id: TOUR_ID }, terminator);
     yield* emitTourRoot(
       "Done",
@@ -255,6 +260,7 @@ const programStatusCommand = Command.make(
     Effect.gen(function* () {
       const state = Option.getOrUndefined(flags.state);
       const interval = Option.getOrUndefined(flags.interval);
+
       const fields = {
         kind: Option.getOrUndefined(flags.kind),
         progress: Option.getOrUndefined(flags.progress),
@@ -263,43 +269,54 @@ const programStatusCommand = Command.make(
         title: Option.getOrUndefined(flags.title),
         message: Option.getOrUndefined(flags.message),
       };
+
       if (
         state === undefined &&
         (flags.hold || Object.values(fields).some((value) => value !== undefined))
       ) {
         return yield* cliError("Payload flags and --hold require --state.");
       }
+
       if (state !== undefined && interval !== undefined) {
         return yield* cliError("--interval is only valid for the tour, without --state.");
       }
+
       if (interval !== undefined && (interval <= 0 || interval > 3600)) {
         return yield* cliError("--interval must be greater than 0 and at most 3600 seconds.");
       }
+
       if (state === "clear" && flags.hold) {
         return yield* cliError("--hold cannot be used with --state clear.");
       }
+
       if (!process.stdout.isTTY && !flags.force) {
         return yield* cliError(
           "Program status requires TTY stdout. Use --force to capture OSC bytes.",
         );
       }
+
       // Let runMain install signal handlers before publishing a status the user can interrupt.
       yield* Effect.yieldNow;
+
       if (state === undefined) {
         return yield* runTour(interval ?? 5, flags.terminator);
       }
+
       if (state === "clear" && fields.id === undefined) {
         yield* caption("Warning: clearing ALL program status records on this terminal.");
       }
+
       const emit = Effect.gen(function* () {
         yield* emitProgramStatus({ state, ...fields }, flags.terminator);
         yield* caption(
           `Emitted ${state} for ${fields.id ?? "root"}.${flags.hold ? " Holding until Ctrl-C." : ""}`,
         );
+
         if (flags.hold) {
           return yield* Effect.never;
         }
       });
+
       if (flags.hold) {
         return yield* emit.pipe(
           Effect.onInterrupt(() =>
@@ -307,6 +324,7 @@ const programStatusCommand = Command.make(
           ),
         );
       }
+
       yield* emit;
     }),
 ).pipe(
@@ -332,9 +350,11 @@ const uiCommand = Command.make(
       if (interval <= 0 || interval > 3600) {
         return yield* cliError("--interval must be greater than 0 and at most 3600.");
       }
+
       openFrame("manifold · output gallery");
       frameDetail("Fixed sample data · no network, credentials, or registry writes");
       const wait = () => sleepPromise(interval * 1000);
+
       const run = createRun([
         {
           title: "Load registry rows",
@@ -355,15 +375,18 @@ const uiCommand = Command.make(
               ["review", 6],
             ]);
             await wait();
+
             // Stress the same three rows: none of these intermediate labels may enter scrollback.
             for (let index = 0; index < 200; index++) {
               reporter.detail(`Searching catalog · update ${index + 1}`);
             }
+
             reporter.item("40/104 Uchi no Maid ga Class no Suki na Ko ni Niteiru");
             reporter.progress(39, 104, [
               ["matched", 32],
               ["review", 7],
             ]);
+
             if (state === "all" || state === "paused") {
               terminalSession()?.blocked("auth", "Solve MangaNato challenge in Chrome");
               reporter.detail(
@@ -372,12 +395,15 @@ const uiCommand = Command.make(
               await wait();
               terminalSession()?.resume();
             }
+
             reporter.detail("Retrying the paused MangaNato request");
             await wait();
+
             if (state === "all" || state === "error") {
               reporter.problem("Sample provider timeout. No real request was made.");
               await wait();
             }
+
             reporter.note("SELECTION sample-entry → manganato:sample · author verified");
             reporter.progress(40, 104, [
               ["matched", 33],
@@ -406,6 +432,7 @@ const uiCommand = Command.make(
             ]),
         },
       ]);
+
       yield* fromPromise(() => run.run());
       writeOutput(
         `${ui.warning("Sample warning with a retained diagnostic\nContinuation stays indented.")}\n`,

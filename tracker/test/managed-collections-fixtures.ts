@@ -31,6 +31,7 @@ const installApplicationStub = (): void => {
     getSecureState: (key: string) => applicationState.get(key),
   });
 };
+
 installApplicationStub();
 
 export const sourceManga = (entryId: string, anilistId: string): SourceManga => ({

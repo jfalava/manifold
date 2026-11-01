@@ -38,6 +38,7 @@ export const TOGGLE_VARIANT_STYLES = {
 
 export function toggleClassesForVariant(variant: FilterToggleVariant, active: boolean): string {
   const bucket = TOGGLE_VARIANT_STYLES[variant] ?? TOGGLE_VARIANT_STYLES.neutral;
+
   return active ? bucket.active : bucket.idle;
 }
 

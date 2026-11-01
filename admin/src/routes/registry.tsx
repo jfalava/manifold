@@ -73,6 +73,7 @@ function RegistryPage() {
 
   const refresh = useCallback(async () => {
     setBusy(true);
+
     try {
       setData(await loadRegistry());
       setError(null);
@@ -91,6 +92,7 @@ function RegistryPage() {
   const act = useCallback(
     async (action: () => Promise<void>): Promise<void> => {
       setBusy(true);
+
       try {
         await action();
         await refresh();
@@ -152,12 +154,15 @@ function EntryEditor({
   const [provider, setProvider] = useState<string>("anilist");
   const [externalId, setExternalId] = useState("");
   const [status, setStatus] = useState(entry.state?.status ?? "");
+
   const [score, setScore] = useState(
     entry.state?.score !== undefined ? String(entry.state.score) : "",
   );
+
   const [volumeProgress, setVolumeProgress] = useState(
     entry.state?.volumeProgress !== undefined ? String(entry.state.volumeProgress) : "",
   );
+
   const dead = entry.tombstoned === true;
 
   return (
@@ -225,15 +230,19 @@ function EntryEditor({
                 score?: number;
                 volumeProgress?: number;
               } = { entryId: entry.id }; // oxlint-disable-line anti-slop/no-known-value-widening -- SAFETY: payload is intentionally widened to allow conditional optional fields; empty init is known evidence
+
               if (status !== "") {
                 payload.status = status;
               }
+
               if (score.trim() !== "" && Number.isFinite(Number(score))) {
                 payload.score = Number(score);
               }
+
               if (volumeProgress.trim() !== "" && Number.isFinite(Number(volumeProgress))) {
                 payload.volumeProgress = Number(volumeProgress);
               }
+
               onClose();
               void onAct(async () => {
                 await saveListState({
@@ -373,6 +382,7 @@ function EntriesTable({
   const [sorting, setSorting] = useState<SortingState>([]);
   const [editingId, setEditingId] = useState<string>();
   const [editorOpen, setEditorOpen] = useState(false);
+
   const controlledPagination = useMemo<ClientPagination>(
     () => ({
       pageIndex: Math.max(0, (search.page ?? 1) - 1),
@@ -380,6 +390,7 @@ function EntriesTable({
     }),
     [search.page, search.pageSize],
   );
+
   const handlePaginationChange = useCallback(
     (next: ClientPagination) => {
       void navigate({
@@ -393,6 +404,7 @@ function EntriesTable({
     },
     [navigate],
   );
+
   const { pagination, setPagination, goToPage, changePageSize, safePageIndex } =
     useClientPagination(25, {
       controlledPagination,
@@ -407,27 +419,36 @@ function EntriesTable({
   const [coverByMangaDexId, setCoverByMangaDexId] = useState<ReadonlyMap<string, string>>(
     () => new Map(),
   );
+
   useEffect(() => {
     let cancelled = false;
+
     const load = async (): Promise<void> => {
       try {
         const { items } = await readMangaDexLibraryCache();
+
         if (cancelled) {
           return;
         }
+
         const covers = new Map<string, string>();
+
         for (const item of items) {
           const src = proxiedCoverUrl(item.coverUrl);
+
           if (src !== undefined) {
             covers.set(item.mangaDexId, src);
           }
         }
+
         setCoverByMangaDexId(covers);
       } catch {
         // Cache miss just means no hover covers — never block the table.
       }
     };
+
     void load();
+
     return () => {
       cancelled = true;
     };
@@ -436,6 +457,7 @@ function EntriesTable({
   const coverForEntry = useCallback(
     (entry: RegistryEntry): string | undefined => {
       const mangaDexId = entry.providers.find((link) => link.provider === "mangadex")?.externalId;
+
       return mangaDexId === undefined ? undefined : coverByMangaDexId.get(mangaDexId);
     },
     [coverByMangaDexId],
@@ -449,21 +471,25 @@ function EntriesTable({
 
   const statuses = useMemo(() => {
     const values = new Set<string>([...STATUSES, "tombstoned", "unset"]);
+
     for (const entry of entries) {
       if (entry.state?.status) {
         values.add(entry.state.status);
       }
     }
+
     return [...values];
   }, [entries]);
 
   const providers = useMemo(() => {
     const values = new Set<string>(REGISTRY_PROVIDERS);
+
     for (const entry of entries) {
       for (const link of entry.providers) {
         values.add(link.provider);
       }
     }
+
     return [...values];
   }, [entries]);
 
@@ -477,6 +503,7 @@ function EntriesTable({
   const changeFilters = useCallback(
     (next: RegistryFilters) => {
       setFilters(next);
+
       if (pagination.pageIndex !== 0) {
         goToPage(1);
       }
@@ -581,11 +608,14 @@ function EntriesTable({
         header: "Progress",
         cell: ({ row }) => {
           const progress = row.original.progress;
+
           if (!progress) {
             return <span className="opacity-40">—</span>;
           }
+
           const chapter = progress.chapterNumber;
           const volume = progress.volumeNumber;
+
           return (
             <div
               className="grid whitespace-nowrap"

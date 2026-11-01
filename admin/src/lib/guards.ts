@@ -31,16 +31,20 @@ export function isJsonValue(value: unknown): value is JsonValue {
   if (value === null || isStringValue(value) || isNumberValue(value)) {
     return true;
   }
+
   // oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: central boolean guard for JSON
   if (typeof value === "boolean") {
     return true;
   }
+
   if (Array.isArray(value)) {
     return value.every(isJsonValue);
   }
+
   if (isJsonObject(value)) {
     return Object.values(value).every(isJsonValue);
   }
+
   return false;
 }
 

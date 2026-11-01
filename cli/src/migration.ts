@@ -92,6 +92,7 @@ const isAuthFailure = (cause: unknown): cause is MangaDexAuthErrorPayload => {
   if (!isJsonObject(cause)) {
     return false;
   }
+
   return (
     stringField(cause, "_tag") === "MangaDexSourceError" &&
     (numberField(cause, "status") === 401 || numberField(cause, "status") === 403)
@@ -114,11 +115,14 @@ const withMangaDexClient = <A>(
         if (forceRefresh) {
           tokenManager.invalidate();
         }
+
         const token = yield* fromPromise(() => tokenManager.current());
+
         const client = createMangaDexClient({
           accessToken: token,
           userAgent: manifoldUserAgent("cli"),
         });
+
         return yield* invoke(client);
       });
 
@@ -135,12 +139,15 @@ const toMatch = (
   normalizedTarget: string,
 ): TitleMatch | undefined => {
   const candidates = [manga.title].filter(Boolean).map(normalizeTitle);
+
   if (candidates.includes(normalizedTarget)) {
     return { manga, method: "title-exact" };
   }
+
   if (candidates.some((candidate) => candidate.startsWith(normalizedTarget))) {
     return { manga, method: "title-prefix" };
   }
+
   return undefined;
 };
 
@@ -155,12 +162,15 @@ const matchMangaDexEffect = (
     // the same direct-hit cascade the reverse migration relies on.
     const results = yield* withMangaDexClient(tokenManager, (client) => client.search(entry.title));
     const directHit = results.find((manga) => manga.anilistId === String(entry.mediaId));
+
     if (directHit) {
       return { manga: { id: directHit.id, title: directHit.title }, method: "links-al" as const };
     }
+
     const titleHit = results
       .map((manga) => toMatch({ id: manga.id, title: manga.title }, normalized))
       .find((hit): hit is TitleMatch => hit !== undefined);
+
     if (titleHit) {
       return titleHit;
     }
@@ -168,19 +178,23 @@ const matchMangaDexEffect = (
     // Retry once with the first three significant words when the full title
     // returned nothing useful.
     const shortened = normalized.split(/\s+/).slice(0, 3).join(" ");
+
     if (shortened && shortened !== normalized) {
       yield* sleep(MD_REQUEST_INTERVAL_MS);
       const retry = yield* withMangaDexClient(tokenManager, (client) => client.search(shortened));
       const retryDirect = retry.find((manga) => manga.anilistId === String(entry.mediaId));
+
       if (retryDirect) {
         return {
           manga: { id: retryDirect.id, title: retryDirect.title },
           method: "links-al" as const,
         };
       }
+
       const retryHit = retry
         .map((manga) => toMatch({ id: manga.id, title: manga.title }, normalized))
         .find((hit): hit is TitleMatch => hit !== undefined);
+
       if (retryHit) {
         return retryHit;
       }
@@ -200,18 +214,24 @@ const chapterIdsUpToEffect = (
 ): Effect.Effect<string[], MangaDexSourceError> =>
   Effect.gen(function* () {
     const chapters = yield* getChapters(mangaId);
+
     const numbered = chapters
       .filter((chapter) => chapter.chapterNumber !== undefined)
       .sort((a, b) => (a.chapterNumber ?? 0) - (b.chapterNumber ?? 0));
+
     const ids: string[] = [];
+
     for (const chapter of numbered) {
       // SAFETY: value matches number at this call site
       const number = chapter.chapterNumber as number;
+
       if (number > progress) {
         break;
       }
+
       ids.push(chapter.id);
     }
+
     return ids;
   });
 
@@ -256,10 +276,12 @@ const runMigrationEffect = (
       if (index > 0) {
         yield* sleep(MD_REQUEST_INTERVAL_MS);
       }
+
       const mangadexStatus = mangaDexStatusFor(entry.status);
 
       yield* Effect.gen(function* () {
         const match = yield* matchMangaDexEffect(tokenManager, entry);
+
         if (!match) {
           unmatched.push({
             mediaId: entry.mediaId,
@@ -268,16 +290,21 @@ const runMigrationEffect = (
             ...(entry.progress !== undefined && { progress: entry.progress }),
             reason: "No MangaDex candidate matched",
           });
+
           return;
         }
 
         let chaptersToMark = 0;
+
         if (options.includeProgress && entry.progress !== undefined && entry.progress >= 1) {
           yield* sleep(MD_REQUEST_INTERVAL_MS);
+
           const chapterIds = yield* withMangaDexClient(tokenManager, (client) =>
             chapterIdsUpToEffect((id) => client.getChapters(id), match.manga.id, entry.progress!),
           );
+
           chaptersToMark = chapterIds.length;
+
           if (!options.dryRun && chapterIds.length > 0) {
             yield* withMangaDexClient(tokenManager, (client) =>
               client.markChaptersRead(match.manga.id, chapterIds),

@@ -26,6 +26,7 @@ const recordReadEffect = (host: SyncHost, entryId: string, input: RecordReadInpu
           targetEntryId,
         )
         .toArray()[0];
+
       if (!corpse || corpse.tombstoned_at !== null) {
         // Queued device actions can outlive registry rows as well as nukes.
         // Recover only through the read's exact native provider identity;
@@ -41,6 +42,7 @@ const recordReadEffect = (host: SyncHost, entryId: string, input: RecordReadInpu
             input.sourceMangaId,
           )
           .toArray()[0];
+
         if (successor) {
           targetEntryId = successor.entry_id;
         } else if (!corpse) {
@@ -62,11 +64,13 @@ const recordReadEffect = (host: SyncHost, entryId: string, input: RecordReadInpu
           input.provider,
         )
         .toArray()[0];
+
       if (providerLink && providerLink.external_id !== input.sourceMangaId) {
         throw new Error(
           `Registry entry ${targetEntryId} has ${input.provider}:${providerLink.external_id}, not ${input.sourceMangaId}`,
         );
       }
+
       if (!providerLink) {
         const owner = host.ctx.storage.sql
           .exec<{ entry_id: string }>(
@@ -75,11 +79,13 @@ const recordReadEffect = (host: SyncHost, entryId: string, input: RecordReadInpu
             input.sourceMangaId,
           )
           .toArray()[0];
+
         if (owner && owner.entry_id !== targetEntryId) {
           throw new Error(
             `${input.provider}:${input.sourceMangaId} belongs to registry entry ${owner.entry_id}`,
           );
         }
+
         const timestamp = now();
         host.ctx.storage.sql.exec(
           `INSERT INTO provider_links
@@ -123,6 +129,7 @@ const recordReadEffect = (host: SyncHost, entryId: string, input: RecordReadInpu
         const current = host.ctx.storage.sql
           .exec<ProgressRow>("SELECT * FROM progress_state WHERE entry_id = ?", targetEntryId)
           .toArray()[0];
+
         if (shouldAdvanceProgress(current, input.chapterNumber, readAt)) {
           const nextVersion = (current?.version ?? 0) + 1;
           host.ctx.storage.sql.exec(
@@ -160,6 +167,7 @@ const recordReadEffect = (host: SyncHost, entryId: string, input: RecordReadInpu
             provider: input.provider,
             sourceChapterId: input.sourceChapterId,
           };
+
           enqueueOp(host, {
             opId: eventId,
             target: "mangadex",
@@ -180,6 +188,7 @@ const recordReadEffect = (host: SyncHost, entryId: string, input: RecordReadInpu
             targetEntryId,
           )
           .toArray()[0];
+
         if (mdLink) {
           host.ctx.storage.sql.exec(
             `INSERT INTO md_status_queue (entry_id, created_at, attempts)
@@ -192,11 +201,14 @@ const recordReadEffect = (host: SyncHost, entryId: string, input: RecordReadInpu
       }
 
       const written = getProgressSync(host, targetEntryId);
+
       if (!written) {
         throw new Error(`Progress was not written for entry ${targetEntryId}`);
       }
+
       return written;
     });
+
     yield* fromPromise(() => scheduleSync(host)).pipe(
       Effect.catch((error) =>
         Effect.sync(() => {
@@ -204,6 +216,7 @@ const recordReadEffect = (host: SyncHost, entryId: string, input: RecordReadInpu
         }),
       ),
     );
+
     return progress;
   });
 

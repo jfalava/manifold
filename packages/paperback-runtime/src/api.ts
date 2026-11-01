@@ -76,14 +76,19 @@ export type PersonalApiRequester = (request: PersonalApiRequest) => Promise<Pers
 
 /** Registry UUID row (HTTP). Prefer this name; PersonalEntry is a compat alias. */
 export type PersonalEntry = RegistryEntry;
+
 export type PersonalProviderLink = RegistryEntry["providers"][number];
+
 export type PersonalReadingProgress = ReadingProgress;
+
 export type PersonalReadInput = RecordReadInput;
+
 export type PersonalMangaDexLibraryItem = {
   readonly mangaDexId: string;
   readonly status: string;
   readonly entryId: string | null;
 };
+
 export type PersonalFeedChapter = {
   readonly id: string;
   readonly mangaId: string;
@@ -110,6 +115,7 @@ export type PendingSyncOp = {
 };
 
 export type { MangaDexMatchResult };
+
 export type MangaDexMatchCandidate = MangaDexMatchResult["candidates"][number];
 
 export interface PersonalApiClient {
@@ -210,15 +216,20 @@ export class PersonalApiError extends Data.TaggedError("PersonalApiError")<{
 
 const asErrorMessage = (body: JsonValue, status: number): string => {
   const error = isJsonObject(body) ? body.error : undefined;
+
   if (isString(error)) {
     return error;
   }
+
   const providers = isJsonObject(body) ? arrayField(body, "providers") : undefined;
+
   const failures = (providers ?? []).flatMap((provider) => {
     const failure = isJsonObject(provider) ? objectField(provider, "error") : undefined;
     const message = failure ? stringField(failure, "message") : undefined;
+
     return message ? [message] : [];
   });
+
   return failures.join("; ") || `Personal API returned HTTP ${status}`;
 };
 
@@ -226,6 +237,7 @@ const limitValue = (limit: number | undefined): number => {
   if (limit === undefined || !Number.isFinite(limit)) {
     return 20;
   }
+
   return Math.min(25, Math.max(1, Math.floor(limit)));
 };
 
@@ -302,12 +314,14 @@ export const createPersonalApiClient = (
           ...(!(body === undefined) && { body: JSON.stringify(body) }),
         }),
       );
+
       if (response.status < 200 || response.status >= 300) {
         return yield* new PersonalApiError({
           message: asErrorMessage(response.body, response.status),
           status: response.status,
         });
       }
+
       return response;
     });
 
@@ -320,12 +334,15 @@ export const createPersonalApiClient = (
             `provider=${encodeURIComponent(provider)}`,
             `limit=${encodeURIComponent(String(limitValue(limit)))}`,
           ].join("&");
+
           const response = yield* rawRequestEffect(`/v1/canonical/search?${params}`);
+
           const body = yield* requireDecoded(
             CanonicalSearchResponse,
             response.body,
             "canonical.search",
           );
+
           for (const source of body.providers) {
             if (source.error) {
               yield* Effect.logWarning(
@@ -333,6 +350,7 @@ export const createPersonalApiClient = (
               );
             }
           }
+
           return {
             query: body.query,
             results: body.results.map((hit) => ({
@@ -356,7 +374,9 @@ export const createPersonalApiClient = (
             const response = yield* rawRequestEffect(
               `/v1/canonical/${encodeURIComponent(provider)}/${encodeURIComponent(providerId)}`,
             );
+
             const body = yield* requireDecoded(CanonicalIdentity, response.body, "canonical.get");
+
             return identityToCanonical(body);
           }),
         ),
@@ -368,7 +388,9 @@ export const createPersonalApiClient = (
           const response = yield* rawRequestEffect(
             `/v1/entries/${encodeURIComponent(entryId)}/canonical`,
           );
+
           const body = yield* requireDecoded(CanonicalIdentity, response.body, "entries.canonical");
+
           return identityToCanonical(body);
         }),
       ),
@@ -378,6 +400,7 @@ export const createPersonalApiClient = (
         undefinedOn404(
           Effect.gen(function* () {
             const response = yield* rawRequestEffect(`/v1/entries/${encodeURIComponent(entryId)}`);
+
             return yield* requireDecoded(RegistryEntry, response.body, "entries.get");
           }),
         ),
@@ -390,7 +413,9 @@ export const createPersonalApiClient = (
             `q=${encodeURIComponent(query.trim())}`,
             `limit=${encodeURIComponent(String(limitValue(limit)))}`,
           ].join("&");
+
           const response = yield* rawRequestEffect(`/v1/registry/search?${params}`);
+
           return (yield* requireDecoded(RegistryEntriesResponse, response.body, "registry.search"))
             .entries;
         }),
@@ -401,9 +426,11 @@ export const createPersonalApiClient = (
         Effect.gen(function* () {
           const safeLimit = Math.min(5000, Math.max(1, Math.floor(limit)));
           const safeOffset = Math.max(0, Math.floor(offset));
+
           const response = yield* rawRequestEffect(
             `/v1/registry?limit=${safeLimit}&offset=${safeOffset}`,
           );
+
           return (yield* requireDecoded(RegistryListResponse, response.body, "registry.list"))
             .entries;
         }),
@@ -413,6 +440,7 @@ export const createPersonalApiClient = (
       Effect.runPromise(
         Effect.gen(function* () {
           const response = yield* rawRequestEffect("/v1/registry/ingest", "POST", input);
+
           return yield* requireDecoded(RegistryEntry, response.body, "registry.ingest");
         }),
       ),
@@ -426,6 +454,7 @@ export const createPersonalApiClient = (
             providerId: entry.providerId,
             title: entry.title,
           });
+
           return yield* requireDecoded(RegistryEntry, response.body, "entries.upsert");
         }),
       ),
@@ -438,6 +467,7 @@ export const createPersonalApiClient = (
             "POST",
             link,
           );
+
           return yield* requireDecoded(RegistryEntry, response.body, "entries.linkProvider");
         }),
       ),
@@ -464,6 +494,7 @@ export const createPersonalApiClient = (
               },
             }),
           });
+
           return yield* requireDecoded(
             MangaDexMatchResult,
             response.body,
@@ -478,10 +509,13 @@ export const createPersonalApiClient = (
           const response = yield* rawRequestEffect(
             `/v1/entries/${encodeURIComponent(entryId)}/progress`,
           );
+
           const body = yield* requireDecoded(ProgressResponse, response.body, "entries.progress");
+
           if (body.progress === null) {
             return undefined;
           }
+
           return body.progress;
         }),
       ),
@@ -494,6 +528,7 @@ export const createPersonalApiClient = (
             "POST",
             input,
           );
+
           return yield* requireDecoded(ReadingProgress, response.body, "entries.read");
         }),
       ),
@@ -502,11 +537,13 @@ export const createPersonalApiClient = (
       Effect.runPromise(
         Effect.gen(function* () {
           const response = yield* rawRequestEffect("/v1/mangadex/library");
+
           const body = yield* requireDecoded(
             MangaDexLibraryResponse,
             response.body,
             "mangadex.library",
           );
+
           return body.library.map((item) => ({
             mangaDexId: item.mangaDexId,
             status: item.status,
@@ -521,7 +558,9 @@ export const createPersonalApiClient = (
           const response = yield* rawRequestEffect(
             `/v1/mangadex/feed?limit=${limit}&offset=${offset}`,
           );
+
           const body = yield* requireDecoded(MangaDexFeedPage, response.body, "mangadex.feed");
+
           return {
             items: body.items.map((item) => ({
               id: item.id,
@@ -545,6 +584,7 @@ export const createPersonalApiClient = (
             "POST",
             { status },
           );
+
           yield* requireDecoded(OkResponse, response.body, "mangadex.status");
         }),
       ),
@@ -555,14 +595,17 @@ export const createPersonalApiClient = (
           const response = yield* rawRequestEffect(
             `/v1/canonical/by-provider/mangadex/${encodeURIComponent(mangaDexId)}`,
           );
+
           const body = yield* requireDecoded(
             EntryByProviderResponse,
             response.body,
             "canonical.byProvider",
           );
+
           if (body.entry === null) {
             return undefined;
           }
+
           return body.entry;
         }),
       ),
@@ -575,6 +618,7 @@ export const createPersonalApiClient = (
             providerId: input.providerId,
             title: input.title,
           });
+
           return yield* requireDecoded(RegistryEntry, response.body, "canonical.resolve");
         }),
       ),
@@ -591,11 +635,13 @@ export const createPersonalApiClient = (
               title: input.title,
             })),
           );
+
           const body = yield* requireDecoded(
             RegistryEntriesResponse,
             response.body,
             "canonical.resolveBatch",
           );
+
           return body.entries;
         }),
       ),
@@ -606,14 +652,17 @@ export const createPersonalApiClient = (
           const response = yield* rawRequestEffect(
             `/v1/entries/${encodeURIComponent(entryId)}/list-state`,
           );
+
           const body = yield* requireDecoded(
             ListStateResponse,
             response.body,
             "entries.listState.get",
           );
+
           if (body.state === null) {
             return undefined;
           }
+
           return listStateFromContract(body.state);
         }),
       ),
@@ -626,7 +675,9 @@ export const createPersonalApiClient = (
             "POST",
             change,
           );
+
           const state = yield* requireDecoded(ListState, response.body, "entries.listState.set");
+
           return listStateFromContract(state);
         }),
       ),
@@ -644,7 +695,9 @@ export const createPersonalApiClient = (
           const response = yield* rawRequestEffect(
             `/v1/ops/pending/anilist?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`,
           );
+
           const body = yield* requireDecoded(OpsListResponse, response.body, "ops.pending.anilist");
+
           return body.ops.map((op) => ({
             opId: op.opId,
             kind: op.kind,
@@ -659,6 +712,7 @@ export const createPersonalApiClient = (
       Effect.runPromise(
         Effect.gen(function* () {
           const response = yield* rawRequestEffect("/v1/ops/complete", "POST", { results });
+
           return yield* requireDecoded(UpdatedCountResponse, response.body, "ops.complete");
         }),
       ),

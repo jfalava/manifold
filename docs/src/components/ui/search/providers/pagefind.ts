@@ -69,10 +69,12 @@ export const provider: SearchProvider = {
     if (pagefind) {
       return;
     }
+
     const baseUrl = new URL(
       import.meta.env.BASE_URL ?? "/",
       window.location.origin,
     );
+
     const pagefindUrl = new URL("pagefind/pagefind.js", baseUrl);
     // SAFETY: value matches PagefindApi; at this call site
     pagefind = (await import(
@@ -85,6 +87,7 @@ export const provider: SearchProvider = {
     if (!pagefind) {
       await this.init?.();
     }
+
     if (!pagefind) {
       return [];
     }
@@ -93,9 +96,11 @@ export const provider: SearchProvider = {
       query,
       defaultFilters ? { filters: defaultFilters } : undefined,
     );
+
     const results = await Promise.all(
       search.results.slice(0, 10).map((result) => result.data()),
     );
+
     return results.map((result): SearchResult => ({
       title: result.meta?.title ?? "Untitled",
       url: result.url,

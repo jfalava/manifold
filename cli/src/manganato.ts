@@ -17,16 +17,20 @@ const SearchPage = Schema.Struct({
   items: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, title: Schema.NonEmptyString })),
   next: Schema.NullOr(Schema.String),
 });
+
 const Details = Schema.Struct({
   id: Schema.NonEmptyString,
   title: Schema.NonEmptyString,
   aliases: Schema.Array(Schema.String),
   authors: Schema.Array(Schema.String),
 });
+
 export type ManganatoDetails = Schema.Schema.Type<typeof Details>;
+
 export type ManganatoCandidate = ManganatoDetails & {
   readonly coverage?: ChapterCoverage & { readonly latestChapterUpdatedAt?: number };
 };
+
 export type ManganatoSelection = ManganatoCandidate & {
   readonly selection?: {
     readonly basis: "active-listing";
@@ -36,6 +40,7 @@ export type ManganatoSelection = ManganatoCandidate & {
     }[];
   };
 };
+
 type ManganatoCoverage = ChapterCoverage & {
   readonly latestChapterUpdatedAt?: number;
   readonly inventory: {
@@ -45,6 +50,7 @@ type ManganatoCoverage = ChapterCoverage & {
     readonly normalizedRecords: number;
   };
 };
+
 const ChapterPage = Schema.Struct({
   success: Schema.Literal(true),
   data: Schema.Struct({
@@ -63,6 +69,7 @@ const ChapterPage = Schema.Struct({
     }),
   }),
 });
+
 export interface ManganatoIdentity {
   readonly titles: readonly string[];
   readonly authors: readonly string[];
@@ -350,6 +357,7 @@ const confirmedWorks = new Map<
 
 export const hasManganatoTitle = (titles: readonly string[], names: readonly string[]): boolean => {
   const keys = new Set(titles.map(titleKey).filter(Boolean));
+
   return names.some((name) => keys.has(titleKey(name)));
 };
 
@@ -359,9 +367,12 @@ export const hasManganatoAuthor = (
 ): boolean => {
   const keyFor = (value: string): string => {
     const key = authorKey(value);
+
     return authorAliases.get(key) ?? key;
   };
+
   const keys = new Set(expected.map(keyFor).filter((key) => key && !missingAuthorKeys.has(key)));
+
   return actual.some((author) => keys.has(keyFor(author)));
 };
 
@@ -375,6 +386,7 @@ const chapterPositions = (candidate: ManganatoCandidate): ReadonlySet<number> =>
 // A maximum alone can be a bogus numbered upload. Require every integer from 1 through it.
 const denseChapterRun = (candidate: ManganatoCandidate): boolean => {
   const positions = chapterPositions(candidate);
+
   return positions.size > 0 && Math.max(...positions) === positions.size;
 };
 
@@ -402,25 +414,32 @@ export const manganatoMatchEvidence = (
   const names = [candidate.title, ...candidate.aliases];
   const exactTitle = hasManganatoTitle(identity.titles, names);
   const userConfirmed = identity.confirmedCandidateIds?.includes(candidate.id) ?? false;
+
   const credited = (authors: readonly string[]): boolean =>
     authors.some((author) => {
       const key = authorKey(author);
+
       return key.length > 0 && !missingAuthorKeys.has(key);
     });
+
   const author = hasManganatoAuthor(identity.authors, candidate.authors)
     ? "verified"
     : credited(identity.authors) && credited(candidate.authors)
       ? "different"
       : "missing";
+
   const reference = identity.chapterReference;
   const positions = chapterPositions(candidate);
+
   const buckets = new Set(
     candidate.coverage?.unit === "chapters"
       ? candidate.coverage.numbers.filter((number) => number >= 1).map(Math.floor)
       : [],
   );
+
   const lastChapter = Math.max(0, ...buckets);
   const total = reference?.chapters;
+
   // Finished totals are comparable only with dense, near-complete absolute numbering.
   // Fractions collapse for this signal, but keep their original positions for coverage ranking.
   const canonicalChapterSupport =
@@ -436,6 +455,7 @@ export const manganatoMatchEvidence = (
     buckets.size <= total * 1.05 &&
     lastChapter <= total * 1.05 &&
     buckets.size >= lastChapter * 0.95;
+
   // Only directly author-verified listings can anchor another candidate. Never chain rescues.
   const overlap =
     (author === "different" || author === "missing") && exactTitle
@@ -448,9 +468,11 @@ export const manganatoMatchEvidence = (
             ) {
               return [];
             }
+
             const anchorPositions = chapterPositions(anchor);
             const shared = [...positions].filter((number) => anchorPositions.has(number)).length;
             const smaller = Math.min(positions.size, anchorPositions.size);
+
             return shared >= 10 && shared >= smaller * 0.95
               ? [
                   {
@@ -468,8 +490,10 @@ export const manganatoMatchEvidence = (
           })
           .sort((a, b) => a.anchorId.localeCompare(b.anchorId))
       : [];
+
   // Missing-credit overlaps are report evidence only, never automatic eligibility.
   const chapterSupport = canonicalChapterSupport || (author !== "missing" && overlap.length > 0);
+
   // Joined/split spellings can suggest an alias, but never verify it automatically.
   const authorAliasSuggestions =
     author === "different"
@@ -477,6 +501,7 @@ export const manganatoMatchEvidence = (
           [...new Set(candidate.authors)].flatMap((actual) => {
             const left = authorKey(expected);
             const right = authorKey(actual);
+
             return left &&
               right &&
               left !== right &&
@@ -486,10 +511,12 @@ export const manganatoMatchEvidence = (
           }),
         )
       : [];
+
   const score =
     (exactTitle ? 60 : 0) +
     (author === "verified" || userConfirmed ? 40 : 0) +
     (chapterSupport ? 25 : 0);
+
   return {
     author,
     exactTitle,
@@ -516,6 +543,7 @@ export const selectManganatoCandidate = (
   if (identity.manualReview) {
     return undefined;
   }
+
   // An explicit listing choice overrides ranking, but never identity checks or falls back.
   if (identity.preferredCandidateId) {
     return candidates.find(
@@ -524,6 +552,7 @@ export const selectManganatoCandidate = (
         manganatoMatchEvidence(identity, candidate).eligible,
     );
   }
+
   const plausible = [
     ...new Map(
       candidates
@@ -533,6 +562,7 @@ export const selectManganatoCandidate = (
         .map((candidate) => [candidate.id, candidate]),
     ).values(),
   ];
+
   // Every competitor needs enough evidence; an unresolved listing cannot silently lose.
   if (
     !plausible.length ||
@@ -540,19 +570,25 @@ export const selectManganatoCandidate = (
   ) {
     return undefined;
   }
+
   if (plausible.length === 1) {
     return plausible[0];
   }
+
   // MangaNato checks containment below, with its own reviewed active-listing exception.
   if (plausible.some((item) => item.coverage?.unit !== "chapters")) {
     return undefined;
   }
+
   const maximum = Math.max(...plausible.map((item) => item.coverage!.count));
   const winners = plausible.filter((item) => item.coverage!.count === maximum);
+
   if (!winners.length || !winners[0]!.coverage!.count) {
     return undefined;
   }
+
   const positions = new Set(winners[0]!.coverage!.numbers);
+
   // A higher count must not hide chapters available only in a competing listing.
   if (plausible.some((item) => item.coverage!.numbers.some((number) => !positions.has(number)))) {
     if (
@@ -565,16 +601,21 @@ export const selectManganatoCandidate = (
     ) {
       return undefined;
     }
+
     const active = plausible.find((item) => {
       if (!denseChapterRun(item)) {
         return false;
       }
+
       const integers = chapterPositions(item);
+
       return plausible.every((other) => {
         if (other.id === item.id) {
           return true;
         }
+
         const otherIntegers = chapterPositions(other);
+
         return (
           integers.size > otherIntegers.size &&
           [...otherIntegers].every((number) => integers.has(number)) &&
@@ -582,10 +623,13 @@ export const selectManganatoCandidate = (
         );
       });
     });
+
     if (!active) {
       return undefined;
     }
+
     const available = new Set(active.coverage!.numbers);
+
     return {
       ...active,
       selection: {
@@ -600,9 +644,11 @@ export const selectManganatoCandidate = (
       },
     };
   }
+
   if (winners.length === 1) {
     return winners[0];
   }
+
   if (
     winners.some(
       (item) =>
@@ -612,8 +658,10 @@ export const selectManganatoCandidate = (
   ) {
     return undefined;
   }
+
   const latest = Math.max(...winners.map((item) => item.coverage!.latestChapterUpdatedAt!));
   const newest = winners.filter((item) => item.coverage!.latestChapterUpdatedAt === latest);
+
   return newest.length === 1 ? newest[0] : undefined;
 };
 
@@ -625,27 +673,37 @@ export const recommendManganatoCandidate = (
   if (identity.manualReview || identity.preferredCandidateId || candidates.length < 2) {
     return undefined;
   }
+
   const edition = editionKey(identity.titles[0] ?? "");
+
   if (candidates.some((candidate) => editionKey(candidate.title) !== edition)) {
     return undefined;
   }
+
   const inferred = [];
+
   for (const candidate of candidates) {
     const evidence = manganatoMatchEvidence(identity, candidate, candidates);
+
     if (!evidence.exactTitle) {
       return undefined;
     }
+
     if (evidence.eligible) {
       continue;
     }
+
     if (evidence.author !== "missing" || !evidence.overlap.length) {
       return undefined;
     }
+
     inferred.push({ candidateId: candidate.id, overlap: evidence.overlap });
   }
+
   if (!inferred.length) {
     return undefined;
   }
+
   // Reuse coverage and recency ranking on a local hypothetical identity. Do not
   // expose its eligibility as real confirmation or change the caller's identity.
   const winner = selectManganatoCandidate(
@@ -658,9 +716,11 @@ export const recommendManganatoCandidate = (
     },
     candidates,
   );
+
   if (!winner) {
     return undefined;
   }
+
   return {
     candidateId: winner.id,
     basis:
@@ -680,11 +740,13 @@ const broadSearchWords = new Set(
     " ",
   ),
 );
+
 const fallbackSearchWords = new Set(
   "welcome home back start boss household prince wife class friend friends senior senpai tomodachi".split(
     " ",
   ),
 );
+
 const compareSearchWords = (a: string, b: string): number =>
   Number(fallbackSearchWords.has(a)) - Number(fallbackSearchWords.has(b)) || b.length - a.length;
 
@@ -692,6 +754,7 @@ const manganatoSearchWords = (title: string): readonly string[] => {
   if (/[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u.test(title)) {
     return [];
   }
+
   return [
     ...new Set(
       title
@@ -713,15 +776,19 @@ export const manganatoSearchPlans = (
   readonly queries: readonly string[];
 }[] => {
   const seen = new Set<string>();
+
   return titles
     .flatMap((title) => {
       const queries = manganatoSearchWords(title).slice(0, 2);
       // Near-identical romanizations often produce the same search; do not spend another alias slot.
       const key = [...queries].sort().join("|");
+
       if (!key || seen.has(key)) {
         return [];
       }
+
       seen.add(key);
+
       return [{ title, queries }];
     })
     .sort((a, b) => compareSearchWords(a.queries[0]!, b.queries[0]!))
@@ -735,34 +802,46 @@ export const manganatoRescueQueries = (
 ): readonly string[] => {
   const seen = new Set(plannedQueries);
   const seenTitles = new Set<string>();
+
   const words = titles
     .map((title) => manganatoSearchWords(title).filter((word) => !seen.has(word)))
     .filter((titleWords) => {
       const key = titleWords.join("|");
+
       if (!key || seenTitles.has(key)) {
         return false;
       }
+
       seenTitles.add(key);
+
       return true;
     });
+
   const queries: string[] = [];
+
   while (queries.length < 6) {
     const previousCount = queries.length;
+
     for (const titleWords of words) {
       const query = titleWords.find((word) => !seen.has(word));
+
       if (!query) {
         continue;
       }
+
       seen.add(query);
       queries.push(query);
+
       if (queries.length === 6) {
         return queries;
       }
     }
+
     if (queries.length === previousCount) {
       break;
     }
   }
+
   return queries;
 };
 
@@ -796,6 +875,7 @@ export const loadManganatoIdentity = async (
 > => {
   const anilistId = providerIdOf(row, "anilist");
   const confirmed = confirmedWorks.get(anilistId ?? "");
+
   const reviewed = {
     ...(confirmed && { confirmedCandidateIds: confirmed.ids }),
     ...(confirmed?.preferredCandidateId && {
@@ -804,10 +884,13 @@ export const loadManganatoIdentity = async (
     // Publication rename with competing updating versions. Never choose automatically.
     ...(anilistId === "149329" && { manualReview: true }),
   };
+
   const knownTitles = [row.title, ...(confirmed?.titles ?? [])];
   const id = providerIdOf(row, "mangadex");
+
   if (!id) {
     onProgress("No MangaDex author evidence; title-only candidates will need review");
+
     return {
       ...reviewed,
       titles: knownTitles,
@@ -816,7 +899,9 @@ export const loadManganatoIdentity = async (
       authors: [],
     };
   }
+
   onProgress("Loading MangaDex aliases and author/artist credits (20s timeout)");
+
   try {
     const response = await platformFetch(
       `https://api.mangadex.org/manga/${encodeURIComponent(id)}?includes[]=author&includes[]=artist`,
@@ -825,33 +910,44 @@ export const loadManganatoIdentity = async (
         signal: AbortSignal.timeout(20_000),
       },
     );
+
     if (!response.ok) {
       throw cliError(`MangaDex HTTP ${response.status}`);
     }
+
     const { data } = await runHost(
       Schema.decodeUnknownEffect(MangaDexIdentity)(await response.json()),
     );
+
     const aliases = [
       ...Object.entries(data.attributes.title),
       ...data.attributes.altTitles.flatMap((titles) => Object.entries(titles)),
     ];
+
     // Search English/romanized aliases only. Other translations still count as identity evidence.
     const discoveryTitles = aliases
       .filter(([language]) => ["en", "ja-ro", "ko-ro", "zh-ro"].includes(language))
       .map(([, title]) => title);
+
     // Without tagged aliases the registry title is the only discovery evidence available.
     if (!discoveryTitles.length) {
       discoveryTitles.push(row.title);
     }
+
     const seen = new Set<string>();
+
     const titles = [...knownTitles, ...aliases.map(([, title]) => title)].filter((title) => {
       const key = titleKey(title);
+
       if (!key || seen.has(key)) {
         return false;
       }
+
       seen.add(key);
+
       return true;
     });
+
     return {
       ...reviewed,
       titles,
@@ -862,6 +958,7 @@ export const loadManganatoIdentity = async (
         ...["en", "ja-ro", "ko-ro", "zh-ro"].flatMap((language) => {
           const title =
             data.attributes.title[language] ?? aliases.find(([tag]) => tag === language)?.[1];
+
           return title ? [title] : [];
         }),
       ],
@@ -876,6 +973,7 @@ export const loadManganatoIdentity = async (
     onProgress(
       `MangaDex metadata unavailable: ${error instanceof Error ? error.message : String(error)}; no automatic title-only links`,
     );
+
     return {
       ...reviewed,
       titles: knownTitles,
@@ -898,31 +996,41 @@ export const loadManganatoChapterReference = async (
 ): Promise<ManganatoChapterReference | undefined> => {
   const anilistId = providerIdOf(row, "anilist");
   const malId = providerIdOf(row, "mal");
+
   if (!anilistId && !malId) {
     return undefined;
   }
+
   try {
     if ([anilistId, malId].some((id) => id !== undefined && !/^[1-9]\d*$/.test(id))) {
       throw cliError("Invalid bound AniList/MAL ID");
     }
+
     onProgress("Loading bound AniList chapter evidence (20s timeout)");
+
     const source = createAniListSource({
       userAgent: manifoldUserAgent("cli"),
       fetcher: async (input, init) => {
         const wait = 2_500 - (epochMillisNow() - lastChapterReferenceAt);
+
         if (wait > 0) {
           await sleepPromise(wait);
         }
+
         lastChapterReferenceAt = epochMillisNow();
+
         return platformFetch(input, { ...init, signal: AbortSignal.timeout(20_000) });
       },
     });
+
     const entry = await runHost(
       (anilistId ? source.getById(anilistId) : source.getByIdMal!(malId!)).pipe(
         Effect.timeout("20 seconds"),
       ),
     );
+
     const mangadexId = providerIdOf(row, "mangadex");
+
     if (
       !entry ||
       (anilistId !== undefined && entry.providerId !== anilistId) ||
@@ -933,6 +1041,7 @@ export const loadManganatoChapterReference = async (
     ) {
       throw cliError("Bound canonical IDs do not agree with chapter reference");
     }
+
     return {
       provider: "anilist",
       providerId: entry.providerId,
@@ -945,6 +1054,7 @@ export const loadManganatoChapterReference = async (
     onProgress(
       `Canonical chapter evidence unavailable: ${error instanceof Error ? error.message : String(error)}`,
     );
+
     return undefined;
   }
 };
@@ -952,12 +1062,15 @@ export const loadManganatoChapterReference = async (
 // Remove only machine-precision tails near a short decimal, never round every chapter to parts.
 const normalizeChapterNumber = (number: number): number => {
   const tolerance = Math.min(1e-12, Number.EPSILON * Math.abs(number) * 2);
+
   for (let places = 0; places <= 12; places++) {
     const rounded = Number(number.toFixed(places));
+
     if (Math.abs(number - rounded) <= tolerance) {
       return rounded;
     }
   }
+
   return number;
 };
 
@@ -972,18 +1085,22 @@ export const createManganatoClient = (options: {
   readonly onBlocked?: (error: ManganatoBlockedError) => Promise<void>;
 }) => {
   let requested = false;
+
   const cache = new Map<
     string,
     { readonly savedAt: number; readonly data: readonly ManganatoDetails[] }
   >();
+
   const pages = new Map<
     string,
     { readonly savedAt: number; readonly data: Schema.Schema.Type<typeof SearchPage> }
   >();
+
   const inventories = new Map<
     string,
     { readonly savedAt: number; readonly data: Schema.Schema.Type<typeof ChapterPage> }
   >();
+
   const CatalogRecord = Schema.Struct({
     event: Schema.Literal("catalog"),
     version: Schema.Literal(1),
@@ -993,6 +1110,7 @@ export const createManganatoClient = (options: {
     savedAt: Schema.Finite,
     data: Schema.Array(Details),
   });
+
   const PageRecord = Schema.Struct({
     event: Schema.Literal("catalog"),
     version: Schema.Literal(1),
@@ -1003,6 +1121,7 @@ export const createManganatoClient = (options: {
     savedAt: Schema.Finite,
     data: SearchPage,
   });
+
   const InventoryRecord = Schema.Struct({
     event: Schema.Literal("catalog"),
     // Version 1 discarded updated_at. Refetch those inventories once for date tie-breaks.
@@ -1015,27 +1134,36 @@ export const createManganatoClient = (options: {
     savedAt: Schema.Finite,
     data: ChapterPage,
   });
+
   for (const line of options.catalog ?? []) {
     const decoded = Schema.decodeUnknownOption(CatalogRecord)(line);
+
     if (Option.isSome(decoded)) {
       const entry = decoded.value;
+
       if (
         entry.kind === "details" &&
         (entry.data.length !== 1 || entry.data[0]!.id !== entry.key)
       ) {
         continue;
       }
+
       cache.set(`${entry.kind}:${entry.key}`, entry);
     }
+
     const decodedPage = Schema.decodeUnknownOption(PageRecord)(line);
+
     if (Option.isSome(decodedPage)) {
       const entry = decodedPage.value;
       const prefix = `/search/story/${encodeURIComponent(entry.query)}?page=`;
+
       if (entry.key.startsWith(prefix) && /^[1-9]\d*$/.test(entry.key.slice(prefix.length))) {
         pages.set(entry.key, entry);
       }
     }
+
     const inventory = Schema.decodeUnknownOption(InventoryRecord)(line);
+
     if (
       Option.isSome(inventory) &&
       inventory.value.key === `${inventory.value.id}:${inventory.value.offset}`
@@ -1043,17 +1171,23 @@ export const createManganatoClient = (options: {
       inventories.set(inventory.value.key, inventory.value);
     }
   }
+
   const fresh = (savedAt: number): boolean => {
     const age = epochMillisNow() - savedAt;
+
     return age >= 0 && age < 86_400_000;
   };
+
   const cached = (kind: string, key: string): readonly ManganatoDetails[] | undefined => {
     const entry = cache.get(`${kind}:${key}`);
+
     if (entry && fresh(entry.savedAt)) {
       return entry.data;
     }
+
     return undefined;
   };
+
   const remember = (kind: string, key: string, data: readonly ManganatoDetails[]): void => {
     const savedAt = epochMillisNow();
     cache.set(`${kind}:${key}`, { savedAt, data });
@@ -1067,6 +1201,7 @@ export const createManganatoClient = (options: {
       data: [...data],
     });
   };
+
   const read = async <A>(
     path: string,
     parser: string,
@@ -1076,9 +1211,11 @@ export const createManganatoClient = (options: {
       if (requested) {
         await sleepPromise(options.delay);
       }
+
       requested = true;
       options.onProgress?.(path);
       let wire: JsonValue;
+
       try {
         wire = await options.view.evaluate<JsonValue>(`(async () => {
       if (location.origin !== ${JSON.stringify(MANGANATO_ORIGIN)}) throw new Error('Open www.manganato.gg in this tab first');
@@ -1103,8 +1240,10 @@ export const createManganatoClient = (options: {
         if (!/\b(?:timeout(?:error)?|timed out)\b/i.test(errorMessage(error))) {
           throw error;
         }
+
         wire = { status: 0, challenged: false, timedOut: true, data: null };
       }
+
       const response = await runHost(
         Schema.decodeUnknownEffect(
           Schema.Struct({
@@ -1115,6 +1254,7 @@ export const createManganatoClient = (options: {
           }),
         )(wire),
       );
+
       if (
         response.challenged ||
         response.status === 403 ||
@@ -1125,24 +1265,32 @@ export const createManganatoClient = (options: {
           message: `MangaNato ${path}: ${response.timedOut ? "request timed out; inspect regular Chrome for a challenge or connection problem" : response.challenged ? "Cloudflare challenge; solve it in regular Chrome" : `HTTP ${response.status}; inspect Chrome or wait before retrying`}.`,
           ...(response.timedOut && { reason: "timeout" }),
         });
+
         if (!options.onBlocked) {
           throw error;
         }
+
         await options.onBlocked(error);
         continue;
       }
+
       if (response.status !== 200) {
         throw cliError(`MangaNato ${path}: HTTP ${response.status}`);
       }
+
       return runHost(Schema.decodeUnknownEffect(schema)(response.data));
     }
   };
+
   const getDetails = async (id: string): Promise<ManganatoDetails> => {
     const saved = cached("details", id);
+
     if (saved) {
       options.onProgress?.(`Cached details: ${id}`);
+
       return saved[0]!;
     }
+
     const result = await read(
       `/manga/${encodeURIComponent(id)}`,
       `
@@ -1153,9 +1301,12 @@ export const createManganatoClient = (options: {
     `,
       Details,
     );
+
     remember("details", id, [result]);
+
     return result;
   };
+
   return {
     details: getDetails,
     coverage: async (id: string): Promise<ManganatoCoverage> => {
@@ -1164,21 +1315,26 @@ export const createManganatoClient = (options: {
       let latestChapterUpdatedAt = 0;
       let completeDates = true;
       const seen = new Set<string>();
+
       const inventory = {
         rawRecords: 0,
         duplicateRecords: 0,
         excludedNegativeRecords: 0,
         normalizedRecords: 0,
       };
+
       let offset = 0;
       let total: number | undefined;
+
       for (let page = 0; page < options.maxPages; page++) {
         const key = `${id}:${offset}`;
         const stored = inventories.get(key);
         const saved = stored && fresh(stored.savedAt) ? stored : undefined;
+
         if (saved) {
           options.onProgress?.(`Cached chapters: ${id} offset ${offset}`);
         }
+
         const result =
           saved?.data ??
           (await read(
@@ -1186,8 +1342,10 @@ export const createManganatoClient = (options: {
             "return JSON.parse(text);",
             ChapterPage,
           ));
+
         const { chapters: items, pagination } = result.data;
         const nextOffset = offset + items.length;
+
         if (
           pagination.offset !== offset ||
           pagination.total < 0 ||
@@ -1200,34 +1358,43 @@ export const createManganatoClient = (options: {
         ) {
           throw cliError(`MangaNato ${id}: incomplete or inconsistent chapter inventory`);
         }
+
         total = pagination.total;
         const pageNumbers = new Map<string, number | undefined>();
+
         for (const item of items) {
           if (seen.has(item.chapter_slug)) {
             throw cliError(
               `MangaNato ${id}: repeated chapter IDs across pages at offset ${offset}; incomplete inventory`,
             );
           }
+
           inventory.rawRecords++;
           const raw = item.chapter_num;
+
           const parsed = Schema.is(Schema.Finite)(raw)
             ? raw
             : raw !== null && /^-?\d+(?:\.\d+)?$/.test(raw.trim())
               ? Number(raw)
               : undefined;
+
           const number = parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined;
+
           // Negative extras may collide with a positive chapter's slug. Keep raw pagination,
           // but never let their order replace or block the positive position used for scoring.
           if (number !== undefined && number < 0) {
             inventory.excludedNegativeRecords++;
             continue;
           }
+
           // Provider chapter-update time, not report/cache fetch time or manga metadata edits.
           const date = item.updated_at;
+
           const timestamp =
             date && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(date)
               ? Date.parse(date)
               : NaN;
+
           if (
             !Number.isFinite(timestamp) ||
             timestamp <= 0 ||
@@ -1238,30 +1405,38 @@ export const createManganatoClient = (options: {
           } else {
             latestChapterUpdatedAt = Math.max(latestChapterUpdatedAt, timestamp);
           }
+
           const normalized = number !== undefined ? normalizeChapterNumber(number) : undefined;
+
           if (normalized !== number) {
             inventory.normalizedRecords++;
           }
+
           if (pageNumbers.has(item.chapter_slug)) {
             if (normalized === undefined || pageNumbers.get(item.chapter_slug) !== normalized) {
               throw cliError(
                 `MangaNato ${id}: conflicting chapter numbers for ${item.chapter_slug} at offset ${offset}; no link selected`,
               );
             }
+
             inventory.duplicateRecords++;
             continue;
           }
+
           pageNumbers.set(item.chapter_slug, normalized);
+
           if (normalized === undefined) {
             unknown = true;
           } else {
             positions.add(normalized);
           }
         }
+
         // Include negative records in cross-page overlap detection as well.
         for (const item of items) {
           seen.add(item.chapter_slug);
         }
+
         if (!saved) {
           const savedAt = epochMillisNow();
           inventories.set(key, { savedAt, data: result });
@@ -1277,11 +1452,13 @@ export const createManganatoClient = (options: {
             data: result,
           });
         }
+
         if (!pagination.has_more) {
           const numbers = [...positions].sort((a, b) => a - b);
           options.onProgress?.(
             `${id}: ${inventory.rawRecords} raw records; ${inventory.duplicateRecords} duplicates; ${inventory.excludedNegativeRecords} negative records excluded; ${inventory.normalizedRecords} precision tails normalized; ${numbers.length} distinct positions`,
           );
+
           return {
             unit: unknown ? "unknown" : "chapters",
             count: numbers.length,
@@ -1290,8 +1467,10 @@ export const createManganatoClient = (options: {
             inventory,
           };
         }
+
         offset = nextOffset;
       }
+
       throw cliError(`MangaNato ${id}: chapter inventory exceeded --max-pages; no link selected`);
     },
     // Yield each validated page so callers can stop at proven ambiguity, never at a lone match.
@@ -1304,30 +1483,38 @@ export const createManganatoClient = (options: {
       const key = query.toLowerCase().replace(/\s+/g, "_").replace(/\.+$/, "");
       // Older reports stored complete queries rather than individual pages.
       const saved = cached("search", key);
+
       if (saved) {
         options.onProgress?.(`Cached complete search: ${query}`);
         yield saved;
+
         return;
       }
+
       let path = `/search/story/${encodeURIComponent(key)}?page=1`;
       const visited = new Set<string>();
       const fingerprints = new Set<string>();
       const found = new Set<string>();
+
       for (let page = 1; ; page++) {
         if (page > maxPages) {
           throw new ManganatoPageBudgetError({
             message: `Incomplete MangaNato search for ${query}; page budget ${maxPages} exhausted`,
           });
         }
+
         if (visited.has(path)) {
           throw cliError(`Incomplete MangaNato search for ${query}; repeated pagination`);
         }
+
         visited.add(path);
         const stored = pages.get(path);
         const savedPage = stored && fresh(stored.savedAt) ? stored : undefined;
+
         if (savedPage) {
           options.onProgress?.(`Cached search page: ${path}`);
         }
+
         const result =
           savedPage?.data ??
           (await read(
@@ -1343,24 +1530,30 @@ export const createManganatoClient = (options: {
         `,
             SearchPage,
           ));
+
         if (!/^Search Results for /i.test(result.title) || isChallengeText(result.title)) {
           throw cliError(`Unexpected MangaNato search page for ${query}`);
         }
+
         const fingerprint = result.items
           .map((item) => item.id)
           .sort()
           .join("|");
+
         if (
           (result.items.length && fingerprints.has(fingerprint)) ||
           (!result.items.length && result.next)
         ) {
           throw cliError(`Incomplete MangaNato search for ${query}; repeated/empty page`);
         }
+
         fingerprints.add(fingerprint);
         let nextPath: string | undefined;
+
         if (result.next) {
           let next: URL;
           let nextQuery: string;
+
           try {
             next = new URL(result.next, `${MANGANATO_ORIGIN}${path}`);
             const segment = /^\/search\/story\/([^/]+)$/.exec(next.pathname)?.[1];
@@ -1368,7 +1561,9 @@ export const createManganatoClient = (options: {
           } catch {
             throw cliError(`Invalid MangaNato pagination for ${query}`);
           }
+
           nextPath = `/search/story/${encodeURIComponent(key)}?page=${page + 1}`;
+
           // Provider links escape punctuation differently; compare the decoded query exactly once.
           if (
             next.origin !== MANGANATO_ORIGIN ||
@@ -1381,6 +1576,7 @@ export const createManganatoClient = (options: {
             throw cliError(`Invalid MangaNato pagination for ${query}`);
           }
         }
+
         if (!savedPage) {
           const savedAt = epochMillisNow();
           pages.set(path, { savedAt, data: result });
@@ -1395,17 +1591,23 @@ export const createManganatoClient = (options: {
             data: result,
           });
         }
+
         const items = result.items.filter((item) => {
           if (found.has(item.id)) {
             return false;
           }
+
           found.add(item.id);
+
           return true;
         });
+
         yield items.map((item) => ({ ...item, aliases: [], authors: [] }));
+
         if (!nextPath) {
           return;
         }
+
         path = nextPath;
       }
     },

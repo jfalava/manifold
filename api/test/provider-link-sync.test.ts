@@ -45,6 +45,7 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
       platform: "browser",
       external: ["cloudflare:workers"],
     });
+
     worker = new Miniflare(
       convertV4MiniflareOptions({
         name: "provider-links",
@@ -70,15 +71,20 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
       headers: { authorization: "Bearer fixture-token", "content-type": "application/json" },
       ...(body !== undefined && { body: JSON.stringify(body) }),
     });
+
     const value = await response.json();
     expect(response.status, JSON.stringify(value)).toBe(status);
+
     if (!isJsonValue(value)) {
       throw new Error("Invalid JSON response");
     }
+
     return value;
   };
+
   const create = async () => {
     const id = newId();
+
     return Schema.decodeUnknownSync(RegistryEntry)(
       await request(
         "/v1/entries",
@@ -92,12 +98,15 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
       ),
     );
   };
+
   const entry = (id: string) => request(`/v1/entries/${id}`);
   const events = () => request("/v1/events?limit=500");
+
   const snapshot = async () => ({
     registry: await request("/v1/registry"),
     events: await events(),
   });
+
   const link = (
     id: string,
     externalId: string,
@@ -135,9 +144,11 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     });
     expect(await entry(target.id)).toEqual(linked);
     const before = await snapshot();
+
     const listed = Schema.decodeUnknownSync(RegistryListResponse)(before.registry).entries.find(
       (row) => row.id === target.id,
     );
+
     expect(listed?.providers).toMatchObject([{ sourceName: "Kodansha Comics" }]);
     expect(
       await request(`/v1/entries/${target.id}/providers`, {
@@ -176,19 +187,23 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
   it("preserves omitted source metadata only when the provider identity is unchanged", async () => {
     const target = await create();
     await link(target.id, "source-original");
+
     const same = await request(`/v1/entries/${target.id}/providers`, {
       provider: "kagane",
       externalId: "source-original",
       onConflict: "replace",
     });
+
     expect(Schema.decodeUnknownSync(RegistryEntry)(same).providers[0]?.sourceName).toBe(
       "Kodansha Comics",
     );
+
     const replaced = await request(`/v1/entries/${target.id}/providers`, {
       provider: "kagane",
       externalId: "source-replacement",
       onConflict: "replace",
     });
+
     expect(Schema.decodeUnknownSync(RegistryEntry)(replaced).providers).toEqual([
       expect.objectContaining({ externalId: "source-replacement" }),
     ]);
@@ -201,6 +216,7 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     const a = await create();
     const b = await create();
     const beforeEvents = await events();
+
     const responses = await Promise.all(
       [a, b].map((target) =>
         worker.dispatchFetch(`https://manifold.jfa.dev/v1/entries/${target.id}/providers`, {
@@ -214,12 +230,15 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
         }),
       ),
     );
+
     expect(responses.map((response) => response.status).sort((a, b) => a - b)).toEqual([200, 500]);
     const loser = responses.find((response) => response.status === 500)!;
     expect(await loser.text()).toContain("Provider link conflict");
+
     const rows = await Promise.all(
       [a, b].map(async (target) => Schema.decodeUnknownSync(RegistryEntry)(await entry(target.id))),
     );
+
     expect(rows.map((row) => row.providers.length).sort((a, b) => a - b)).toEqual([0, 1]);
     expect(await events()).not.toEqual(beforeEvents);
     const before = await snapshot();
@@ -280,6 +299,7 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     await link(b.id, "rollback-b");
     const before = await snapshot();
     await request("/fixture/fault?enabled=true");
+
     try {
       expect(JSON.stringify(await link(fresh.id, "rollback-new", "reject", 500))).toContain(
         "fixture link event failure",
@@ -289,6 +309,7 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     } finally {
       await request("/fixture/fault?enabled=false");
     }
+
     await link(b.id, "rollback-a", "replace");
     expect(await entry(a.id)).toMatchObject({ providers: [] });
   });

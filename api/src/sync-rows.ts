@@ -131,11 +131,13 @@ export interface ManifoldSessionRow extends Record<string, SqlStorageValue> {
 
 const parseStoredJsonObject = (text: string): JsonObject => {
   let parsed: unknown;
+
   try {
     parsed = JSON.parse(text);
   } catch {
     return { raw: text };
   }
+
   return isJsonObject(parsed) ? parsed : { raw: text };
 };
 
@@ -163,12 +165,15 @@ export const shouldAdvanceProgress = (
   if (!current) {
     return true;
   }
+
   if (chapterNumber === undefined) {
     return current.chapter_number === null && readAt >= current.read_at;
   }
+
   if (current.chapter_number === null) {
     return true;
   }
+
   return (
     chapterNumber > current.chapter_number ||
     (chapterNumber === current.chapter_number && readAt >= current.read_at)
@@ -212,6 +217,7 @@ export const toListEvent = (row: ListEventRow): ListEvent => ({
 });
 
 const CANONICAL_PROVIDERS: ReadonlySet<string> = new Set(["anilist", "mal", "local"]);
+
 const REGISTRY_PROVIDERS: ReadonlySet<string> = new Set([
   "anilist",
   "mal",
@@ -231,7 +237,9 @@ const nonEmpty = (value: string | null | undefined): string | undefined => {
   if (value === null || value === undefined) {
     return undefined;
   }
+
   const trimmed = value.trim();
+
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
@@ -249,14 +257,18 @@ export const toRegistryEntry = (
 ): RegistryEntry => {
   const nowMs = epochMillisNow();
   const providers: ProviderLink[] = [];
+
   for (const link of providerRows) {
     if (!isRegistryProvider(link.provider)) {
       continue;
     }
+
     const externalId = nonEmpty(link.external_id);
+
     if (!externalId) {
       continue;
     }
+
     const title = nonEmpty(link.title);
     const sourceName = nonEmpty(link.source_name);
     providers.push({
@@ -271,6 +283,7 @@ export const toRegistryEntry = (
   const provider: RegistryEntry["provider"] = isCanonicalProvider(row.provider)
     ? row.provider
     : "local";
+
   const providerId = nonEmpty(row.provider_id) ?? row.id;
   const title = nonEmpty(row.title) ?? providerId;
 

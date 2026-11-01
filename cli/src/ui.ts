@@ -14,19 +14,25 @@ import { ProgressRenderer, taskOutputs } from "@/ui/renderer";
 import { ui } from "@/ui/style";
 
 export { ui } from "@/ui/style";
+
 export { createProgress, withActivity, withProgress, writeOutput } from "@/ui/progress";
+
 export const muted = ui.muted;
 
 /** Retained for URL consumers: each segment remains copyable in a narrow terminal. */
 export const wrapFrameText = (text: string, width: number): string[] => {
   const max = Math.max(8, width);
+
   if (!text.length) {
     return [""];
   }
+
   const lines: string[] = [];
+
   for (let i = 0; i < text.length; i += max) {
     lines.push(text.slice(i, i + max));
   }
+
   return lines;
 };
 
@@ -37,21 +43,25 @@ export const terminalHyperlink = (href: string, label: string): string =>
 
 /** Compatibility names for report printers; the old box/rail renderer is gone. */
 export const frameDetail = (text: string): void => writeOutput(`${ui.info(text)}\n`);
+
 export const frameUrl = (url: string): void => {
   for (const chunk of wrapFrameText(url, (process.stdout.columns ?? 80) - 4)) {
     writeOutput(`    ${terminalHyperlink(url, ui.key(chunk))}\n`);
   }
 };
+
 export const openFrame = (title: string): void => {
   terminalSession()?.phase(title);
   writeOutput(`${ui.heading(title)}\n`);
 };
+
 export const closeFrame = (message: string, hasErrors = Boolean(process.exitCode)): void => {
   terminalSession()?.summary(message, hasErrors);
   writeOutput(
     `${hasErrors || terminalSession()?.cancelled ? ui.warning(message) : ui.success(message.split("\n").join("\n  "))}\n`,
   );
 };
+
 export const abortFrame = (): void => {
   terminalSession()?.summary("Failed", true);
 };
@@ -65,6 +75,7 @@ const runPrompt = <A>(
   Effect.runPromise(
     Effect.gen(function* () {
       const terminal = yield* Terminal.Terminal;
+
       return yield* Prompt.run(prompt).pipe(
         Effect.provideService(
           Terminal.Terminal,
@@ -89,21 +100,27 @@ const withTerminalInputEffect =
 
 export const confirmInFrame = (message: string): Promise<boolean> =>
   runPrompt(Prompt.Confirm({ message, initial: false }), message, "permission");
+
 export const waitForEnterInFrame = (message: string): Promise<void> =>
   runPrompt(Prompt.String({ message }), message, "question").then(() => undefined);
+
 export const promptInFrame = (message: string): Promise<string> =>
   runPrompt(Prompt.String({ message }), message, "question");
+
 export const promptInFrameWithDefault = (message: string, defaultValue?: string): Promise<string> =>
   runPrompt(Prompt.String({ message, default: defaultValue }), message, "question");
+
 export const promptSecretInFrame = (message: string): Promise<string> =>
   runPrompt(Prompt.Password({ message }), message, "auth").then(Redacted.value);
 
 export const fmtDuration = (ms: number): string => {
   const s = Math.round(ms / 1000);
+
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
 };
 
 export interface RunContext {}
+
 /** Keep Listr's execution, skip, nesting and cancellation contracts; replace only its UI. */
 export const createRun = <Ctx extends RunContext>(
   tasks: ListrTask<Ctx>[],
@@ -129,6 +146,7 @@ export const barLine = ({ done, total, counts = [], startedAt }: BarUpdate): str
   const progress = total > 0 ? Math.min(1, done / total) : 1;
   const remaining = Math.max(total - done, 0);
   const etaSec = done > 0 ? (((epochMillisNow() - startedAt) / done) * remaining) / 1000 : 0;
+
   return cliProgress.Format.Formatter(
     {
       barsize: 6,
@@ -136,6 +154,7 @@ export const barLine = ({ done, total, counts = [], startedAt }: BarUpdate): str
       barIncompleteChar: "─",
       formatBar: (ratio: number) => {
         const complete = Math.min(6, Math.max(0, Math.floor(ratio * 6)));
+
         return pc.cyan("━".repeat(complete)) + pc.dim("─".repeat(6 - complete));
       },
       formatTime: (seconds: number) => fmtDuration(seconds * 1000),
@@ -178,6 +197,7 @@ export const makePhaseReporter = (
 ): PhaseReporter & { item(text: string): void } => {
   let startedAt: number | undefined;
   const output = task.task === undefined ? undefined : taskOutputs.get(task.task);
+
   return {
     item(text) {
       if (output) {
@@ -210,6 +230,7 @@ export const makePhaseReporter = (
     progress(done, total, counts) {
       startedAt ??= epochMillisNow();
       const text = barLine({ done, total, counts, startedAt });
+
       if (output) {
         output.progress(text, done, total);
       } else {

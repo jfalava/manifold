@@ -43,8 +43,10 @@ const loadRegistrySearchTitlesEffect = (
   Effect.gen(function* () {
     const titles = [row.title];
     const anilistId = providerIdOf(row, "anilist");
+
     if (anilistId && options.anilistToken) {
       const parsed = Number(anilistId);
+
       if (Number.isInteger(parsed) && parsed > 0) {
         options.onProgress?.("Loading AniList aliases (20s timeout)");
         yield* Effect.tryPromise({
@@ -67,27 +69,36 @@ const loadRegistrySearchTitlesEffect = (
         );
       }
     }
+
     const unique = uniqueTitles(titles);
+
     if (unique.length >= 2) {
       return unique;
     }
+
     const mangadexId = providerIdOf(row, "mangadex");
+
     if (!mangadexId) {
       return unique;
     }
+
     options.onProgress?.("Loading MangaDex aliases (20s timeout)");
+
     return yield* Effect.gen(function* () {
       const signal = yield* Effect.abortSignal;
+
       if (options.mangaDexTitles) {
         return yield* Effect.tryPromise({
           try: () => options.mangaDexTitles!(mangadexId, signal),
           catch: (cause) => cliError(errorMessage(cause)),
         });
       }
+
       const manga = yield* createMangaDexClient({
         userAgent: manifoldUserAgent("cli"),
         fetcher: (input, init) => platformFetch(input, { ...init, signal }),
       }).getManga(mangadexId);
+
       return [manga.title, ...manga.altTitles] as const;
     }).pipe(
       Effect.scoped,
@@ -98,6 +109,7 @@ const loadRegistrySearchTitlesEffect = (
         options.onProgress?.(
           "MangaDex aliases unavailable or timed out; continuing with known titles",
         );
+
         return unique;
       }),
     );

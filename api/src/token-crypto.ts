@@ -13,9 +13,11 @@ const asCryptoError = (cause: unknown) =>
 
 export const toBase64Url = (bytes: Uint8Array): string => {
   let binary = "";
+
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);
   }
+
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 };
 
@@ -23,9 +25,11 @@ export const fromBase64Url = (value: string): Uint8Array => {
   const padded = value.replaceAll("-", "+").replaceAll("_", "/") + "===";
   const binary = atob(padded.slice(0, padded.length - (padded.length % 4)));
   const bytes = new Uint8Array(binary.length);
+
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index);
   }
+
   return bytes;
 };
 
@@ -41,10 +45,12 @@ const encryptionKey = (
         ),
       catch: asCryptoError,
     });
+
     const digest = yield* Effect.tryPromise({
       try: () => crypto.subtle.digest("SHA-256", new TextEncoder().encode(encryptionSecret)),
       catch: asCryptoError,
     });
+
     return yield* Effect.tryPromise({
       try: () =>
         crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]),
@@ -60,14 +66,17 @@ export const encryptToken = (
     Effect.gen(function* () {
       const iv = crypto.getRandomValues(new Uint8Array(12));
       const key = yield* encryptionKey(env);
+
       const encrypted = yield* Effect.tryPromise({
         try: () =>
           crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(value)),
         catch: asCryptoError,
       });
+
       const combined = new Uint8Array(iv.byteLength + encrypted.byteLength);
       combined.set(iv);
       combined.set(new Uint8Array(encrypted), iv.byteLength);
+
       return toBase64Url(combined);
     }),
   );
@@ -82,10 +91,12 @@ export const decryptToken = (
       const iv = combined.slice(0, 12);
       const encrypted = combined.slice(12);
       const key = yield* encryptionKey(env);
+
       const decrypted = yield* Effect.tryPromise({
         try: () => crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, encrypted),
         catch: asCryptoError,
       });
+
       return new TextDecoder().decode(decrypted);
     }),
   );

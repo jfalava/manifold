@@ -19,6 +19,7 @@ const candidate = (
   aliases,
   score: 0,
 });
+
 const entry: RegistryEntry = {
   id: "registry-id",
   provider: "anilist",
@@ -28,6 +29,7 @@ const entry: RegistryEntry = {
   updatedAt: 0,
   providers: [{ provider: "anilist", externalId: "42", updatedAt: 0 }],
 };
+
 const environment = (): Pick<Env, "AI" | "MANIFOLD_MAL_CLIENT_ID"> => {
   const fixture = {
     MANIFOLD_MAL_CLIENT_ID: "test-client",
@@ -37,6 +39,7 @@ const environment = (): Pick<Env, "AI" | "MANIFOLD_MAL_CLIENT_ID"> => {
       },
     },
   };
+
   // @ts-expect-error Ai's platform brand is wider than this resolver test double.
   return fixture;
 };
@@ -73,6 +76,7 @@ describe("MAL backup matching", () => {
       { entry: candidate("1", "Near"), score },
       { entry: candidate("2", "Far"), score: runnerUp },
     ];
+
     expect(chooseMalMatch(["Query"], ranked(0.8, 0.5))).toBeUndefined();
     expect(chooseMalMatch(["Query"], ranked(0.9, 0.86))).toBeUndefined();
     expect(chooseMalMatch(["Query"], ranked(0.92, 0.8))).toMatchObject({
@@ -104,14 +108,17 @@ describe("MAL backup matching", () => {
 
   it("searches all distinct aliases and deduplicates returned MAL identities", async () => {
     const terms: string[] = [];
+
     const source: CanonicalSearchSource = {
       provider: "mal",
       getById: () => Effect.as(Effect.void, undefined),
       search: (term) => {
         terms.push(term);
+
         return Effect.succeed([candidate("7", "Other display title", ["日本語"])]);
       },
     };
+
     expect(
       await resolveMalBackup(
         environment(),
@@ -128,14 +135,17 @@ describe("MAL backup matching", () => {
 
   it("ignores identity metadata from another AniList entry", async () => {
     const terms: string[] = [];
+
     const source: CanonicalSearchSource = {
       provider: "mal",
       getById: () => Effect.as(Effect.void, undefined),
       search: (term) => {
         terms.push(term);
+
         return Effect.succeed([]);
       },
     };
+
     await expect(
       resolveMalBackup(
         environment(),
@@ -165,6 +175,7 @@ describe("MAL backup matching", () => {
               status: 429,
             }),
     };
+
     await expect(
       resolveMalBackup(
         environment(),
@@ -188,6 +199,7 @@ describe("MAL backup status write", () => {
     "plan_to_read",
     "re_reading",
   ];
+
   it.each(statuses)("projects %s without overwriting other list fields", async (status) => {
     const fetcher = vi.fn(async () => new Response("{}"));
     vi.stubGlobal("fetch", fetcher);

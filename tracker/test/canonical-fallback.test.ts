@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Form, type Request as PaperbackRequest } from "@paperback/types";
 import { isJsonObject, isString, type JsonValue } from "@manifold/json";
 import { MANIFOLD_API_TOKEN_KEY, ANILIST_SESSION_KEY } from "@manifold/paperback-runtime";
+
 let ManifoldTrackerSource: typeof import("../src/MANIFOLD/main").ManifoldTrackerSource;
 
 const entry = {
@@ -16,6 +17,7 @@ const entry = {
   updatedAt: 2,
   providers: [{ provider: "mal", externalId: "77", updatedAt: 2 }],
 };
+
 const canonical = {
   id: "mal:77",
   provider: "mal",
@@ -31,10 +33,13 @@ const parseJsonObject = (value: PaperbackRequest["body"]): Record<string, JsonVa
   if (!isString(value)) {
     throw new Error("Expected a JSON request body");
   }
+
   const parsed: unknown = JSON.parse(value);
+
   if (!isJsonObject(parsed)) {
     throw new Error("Expected a JSON object request body");
   }
+
   return parsed;
 };
 
@@ -65,6 +70,7 @@ describe("Paperback canonical fallback", () => {
         const url = new URL(request.url);
         let status = 200;
         let body: JsonValue = {};
+
         const stored = {
           ...entry,
           providers: [
@@ -72,6 +78,7 @@ describe("Paperback canonical fallback", () => {
             ...(hasAniList ? [{ provider: "anilist", externalId: "42", updatedAt: 2 }] : []),
           ],
         };
+
         if (url.hostname === "graphql.anilist.co") {
           status = 403;
           body = { errors: [{ message: "Blocked", status: 403 }] };
@@ -109,6 +116,7 @@ describe("Paperback canonical fallback", () => {
           status = 503;
           body = { error: "Other provider unavailable" };
         }
+
         return [{ status, headers: {} }, new TextEncoder().encode(JSON.stringify(body)).buffer];
       },
     });
@@ -154,11 +162,13 @@ describe("Paperback canonical fallback", () => {
 
   it("deduplicates an already-linked MAL search result against the registry", async () => {
     registrySearch = true;
+
     const result = await new ManifoldTrackerSource().getSearchResults(
       { title: "Example" },
       undefined,
       undefined,
     );
+
     expect(result.items).toEqual([
       expect.objectContaining({ mangaId: entry.id, imageUrl: "https://example.test/mal.jpg" }),
     ]);
@@ -179,19 +189,24 @@ describe("Paperback canonical fallback", () => {
       const tracker = new ManifoldTrackerSource();
       const details = await tracker.getMangaDetails(entry.id);
       const form = await tracker.getMangaProgressManagementForm(details);
+
       // Exercise the public form callback, not the private state implementation.
       // SAFETY: the tracker returns a Form with its public notes callback attached.
       const callbacks = form as Form & {
         notesChanged?: (value: string) => Promise<void>;
       };
+
       if (callbacks.notesChanged === undefined) {
         throw new Error("Missing notes callback");
       }
+
       await callbacks.notesChanged("Local notes");
       await form.formDidSubmit?.();
+
       const save = requests.find(
         (request) => request.method === "POST" && request.url.endsWith("/list-state"),
       );
+
       expect(parseJsonObject(save?.body)).toEqual({
         notes: "Local notes",
         origin: "device",
@@ -203,20 +218,26 @@ describe("Paperback canonical fallback", () => {
   it("saves status locally when AniList rejects the write", async () => {
     hasAniList = true;
     const tracker = new ManifoldTrackerSource();
+
     const form = await tracker.getMangaProgressManagementForm(
       await tracker.getMangaDetails(entry.id),
     );
+
     // SAFETY: the tracker returns a Form with its public status callback attached.
     const callbacks = form as Form & {
       statusSelected?: (values: string[]) => Promise<void>;
     };
+
     if (callbacks.statusSelected === undefined) {
       throw new Error("Missing status callback");
     }
+
     await callbacks.statusSelected(["completed"]);
+
     const save = requests.find(
       (request) => request.method === "POST" && request.url.endsWith("/list-state"),
     );
+
     expect(parseJsonObject(save?.body)).toEqual({
       status: "completed",
       origin: "device",

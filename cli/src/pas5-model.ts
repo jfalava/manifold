@@ -19,10 +19,12 @@ export const LAST_READ_NEVER = -63_114_076_800;
 export const mangaInfoKey = (sourceId: string, mangaId: string): string => {
   let hash = 0xcbf29ce484222325n;
   const input = `${sourceId}|${mangaId}`;
+
   for (let i = 0; i < input.length; i++) {
     hash ^= BigInt(input.charCodeAt(i));
     hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
   }
+
   return BigInt.asIntN(64, hash).toString();
 };
 
@@ -31,17 +33,20 @@ export const deterministicUuid = (seed: string): string => {
   const digest = new Uint8Array(16);
   let h1 = 0x811c9dc5n;
   let h2 = 0x1003fn | 0n;
+
   for (let i = 0; i < seed.length; i++) {
     const c = BigInt(seed.charCodeAt(i));
     h1 = ((h1 ^ c) * 0x100000001b3n) & 0xffffffffffffffffn;
     h2 = ((h2 * 31n + c) * 0x2545f491n) & 0xffffffffffffffffn;
   }
+
   const view = new DataView(digest.buffer);
   view.setBigUint64(0, h1);
   view.setBigUint64(8, h2);
   digest[6] = (digest[6] & 0x0f) | 0x40;
   digest[8] = (digest[8] & 0x3f) | 0x80;
   const hex = [...digest].map((b) => b.toString(16).padStart(2, "0")).join("");
+
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`.toUpperCase();
 };
 

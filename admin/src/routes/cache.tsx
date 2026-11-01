@@ -121,6 +121,7 @@ function CachePage() {
             <Table.Body>
               {snapshot.surfaces.map((surface) => {
                 const cacheable = surface.hits + surface.misses;
+
                 return (
                   <Table.Row key={surface.surface}>
                     <Table.Cell>{surface.surface}</Table.Cell>
@@ -230,6 +231,7 @@ function ratio(part: number, whole: number): string {
   if (whole <= 0) {
     return "—";
   }
+
   return `${((part / whole) * 100).toFixed(1)}%`;
 }
 
@@ -237,14 +239,18 @@ function formatBytes(value: number): string {
   if (value <= 0) {
     return "—";
   }
+
   if (value < 1024) {
     return `${value} B`;
   }
+
   if (value < 1024 * 1024) {
     return `${(value / 1024).toFixed(1)} KB`;
   }
+
   if (value < 1024 * 1024 * 1024) {
     return `${(value / (1024 * 1024)).toFixed(1)} MB`;
   }
+
   return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }

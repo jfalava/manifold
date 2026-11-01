@@ -44,6 +44,7 @@ function formatWhen(ms: number | undefined): string {
   if (ms === undefined) {
     return "—";
   }
+
   return new Date(ms).toLocaleString();
 }
 
@@ -55,30 +56,38 @@ type HashTokenCapture = {
 
 function parseHashToken(hash: string): HashTokenCapture {
   const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+
   if (!raw) {
     return {};
   }
+
   const params = new URLSearchParams(raw);
   const error = params.get("error");
   const accessToken = params.get("access_token");
   const expiresRaw = params.get("expires_in");
   const expiresParsed = expiresRaw !== null ? Number(expiresRaw) : Number.NaN;
   const expiresIn = Number.isFinite(expiresParsed) && expiresParsed > 0 ? expiresParsed : undefined;
+
   if (accessToken && expiresIn !== undefined && error) {
     return { accessToken, expiresIn, error };
   }
+
   if (accessToken && expiresIn !== undefined) {
     return { accessToken, expiresIn };
   }
+
   if (accessToken && error) {
     return { accessToken, error };
   }
+
   if (accessToken) {
     return { accessToken };
   }
+
   if (error) {
     return { error };
   }
+
   return {};
 }
 
@@ -93,6 +102,7 @@ function CredentialsPage() {
 
   const refresh = useCallback(async () => {
     setBusy(true);
+
     try {
       setConnections(await loadAuthConnections());
       setError(undefined);
@@ -113,11 +123,13 @@ function CredentialsPage() {
     const params = new URLSearchParams(globalThis.location.search);
     const oauth = params.get("oauth");
     const provider = params.get("provider");
+
     if (oauth && provider) {
       const label =
         provider === "anilist" || provider === "mal" || provider === "mangadex"
           ? PROVIDER_LABELS[provider]
           : provider;
+
       if (oauth === "connected") {
         // oxlint-disable-next-line react/set-state-in-effect -- one-shot query banner after OAuth return
         setNotice(`${label} connected.`);
@@ -125,6 +137,7 @@ function CredentialsPage() {
         // oxlint-disable-next-line react/set-state-in-effect -- one-shot query banner after OAuth return
         setError(`${label} authorization was denied.`);
       }
+
       const next = new URL(globalThis.location.href);
       next.searchParams.delete("oauth");
       next.searchParams.delete("provider");
@@ -133,29 +146,37 @@ function CredentialsPage() {
 
     const hash = globalThis.location.hash;
     const captured = parseHashToken(hash);
+
     if (!captured.accessToken && !captured.error) {
       return;
     }
+
     // Drop the fragment immediately so a refresh cannot re-import.
     globalThis.history.replaceState(
       {},
       "",
       globalThis.location.pathname + globalThis.location.search,
     );
+
     if (captured.error) {
       // oxlint-disable-next-line react/set-state-in-effect -- one-shot hash banner after OAuth return
       setError(`AniList authorization failed: ${captured.error}`);
+
       return;
     }
+
     const hashToken = captured.accessToken;
+
     if (!hashToken) {
       return;
     }
+
     const hashExpiresIn = captured.expiresIn;
     void (async () => {
       setActing("login:anilist");
       setError(undefined);
       setNotice(undefined);
+
       try {
         if (hashExpiresIn !== undefined) {
           await importAniListToken({
@@ -164,6 +185,7 @@ function CredentialsPage() {
         } else {
           await importAniListToken({ data: { accessToken: hashToken } });
         }
+
         setNotice("AniList connected from browser token.");
         setAniListTokenDraft("");
         await refresh();
@@ -184,6 +206,7 @@ function CredentialsPage() {
       setActing(key);
       setError(undefined);
       setNotice(undefined);
+
       try {
         await action();
         await refresh();
@@ -232,6 +255,7 @@ function CredentialsPage() {
                 const connected = row?.connected === true;
                 const connecting = acting === `login:${provider}`;
                 const disconnecting = acting === `disconnect:${provider}`;
+
                 return (
                   <Table.Row key={provider}>
                     <Table.Cell>
@@ -344,6 +368,7 @@ function CredentialsPage() {
         open={pasteOpen}
         onOpenChange={(open) => {
           setPasteOpen(open);
+
           if (!open) {
             setAniListTokenDraft("");
           }
@@ -390,6 +415,7 @@ function CredentialsPage() {
                 if (event.key !== "Enter" || aniListTokenDraft.trim().length === 0) {
                   return;
                 }
+
                 event.preventDefault();
                 void act("login:anilist", async () => {
                   await importAniListToken({ data: { accessToken: aniListTokenDraft } });

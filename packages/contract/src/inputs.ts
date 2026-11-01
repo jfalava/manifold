@@ -14,6 +14,7 @@ export const MalBackupIdentity = Schema.Struct({
   malId: Schema.optional(Schema.NonEmptyString),
   titles: Schema.Array(Schema.NonEmptyString),
 });
+
 export type MalBackupIdentity = Schema.Schema.Type<typeof MalBackupIdentity>;
 
 export const SetListStateInput = Schema.Struct({
@@ -27,6 +28,7 @@ export const SetListStateInput = Schema.Struct({
   appliedRemotely: Schema.optional(Schema.Boolean),
   backupIdentity: Schema.optional(MalBackupIdentity),
 });
+
 export type SetListStateInput = Schema.Schema.Type<typeof SetListStateInput>;
 
 export const UpsertEntryInput = Schema.Struct({
@@ -35,6 +37,7 @@ export const UpsertEntryInput = Schema.Struct({
   providerId: Schema.NonEmptyString,
   title: Schema.NonEmptyString,
 });
+
 export type UpsertEntryInput = Schema.Schema.Type<typeof UpsertEntryInput>;
 
 export const LinkProviderInput = Schema.Struct({
@@ -43,6 +46,7 @@ export const LinkProviderInput = Schema.Struct({
   title: Schema.optional(Schema.String),
   sourceName: Schema.optional(Schema.NonEmptyString),
 });
+
 export type LinkProviderInput = Schema.Schema.Type<typeof LinkProviderInput>;
 
 /** Entry-targeted link write; reject never replaces an existing identity or owner. */
@@ -50,6 +54,7 @@ export const SetProviderLinkInput = Schema.Struct({
   ...LinkProviderInput.fields,
   onConflict: Schema.optional(Schema.Literals(["reject", "replace"])),
 });
+
 export type SetProviderLinkInput = Schema.Schema.Type<typeof SetProviderLinkInput>;
 
 export const ResolveEntryInput = Schema.Struct({
@@ -57,6 +62,7 @@ export const ResolveEntryInput = Schema.Struct({
   providerId: Schema.NonEmptyString,
   title: Schema.NonEmptyString,
 });
+
 export type ResolveEntryInput = Schema.Schema.Type<typeof ResolveEntryInput>;
 
 /**
@@ -69,6 +75,7 @@ export const IngestCandidateInput = Schema.Struct({
   title: Schema.NonEmptyString,
   links: Schema.optional(Schema.Array(LinkProviderInput)),
 });
+
 export type IngestCandidateInput = Schema.Schema.Type<typeof IngestCandidateInput>;
 
 export const RecordReadInput = Schema.Struct({
@@ -81,6 +88,7 @@ export const RecordReadInput = Schema.Struct({
   sourceChapterId: Schema.NonEmptyString,
   readAt: Schema.optional(Schema.Finite),
 });
+
 export type RecordReadInput = Schema.Schema.Type<typeof RecordReadInput>;
 
 export const CompleteOpsInput = Schema.Struct({
@@ -93,22 +101,26 @@ export const CompleteOpsInput = Schema.Struct({
     }),
   ),
 });
+
 export type CompleteOpsInput = Schema.Schema.Type<typeof CompleteOpsInput>;
 
 export const SetMangaDexStatusInput = Schema.Struct({
   status: Schema.NullOr(ListStatus),
 });
+
 export type SetMangaDexStatusInput = Schema.Schema.Type<typeof SetMangaDexStatusInput>;
 
 export const NukeEntryInput = Schema.Struct({
   origin: Schema.optional(OpOrigin),
 });
+
 export type NukeEntryInput = Schema.Schema.Type<typeof NukeEntryInput>;
 
 export const RestoreRegistryBackupInput = Schema.Struct({
   key: Schema.NonEmptyString,
   confirm: Schema.Literal(true),
 });
+
 export type RestoreRegistryBackupInput = Schema.Schema.Type<typeof RestoreRegistryBackupInput>;
 
 export const MangaDexMatchInput = Schema.Struct({
@@ -135,4 +147,5 @@ export const MangaDexMatchInput = Schema.Struct({
     }),
   ),
 });
+
 export type MangaDexMatchInput = Schema.Schema.Type<typeof MangaDexMatchInput>;

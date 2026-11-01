@@ -53,10 +53,12 @@ const installApplication = (
         const outcome = respond(request, index++);
         // SAFETY: TextEncoder always returns a Uint8Array backed by an ArrayBuffer here.
         const body = new TextEncoder().encode(JSON.stringify(outcome.body)).buffer as ArrayBuffer;
+
         return [{ status: outcome.status, headers: {} }, body];
       },
     },
   });
+
   return { requests, setState, setSecureState };
 };
 
@@ -79,11 +81,13 @@ describe("Manifold OAuth session runtime", () => {
       [API_REFRESH_TOKEN_KEY, "old-refresh"],
       [API_ACCESS_EXPIRES_AT_KEY, "1000001"],
     ]);
+
     const { requests } = installApplication(secureState, (request): ResponseBody => {
       if (request.url === OAUTH_TOKEN_URL) {
         const form = new URLSearchParams(request.body);
         expect(form.get("grant_type")).toBe("refresh_token");
         expect(form.get("refresh_token")).toBe("old-refresh");
+
         return {
           status: 200,
           body: {
@@ -93,6 +97,7 @@ describe("Manifold OAuth session runtime", () => {
           },
         };
       }
+
       return { status: 200, body: entry };
     });
 
@@ -114,6 +119,7 @@ describe("Manifold OAuth session runtime", () => {
       [API_REFRESH_TOKEN_KEY, "old-refresh"],
       [API_ACCESS_EXPIRES_AT_KEY, "2000000"],
     ]);
+
     const { requests } = installApplication(secureState, (request): ResponseBody => {
       if (request.url === OAUTH_TOKEN_URL) {
         return {
@@ -125,9 +131,11 @@ describe("Manifold OAuth session runtime", () => {
           },
         };
       }
+
       if (requests.length === 1) {
         return { status: 401, body: { error: "expired" } };
       }
+
       return { status: 200, body: entry };
     });
 
@@ -145,6 +153,7 @@ describe("Manifold OAuth session runtime", () => {
 
   it("marks a rejected manual token as unauthorized", async () => {
     const secureState = new Map([[API_TOKEN_KEY, "manual-token"]]);
+
     const { requests, setState } = installApplication(secureState, () => ({
       status: 401,
       body: { error: "Unauthorized" },
@@ -167,6 +176,7 @@ describe("Manifold OAuth session runtime", () => {
       [API_REFRESH_TOKEN_KEY, "old-refresh"],
       [API_ACCESS_EXPIRES_AT_KEY, "2000000"],
     ]);
+
     const { requests, setState, setSecureState } = installApplication(
       secureState,
       (request): ResponseBody =>

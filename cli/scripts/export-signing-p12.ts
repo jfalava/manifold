@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const CN = process.env.MANIFOLD_SIGN_CN ?? "Manifold Dev Signing";
+
 const LOGIN_KEYCHAIN = process.env.HOME
   ? join(process.env.HOME, "Library", "Keychains", "login.keychain-db")
   : "login.keychain-db";
@@ -28,6 +29,7 @@ const LOGIN_KEYCHAIN = process.env.HOME
 const outDir = process.argv[2]
   ? join(process.argv[2])
   : mkdtempSync(join(tmpdir(), "manifold-signing-"));
+
 const p12Path = join(outDir, "manifold-signing.p12");
 const p64Path = join(outDir, "manifold-signing.p12.b64");
 const pwPath = join(outDir, "manifold-signing.p12.pw");
@@ -35,6 +37,7 @@ const pwPath = join(outDir, "manifold-signing.p12.pw");
 const precheck = spawnSync("security", ["find-certificate", "-c", CN, LOGIN_KEYCHAIN], {
   encoding: "utf8",
 });
+
 if (!(precheck.status === 0)) {
   console.error(
     `[signing:export] "${CN}" not in login keychain. Provision first: bun run signing:provision`,
@@ -65,18 +68,26 @@ const proc = spawnSync(
   ],
   { stdio: "inherit" },
 );
+
 if (proc.status !== 0) {
   console.error("[signing:export] security export failed");
   process.exit(proc.status === null ? 1 : proc.status);
 }
 
 writeFileSync(p64Path, readFileSync(p12Path).toString("base64"));
+
 writeFileSync(pwPath, password);
 
 console.info(`[signing:export] wrote ${p12Path}`);
+
 console.info(`[signing:export] wrote ${p64Path} (base64, no line breaks)`);
+
 console.info(`[signing:export] wrote ${pwPath} (ephemeral password)`);
+
 console.info("[signing:export] next, upload as GitHub Actions secrets:");
+
 console.info(`  gh secret set MANIFOLD_SIGNING_P12 < ${p64Path}`);
+
 console.info(`  gh secret set MANIFOLD_SIGNING_P12_PASSWORD < ${pwPath}`);
+
 console.info(`[signing:export] then delete ${outDir}`);

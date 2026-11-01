@@ -25,19 +25,23 @@ const retryFailedSyncEffect = (host: SyncHost) =>
       `UPDATE md_status_queue SET attempts = 0, last_error = NULL
      WHERE attempts >= ${SYNC_MAX_ATTEMPTS}`,
     );
+
     const pending =
       host.ctx.storage.sql
         .exec<{ count: number }>(
           "SELECT COUNT(*) AS count FROM sync_ops WHERE state = 'pending' AND target = 'mangadex'",
         )
         .toArray()[0]?.count ?? 0;
+
     const shelfPending =
       host.ctx.storage.sql
         .exec<{ count: number }>(
           `SELECT COUNT(*) AS count FROM md_status_queue WHERE attempts < ${SYNC_MAX_ATTEMPTS}`,
         )
         .toArray()[0]?.count ?? 0;
+
     yield* fromPromise(() => scheduleSync(host));
+
     return { retried: pending + shelfPending };
   });
 
@@ -51,22 +55,28 @@ export function pendingAniListOps(host: SyncHost, limit = 25): readonly SyncOp[]
 export function completeOps(host: SyncHost, input: CompleteOpsInput) {
   let updated = 0;
   const timestamp = now();
+
   for (const result of input.results) {
     const row = host.ctx.storage.sql
       .exec<OpRow>("SELECT * FROM sync_ops WHERE op_id = ?", result.opId)
       .toArray()[0];
+
     if (!row || row.state !== "pending") {
       continue;
     }
+
     if (result.ok) {
       if (result.mediaListEntryId !== undefined && row.target === "anilist") {
         let parsed: unknown;
+
         try {
           parsed = JSON.parse(row.payload);
         } catch {
           parsed = undefined;
         }
+
         const entryId = isJsonObject(parsed) ? stringField(parsed, "entryId") : undefined;
+
         if (entryId) {
           host.ctx.storage.sql.exec(
             "UPDATE list_state SET media_list_entry_id = ? WHERE entry_id = ?",
@@ -75,6 +85,7 @@ export function completeOps(host: SyncHost, input: CompleteOpsInput) {
           );
         }
       }
+
       // Successes are not logged: the row is deleted so the outbox only
       // retains actionable (pending/failed/blocked) ops.
       host.ctx.storage.sql.exec("DELETE FROM sync_ops WHERE id = ?", row.id);
@@ -91,8 +102,10 @@ export function completeOps(host: SyncHost, input: CompleteOpsInput) {
         row.id,
       );
     }
+
     updated += 1;
   }
+
   return { updated };
 }
 
@@ -105,9 +118,11 @@ const retryOpEffect = (host: SyncHost, opId: string) =>
       timestamp,
       opId,
     );
+
     const row = host.ctx.storage.sql
       .exec<OpRow>("SELECT * FROM sync_ops WHERE op_id = ?", opId)
       .toArray()[0];
+
     // Both server-drained targets need an alarm: after retries exhaust, the
     // alarm loop stops scheduling itself, so a manual retry of a blocked
     // mangadex or mal op must re-arm it. Device anilist ops are drained by
@@ -115,6 +130,7 @@ const retryOpEffect = (host: SyncHost, opId: string) =>
     if (row?.target === "mal" || row?.target === "mangadex") {
       yield* fromPromise(() => scheduleSync(host));
     }
+
     return row ? toOp(row) : undefined;
   });
 
@@ -129,24 +145,30 @@ export function listOps(
 ): readonly SyncOp[] {
   const clauses: string[] = [];
   const params: (string | number)[] = [];
+
   if (state && ["pending", "completed", "failed", "blocked"].includes(state)) {
     clauses.push("state = ?");
     params.push(state);
   }
+
   if (target && ["mangadex", "anilist", "mal"].includes(target)) {
     clauses.push("target = ?");
     params.push(target);
   }
+
   const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
   params.push(Math.min(500, Math.max(1, limit)));
+
   const rows = host.ctx.storage.sql
     .exec<OpRow>(`SELECT * FROM sync_ops ${where} ORDER BY id DESC LIMIT ?`, ...params)
     .toArray();
+
   return rows.map((row) => toOp(row));
 }
 
 export function opsSummary(host: SyncHost, limit = 200): OpsSummary {
   const safeLimit = Math.min(500, Math.max(1, Math.trunc(limit)));
+
   const rows = host.ctx.storage.sql
     .exec<{
       state: string;
@@ -161,15 +183,19 @@ export function opsSummary(host: SyncHost, limit = 200): OpsSummary {
       safeLimit,
     )
     .toArray();
+
   const states = new Map<string, number>();
   let oldestPendingAt: number | null = null;
   let lastFailedError: string | null = null;
   let lastFailedAt = 0;
+
   for (const row of rows) {
     states.set(row.state, (states.get(row.state) ?? 0) + 1);
+
     if (row.state === "pending" && (oldestPendingAt === null || row.created_at < oldestPendingAt)) {
       oldestPendingAt = row.created_at;
     }
+
     if (
       (row.state === "failed" || row.state === "blocked") &&
       row.last_error !== null &&
@@ -179,18 +205,22 @@ export function opsSummary(host: SyncHost, limit = 200): OpsSummary {
       lastFailedError = row.last_error;
     }
   }
+
   const shelf = host.ctx.storage.sql
     .exec<{ attempts: number; created_at: number; last_error: string | null }>(
       "SELECT attempts, created_at, last_error FROM md_status_queue",
     )
     .toArray();
+
   let shelfPending = 0;
   let shelfBlocked = 0;
   let shelfLastBlockedError: string | null = null;
   let shelfLastBlockedAt = 0;
+
   for (const row of shelf) {
     if (row.attempts >= SYNC_MAX_ATTEMPTS) {
       shelfBlocked += 1;
+
       if (row.last_error !== null && row.created_at > shelfLastBlockedAt) {
         shelfLastBlockedAt = row.created_at;
         shelfLastBlockedError = row.last_error;
@@ -199,6 +229,7 @@ export function opsSummary(host: SyncHost, limit = 200): OpsSummary {
       shelfPending += 1;
     }
   }
+
   return {
     total: rows.length,
     states: Object.fromEntries(states),
@@ -224,7 +255,9 @@ const backfillMangaDexShelfEffect = (host: SyncHost) =>
        ON CONFLICT DO NOTHING`,
         now(),
       ).rowsWritten ?? 0;
+
     yield* fromPromise(() => scheduleSync(host));
+
     return { enqueued };
   });
 

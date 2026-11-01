@@ -26,13 +26,16 @@ const jsonResponse = (body: JsonValue, status = 200): Response =>
 describe("AniList canonical source", () => {
   it("searches manga and normalizes stable ids, aliases, metadata, and external links", async () => {
     let requestBody: JsonValue | undefined;
+
     const source = createAniListSource({
       fetcher: async (_input, init) => {
         const bodyText = requestInitText(init);
+
         if (bodyText !== undefined) {
           const parsed: unknown = JSON.parse(bodyText);
           requestBody = isJsonValue(parsed) ? parsed : undefined;
         }
+
         return jsonResponse({
           data: {
             Page: {
@@ -125,6 +128,7 @@ describe("AniList canonical source", () => {
       },
       (cause: unknown) => cause,
     );
+
     expect(error).toMatchObject({
       _tag: "CanonicalSourceError",
       provider: "anilist",
@@ -140,13 +144,16 @@ describe("MyAnimeList canonical source", () => {
     "rejects short Unicode search %s without a request",
     async (query) => {
       let calls = 0;
+
       const source = createMyAnimeListSource({
         clientId: "client",
         fetcher: async () => {
           calls += 1;
+
           return jsonResponse({ data: [] });
         },
       });
+
       await expect(Effect.runPromise(source.search(query))).rejects.toMatchObject({
         provider: "mal",
         status: 400,
@@ -158,13 +165,16 @@ describe("MyAnimeList canonical source", () => {
 
   it("accepts three Unicode characters", async () => {
     let href = "";
+
     const source = createMyAnimeListSource({
       clientId: "client",
       fetcher: async (input) => {
         href = requestHref(input);
+
         return jsonResponse({ data: [] });
       },
     });
+
     await expect(Effect.runPromise(source.search(" 漫画家 "))).resolves.toEqual([]);
     expect(new URL(href).searchParams.get("q")).toBe("漫画家");
   });
@@ -172,11 +182,13 @@ describe("MyAnimeList canonical source", () => {
   it("uses the client id header and normalizes REST search results", async () => {
     let requestUrl: URL | undefined;
     let requestHeaders: Headers | undefined;
+
     const source = createMyAnimeListSource({
       clientId: "mal-client",
       fetcher: async (input, init) => {
         requestUrl = new URL(requestHref(input));
         requestHeaders = new Headers(init?.headers);
+
         return jsonResponse({
           data: [
             {

@@ -11,14 +11,18 @@ export const resolveValue = (
   ...names: readonly string[]
 ): string | undefined => {
   const direct = Option.getOrUndefined(flagValue);
+
   if (direct !== undefined) {
     return direct;
   }
+
   for (const name of names) {
     const value = envString(name);
+
     if (value !== undefined) {
       return value;
     }
   }
+
   return undefined;
 };

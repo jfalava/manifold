@@ -77,7 +77,9 @@ describe("decodeResponse", () => {
     const result = Effect.runSync(
       Effect.result(decodeResponseEffect(RegistryEntry, { nope: true }, "entry")),
     );
+
     expect(Result.isFailure(result)).toBe(true);
+
     if (Result.isFailure(result)) {
       expect(result.failure).toBeInstanceOf(ResponseDecodeError);
       expect(result.failure.label).toBe("entry");

@@ -91,12 +91,14 @@ export const handleHealth = (ctx: RouteContext): RouteEffect =>
         build: "p1-oauth-fix-2",
       });
     }
+
     return null;
   });
 
 export const handleAuth = (ctx: RouteContext): RouteEffect =>
   Effect.gen(function* () {
     const { path, request, env, url } = ctx;
+
     if (path[0] === "v1" && path[1] === "auth" && path[2] === "anilist" && path[3] === "device") {
       // Single-sourced with the tracker (memory 1067): the Worker app (49060,
       // registered callback https://anilist.co/api/v2/oauth/pin) uses
@@ -105,6 +107,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
       const authorizeUrl =
         `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(ANILIST_OAUTH_CLIENT_ID)}` +
         `&response_type=token`;
+
       return new Response(anilistDevicePage(authorizeUrl), {
         headers: { "content-type": "text/html" },
       });
@@ -118,6 +121,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
 
     if (path.length === 2 && request.method === "GET") {
       const sync = env.MANIFOLD_SYNC.getByName("default");
+
       return jsonEncoded(
         AuthConnectionsResponse,
         yield* tryPromise(() => sync.listAuthConnections()),
@@ -125,11 +129,13 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
     }
 
     const provider = authProvider(path[2]);
+
     if (!provider) {
       return jsonEncoded(ErrorBody, { error: "Unknown auth provider" }, 404);
     }
 
     const sync = env.MANIFOLD_SYNC.getByName("default");
+
     if (
       provider === "mangadex" &&
       path.length === 4 &&
@@ -148,14 +154,19 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
       request.method === "POST"
     ) {
       const body = yield* parseJson(request);
+
       if (!isJsonObject(body) || !isString(body.accessToken)) {
         return jsonEncoded(ErrorBody, { error: "Body must include accessToken string" }, 400);
       }
+
       const accessToken = body.accessToken.trim();
+
       if (!accessToken) {
         return jsonEncoded(ErrorBody, { error: "accessToken is empty" }, 400);
       }
+
       const expiresIn = numberField(body, "expiresIn");
+
       return jsonEncoded(
         AuthConnection,
         yield* tryPromise(() =>
@@ -169,17 +180,22 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
     }
 
     const oauth = oauthProvider(provider);
+
     if (oauth && path.length === 4 && path[3] === "start" && request.method === "GET") {
       const returnPath = adminOAuthReturnPath(url.searchParams.get("return"));
+
       const start = yield* tryPromise(() =>
         sync.createOAuthSession(oauth, oauthRedirectUri(oauth, redirectBase), returnPath),
       );
+
       // Browser navigation (curl -I / Paperback) keeps the 302. Admin's
       // server fn asks for JSON so it can hand the URL to window.location.
       const accept = request.headers.get("accept") ?? "";
+
       if (accept.includes("application/json")) {
         return jsonEncoded(OAuthStart, start);
       }
+
       return new Response(null, {
         status: 302,
         headers: {
@@ -192,6 +208,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
     if (oauth && path.length === 4 && path[3] === "callback" && request.method === "GET") {
       const state = url.searchParams.get("state");
       const error = url.searchParams.get("error");
+
       if (!state) {
         // No state + no code means an OAuth *implicit* return (the admin
         // app's migration flow): the access_token lives in the URL
@@ -202,10 +219,13 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
             headers: { "content-type": "text/html", "cache-control": "no-store" },
           });
         }
+
         return jsonEncoded(ErrorBody, { error: "OAuth callback is missing state" }, 400);
       }
+
       if (error) {
         const cancelled = yield* tryPromise(() => sync.cancelOAuthSession(oauth, state));
+
         if (cancelled.returnPath) {
           return new Response(null, {
             status: 302,
@@ -215,6 +235,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
             },
           });
         }
+
         return jsonEncoded(
           ErrorBody,
           { error: "OAuth authorization was denied", provider: oauth },
@@ -223,10 +244,13 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
       }
 
       const code = url.searchParams.get("code");
+
       if (!code) {
         return jsonEncoded(ErrorBody, { error: "OAuth callback is missing code" }, 400);
       }
+
       const connection = yield* tryPromise(() => sync.completeOAuthSession(oauth, state, code));
+
       if (connection.returnPath) {
         return new Response(null, {
           status: 302,
@@ -236,6 +260,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
           },
         });
       }
+
       return jsonEncoded(AuthConnection, connection);
     }
 
@@ -245,6 +270,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
 
     if (path.length === 3 && request.method === "DELETE") {
       yield* tryPromise(() => sync.disconnectAuth(provider));
+
       return jsonEncoded(AuthDisconnectedResponse, { provider, connected: false as const });
     }
 

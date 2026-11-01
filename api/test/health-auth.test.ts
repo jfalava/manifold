@@ -14,11 +14,15 @@ const devicePage = async (): Promise<string> => {
     url: new URL("https://api.manifold.test/v1/auth/anilist/device"),
     path: ["v1", "auth", "anilist", "device"],
   });
+
   const response = await Effect.runPromise(effect);
+
   if (!response) {
     throw new Error("device route returned no response");
   }
+
   expect(response.headers.get("content-type")).toContain("text/html");
+
   return response.text();
 };
 

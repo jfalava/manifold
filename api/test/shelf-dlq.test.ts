@@ -56,6 +56,7 @@ const ShelfRow = Schema.Struct({
   attempts: Schema.Finite,
   last_error: Schema.NullOr(Schema.String),
 });
+
 const ReadResponse = Schema.Struct({ rows: Schema.Array(ShelfRow) });
 const RetryResponse = Schema.Struct({ retried: Schema.Finite });
 const ScheduleResponse = Schema.Struct({ alarm: Schema.NullOr(Schema.Finite) });
@@ -83,6 +84,7 @@ describe("MangaDex shelf DLQ", () => {
       platform: "browser",
       external: ["cloudflare:workers"],
     });
+
     worker = new Miniflare(
       convertV4MiniflareOptions({
         name: "shelf-dlq-test",
@@ -132,18 +134,21 @@ describe("MangaDex shelf DLQ", () => {
   const readRows = async (nonce: string): Promise<readonly ShelfRowValue[]> => {
     const response = await dispatch({ op: "read", nonce });
     expect(response.status).toBe(200);
+
     return Schema.decodeUnknownSync(ReadResponse)(await response.json()).rows;
   };
 
   const retryAll = async (nonce: string): Promise<number> => {
     const response = await dispatch({ op: "retry", nonce });
     expect(response.status).toBe(200);
+
     return Schema.decodeUnknownSync(RetryResponse)(await response.json()).retried;
   };
 
   const scheduledAlarm = async (nonce: string): Promise<number | null> => {
     const response = await dispatch({ op: "schedule", nonce });
     expect(response.status).toBe(200);
+
     return Schema.decodeUnknownSync(ScheduleResponse)(await response.json()).alarm;
   };
 

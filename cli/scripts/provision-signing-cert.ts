@@ -26,6 +26,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const CN = process.env.MANIFOLD_SIGN_CN ?? "Manifold Dev Signing";
+
 const LOGIN_KEYCHAIN = process.env.HOME
   ? join(process.env.HOME, "Library", "Keychains", "login.keychain-db")
   : "login.keychain-db";
@@ -35,6 +36,7 @@ const LOGIN_KEYCHAIN = process.env.HOME
 const probe = spawnSync("security", ["find-certificate", "-c", CN, LOGIN_KEYCHAIN], {
   encoding: "utf8",
 });
+
 if (probe.status === 0 && !probe.stderr?.includes("could not be found")) {
   console.error(
     `[signing:provision] keychain already contains "${CN}". Remove it in Keychain Access (login keychain > My Certificates) or set MANIFOLD_SIGN_CN to a different name.`,
@@ -53,6 +55,7 @@ const password = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
 ).join("");
 
 const opensslConfig = join(dir, "openssl.cnf");
+
 writeFileSync(
   opensslConfig,
   [
@@ -74,6 +77,7 @@ writeFileSync(
 
 function run(name: string, args: string[], label: string) {
   const proc = spawnSync(name, args, { stdio: "inherit" });
+
   if (proc.status !== 0) {
     rmSync(dir, { recursive: true, force: true });
     console.error(`[signing:provision] ${label} failed`);
@@ -146,7 +150,9 @@ try {
 }
 
 console.info("[signing:provision] keychain identities available:");
+
 run("security", ["find-identity", "-v", "-p", "codesigning"], "security find-identity");
+
 console.info(
   "[signing:provision] done. Run `bun run --cwd cli build:darwin-arm64` to build and sign.",
 );

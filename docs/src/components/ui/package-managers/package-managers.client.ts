@@ -24,6 +24,7 @@ function initPackageManager(container: HTMLElement): () => void {
   const copyTpl = container.querySelector<HTMLTemplateElement>(
     "[data-nb-pm-icon-copy]",
   );
+
   const checkTpl = container.querySelector<HTMLTemplateElement>(
     "[data-nb-pm-icon-check]",
   );
@@ -49,15 +50,19 @@ function initPackageManager(container: HTMLElement): () => void {
           } catch {
             return;
           }
+
           btn.replaceChildren(cloneIcon(checkTpl));
+
           if (handlerInfo.timer) {
             window.clearTimeout(handlerInfo.timer);
           }
+
           handlerInfo.timer = window.setTimeout(() => {
             btn.replaceChildren(cloneIcon(copyTpl));
           }, 1500);
         },
       };
+
       btn.addEventListener("click", handlerInfo.handler);
       copyHandlers.push(handlerInfo);
     });
@@ -66,6 +71,7 @@ function initPackageManager(container: HTMLElement): () => void {
     tabs.destroy();
     copyHandlers.forEach(({ btn, handler, timer }) => {
       btn.removeEventListener("click", handler);
+
       if (timer) {
         window.clearTimeout(timer);
       }

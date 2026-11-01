@@ -4,6 +4,7 @@
 /** @effect-diagnostics globalConsole:off */
 /** @effect-diagnostics globalTimers:off */
 export { default as Button } from "./Button.astro";
+
 export {
   buttonVariants,
   buttonBase,

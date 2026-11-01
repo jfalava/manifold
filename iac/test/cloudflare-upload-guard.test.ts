@@ -13,9 +13,11 @@ import {
 
 const uploadRequest = (scriptName: string, metadata?: string) => {
   const formData = new FormData();
+
   if (metadata !== undefined) {
     formData.append("metadata", metadata);
   }
+
   return HttpClientRequest.put(
     `https://api.cloudflare.com/client/v4/accounts/account/workers/scripts/${scriptName}`,
   ).pipe(HttpClientRequest.setBody(HttpBody.formData(formData)));
@@ -28,13 +30,17 @@ test("blocks ManifoldSync deletion before the request is sent", () =>
   Effect.runPromise(
     Effect.gen(function* () {
       const seen: string[] = [];
+
       const base = HttpClient.make((request) => {
         seen.push(request.url);
+
         return Effect.succeed(
           HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })),
         );
       });
+
       const guarded = HttpClient.tapRequest(base, validateManifoldWorkerUpload);
+
       const result = yield* Effect.exit(
         guarded.execute(
           uploadRequest("manifold-api", '{"migrations":{"deleted_classes":["ManifoldSync"]}}'),
@@ -50,12 +56,15 @@ test("allows ordinary Worker uploads through unchanged", () =>
   Effect.runPromise(
     Effect.gen(function* () {
       const seen: string[] = [];
+
       const base = HttpClient.make((request) => {
         seen.push(request.url);
+
         return Effect.succeed(
           HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })),
         );
       });
+
       const guarded = HttpClient.tapRequest(base, validateManifoldWorkerUpload);
 
       yield* guarded.execute(
@@ -72,6 +81,7 @@ test("fails closed for malformed protected uploads", () =>
   Effect.runPromise(
     Effect.gen(function* () {
       const missingMetadata = yield* Effect.exit(runValidation(uploadRequest("manifold-api")));
+
       const invalidMetadata = yield* Effect.exit(
         runValidation(uploadRequest("manifold-api", "not-json")),
       );
@@ -110,6 +120,7 @@ test("blocks secret record deletion, cascade store deletion, and value writes", 
       for (const [label, request] of blocked) {
         const result = yield* Effect.exit(runSecretsStoreValidation(request));
         expect(Exit.isFailure(result)).toBe(true);
+
         if (Exit.isFailure(result)) {
           expect(result.cause.toString()).toContain("binding-only deployment");
         } else {

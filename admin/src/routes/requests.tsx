@@ -102,6 +102,7 @@ function RequestsPage() {
                 </Table.Cell>
                 {workerOrder.map((worker, index) => {
                   const total = totals[index] ?? { requests: 0, errors: 0 };
+
                   return (
                     <Table.Cell key={worker}>
                       <span className="font-medium tabular-nums">
@@ -117,6 +118,7 @@ function RequestsPage() {
                   <Table.Cell>{hour.slice(11, 16)}:00</Table.Cell>
                   {workerOrder.map((worker) => {
                     const point = snapshot.hourly[worker].find((p) => p.hour === hour);
+
                     return (
                       <Table.Cell key={worker}>
                         <span className="tabular-nums">
@@ -145,6 +147,7 @@ function ErrorCount({ errors }: { errors: number }) {
   if (errors <= 0) {
     return null;
   }
+
   return (
     <span className="ml-1.5 text-xs text-kumo-danger tabular-nums">
       {errors.toLocaleString("en")} err

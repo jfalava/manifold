@@ -18,6 +18,7 @@ export function getRouter() {
     // Show route pendingComponent immediately; default pendingMs is 1000.
     defaultPendingMs: 0,
   });
+
   return router;
 }
 

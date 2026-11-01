@@ -39,9 +39,11 @@ export function HoverCoverRow({
     if (cursor === null || !src) {
       return undefined;
     }
+
     const dismiss = () => setCursor(null);
     window.addEventListener("resize", dismiss);
     window.addEventListener("scroll", dismiss, true);
+
     return () => {
       window.removeEventListener("resize", dismiss);
       window.removeEventListener("scroll", dismiss, true);
@@ -55,8 +57,10 @@ export function HoverCoverRow({
   const ratio = COVER_RATIOS.get(src) ?? 0.7;
   const zoomWidth = ZOOM_HEIGHT * ratio;
   const flipLeft = cursor !== null && cursor.x + 16 + zoomWidth > window.innerWidth - 8;
+
   const left =
     cursor === null ? 0 : Math.max(8, flipLeft ? cursor.x - 16 - zoomWidth : cursor.x + 16);
+
   const top =
     cursor === null
       ? 0

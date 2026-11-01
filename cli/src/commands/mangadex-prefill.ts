@@ -48,16 +48,21 @@ const providerIdFor = (
   row: FullRegistryRow,
 ): { provider: "anilist" | "mal"; providerId: string } | undefined => {
   const anilist = row.providers.find((p) => p.provider === "anilist")?.externalId;
+
   if (anilist) {
     return { provider: "anilist", providerId: anilist };
   }
+
   const mal = row.providers.find((p) => p.provider === "mal")?.externalId;
+
   if (mal) {
     return { provider: "mal", providerId: mal };
   }
+
   if (row.provider === "anilist" || row.provider === "mal") {
     return { provider: row.provider, providerId: row.providerId };
   }
+
   return undefined;
 };
 
@@ -108,14 +113,18 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
           report: reportFlag,
           resume,
         } = options;
+
         const limitValue = Option.getOrUndefined(limit);
         validateNonNegativeLimit(limitValue);
+
         if (!Number.isSafeInteger(delay) || delay < 0) {
           throw cliError("--delay must be a non-negative integer (milliseconds).");
         }
+
         const config: ApiConfig = await apiConfig(apiOrigin, apiToken);
         const statusFilter = parseStatusFilter(status);
         const anilist = await resolveAniListToken(Option.getOrUndefined(anilistToken));
+
         const report = openRegistryReport(
           "mangadex",
           apply,
@@ -123,11 +132,14 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
           Option.getOrUndefined(reportFlag),
           Option.getOrUndefined(resume),
         );
+
         openFrame(`MangaDex registry prefill → ${apply ? "apply" : "dry run"}`);
         frameDetail(`report: ${report.path}`);
+
         if (statusFilter) {
           frameDetail(`status filter: ${[...statusFilter].join(", ")}`);
         }
+
         if (anilist) {
           frameDetail("resolving with AniList english/romaji/native/synonyms");
         } else {
@@ -145,6 +157,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
             let offset = 0;
             let page: readonly FullRegistryRow[];
             const allRows: FullRegistryRow[] = [];
+
             do {
               const body = await apiCall(
                 config,
@@ -153,27 +166,35 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                 undefined,
                 RegistryListResponse,
               );
+
               page = body.entries;
               allRows.push(...page);
               offset += page.length;
             } while (page.length === PAGE_SIZE);
+
             const all = allRows.filter((row) => !row.tombstoned);
+
             const withoutMangadex = all.filter(
               (row) => !row.providers.some((p) => p.provider === "mangadex"),
             );
+
             const statusMatched = withoutMangadex.filter((row) =>
               matchesStatusFilter(row.state?.status, statusFilter),
             );
+
             ctx.unmatched = statusMatched.filter(
               (row) => !report.skip(row, MANGADEX_RESUME_POLICY),
             );
+
             if (limitValue !== undefined && limitValue >= 0) {
               ctx.unmatched = ctx.unmatched.slice(0, limitValue);
             }
+
             const statusNote =
               statusFilter === undefined
                 ? ""
                 : ` · ${statusMatched.length}/${withoutMangadex.length} match --status`;
+
             makePhaseReporter(task).note(
               `${all.length} active rows (paged, limit=${PAGE_SIZE}) · ${withoutMangadex.length} without a mangadex link${statusNote} → ${ctx.unmatched.length} to resolve` +
                 (limitValue !== undefined ? ` (showing first ${ctx.unmatched.length})` : ""),
@@ -188,6 +209,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
             const baseTitle = task.title;
             const reporter = makePhaseReporter(task);
             const total = ctx.unmatched.length;
+
             const counts = (): readonly [string, number][] => [
               ["linked", ctx.linked],
               ["ambiguous", ctx.ambiguous],
@@ -195,18 +217,24 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
               ["skipped", ctx.skipped],
               ["error", ctx.errors],
             ];
+
             const done = (): number =>
               ctx.linked + ctx.ambiguous + ctx.notFound + ctx.skipped + ctx.errors;
+
             const formatTitle = (rowTitle: string, suffix = ""): string => {
               const cols = process.stdout.columns ?? 80;
+
               const budget = Math.max(
                 24,
                 Math.min(48, cols - baseTitle.length - 16 - suffix.length),
               );
+
               const clean = rowTitle.replace(/\s+/g, " ").trim();
               const short = clean.length > budget ? `${clean.slice(0, budget - 1)}…` : clean;
+
               return suffix ? `${short}${suffix}` : short;
             };
+
             if (total > 0) {
               reporter.progress(0, total, counts());
             }
@@ -214,6 +242,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
             for (const row of ctx.unmatched) {
               reporter.item(formatTitle(row.title));
               const resolved = providerIdFor(row);
+
               if (!resolved) {
                 ctx.skipped += 1;
                 reporter.item(formatTitle(row.title, " — skipped"));
@@ -224,6 +253,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
 
               let result: MangaDexMatchResultBody;
               let incompleteAliases = false;
+
               try {
                 const titles = await loadRegistrySearchTitles(row, {
                   anilistToken: anilist,
@@ -231,6 +261,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                     incompleteAliases = true;
                   },
                 });
+
                 const [primary, ...aliases] = titles;
                 result = await apiCall(
                   config,
@@ -286,6 +317,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                     throw error;
                   }
                 }
+
                 ctx.linked += 1;
                 const method = result.method ? ` ${result.method}` : "";
                 const score = result.score !== undefined ? ` ${result.score.toFixed(3)}` : "";
@@ -317,9 +349,11 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
                   retryable: incompleteAliases,
                 });
               }
+
               reporter.progress(done(), total, counts());
               await sleep(delayMs);
             }
+
             reporter.item("");
             reporter.note(
               `${apply ? "Applied" : "Dry run"}: ${ctx.linked} linked · ${ctx.ambiguous} ambiguous · ${ctx.notFound} not_found · ${ctx.skipped} skipped · ${ctx.errors} errors. ${apply ? "" : "Re-run with --apply to write."}`,
@@ -329,6 +363,7 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
         };
 
         const run = createRun<MangadexCtx>([loadTask, sweepTask]);
+
         const ctx: MangadexCtx = {
           unmatched: [],
           linked: 0,
@@ -337,17 +372,22 @@ export const mangadexPrefillCommand = Command.make("mangadex", {
           skipped: 0,
           errors: 0,
         };
+
         let completed = false;
+
         try {
           await run.run(ctx);
           completed = true;
+
           const summary =
             `${ctx.linked} linked · ${ctx.ambiguous} ambiguous · ${ctx.notFound} not_found` +
             (ctx.skipped ? ` · ${ctx.skipped} skipped` : "") +
             (ctx.errors ? ` · ${ctx.errors} errors` : "");
+
           if (ctx.errors > 0) {
             frameDetail(`errors: ${ctx.errors} — re-run with --limit to retry`);
           }
+
           closeFrame(
             apply
               ? `MangaDex prefill applied — ${summary}`

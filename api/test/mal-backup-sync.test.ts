@@ -48,15 +48,20 @@ describe("Worker-side MAL backup outbox", () => {
       method: "POST",
       body: JSON.stringify(input),
     });
+
     expect(response.status).toBe(200);
     const body = await response.json();
+
     if (!isJsonValue(body)) {
       throw new Error("Invalid fixture response");
     }
+
     return body;
   };
+
   const createEntry = async (id: string): Promise<RegistryEntry> =>
     Schema.decodeUnknownSync(RegistryEntry)(await request({ action: "entry", id }));
+
   const readOps = async () =>
     Schema.decodeUnknownSync(Schema.Array(SyncOp))(await request({ action: "ops" }));
 
@@ -69,6 +74,7 @@ describe("Worker-side MAL backup outbox", () => {
       platform: "browser",
       external: ["cloudflare:workers"],
     });
+
     worker = new Miniflare(
       convertV4MiniflareOptions({
         name: "mal-test",
@@ -82,13 +88,17 @@ describe("Worker-side MAL backup outbox", () => {
         },
         outboundService: async (outbound) => {
           const url = new URL(outbound.url);
+
           if (url.hostname !== "api.myanimelist.net") {
             throw new Error(`Unexpected upstream: ${url.hostname}`);
           }
+
           if (outbound.method === "PATCH") {
             writes.push({ path: url.pathname, body: await outbound.text() });
+
             return new WorkerResponse("{}", { status: upstreamStatus });
           }
+
           return WorkerResponse.json({
             data: [
               { node: { id: 900, title: "Title", alternative_titles: { synonyms: ["Alias"] } } },
@@ -129,9 +139,11 @@ describe("Worker-side MAL backup outbox", () => {
     ]);
     // Retention: successful drains delete op rows instead of logging them.
     expect(await readOps()).toHaveLength(0);
+
     const stored = Schema.decodeUnknownSync(RegistryEntry)(
       await request({ action: "get", id: entry.id }),
     );
+
     expect(stored).toMatchObject({
       id: entry.id,
       provider: "anilist",
@@ -183,6 +195,7 @@ describe("Worker-side MAL backup outbox", () => {
     const entry = await createEntry("45");
     await request({ action: "link", id: entry.id, malId: "8" });
     upstreamStatus = 503;
+
     const state = Schema.decodeUnknownSync(ListState)(
       await request({
         action: "set",
@@ -194,6 +207,7 @@ describe("Worker-side MAL backup outbox", () => {
         },
       }),
     );
+
     expect(state.status).toBe("reading");
     await request({ action: "drain" });
     const failed = (await readOps()).find((op) => op.payload.entryId === entry.id);
@@ -214,6 +228,7 @@ describe("Worker-side MAL backup outbox", () => {
     const deleted = await createEntry("46");
     const cleared = await createEntry("47");
     const admin = await createEntry("48");
+
     for (const entry of [deleted, cleared]) {
       await request({
         action: "set",
@@ -221,6 +236,7 @@ describe("Worker-side MAL backup outbox", () => {
         change: { origin: "device", status: "reading", appliedRemotely: true },
       });
     }
+
     await request({ action: "nuke", id: deleted.id });
     await request({
       action: "set",
@@ -243,14 +259,18 @@ describe("Worker-side MAL backup outbox", () => {
       change: { origin: "device", status: "reading", appliedRemotely: true },
     });
     upstreamStatus = 401;
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await request({ action: "drain" });
     }
+
     const blocked = (await readOps()).find((op) => op.payload.entryId === entry.id);
     expect(blocked).toMatchObject({ state: "blocked", attempts: 5 });
+
     if (!blocked) {
       throw new Error("Missing backup op");
     }
+
     // Admin does not originate another backup, but a retry must still read
     // the latest canonical state rather than replaying the original status.
     await request({

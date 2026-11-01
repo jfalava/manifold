@@ -38,20 +38,24 @@ const ProgramStatus = Schema.Struct({
     if (report.kind !== undefined && report.state !== "blocked") {
       return "--kind requires --state blocked.";
     }
+
     if (report.progress !== undefined && report.state !== "working" && report.state !== "blocked") {
       return "--progress requires --state working or blocked.";
     }
+
     if (
       report.state === "clear" &&
       (report.app !== undefined || report.title !== undefined || report.message !== undefined)
     ) {
       return "--state clear accepts only --id, not metadata.";
     }
+
     return true;
   }),
 );
 
 export type ProgramStatus = typeof ProgramStatus.Type;
+
 export type StatusTerminator = "st" | "bel";
 
 /** OSC 7501 revision 0.4. Each report is complete, with no retained sender state. */
@@ -62,17 +66,22 @@ export const encodeProgramStatus = Effect.fnUntraced(function* (
   const valid = yield* Schema.decodeEffect(ProgramStatus)(report).pipe(
     Effect.mapError((cause) => cliError(errorMessage(cause))),
   );
+
   const pairs = [`state=${valid.state}`];
+
   for (const key of ["id", "kind", "progress", "app", "title", "message"] as const) {
     const value = valid[key];
+
     if (value !== undefined) {
       const encoded =
         key === "title" || key === "message"
           ? Buffer.from(String(value), "utf8").toString("base64")
           : String(value);
+
       pairs.push(`${key === "message" ? "msg" : key}=${encoded}`);
     }
   }
+
   return `\u001b]7501;${pairs.join(":")}${terminator === "bel" ? "\u0007" : "\u001b\\"}`;
 });
 
@@ -86,6 +95,7 @@ export const emitProgramStatus = Effect.fnUntraced(function* (
     try: () => {
       const bytes = Buffer.from(sequence);
       let offset = 0;
+
       while (offset < bytes.length) {
         offset += writeSync(1, bytes, offset, bytes.length - offset);
       }
@@ -107,44 +117,57 @@ export const withProgramStatus = Effect.fnUntraced(function* <A, E, R>(
 ) {
   // The executable owns one session for every command; embedders retain the legacy boundary.
   const session = terminalSession();
+
   if (session !== undefined) {
     return yield* run(session);
   }
+
   const services = yield* Effect.context<R>();
+
   let enabled =
     Boolean(process.stdout.isTTY) &&
     envString("TERM") !== "dumb" &&
     envString("MANIFOLD_PROGRAM_STATUS") !== "0";
+
   let closed = false;
   let phase = "Preparing registry";
   let summary: string | undefined;
   let hasErrors = false;
   let previous: string | undefined;
+
   const publish = (state: ProgramStatus["state"], label: string, progress?: number) => {
     if (!enabled) {
       return;
     }
+
     const title = `manifold: ${label}${progress === undefined ? "" : ` ${progress}%`}`;
+
     // Validate before writing either sequence, including the unencoded OSC 2 title.
     const encoded = Effect.runSyncExitWith(services)(
       encodeProgramStatus({ state, app: "manifold", title, message: summary, progress }),
     );
+
     if (Exit.isFailure(encoded) || encoded.value === previous) {
       return;
     }
+
     const sequence = encoded.value;
+
     try {
       const bytes = Buffer.from(`\u001b]2;${title}\u001b\\${sequence}`);
       let offset = 0;
+
       while (offset < bytes.length) {
         offset += writeSync(1, bytes, offset, bytes.length - offset);
       }
+
       previous = sequence;
     } catch {
       // A closed terminal must not interrupt registry writes or cleanup.
       enabled = false;
     }
   };
+
   const status: ProgramStatusReporter = {
     phase(label) {
       if (!closed) {
@@ -164,12 +187,14 @@ export const withProgramStatus = Effect.fnUntraced(function* <A, E, R>(
       }
     },
   };
+
   // BunRuntime installs signal handlers after starting the fiber.
   return yield* Effect.yieldNow.pipe(
     Effect.andThen(Effect.suspend(() => run(status))),
     Effect.onExit((exit) =>
       Effect.sync(() => {
         closed = true;
+
         if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) {
           summary = undefined;
           publish("idle", "Cancelled");

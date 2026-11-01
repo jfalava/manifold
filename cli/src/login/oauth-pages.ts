@@ -18,6 +18,7 @@ const escapeHtml = (value: string): string =>
 /** Standalone callback document with an embedded font; no scripts or credentials. */
 export const renderCallbackPage = (state: CallbackPageState, providerLabel: string): string => {
   const provider = escapeHtml(providerLabel);
+
   const pages = {
     received: {
       title: "Authorization received",
@@ -48,7 +49,9 @@ export const renderCallbackPage = (state: CallbackPageState, providerLabel: stri
       terminal: true,
     },
   };
+
   const page = pages[state];
+
   const symbol =
     state === "received"
       ? '<path d="m7 12 3 3 7-7"/>'

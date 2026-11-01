@@ -60,11 +60,13 @@ export const wipeAlMangaCommand = Command.make("manga", {
         (yield* Effect.tryPromise(() =>
           resolveAniListToken(Option.getOrUndefined(anilistToken)),
         )) ?? "";
+
       if (!token) {
         return yield* cliError(
           "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
         );
       }
+
       // Scan phase runs to completion before the interactive confirm so the
       // readline prompt never fights the listr2 renderer for the screen.
       const scan: WipeCtx = yield* Effect.tryPromise({
@@ -72,6 +74,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
           openFrame("anilist wipe manga");
 
           let viewerId: number | undefined;
+
           const run = createRun<WipeCtx>([
             {
               title: "AniList profile",
@@ -88,6 +91,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
                 if (viewerId === undefined) {
                   throw cliError("Viewer lookup failed after AniList login.");
                 }
+
                 ctx.entries = await fetchMangaEntries(token, viewerId);
               },
             },
@@ -97,6 +101,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
                 if (viewerId === undefined) {
                   throw cliError("Viewer lookup failed after AniList login.");
                 }
+
                 ctx.activities = await fetchMangaActivities(
                   token,
                   viewerId,
@@ -119,6 +124,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
 
       if (scan.entries.length === 0 && scan.activities.length === 0) {
         closeFrame("Nothing to delete.");
+
         return;
       }
 
@@ -132,6 +138,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
             textActivityCount > 0 ? ` (including ${textActivityCount} text posts)` : ""
           }. Re-run with --apply.`,
         );
+
         return;
       }
 
@@ -146,9 +153,11 @@ export const wipeAlMangaCommand = Command.make("manga", {
               }. Continue?`,
             ),
           );
+
       if (!confirmed) {
         terminalSession()?.cancel();
         closeFrame("Cancelled.");
+
         return;
       }
 
@@ -157,6 +166,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
           interface DeleteCtx extends RunContext {}
 
           const deleteTasks: Parameters<typeof createRun<DeleteCtx>>[0] = [];
+
           if (scan.entries.length > 0) {
             deleteTasks.push({
               title: `Delete ${scan.entries.length} list entries`,
@@ -166,12 +176,14 @@ export const wipeAlMangaCommand = Command.make("manga", {
                   scan.entries,
                   makePhaseReporter(task),
                 );
+
                 makePhaseReporter(task).note(
                   `Entries deleted=${result.ok} failed=${result.failed}`,
                 );
               },
             });
           }
+
           if (scan.activities.length > 0) {
             deleteTasks.push({
               title: `Delete ${scan.activities.length} activities${
@@ -183,6 +195,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
                   scan.activities,
                   makePhaseReporter(task),
                 );
+
                 makePhaseReporter(task).note(
                   `Activities deleted=${result.ok} failed=${result.failed} skipped=${result.skipped}`,
                 );
@@ -191,6 +204,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
           }
 
           const run = createRun<DeleteCtx>(deleteTasks);
+
           try {
             await run.run();
             closeFrame("Wipe complete.");

@@ -38,12 +38,14 @@ export type OAuthCallbackInput = {
  */
 export const parseOAuthCallbackInput = (raw: string): OAuthCallbackInput => {
   const value = raw.trim();
+
   if (!value) {
     throw cliError("Paste an authorization code or the full callback URL.");
   }
 
   try {
     const url = new URL(value);
+
     if (url.searchParams.has("error")) {
       return {
         code: "",
@@ -51,6 +53,7 @@ export const parseOAuthCallbackInput = (raw: string): OAuthCallbackInput => {
         denied: true,
       };
     }
+
     return {
       code: url.searchParams.get("code") ?? "",
       state: url.searchParams.get("state"),
@@ -61,6 +64,7 @@ export const parseOAuthCallbackInput = (raw: string): OAuthCallbackInput => {
   }
 
   const separator = value.lastIndexOf("#");
+
   if (separator >= 0) {
     return {
       code: value.slice(0, separator).trim(),
@@ -79,15 +83,19 @@ export const resolveOAuthAuthorizationCode = (
   providerLabel: string,
 ): string => {
   const parsed = parseOAuthCallbackInput(raw);
+
   if (parsed.denied) {
     throw cliError(`${providerLabel} authorization denied.`);
   }
+
   if (!parsed.code) {
     throw cliError("Paste an authorization code or the full callback URL.");
   }
+
   if (parsed.state !== null && parsed.state !== expectedState) {
     throw cliError("OAuth state does not match this login attempt. Start login again.");
   }
+
   return parsed.code;
 };
 
@@ -96,14 +104,18 @@ const writeOsc52Clipboard = (text: string): boolean => {
   if (!stderr.isTTY) {
     return false;
   }
+
   try {
     const payload = Buffer.from(text, "utf8").toString("base64");
     let sequence = `\u001b]52;c;${payload}\u0007`;
+
     // tmux needs a DCS passthrough wrapper to forward OSC 52 to the outer client.
     if (envString("TMUX") !== undefined) {
       sequence = `\u001bPtmux;\u001b${sequence.replaceAll("\u001b", "\u001b\u001b")}\u001b\\`;
     }
+
     stderr.write(sequence);
+
     return true;
   } catch {
     return false;
@@ -121,9 +133,11 @@ export const tryCopyToClipboard = async (text: string): Promise<boolean> => {
         stdout: "ignore",
         stderr: "ignore",
       });
+
       await proc.stdin.write(payload);
       await proc.stdin.end();
       const code = await proc.exited;
+
       return code === 0;
     } catch {
       return false;
@@ -131,6 +145,7 @@ export const tryCopyToClipboard = async (text: string): Promise<boolean> => {
   };
 
   let tool = false;
+
   if (process.platform === "darwin") {
     tool = await write(["pbcopy"], text);
   } else if (process.platform === "win32") {
@@ -173,6 +188,7 @@ export const handleLoopbackRequest = (
   options: LoopbackRequestOptions,
 ): Response => {
   const url = new URL(request.url);
+
   if (request.method !== "GET" || url.pathname !== options.pathname) {
     return new Response("Not found", {
       status: 404,
@@ -196,6 +212,7 @@ export const handleLoopbackRequest = (
   if (url.searchParams.get("state") !== options.expectedState) {
     return page("state-mismatch", 400);
   }
+
   if (url.searchParams.has("error")) {
     const denied = url.searchParams.get("error") === "access_denied";
     options.onError(
@@ -205,13 +222,18 @@ export const handleLoopbackRequest = (
           : `${options.providerLabel} authorization failed. Start login again.`,
       ),
     );
+
     return page(denied ? "declined" : "provider-error");
   }
+
   const code = url.searchParams.get("code");
+
   if (!code) {
     return page("missing-code", 400);
   }
+
   options.onCode(code);
+
   return page("received");
 };
 
@@ -219,14 +241,19 @@ const readPasteLine = async (signal: AbortSignal): Promise<string> => {
   if (signal.aborted) {
     throw cliError("Login cancelled.");
   }
+
   stderr.write("  󰌗 Paste authorization code or callback URL: ");
   const reader = createInterface({ input: stdin, output: stderr });
+
   const onAbort = (): void => {
     reader.close();
   };
+
   signal.addEventListener("abort", onAbort, { once: true });
+
   try {
     const line = await reader.question("");
+
     return line;
   } finally {
     signal.removeEventListener("abort", onAbort);
@@ -246,13 +273,16 @@ const asRawStdin = (stream: NodeJS.ReadStream): RawStdin | undefined => {
   if (!stream.isTTY) {
     return undefined;
   }
+
   // SAFETY: Node TTY streams expose setRawMode; non-TTY already returned above.
   const candidate: NodeJS.ReadStream & {
     setRawMode?: (mode: boolean) => NodeJS.ReadStream;
   } = stream;
+
   if (candidate.setRawMode === undefined) {
     return undefined;
   }
+
   // SAFETY: setRawMode presence checked above; RawStdin requires that method.
   return candidate as RawStdin;
 };
@@ -270,6 +300,7 @@ export const isBulkPasteChunk = (text: string): boolean => {
   if (text.length <= 1 || text.startsWith("\u001b")) {
     return false;
   }
+
   return text.replace(/[\r\n]+$/g, "").length > 1;
 };
 
@@ -280,6 +311,7 @@ export const isBulkPasteChunk = (text: string): boolean => {
  */
 const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Promise<string> => {
   const rawStdin = asRawStdin(stdin);
+
   if (!rawStdin) {
     return readPasteLine(signal);
   }
@@ -296,19 +328,23 @@ const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Pro
       if (cleaned) {
         return;
       }
+
       cleaned = true;
       rawStdin.removeListener("data", onData);
       signal.removeEventListener("abort", onAbort);
+
       try {
         stderr.write(BRACKETED_PASTE_DISABLE);
       } catch {
         // ignore
       }
+
       try {
         rawStdin.setRawMode(false);
       } catch {
         // already non-raw
       }
+
       rawStdin.pause();
     };
 
@@ -330,12 +366,15 @@ const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Pro
       if (copyBusy || signal.aborted) {
         return;
       }
+
       copyBusy = true;
       void tryCopyToClipboard(authorizeUrl).then((ok) => {
         copyBusy = false;
+
         if (signal.aborted) {
           return;
         }
+
         frameDetail(
           ok
             ? "Authorize URL copied to the clipboard."
@@ -348,13 +387,16 @@ const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Pro
       while (buffer.length > 0 && !cleaned) {
         if (inBracketedPaste) {
           const end = buffer.indexOf(BRACKETED_PASTE_END);
+
           if (end < 0) {
             return;
           }
+
           const pasted = buffer.slice(0, end);
           buffer = buffer.slice(end + BRACKETED_PASTE_END.length);
           inBracketedPaste = false;
           succeed(pasted);
+
           return;
         }
 
@@ -369,10 +411,12 @@ const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Pro
           if (buffer.length === 1) {
             return;
           }
+
           // Drop unknown short escapes; keep waiting if it might still grow into paste start.
           if (BRACKETED_PASTE_START.startsWith(buffer) || buffer.length < 6) {
             return;
           }
+
           buffer = buffer.slice(1);
           continue;
         }
@@ -383,13 +427,17 @@ const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Pro
         if (ch === "\u0003") {
           terminalSession()?.cancel();
           fail(cliError("Login cancelled."));
+
           return;
         }
+
         if (ch === "\r" || ch === "\n") {
           cleanup();
           void readPasteLine(signal).then(resolve, (cause: unknown) => fail(asError(cause)));
+
           return;
         }
+
         if (ch === "c" || ch === "C") {
           copyAuthorizeUrl();
         }
@@ -401,13 +449,17 @@ const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Pro
       if (signal.aborted || cleaned) {
         return;
       }
+
       const text = chunk.toString("utf8");
+
       // Terminals without bracketed paste often deliver the whole paste in one
       // multi-byte chunk. Treat that as the callback payload, not keybinds.
       if (!inBracketedPaste && buffer.length === 0 && isBulkPasteChunk(text)) {
         succeed(text.replace(/[\r\n]+$/g, ""));
+
         return;
       }
+
       buffer += text;
       consumeBuffer();
     };
@@ -415,11 +467,13 @@ const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Pro
     signal.addEventListener("abort", onAbort, { once: true });
     rawStdin.setRawMode(true);
     rawStdin.resume();
+
     try {
       stderr.write(BRACKETED_PASTE_ENABLE);
     } catch {
       // ignore
     }
+
     rawStdin.on("data", onData);
 
     if (signal.aborted) {
@@ -447,19 +501,23 @@ export const awaitOAuthAuthorizationCode = async (
   const codeGate = Promise.withResolvers<string>();
   let settled = false;
   let settledByCallback = false;
+
   const settleResolve = (code: string, fromCallback = false): void => {
     if (settled) {
       return;
     }
+
     settled = true;
     settledByCallback = fromCallback;
     ac.abort();
     codeGate.resolve(code);
   };
+
   const settleReject = (cause: Error, fromCallback = false): void => {
     if (settled) {
       return;
     }
+
     settled = true;
     settledByCallback = fromCallback;
     ac.abort();
@@ -517,9 +575,11 @@ export const awaitOAuthAuthorizationCode = async (
   }
 
   const minutes = Math.round(timeoutMs / 60_000);
+
   const timeoutId = setTimeout(() => {
     settleReject(cliError(`${options.providerLabel} login timed out after ${minutes} minutes.`));
   }, timeoutMs);
+
   // Do not keep the process alive solely for the timer once login finishes.
   timeoutId.unref?.();
 
@@ -529,6 +589,7 @@ export const awaitOAuthAuthorizationCode = async (
         if (settled) {
           return;
         }
+
         settleResolve(
           resolveOAuthAuthorizationCode(raw, options.expectedState, options.providerLabel),
         );
@@ -541,15 +602,18 @@ export const awaitOAuthAuthorizationCode = async (
   }
 
   terminalSession()?.blocked("auth", `Authorize ${options.providerLabel} in your browser`);
+
   try {
     return await codeGate.promise;
   } finally {
     terminalSession()?.resume();
     // Always cancel the timer first — awaiting a live 5‑minute sleep hung paste login.
     clearTimeout(timeoutId);
+
     if (!signal.aborted) {
       ac.abort();
     }
+
     // Drain terminal callbacks; paste and timeout still close active connections immediately.
     await server?.stop(!settledByCallback);
   }

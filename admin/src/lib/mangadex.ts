@@ -60,6 +60,7 @@ export function formatMangaDexStatus(status: string): string {
   if (!status || status === "unset") {
     return "Unset";
   }
+
   return status
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
@@ -79,9 +80,12 @@ export const proxiedCoverUrl = (coverUrl: string | undefined): string | undefine
   if (!coverUrl) {
     return undefined;
   }
+
   const match = /\/covers\/([^/]+)\/([^/]+)$/.exec(coverUrl);
+
   if (!match) {
     return undefined;
   }
+
   return `/mangadex-cover/${match[1]}/${match[2]}`;
 };

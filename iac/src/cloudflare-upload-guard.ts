@@ -18,15 +18,20 @@ const isSecretsStoreSecretWrite = (request: HttpClientRequest.HttpClientRequest)
   if (request.method === "GET") {
     return false;
   }
+
   const segments = new URL(request.url).pathname.split("/").filter(Boolean).map(decodeURIComponent);
   const storeRoot = segments.indexOf("secrets_store") + 1; // index of "stores"
+
   if (storeRoot === 0 || segments[storeRoot] !== "stores") {
     return false;
   }
+
   const rest = segments.length - storeRoot;
+
   if (request.method === "DELETE") {
     return rest === 2 || rest === 3 || rest === 4;
   }
+
   // POST/PUT/PATCH: writes into the store's secrets collection only; other
   // store-level calls (e.g. store metadata PATCH) stay allowed.
   return segments[storeRoot + 2] === "secrets";
@@ -53,6 +58,7 @@ const pathOf = (request: HttpClientRequest.HttpClientRequest): string =>
   new URL(request.url).pathname;
 
 type JsonValue = string | number | boolean | null | readonly JsonValue[] | JsonObject;
+
 type JsonObject = { readonly [key: string]: JsonValue };
 
 function isJsonObject(value: unknown): value is JsonObject {
@@ -72,6 +78,7 @@ const isManifoldWorkerUpload = (request: HttpClientRequest.HttpClientRequest): b
   }
 
   const path = new URL(request.url).pathname.split("/").filter(Boolean);
+
   return path.at(-3) === "workers" && path.at(-2) === "scripts" && path.at(-1) === "manifold-api";
 };
 
@@ -91,11 +98,13 @@ export const validateManifoldWorkerUpload = (
   }
 
   const metadataPart = request.body.formData.get("metadata");
+
   if (metadataPart === null || metadataPart instanceof Blob) {
     return rejectMalformedUpload("metadata is missing or not JSON text");
   }
 
   let metadata: unknown;
+
   try {
     // SAFETY: JSON.parse is immediately narrowed with the JSON object predicate below.
     metadata = JSON.parse(metadataPart);
@@ -108,20 +117,25 @@ export const validateManifoldWorkerUpload = (
   }
 
   const migrations = metadata.migrations;
+
   if (migrations === undefined) {
     return Effect.void;
   }
+
   if (!isJsonObject(migrations)) {
     return rejectMalformedUpload("migrations must be a JSON object");
   }
 
   const deletedClasses = migrations.deleted_classes ?? migrations.deletedClasses;
+
   if (deletedClasses === undefined) {
     return Effect.void;
   }
+
   if (!isStringArray(deletedClasses)) {
     return rejectMalformedUpload("migrations.deleted_classes must be an array of class names");
   }
+
   if (deletedClasses.includes("ManifoldSync")) {
     return Effect.die(
       new Error(

@@ -28,6 +28,7 @@ import { handleRegistry } from "./routes/registry";
 import type { Env } from "./types";
 
 export { ManifoldSync };
+
 export type { Env };
 
 const PUBLIC_HOSTNAME = "manifold.jfa.dev";
@@ -39,6 +40,7 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, RouteError>
     const ctx: RouteContext = { request, env, url, path };
 
     const health = yield* handleHealth(ctx);
+
     if (health) {
       return health;
     }
@@ -51,34 +53,47 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, RouteError>
     }
 
     const oauth = yield* handleOAuth(ctx);
+
     if (oauth) {
       return oauth;
     }
 
     const canonical = yield* handleCanonical(ctx);
+
     if (canonical) {
       return canonical;
     }
+
     const backups = yield* handleBackups(ctx);
+
     if (backups) {
       return backups;
     }
+
     const registry = yield* handleRegistry(ctx);
+
     if (registry) {
       return registry;
     }
+
     const mangadex = yield* handleMangaDex(ctx);
+
     if (mangadex) {
       return mangadex;
     }
+
     const ops = yield* handleOps(ctx);
+
     if (ops) {
       return ops;
     }
+
     const auth = yield* handleAuth(ctx);
+
     if (auth) {
       return auth;
     }
+
     return jsonEncoded(ErrorBody, { error: "Not found" }, 404);
   });
 
@@ -87,6 +102,7 @@ const app: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
     if (new URL(c.req.url).hostname !== PUBLIC_HOSTNAME) {
       return jsonEncoded(ErrorBody, { error: "Not found" }, 404);
     }
+
     await next();
   })
   .route("/", catalogApp)
@@ -101,15 +117,20 @@ const app: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
           500,
         );
       }
+
       if (error instanceof ParseRequestError) {
         return jsonEncoded(ErrorBody, { error: "Invalid request", details: error.message }, 400);
       }
+
       if (error instanceof Schema.SchemaError) {
         hostLogError(`[manifold/api] schema error:${error.message}`);
+
         return jsonEncoded(ErrorBody, { error: "Invalid request", details: error.message }, 400);
       }
+
       const message = error instanceof Error ? error.message : "Internal server error";
       hostLogError(`[manifold/api] request failed:${message}`);
+
       return jsonEncoded(ErrorBody, { error: message }, 500);
     }
   });

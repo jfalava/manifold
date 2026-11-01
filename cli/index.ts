@@ -15,6 +15,7 @@ import { CLI_VERSION } from "@/version";
 
 // Pick up CLI credentials from cli/.env (cwd or package-local path).
 loadDotEnv(fileURLToPath(new URL("./.env", import.meta.url)));
+
 loadDotEnv(".env");
 
 const program = Command.runWith(makeRootCommand(CLI_VERSION), {
@@ -27,7 +28,9 @@ const program = Command.runWith(makeRootCommand(CLI_VERSION), {
       if (terminalSession()?.cancelled) {
         return yield* Effect.interrupt;
       }
+
       process.exitCode = 1;
+
       if (!CliError.isCliError(cause)) {
         writeOutput(`${ui.error(errorMessage(cause))}\n`, process.stderr);
       }
@@ -38,6 +41,7 @@ const program = Command.runWith(makeRootCommand(CLI_VERSION), {
       if (terminalSession()?.cancelled) {
         return yield* Effect.interrupt;
       }
+
       process.exitCode = 1;
       writeOutput(`${ui.error(errorMessage(cause))}\n`, process.stderr);
     }),

@@ -29,6 +29,7 @@ const JsonString = Schema.fromJsonString(Schema.Unknown);
 const mangaDexStatsEffect = (host: SyncHost, mangaDexIds: readonly string[]) =>
   Effect.gen(function* () {
     const wanted = [...new Set(mangaDexIds)].filter((id) => id.length > 0).slice(0, 200);
+
     if (wanted.length === 0) {
       return {};
     }
@@ -40,27 +41,35 @@ const mangaDexStatsEffect = (host: SyncHost, mangaDexIds: readonly string[]) =>
     const meta = new Map<string, MdFeedStatsPayload>();
     const staleIds: string[] = [];
     const cutoff = now() - MD_STATS_TTL_MS;
+
     for (let index = 0; index < wanted.length; index += 100) {
       const chunk = wanted.slice(index, index + 100);
       const placeholders = chunk.map(() => "?").join(",");
+
       const rows = host.ctx.storage.sql
         .exec<{ manga_id: string; payload: string; computed_at: number }>(
           `SELECT manga_id, payload, computed_at FROM md_feed_stats WHERE manga_id IN (${placeholders})`,
           ...chunk,
         )
         .toArray();
+
       const fresh = new Set<string>();
+
       for (const row of rows) {
         if (row.computed_at < cutoff) {
           continue;
         }
+
         const payload = parseMdFeedStatsPayload(row.payload);
+
         if (!payload) {
           continue;
         }
+
         meta.set(row.manga_id, payload);
         fresh.add(row.manga_id);
       }
+
       for (const mangaDexId of chunk) {
         if (!fresh.has(mangaDexId)) {
           staleIds.push(mangaDexId);
@@ -81,6 +90,7 @@ const mangaDexStatsEffect = (host: SyncHost, mangaDexIds: readonly string[]) =>
         ),
       { concurrency: MD_STATS_CONCURRENCY, discard: true },
     );
+
     for (const [mangaDexId, payload] of fetched) {
       host.ctx.storage.sql.exec(
         `INSERT INTO md_feed_stats (manga_id, payload, computed_at)
@@ -96,6 +106,7 @@ const mangaDexStatsEffect = (host: SyncHost, mangaDexIds: readonly string[]) =>
     // 2. Fresh read markers (grouped by manga, batched 100 ids per call).
     const readMarkers = new Map<string, ReadonlySet<string>>();
     const markerFailures = new Set<string>();
+
     for (let index = 0; index < wanted.length; index += 100) {
       const chunk = wanted.slice(index, index + 100);
       yield* client.readMarkersBulk(chunk).pipe(
@@ -116,6 +127,7 @@ const mangaDexStatsEffect = (host: SyncHost, mangaDexIds: readonly string[]) =>
 
     // 3. Compose.
     const stats: Record<string, MangaDexEntryStat> = {};
+
     for (const mangaDexId of wanted) {
       stats[mangaDexId] = composeMangaDexEntryStat(
         meta.get(mangaDexId),
@@ -123,6 +135,7 @@ const mangaDexStatsEffect = (host: SyncHost, mangaDexIds: readonly string[]) =>
         markerFailures.has(mangaDexId),
       );
     }
+
     return stats;
   });
 
@@ -136,6 +149,7 @@ const mangaDexLibraryEffect = (host: SyncHost, status?: string) =>
   Effect.gen(function* () {
     const accessToken = yield* fromPromise(() => getAuthAccessToken(host, "mangadex"));
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
+
     const statusFilter =
       status === "reading" ||
       status === "on_hold" ||
@@ -154,11 +168,14 @@ const mangaDexLibraryEffect = (host: SyncHost, status?: string) =>
         if (base.length === 0) {
           return base;
         }
+
         const ids = base.map((row) => row.mangaDexId);
+
         // Best-effort — a single upstream failure must not kill the library.
         return yield* client.getRatings(ids).pipe(
           Effect.map((batch) => {
             const byId = new Map(Object.entries(batch));
+
             return base.map((row) =>
               byId.has(row.mangaDexId)
                 ? {
@@ -182,9 +199,11 @@ const mangaDexLibraryEffect = (host: SyncHost, status?: string) =>
         const mangaDexIds = Object.keys(statuses);
         const seedById = new Map((options?.seed ?? []).map((row) => [row.mangaDexId, row]));
         const links = new Map<string, string>();
+
         for (let index = 0; index < mangaDexIds.length; index += 100) {
           const chunk = mangaDexIds.slice(index, index + 100);
           const placeholders = chunk.map(() => "?").join(",");
+
           const rows = host.ctx.storage.sql
             .exec<{ external_id: string; entry_id: string }>(
               `SELECT external_id, entry_id FROM provider_links
@@ -192,10 +211,12 @@ const mangaDexLibraryEffect = (host: SyncHost, status?: string) =>
               ...chunk,
             )
             .toArray();
+
           for (const row of rows) {
             links.set(row.external_id, row.entry_id);
           }
         }
+
         // Resolve titles + covers in batches so the admin UI shows names, not bare UUIDs.
         // Prefer seed/cache rows; listManga only for ids still missing a title or cover.
         // listManga defaults to all content ratings (safe/suggestive/erotica/pornographic)
@@ -203,18 +224,23 @@ const mangaDexLibraryEffect = (host: SyncHost, status?: string) =>
         const titles = new Map<string, string>();
         const covers = new Map<string, string>();
         const missingMeta: string[] = [];
+
         for (const mangaDexId of mangaDexIds) {
           const seeded = seedById.get(mangaDexId);
+
           if (seeded?.title) {
             titles.set(mangaDexId, seeded.title);
           }
+
           if (seeded?.coverUrl) {
             covers.set(mangaDexId, seeded.coverUrl);
           }
+
           if (!titles.has(mangaDexId) || !covers.has(mangaDexId)) {
             missingMeta.push(mangaDexId);
           }
         }
+
         for (let index = 0; index < missingMeta.length; index += 100) {
           const chunk = missingMeta.slice(index, index + 100);
           // Titles are cosmetic here — a failed batch must not kill the list.
@@ -224,6 +250,7 @@ const mangaDexLibraryEffect = (host: SyncHost, status?: string) =>
                 if (manga.title) {
                   titles.set(manga.id, manga.title);
                 }
+
                 if (manga.coverUrl) {
                   covers.set(manga.id, manga.coverUrl);
                 }
@@ -232,6 +259,7 @@ const mangaDexLibraryEffect = (host: SyncHost, status?: string) =>
             Effect.ignore,
           );
         }
+
         const base: readonly MangaDexLibraryItem[] = mangaDexIds.map((mangaDexId) => ({
           mangaDexId,
           status: statuses[mangaDexId] ?? "",
@@ -239,6 +267,7 @@ const mangaDexLibraryEffect = (host: SyncHost, status?: string) =>
           ...(titles.has(mangaDexId) && { title: titles.get(mangaDexId) }),
           ...(covers.has(mangaDexId) && { coverUrl: covers.get(mangaDexId) }),
         }));
+
         return yield* attachRatings(base);
       });
 
@@ -248,39 +277,47 @@ const mangaDexLibraryEffect = (host: SyncHost, status?: string) =>
     if (statusFilter !== undefined) {
       const shelfStatuses = yield* client.readingStatuses({ status: statusFilter });
       const library = yield* hydrate(shelfStatuses, { seed: host.mdLibraryCache?.data });
+
       if (host.mdLibraryCache) {
         const byId = new Map(library.map((row) => [row.mangaDexId, row]));
         host.mdLibraryCache = {
           at: host.mdLibraryCache.at,
           data: host.mdLibraryCache.data.map((row) => {
             const hydrated = byId.get(row.mangaDexId);
+
             if (hydrated) {
               return hydrated;
             }
+
             if ((row.status || "") === statusFilter) {
               return { ...row, status: "" };
             }
+
             return row;
           }),
         };
       }
+
       return library;
     }
 
     // Serve from cache when fresh, but still refresh ratings live.
     if (host.mdLibraryCache && epochMillisNow() - host.mdLibraryCache.at < MD_LIBRARY_TTL_MS) {
       const withRatings = yield* attachRatings(host.mdLibraryCache.data);
+
       // Keep the cached snapshot in sync with the freshest ratings so a
       // subsequent cache hit without a rating fetch still reflects reality.
       if (withRatings !== host.mdLibraryCache.data) {
         host.mdLibraryCache = { at: host.mdLibraryCache.at, data: withRatings };
       }
+
       return withRatings;
     }
 
     const statuses = yield* client.readingStatuses();
     const data = yield* hydrate(statuses);
     host.mdLibraryCache = { at: epochMillisNow(), data };
+
     return data;
   });
 
@@ -304,37 +341,46 @@ const mangaDexLibrarySummaryEffect = (host: SyncHost) =>
       let ratingSum = 0;
       let linkedToRegistry = 0;
       let sawRatingFlag = false;
+
       for (const row of data) {
         const status = row.status === "" ? "unset" : row.status;
         statusCounts.set(status, (statusCounts.get(status) ?? 0) + 1);
+
         if (row.hasRating !== undefined) {
           sawRatingFlag = true;
         }
+
         if (row.hasRating === true && row.rating !== undefined) {
           rated += 1;
           ratingSum += row.rating;
         }
+
         if (row.entryId !== null) {
           linkedToRegistry += 1;
         }
       }
+
       if (!sawRatingFlag && data.length > 0) {
         // Best-effort ratings for overview.
         const ratingResult = yield* client.getRatings(data.map((row) => row.mangaDexId)).pipe(
           Effect.map((batch) => {
             let nextRated = 0;
             let nextSum = 0;
+
             for (const entry of Object.values(batch)) {
               nextRated += 1;
               nextSum += entry.rating;
             }
+
             return { rated: nextRated, ratingSum: nextSum };
           }),
           Effect.orElseSucceed(() => ({ rated: 0, ratingSum: 0 })),
         );
+
         rated = ratingResult.rated;
         ratingSum = ratingResult.ratingSum;
       }
+
       return {
         total: data.length,
         statuses: Object.fromEntries(statusCounts),
@@ -347,6 +393,7 @@ const mangaDexLibrarySummaryEffect = (host: SyncHost) =>
     const statuses = yield* client.readingStatuses();
     const mangaDexIds = Object.keys(statuses);
     const statusCounts = new Map<string, number>();
+
     for (const status of Object.values(statuses)) {
       statusCounts.set(status, (statusCounts.get(status) ?? 0) + 1);
     }
@@ -356,24 +403,31 @@ const mangaDexLibrarySummaryEffect = (host: SyncHost) =>
       Effect.map((batch) => {
         let nextRated = 0;
         let nextSum = 0;
+
         for (const entry of Object.values(batch)) {
           nextRated += 1;
           nextSum += entry.rating;
         }
+
         return { rated: nextRated, ratingSum: nextSum };
       }),
       Effect.orElseSucceed(() => ({ rated: 0, ratingSum: 0 })),
     );
+
     const rated = ratingResult.rated;
     const ratingSum = ratingResult.ratingSum;
 
     let linkedToRegistry = 0;
+
     for (let index = 0; index < mangaDexIds.length; index += 100) {
       const chunk = mangaDexIds.slice(index, index + 100);
+
       if (chunk.length === 0) {
         continue;
       }
+
       const placeholders = chunk.map(() => "?").join(",");
+
       const rows = host.ctx.storage.sql
         .exec<{ external_id: string }>(
           `SELECT external_id FROM provider_links
@@ -381,6 +435,7 @@ const mangaDexLibrarySummaryEffect = (host: SyncHost) =>
           ...chunk,
         )
         .toArray();
+
       linkedToRegistry += rows.length;
     }
 
@@ -400,6 +455,7 @@ const mangaDexFeedEffect = (host: SyncHost, limit: number, offset: number) =>
   Effect.gen(function* () {
     const accessToken = yield* fromPromise(() => getAuthAccessToken(host, "mangadex"));
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
+
     return yield* client.followedFeed({ limit, offset });
   });
 
@@ -444,6 +500,7 @@ export const entryByProvider = (
           externalId,
         )
         .toArray()[0];
+
       return row ? readEntry(host, row.entry_id, false) : undefined;
     }),
   );
@@ -452,6 +509,7 @@ const mangaDexCurrentUserEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     const accessToken = yield* fromPromise(() => getAuthAccessToken(host, "mangadex"));
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
+
     return yield* client.currentUser;
   });
 
@@ -462,6 +520,7 @@ const mangaDexReadMarkersEffect = (host: SyncHost, mangaDexId: string) =>
   Effect.gen(function* () {
     const accessToken = yield* fromPromise(() => getAuthAccessToken(host, "mangadex"));
     const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
+
     return yield* client.readMarkers(mangaDexId);
   });
 

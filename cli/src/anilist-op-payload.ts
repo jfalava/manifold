@@ -95,9 +95,11 @@ export const toAniListGraphqlStatus = (
 
 const requiredString = (payload: JsonObject, key: string, opId: string): string => {
   const value = payload[key];
+
   if (!isString(value) || value.trim().length === 0) {
     throw new Error(`op ${opId} has invalid ${key}`);
   }
+
   return value.trim();
 };
 
@@ -107,12 +109,15 @@ const nullableString = (
   opId: string,
 ): string | null | undefined => {
   const value = payload[key];
+
   if (value === undefined || value === null) {
     return value;
   }
+
   if (!isString(value)) {
     throw new Error(`op ${opId} has invalid ${key}`);
   }
+
   return value;
 };
 
@@ -122,28 +127,35 @@ const nullableNumber = (
   opId: string,
 ): number | null | undefined => {
   const value = payload[key];
+
   if (value === undefined || value === null) {
     return value;
   }
+
   if (!isFiniteNumber(value)) {
     throw new Error(`op ${opId} has invalid ${key}`);
   }
+
   return value;
 };
 
 const optionalNumber = (payload: JsonObject, key: string, opId: string): number | undefined => {
   const value = nullableNumber(payload, key, opId);
+
   if (value === null) {
     throw new Error(`op ${opId} has invalid ${key}`);
   }
+
   return value;
 };
 
 const optionalListEntryId = (payload: JsonObject, opId: string): number | undefined => {
   const value = optionalNumber(payload, "mediaListEntryId", opId);
+
   if (value !== undefined && (!Number.isSafeInteger(value) || value < 1)) {
     throw new Error(`op ${opId} has invalid mediaListEntryId`);
   }
+
   return value;
 };
 
@@ -154,13 +166,17 @@ const statusOrNull = (
   if (value === undefined || value === null) {
     return value;
   }
+
   if (!isString(value)) {
     throw new Error(`op ${opId} has invalid status`);
   }
+
   const status = parseAniListReadingStatus(value);
+
   if (status === undefined) {
     throw new Error(`op ${opId} has invalid status`);
   }
+
   return status;
 };
 
@@ -171,18 +187,24 @@ export const parsePendingAniListOp = (op: PendingAniListOp): ParsedAniListOp => 
   switch (op.kind) {
     case "anilist.status": {
       const status = statusOrNull(payload["status"], op.opId);
+
       if (status === undefined) {
         throw new Error(`op ${op.opId} has no status`);
       }
+
       return { kind: op.kind, opId: op.opId, anilistId, status };
     }
+
     case "anilist.progress": {
       const progress = optionalNumber(payload, "progress", op.opId);
+
       if (progress === undefined) {
         throw new Error(`op ${op.opId} has no progress`);
       }
+
       return { kind: op.kind, opId: op.opId, anilistId, progress };
     }
+
     case "anilist.fields": {
       const status = statusOrNull(payload["status"], op.opId);
       const score = nullableNumber(payload, "score", op.opId);
@@ -191,6 +213,7 @@ export const parsePendingAniListOp = (op: PendingAniListOp): ParsedAniListOp => 
       const completedAt = nullableString(payload, "completedAt", op.opId);
       const volumeProgress = nullableNumber(payload, "volumeProgress", op.opId);
       const mediaListEntryId = optionalListEntryId(payload, op.opId);
+
       return {
         kind: op.kind,
         opId: op.opId,
@@ -206,8 +229,10 @@ export const parsePendingAniListOp = (op: PendingAniListOp): ParsedAniListOp => 
         ...(mediaListEntryId !== undefined && { mediaListEntryId }),
       };
     }
+
     case "anilist.delete": {
       const mediaListEntryId = optionalListEntryId(payload, op.opId);
+
       return {
         kind: op.kind,
         opId: op.opId,
@@ -215,6 +240,7 @@ export const parsePendingAniListOp = (op: PendingAniListOp): ParsedAniListOp => 
         ...(mediaListEntryId !== undefined && { mediaListEntryId }),
       };
     }
+
     default:
       throw new Error(`op ${op.opId}: unknown kind ${op.kind}`);
   }

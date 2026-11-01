@@ -19,16 +19,20 @@ export const registryCatalog = (options: {
   readonly onCache?: (record: JsonObject) => void;
 }) => {
   const reads = new Map<string, Schema.Schema.Type<typeof CatalogRead>>();
+
   for (const line of options.catalog ?? []) {
     const decoded = Schema.decodeUnknownOption(CatalogRead)(line);
+
     if (Option.isSome(decoded) && decoded.value.origin === options.origin) {
       reads.set(decoded.value.key, decoded.value);
     }
   }
+
   return {
     read(key: string): string | undefined {
       const entry = reads.get(key);
       const age = entry ? epochMillisNow() - entry.savedAt : -1;
+
       return age >= 0 && age < 86_400_000 ? entry!.data : undefined;
     },
     forget(key: string): void {
@@ -53,6 +57,7 @@ export const registryCatalog = (options: {
         savedAt: epochMillisNow(),
         data,
       };
+
       reads.set(key, entry);
       options.onCache?.(entry);
     },

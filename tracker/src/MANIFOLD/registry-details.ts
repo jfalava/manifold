@@ -24,6 +24,7 @@ export const canonicalResultForRegistryEntry = (
 
   const anilist = entry.providers.find((provider) => provider.provider === "anilist");
   const mal = entry.providers.find((provider) => provider.provider === "mal");
+
   return {
     id: entry.id,
     provider: anilist ? "anilist" : mal ? "mal" : entry.provider,

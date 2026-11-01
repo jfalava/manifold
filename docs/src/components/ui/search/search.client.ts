@@ -40,11 +40,14 @@ export function initSearch(config: SearchConfig): SearchInstance {
 
   function updateActive(newIndex: number): void {
     const options = getOptions();
+
     if (options.length === 0) {
       activeIndex = -1;
       input.removeAttribute("aria-activedescendant");
+
       return;
     }
+
     activeIndex = Math.max(-1, Math.min(newIndex, options.length - 1));
     options.forEach((option, index) => {
       if (index === activeIndex) {
@@ -55,6 +58,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
         option.removeAttribute("data-highlighted");
       }
     });
+
     if (activeIndex < 0) {
       input.removeAttribute("aria-activedescendant");
     }
@@ -64,6 +68,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
     for (const result of resultsContainer.querySelectorAll("[role='option']")) {
       result.remove();
     }
+
     input.setAttribute("aria-expanded", "false");
     input.removeAttribute("aria-activedescendant");
   }
@@ -78,6 +83,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
     link.className = className;
     link.textContent = title;
     link.addEventListener("click", () => onNavigate?.());
+
     return link;
   }
 
@@ -93,6 +99,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
       result.url,
       "block truncate text-sm font-medium text-foreground no-underline focus-visible:outline-none",
     );
+
     option.appendChild(link);
 
     if (result.snippet) {
@@ -106,6 +113,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
     if (result.subResults?.length) {
       const subList = document.createElement("div");
       subList.className = "mt-2 border-l border-border pl-3";
+
       for (const sub of result.subResults.slice(0, 3)) {
         subList.appendChild(
           resultLink(
@@ -115,6 +123,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
           ),
         );
       }
+
       option.appendChild(subList);
     }
 
@@ -123,6 +132,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
       if ((domEvent.target as Element | null)?.closest("a")) {
         return;
       }
+
       link.click();
     });
 
@@ -133,12 +143,15 @@ export function initSearch(config: SearchConfig): SearchInstance {
     if (initialized) {
       return true;
     }
+
     try {
       await provider.init?.();
       initialized = true;
+
       return true;
     } catch {
       emptyState.textContent = "Search is available after a production build.";
+
       return false;
     }
   }
@@ -158,6 +171,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
 
     try {
       const results = await provider.search(query, { signal });
+
       if (signal.aborted) {
         return;
       }
@@ -168,11 +182,13 @@ export function initSearch(config: SearchConfig): SearchInstance {
       if (results.length === 0) {
         emptyState.style.display = "";
         emptyState.textContent = "No results found.";
+
         return;
       }
 
       emptyState.style.display = "none";
       input.setAttribute("aria-expanded", "true");
+
       for (const result of results) {
         resultsContainer.appendChild(buildResult(result));
       }
@@ -180,6 +196,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
       if (signal.aborted) {
         return;
       }
+
       clearResults();
       emptyState.style.display = "";
       emptyState.textContent = "Search is temporarily unavailable.";
@@ -190,21 +207,26 @@ export function initSearch(config: SearchConfig): SearchInstance {
     if (debounceTimer) {
       clearTimeout(debounceTimer);
     }
+
     debounceTimer = setTimeout(() => {
       const query = input.value.trim();
+
       if (!query) {
         activeController?.abort();
         clearResults();
         emptyState.style.display = "";
         emptyState.textContent = "Type to search…";
+
         return;
       }
+
       void runSearch(query);
     }, 150);
   }
 
   function handleKeydown(domEvent: KeyboardEvent): void {
     const options = getOptions();
+
     if (domEvent.key === "ArrowDown") {
       domEvent.preventDefault();
       updateActive(activeIndex + 1);
@@ -229,9 +251,11 @@ export function initSearch(config: SearchConfig): SearchInstance {
   return {
     async reset() {
       activeController?.abort();
+
       if (debounceTimer) {
         clearTimeout(debounceTimer);
       }
+
       input.value = "";
       input.focus();
       activeIndex = -1;
@@ -242,9 +266,11 @@ export function initSearch(config: SearchConfig): SearchInstance {
     },
     destroy() {
       activeController?.abort();
+
       if (debounceTimer) {
         clearTimeout(debounceTimer);
       }
+
       input.removeEventListener("input", handleInput);
       input.closest("dialog")?.removeEventListener("keydown", handleKeydown);
     },
@@ -279,6 +305,7 @@ function bindGlobals() {
   if (globalsBound) {
     return;
   }
+
   globalsBound = true;
 
   document.addEventListener("click", (domEvent) => {
@@ -286,9 +313,11 @@ function bindGlobals() {
     const trigger = (domEvent.target as Element | null)?.closest(
       "[data-search-trigger]",
     );
+
     if (!trigger) {
       return;
     }
+
     primaryDialog()?.__openSearchDialog?.();
   });
 
@@ -299,11 +328,15 @@ function bindGlobals() {
     ) {
       return;
     }
+
     const dialog = primaryDialog();
+
     if (!dialog) {
       return;
     }
+
     domEvent.preventDefault();
+
     if (dialog.open) {
       dialog.close();
     } else {
@@ -321,10 +354,13 @@ mount("[data-search-dialog]", (root) => {
   dialog.setAttribute("data-search-ready", "true");
 
   const input = dialog.querySelector<HTMLInputElement>("[data-search-input]");
+
   const resultsContainer = dialog.querySelector<HTMLElement>(
     "[data-search-results]",
   );
+
   const emptyState = dialog.querySelector<HTMLElement>("[data-search-empty]");
+
   if (!input || !resultsContainer || !emptyState) {
     return () => undefined;
   }
@@ -341,6 +377,7 @@ mount("[data-search-dialog]", (root) => {
     if (!dialog.open) {
       dialog.showModal();
     }
+
     void search.reset();
   };
 

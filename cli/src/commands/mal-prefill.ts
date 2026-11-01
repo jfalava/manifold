@@ -62,11 +62,13 @@ export const malPrefillCommand = Command.make("mal", {
         const maximum = Option.getOrUndefined(limit);
         validateNonNegativeLimit(maximum);
         const config = await apiConfig(apiOrigin, apiToken);
+
         const source = createAniListSource({
           userAgent: manifoldUserAgent("cli"),
           fetcher: (input, init) =>
             platformFetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
         });
+
         const report = openRegistryReport(
           "mal",
           apply,
@@ -74,6 +76,7 @@ export const malPrefillCommand = Command.make("mal", {
           Option.getOrUndefined(reportFlag),
           Option.getOrUndefined(resume),
         );
+
         openFrame(`MAL registry links (${apply ? "apply" : "dry run"})`);
         frameDetail(`report: ${report.path}`);
 
@@ -83,6 +86,7 @@ export const malPrefillCommand = Command.make("mal", {
             const pageSize = 5000;
             let offset = 0;
             const rows: RegistryListEntry[] = [];
+
             for (;;) {
               const page = await apiCall(
                 config,
@@ -91,21 +95,27 @@ export const malPrefillCommand = Command.make("mal", {
                 undefined,
                 RegistryListResponse,
               );
+
               rows.push(...page.entries.filter((row) => !row.tombstoned));
               offset += page.entries.length;
+
               if (page.entries.length < pageSize) {
                 break;
               }
             }
+
             const missing = rows.filter(
               (row) => !row.providers.some((link) => link.provider === "mal"),
             );
+
             const eligible = missing.filter((row) =>
               row.providers.some((link) => link.provider === "anilist"),
             );
+
             const pending = eligible.filter(
               (row) => !report.skip(row, { searchPolicy: MAL_SEARCH_POLICY }),
             );
+
             const selected = maximum === undefined ? pending : pending.slice(0, maximum);
             ctx.rows = rows;
             ctx.selected = selected;
@@ -123,22 +133,29 @@ export const malPrefillCommand = Command.make("mal", {
             const baseTitle = task.title;
             const reporter = makePhaseReporter(task);
             const total = ctx.selected.length;
+
             const counts = (): readonly [string, number][] => [
               [apply ? "linked" : "verified", ctx.linked],
               ["unmapped", ctx.unmatched],
               ["errors", ctx.errors],
             ];
+
             const done = (): number => ctx.linked + ctx.unmatched + ctx.errors;
+
             const formatTitle = (rowTitle: string, suffix = ""): string => {
               const cols = process.stdout.columns ?? 80;
+
               const budget = Math.max(
                 24,
                 Math.min(48, cols - baseTitle.length - 16 - suffix.length),
               );
+
               const clean = rowTitle.replace(/\s+/g, " ").trim();
               const short = clean.length > budget ? `${clean.slice(0, budget - 1)}…` : clean;
+
               return suffix ? `${short}${suffix}` : short;
             };
+
             const owners = new Map(
               ctx.rows.flatMap((row) =>
                 row.providers
@@ -146,6 +163,7 @@ export const malPrefillCommand = Command.make("mal", {
                   .map((link) => [link.externalId, row.id] as const),
               ),
             );
+
             if (total > 0) {
               reporter.progress(0, total, counts());
             }
@@ -154,17 +172,22 @@ export const malPrefillCommand = Command.make("mal", {
               if (index > 0) {
                 await sleepPromise(ANILIST_LOOKUP_INTERVAL_MS);
               }
+
               reporter.item(formatTitle(row.title));
+
               const anilistId = row.providers.find(
                 (link) => link.provider === "anilist",
               )?.externalId;
+
               if (!anilistId) {
                 report.entry(row, { outcome: "skipped", reason: "Missing AniList identity" });
                 continue;
               }
+
               try {
                 const canonical = await runHost(source.getById(anilistId));
                 const malId = canonical?.externalIds?.mal;
+
                 if (!malId) {
                   ctx.unmatched += 1;
                   ctx.details.push(`UNMAPPED ${row.id} anilist:${anilistId}`);
@@ -177,13 +200,17 @@ export const malPrefillCommand = Command.make("mal", {
                   });
                   continue;
                 }
+
                 if (canonical?.providerId !== anilistId || !/^[1-9]\d*$/.test(malId)) {
                   throw cliError("Invalid AniList cross-link response");
                 }
+
                 const owner = owners.get(malId);
+
                 if (owner && owner !== row.id) {
                   throw cliError(`mal:${malId} already belongs to ${owner}`);
                 }
+
                 if (apply) {
                   // Ingestion rejects conflicting ownership; linkProvider would move the link.
                   await apiCall(
@@ -199,6 +226,7 @@ export const malPrefillCommand = Command.make("mal", {
                     RegistryEntry,
                   );
                 }
+
                 owners.set(malId, row.id);
                 ctx.linked += 1;
                 ctx.details.push(
@@ -217,8 +245,10 @@ export const malPrefillCommand = Command.make("mal", {
                 reporter.item(formatTitle(row.title, " — error"));
                 report.entry(row, { outcome: "errors", anilistId, error: errorMessage(error) });
               }
+
               reporter.progress(done(), total, counts());
             }
+
             reporter.item("");
             reporter.note(
               [
@@ -232,6 +262,7 @@ export const malPrefillCommand = Command.make("mal", {
         };
 
         const run = createRun<MalPrefillCtx>([loadTask, sweepTask]);
+
         const ctx: MalPrefillCtx = {
           rows: [],
           selected: [],
@@ -240,7 +271,9 @@ export const malPrefillCommand = Command.make("mal", {
           unmatched: 0,
           errors: 0,
         };
+
         let completed = false;
+
         try {
           await run.run(ctx);
           completed = true;
@@ -248,6 +281,7 @@ export const malPrefillCommand = Command.make("mal", {
             `${ctx.linked} ${apply ? "linked" : "verified"}; ${ctx.unmatched} unmapped; ${ctx.errors} errors`,
             ctx.errors > 0,
           );
+
           if (ctx.errors > 0) {
             throw cliError(`${ctx.errors} MAL link checks failed; inspect the report and rerun`);
           }

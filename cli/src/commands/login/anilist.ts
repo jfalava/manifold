@@ -49,6 +49,7 @@ export const anilistLoginCommand = Command.make("anilist", {
       try: async () => {
         openFrame("login anilist");
         const wizard = isBareLoginInvocation(clientId, clientSecret, pasteOnly);
+
         const oauth = await resolveOAuthClient({
           kind: "anilist",
           clientIdFlag: clientId,
@@ -56,11 +57,14 @@ export const anilistLoginCommand = Command.make("anilist", {
           requireSecret: true,
           wizard,
         });
+
         if (!oauth.clientSecret) {
           throw cliError("AniList client secret is required.");
         }
+
         const usePasteOnly = await resolvePasteOnlyWizard(pasteOnly, wizard);
         const auth = createAniListAuthorization(oauth.clientId);
+
         const code = await awaitOAuthAuthorizationCode({
           providerLabel: "AniList",
           authorizeUrl: auth.url,
@@ -68,10 +72,12 @@ export const anilistLoginCommand = Command.make("anilist", {
           expectedState: auth.state,
           pasteOnly: usePasteOnly,
         });
+
         const session = await exchangeAniListCode(oauth.clientId, oauth.clientSecret, code);
         const viewer = await validateAniListSession(session.accessToken);
         await Bun.secrets.set({ ...ANILIST_SECRET, value: JSON.stringify(session) });
         closeFrame(`Signed in as ${viewer.name} (${viewer.id}). Token saved in the OS keychain.`);
+
         if (envString("MANIFOLD_ANILIST_TOKEN")) {
           frameDetail(
             "MANIFOLD_ANILIST_TOKEN is set and overrides this login. Unset it to use the keychain token.",

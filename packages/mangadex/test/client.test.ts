@@ -19,10 +19,12 @@ const jsonResponse = (body: JsonValue, status = 200): Response =>
 describe("MangaDex client", () => {
   it("normalizes manga search and cover relationships", async () => {
     const requests: string[] = [];
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(requestHref(input));
+
         return jsonResponse({
           data: [
             {
@@ -68,12 +70,14 @@ describe("MangaDex client", () => {
 
   it("paginates chapters and resolves MangaDex@Home pages", async () => {
     const requests: string[] = [];
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       limit: 1,
       fetcher: async (input) => {
         const url = requestHref(input);
         requests.push(url);
+
         if (url.includes("/at-home/server/")) {
           return jsonResponse({
             baseUrl: "https://uploads.example",
@@ -84,7 +88,9 @@ describe("MangaDex client", () => {
             },
           });
         }
+
         const offset = new URL(url).searchParams.get("offset");
+
         return jsonResponse({
           total: 2,
           data: [
@@ -146,11 +152,13 @@ describe("MangaDex client", () => {
 
   it("marks chapters as read with the authenticated MangaDex endpoint", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       accessToken: "access-token",
       fetcher: async (input, init) => {
         requests.push({ url: requestHref(input), init });
+
         return new Response(null, { status: 204 });
       },
     });
@@ -172,10 +180,12 @@ describe("MangaDex client", () => {
 
   it("lists manga with ids, ordering, and recency filters", async () => {
     const requests: string[] = [];
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(requestHref(input));
+
         return jsonResponse({
           total: 1,
           data: [{ id: "manga-9", attributes: { title: { en: "Nine" } } }],
@@ -205,10 +215,12 @@ describe("MangaDex client", () => {
 
   it("fetches the latest chapter feed ordered by readableAt", async () => {
     const requests: string[] = [];
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(requestHref(input));
+
         return jsonResponse({
           total: 1,
           data: [
@@ -237,10 +249,12 @@ describe("MangaDex client", () => {
 
   it("queries the followed feed with publish cutoff and explicit content ratings", async () => {
     const requests: string[] = [];
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(requestHref(input));
+
         return jsonResponse({
           total: 1,
           data: [
@@ -282,10 +296,12 @@ describe("MangaDex client", () => {
   it("fetches the newest chapter since a cutoff for a single manga", async () => {
     const requests: string[] = [];
     let empty = false;
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(requestHref(input));
+
         return jsonResponse({
           total: empty ? 0 : 1,
           data: empty
@@ -308,6 +324,7 @@ describe("MangaDex client", () => {
     const chapter = await Effect.runPromise(
       client.latestChapterSince("manga-3", "2026-01-01T00:00:00Z"),
     );
+
     expect(chapter?.id).toBe("chapter-9");
     expect(chapter?.publishedAt).toBe(Date.parse("2026-08-02T00:00:00Z"));
     const url = new URL(requests[0]);
@@ -317,18 +334,22 @@ describe("MangaDex client", () => {
 
     empty = true;
     requests.length = 0;
+
     const none = await Effect.runPromise(
       client.latestChapterSince("manga-3", "2026-01-01T00:00:00Z"),
     );
+
     expect(none).toBeUndefined();
   });
 
   it("pages the followed manga list", async () => {
     const requests: string[] = [];
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(requestHref(input));
+
         return jsonResponse({
           total: 1,
           data: [{ id: "manga-8", attributes: { title: { en: "Eight" } } }],
@@ -347,10 +368,12 @@ describe("MangaDex client", () => {
 
   it("lists manga with content rating overrides for id lookups", async () => {
     const requests: string[] = [];
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(requestHref(input));
+
         return jsonResponse({ total: 0, data: [] });
       },
     });
@@ -375,15 +398,18 @@ describe("MangaDex client", () => {
   it("retries transient 5xx and 429 responses before failing", async () => {
     let calls = 0;
     const statuses = [500, 429, 200];
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       retryDelayMs: 1,
       fetcher: async () => {
         const status = statuses[Math.min(calls, statuses.length - 1)];
         calls += 1;
+
         if (status === 200) {
           return jsonResponse({ statuses: {} });
         }
+
         return new Response(null, { status, headers: { "retry-after": "0" } });
       },
     });
@@ -395,14 +421,17 @@ describe("MangaDex client", () => {
 
   it("reads and writes reading statuses with authentication", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       accessToken: "access-token",
       fetcher: async (input, init) => {
         requests.push({ url: requestHref(input), init });
+
         if (requestHref(input).endsWith("/status") && init?.method === "POST") {
           return new Response(null, { status: 200 });
         }
+
         return jsonResponse({ statuses: { "manga-1": "reading", "manga-2": "bogus" } });
       },
     });
@@ -426,10 +455,12 @@ describe("MangaDex client", () => {
 
   it("fetches one page of a manga feed with explicit content ratings", async () => {
     const requests: string[] = [];
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(requestHref(input));
+
         return jsonResponse({
           total: 32,
           data: [
@@ -467,13 +498,16 @@ describe("MangaDex client", () => {
   it("bulk reads markers grouped by manga id", async () => {
     const requests: string[] = [];
     let empty = false;
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(requestHref(input));
+
         if (empty) {
           return jsonResponse({ data: [] });
         }
+
         return jsonResponse({
           data: { "manga-1": ["chapter-1", "chapter-2"], "manga-2": [] },
         });
@@ -497,10 +531,12 @@ describe("MangaDex client", () => {
 
   it("defaults listManga to all content ratings so adult titles resolve", async () => {
     const requests: string[] = [];
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async (input) => {
         requests.push(requestHref(input));
+
         return jsonResponse({
           total: 1,
           data: [{ id: "adult-1", attributes: { title: { en: "Adult One" } } }],
@@ -521,12 +557,14 @@ describe("MangaDex client", () => {
 
   it("batches user ratings and omits unrated entries", async () => {
     const requests: string[] = [];
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       accessToken: "token",
       fetcher: async (input) => {
         requests.push(requestHref(input));
         const url = requestHref(input);
+
         if (url.includes("/rating")) {
           return jsonResponse({
             result: "ok",
@@ -535,6 +573,7 @@ describe("MangaDex client", () => {
             },
           });
         }
+
         return jsonResponse({ data: [] });
       },
     });
@@ -553,10 +592,12 @@ describe("MangaDex client", () => {
 
   it("handles empty rating input without calling upstream", async () => {
     let called = false;
+
     const client = createMangaDexClient({
       endpoint: "https://mangadex.test",
       fetcher: async () => {
         called = true;
+
         return jsonResponse({ result: "ok", ratings: {} });
       },
     });

@@ -11,6 +11,7 @@ export interface BrowserView {
 
 export const isChallengeText = (value: string): boolean => {
   const lowered = value.toLowerCase();
+
   return (
     lowered.includes("just a moment") ||
     lowered.includes("cf-chl-") ||

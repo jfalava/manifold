@@ -37,13 +37,17 @@ export function DataTable<TData extends RowData>({
               {headerGroup.headers.map((header) => {
                 const canSort = header.column.getCanSort();
                 const sort = header.column.getIsSorted();
+
                 const headerContent = header.isPlaceholder
                   ? undefined
                   : flexRender(header.column.columnDef.header, header.getContext());
+
                 const sortDescription =
                   sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "not sorted";
+
                 const ariaSort =
                   sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "none";
+
                 return (
                   <Table.Head
                     key={header.id}
@@ -98,9 +102,11 @@ export function DataTable<TData extends RowData>({
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </Table.Cell>
                   ));
+
                 if (renderRow) {
                   return renderRow(row, cells);
                 }
+
                 return <Table.Row key={row.id}>{cells}</Table.Row>;
               })}
           {!loading && rows.length === 0 && (

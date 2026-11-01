@@ -50,6 +50,7 @@ describe("manual operation retry scheduling", () => {
       platform: "browser",
       external: ["cloudflare:workers"],
     });
+
     worker = new Miniflare(
       convertV4MiniflareOptions({
         name: "op-retry-test",
@@ -77,6 +78,7 @@ describe("manual operation retry scheduling", () => {
         method: "POST",
         body: JSON.stringify({ target, paused }),
       });
+
       expect(response.status).toBe(200);
       const result = Schema.decodeUnknownSync(RetryResult)(await response.json());
       expect(result.before).toBeNull();

@@ -21,7 +21,9 @@ export type ButtonVariant =
   | "destructive"
   | "secondary-destructive"
   | "outline";
+
 export type ButtonSize = "xs" | "sm" | "base" | "lg";
+
 export type ButtonAppearance = "base" | "square" | "circle";
 
 // `rounded-lg` is the default radius for every button; `circle` overrides
@@ -87,5 +89,6 @@ export function buttonVariants({
           "p-0",
           appearance === "circle" && "rounded-full",
         );
+
   return cn(buttonBase, buttonVariantClasses[variant], dims);
 }

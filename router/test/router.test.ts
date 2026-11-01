@@ -38,12 +38,14 @@ function makeEnv(): TestEnv {
           input instanceof Request
             ? input
             : new Request(input instanceof URL ? input.href : input, init);
+
         const url = new URL(request.url);
         calls[binding].push({
           pathname: url.pathname,
           search: url.search,
           method: request.method,
         });
+
         return new Response(`${binding}-ok`, { status: 200 });
       },
       // Test double only implements fetch; connect is unused by the router.
@@ -51,6 +53,7 @@ function makeEnv(): TestEnv {
         throw new Error(`connect is not stubbed for ${binding}`);
       },
     };
+
     // SAFETY: test double supplies the Fetcher.fetch surface the router calls
     return fetcher as Fetcher;
   };
@@ -68,6 +71,7 @@ function makeEnv(): TestEnv {
 const request = (path: string) => {
   const { calls, env } = makeEnv();
   const response = router.request(path, {}, env);
+
   return { response, calls };
 };
 

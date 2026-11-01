@@ -47,10 +47,13 @@ const RETRY_AFTER_FALLBACK_MS = 60_000;
  */
 export const retryAfterMs = (response: Response): number => {
   const raw = response.headers.get("retry-after");
+
   if (raw === null || raw.trim() === "") {
     return RETRY_AFTER_FALLBACK_MS;
   }
+
   const seconds = Number(raw);
+
   return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : RETRY_AFTER_FALLBACK_MS;
 };
 
@@ -63,7 +66,9 @@ const hasGraphQLErrors = (value: JsonValue): boolean => {
   if (!isJsonObject(value)) {
     return true;
   }
+
   const errors = value["errors"];
+
   return errors !== undefined && (!isJsonArray(errors) || errors.length > 0);
 };
 
@@ -71,13 +76,17 @@ const decodeViewer = (value: JsonValue): { id: number; name: string } | undefine
   if (hasGraphQLErrors(value) || !isJsonObject(value)) {
     return undefined;
   }
+
   const data = objectField(value, "data");
   const viewer = data === undefined ? undefined : objectField(data, "Viewer");
+
   if (viewer === undefined) {
     return undefined;
   }
+
   const id = viewer["id"];
   const name = viewer["name"];
+
   return isFiniteNumber(id) && isString(name) ? { id, name } : undefined;
 };
 
@@ -85,42 +94,56 @@ const decodeMangaEntries = (value: JsonValue): WipeListEntry[] | undefined => {
   if (hasGraphQLErrors(value) || !isJsonObject(value)) {
     return undefined;
   }
+
   const data = objectField(value, "data");
   const collection = data === undefined ? undefined : objectField(data, "MediaListCollection");
+
   if (collection === undefined) {
     return undefined;
   }
+
   const listsValue = collection["lists"];
+
   if (listsValue === null) {
     return [];
   }
+
   if (listsValue === undefined) {
     return undefined;
   }
+
   if (!isJsonArray(listsValue)) {
     return undefined;
   }
 
   const entries: WipeListEntry[] = [];
+
   for (const listValue of listsValue) {
     if (!isJsonObject(listValue)) {
       return undefined;
     }
+
     const entriesValue = listValue["entries"];
+
     if (entriesValue === undefined || entriesValue === null) {
       continue;
     }
+
     if (!isJsonArray(entriesValue)) {
       return undefined;
     }
+
     for (const entryValue of entriesValue) {
       if (!isJsonObject(entryValue) || !isFiniteNumber(entryValue["id"])) {
         return undefined;
       }
+
       const mediaValue = entryValue["media"];
+
       if (mediaValue !== undefined && mediaValue !== null && !isJsonObject(mediaValue)) {
         return undefined;
       }
+
       const media = isJsonObject(mediaValue) ? mediaValue : undefined;
       const mediaId = media !== undefined && isFiniteNumber(media["id"]) ? media["id"] : 0;
       const title = media === undefined ? undefined : objectField(media, "title");
@@ -134,6 +157,7 @@ const decodeMangaEntries = (value: JsonValue): WipeListEntry[] | undefined => {
       });
     }
   }
+
   return entries;
 };
 
@@ -156,9 +180,11 @@ const postGraphQLEffect = (
           body: JSON.stringify({ query, variables }),
         }),
       ).pipe(Effect.mapError((cause) => cliError(`AniList wipe POST failed: ${cause.message}`)));
+
       if (response.status !== 429 || attempt >= DELETE_429_MAX_RETRIES) {
         return response;
       }
+
       yield* sleep(retryAfterMs(response));
     }
   });
@@ -186,14 +212,18 @@ const fetchViewerEffect = (
         body: JSON.stringify({ query: `query { Viewer { id name } }` }),
       }),
     ).pipe(Effect.mapError((cause) => cliError(`Viewer query failed: ${cause.message}`)));
+
     if (!response.ok) {
       return yield* cliError(`Viewer query failed: HTTP ${response.status}`);
     }
+
     const raw = yield* jsonFromResponseEffect(response, "anilist.viewer");
     const viewer = decodeViewer(raw);
+
     if (viewer === undefined) {
       return yield* cliError("AniList returned an invalid Viewer response");
     }
+
     return viewer;
   });
 
@@ -224,23 +254,30 @@ const fetchMangaEntriesEffect = (
         }),
       }),
     ).pipe(Effect.mapError((cause) => cliError(`Manga list fetch failed: ${cause.message}`)));
+
     if (!response.ok) {
       return yield* cliError(`Manga list fetch failed: HTTP ${response.status}`);
     }
+
     const raw = yield* jsonFromResponseEffect(response, "anilist.manga-list");
     const decoded = decodeMangaEntries(raw);
+
     if (decoded === undefined) {
       return yield* cliError("AniList returned an invalid manga-list response");
     }
+
     const seen = new Set<number>();
     const entries: WipeListEntry[] = [];
+
     for (const entry of decoded) {
       if (seen.has(entry.id)) {
         continue;
       }
+
       seen.add(entry.id);
       entries.push(entry);
     }
+
     return entries;
   });
 
@@ -258,19 +295,26 @@ const decodeDeletedEnvelopeEffect = (
 ): Effect.Effect<boolean | undefined, CliEffectError> =>
   Effect.gen(function* () {
     const payload = yield* jsonFromResponseEffect(response, "anilist.delete");
+
     if (!isJsonObject(payload)) {
       return undefined;
     }
+
     const errors = arrayField(payload, "errors");
+
     if (errors !== undefined && errors.length > 0) {
       return undefined;
     }
+
     const envelope = objectField(payload, "data");
     const mutation = envelope === undefined ? undefined : objectField(envelope, field);
+
     if (mutation === undefined) {
       return undefined;
     }
+
     const deleted = mutation["deleted"];
+
     return isBoolean(deleted) ? deleted : undefined;
   });
 
@@ -284,10 +328,13 @@ const deleteEntryEffect = (
       `mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }`,
       { id: entryId },
     );
+
     if (!response.ok) {
       return false;
     }
+
     const deleted = yield* decodeDeletedEnvelopeEffect(response, "DeleteMediaListEntry");
+
     return deleted === true;
   });
 
@@ -340,24 +387,32 @@ const fetchActivitiesPageEffect = (
         }),
       }),
     ).pipe(Effect.mapError((cause) => cliError(`Activity page fetch failed: ${cause.message}`)));
+
     if (!response.ok) {
       return yield* cliError(`Activity page fetch failed: HTTP ${response.status}`);
     }
+
     // SAFETY: AniList activity page JSON is decoded via isJsonObject / field helpers below
     const data: unknown = yield* jsonFromResponseEffect(response, "anilist.activities");
     const envelope = isJsonObject(data) ? objectField(data, "data") : undefined;
     const pageRecord = envelope === undefined ? undefined : objectField(envelope, "Page");
+
     const activityItems =
       pageRecord === undefined
         ? []
         : (arrayField(pageRecord, "activities") ?? []).filter(isJsonObject);
+
     const activities: Activity[] = [];
+
     for (const item of activityItems) {
       const id = numberField(item, "id");
+
       if (id === undefined) {
         continue;
       }
+
       const type = stringField(item, "type");
+
       if (type === "MANGA_LIST") {
         const media = objectField(item, "media");
         const title = media === undefined ? undefined : objectField(media, "title");
@@ -375,7 +430,9 @@ const fetchActivitiesPageEffect = (
         activities.push({ type: "TEXT", id, text: stringField(item, "text") ?? "" });
       }
     }
+
     const pageInfo = pageRecord === undefined ? undefined : objectField(pageRecord, "pageInfo");
+
     return { activities, hasNextPage: pageInfo !== undefined && pageInfo.hasNextPage === true };
   });
 
@@ -398,13 +455,16 @@ export const selectWipeActivities = (
   options: ActivitySelectionOptions = {},
 ): Activity[] => {
   const includeTextActivities = options.includeTextActivities === true;
+
   return activities.filter((activity) => {
     if (activity.type === "MANGA_LIST") {
       return true;
     }
+
     if (activity.type === "TEXT") {
       return includeTextActivities;
     }
+
     return false;
   });
 };
@@ -420,11 +480,14 @@ const fetchMangaActivitiesEffect = (
     const all: Activity[] = [];
     let page = 1;
     let hasNextPage = true;
+
     while (hasNextPage) {
       const result = yield* fetchActivitiesPageEffect(token, userId, page);
+
       for (const activity of selectWipeActivities(result.activities, options)) {
         all.push(activity);
       }
+
       report?.detail(
         `page ${page}: ${result.activities.length} activities (${all.length} ${
           includeTextActivities ? "selected, text included" : "manga list"
@@ -434,6 +497,7 @@ const fetchMangaActivitiesEffect = (
       page += 1;
       yield* sleep(3000);
     }
+
     return all;
   });
 
@@ -454,21 +518,27 @@ const deleteActivityEffect = (
       `mutation ($id: Int) { DeleteActivity(id: $id) { deleted } }`,
       { id: activityId },
     );
+
     if (!response.ok) {
       if (response.status === 400) {
         const body = yield* fromPromise(() => response.text()).pipe(
           Effect.mapError((cause) => cliError(cause.message)),
         );
+
         if (body.includes("The selected id is invalid")) {
           return { success: true, alreadyDeleted: true };
         }
       }
+
       return { success: false, alreadyDeleted: false };
     }
+
     const deleted = yield* decodeDeletedEnvelopeEffect(response, "DeleteActivity");
+
     if (deleted !== true) {
       return { success: false, alreadyDeleted: false };
     }
+
     return { success: true, alreadyDeleted: false };
   });
 
@@ -486,26 +556,32 @@ const deleteEntriesWithProgressEffect = (
   Effect.gen(function* () {
     let ok = 0;
     let failed = 0;
+
     for (let index = 0; index < entries.length; index += 1) {
       const entry = entries[index];
+
       if (!entry) {
         continue;
       }
+
       const outcome = yield* deleteEntryEffect(token, entry.id).pipe(
         Effect.map((deleted) => (deleted ? ("ok" as const) : ("fail" as const))),
         Effect.orElseSucceed(() => "fail" as const),
       );
+
       if (outcome === "ok") {
         ok += 1;
       } else {
         failed += 1;
       }
+
       report?.progress(index + 1, entries.length, [
         ["ok", ok],
         ["fail", failed],
       ]);
       yield* sleep(2500);
     }
+
     return { ok, failed };
   });
 
@@ -525,14 +601,18 @@ const deleteActivitiesWithProgressEffect = (
     let ok = 0;
     let failed = 0;
     let skipped = 0;
+
     for (let index = 0; index < activities.length; index += 1) {
       const activity = activities[index];
+
       if (!activity) {
         continue;
       }
+
       const result = yield* deleteActivityEffect(token, activity.id).pipe(
         Effect.orElseSucceed(() => ({ success: false, alreadyDeleted: false })),
       );
+
       if (result.alreadyDeleted) {
         skipped += 1;
       } else if (result.success) {
@@ -540,6 +620,7 @@ const deleteActivitiesWithProgressEffect = (
       } else {
         failed += 1;
       }
+
       report?.progress(index + 1, activities.length, [
         ["ok", ok],
         ["fail", failed],
@@ -547,6 +628,7 @@ const deleteActivitiesWithProgressEffect = (
       ]);
       yield* sleep(3000);
     }
+
     return { ok, failed, skipped };
   });
 

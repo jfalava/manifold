@@ -16,6 +16,7 @@ const forwardStripped =
   async (c) => {
     const url = new URL(c.req.raw.url);
     url.pathname = url.pathname.slice(prefix.length) || "/";
+
     return c.env[binding].fetch(new Request(url, c.req.raw));
   };
 
@@ -23,12 +24,14 @@ const forwardStripped =
 // (api.mangadex.org/docs/2-limitations: "you MUST proxy the requests your
 // users make to our services"). Proxy covers here so admin <img> tags work.
 const UUID_RE = /^[0-9a-f-]{16,64}$/i;
+
 // Original: uuid.jpg|png|gif — thumbnails: uuid.jpg.256.jpg / uuid.jpg.512.jpg
 const FILE_RE = /^[0-9a-f-]{16,64}\.(jpg|png|gif)(\.(256|512))?\.jpg$/i;
 
 const mangadexCover: Handler<App> = async (c) => {
   const mangaId = c.req.param("mangaId");
   const filename = c.req.param("filename");
+
   if (
     mangaId === undefined ||
     filename === undefined ||
@@ -37,12 +40,15 @@ const mangadexCover: Handler<App> = async (c) => {
   ) {
     return c.text("Bad cover path", 400);
   }
+
   const upstream = await fetch(`https://uploads.mangadex.org/covers/${mangaId}/${filename}`, {
     headers: { "user-agent": "manifold/0.1 (+https://manifold.jfa.dev; manifold/router)" },
   });
+
   const headers = new Headers();
   headers.set("content-type", upstream.headers.get("content-type") ?? "image/jpeg");
   headers.set("cache-control", "public, max-age=604800, stale-while-revalidate=86400");
+
   return new Response(upstream.body, { status: upstream.status, headers });
 };
 
@@ -98,9 +104,11 @@ export function isDocsPath(pathname: string): boolean {
 
 const forwardDocs: Handler<App> = async (c) => {
   const pathname = new URL(c.req.url).pathname;
+
   if (!isDocsPath(pathname)) {
     return c.text("I'm a teapot", 418);
   }
+
   return c.env.DOCS_WORKER.fetch(c.req.raw);
 };
 

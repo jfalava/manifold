@@ -14,6 +14,7 @@ const KEY_PREFIX = "nb-banner-dismissed-";
 
 function initBanner(banner: HTMLElement): () => void {
   const id = banner.dataset.nbBannerDismiss;
+
   if (!id) {
     return () => undefined;
   }
@@ -22,12 +23,16 @@ function initBanner(banner: HTMLElement): () => void {
 
   try {
     const stored = localStorage.getItem(key);
+
     if (stored) {
       const expiry = Number(stored);
+
       if (expiry === 0 || expiry > Date.now()) {
         banner.remove();
+
         return () => undefined;
       }
+
       localStorage.removeItem(key);
     }
   } catch {
@@ -35,6 +40,7 @@ function initBanner(banner: HTMLElement): () => void {
   }
 
   const btn = banner.querySelector<HTMLButtonElement>("[data-nb-banner-close]");
+
   if (!btn) {
     return () => undefined;
   }
@@ -42,11 +48,13 @@ function initBanner(banner: HTMLElement): () => void {
   function handleClick() {
     const days = Number(banner.dataset.nbBannerDays) || 0;
     const value = days > 0 ? String(Date.now() + days * 86400000) : "0";
+
     try {
       localStorage.setItem(key, value);
     } catch {
       // localStorage unavailable; dismissal is session-only.
     }
+
     banner.remove();
   }
 

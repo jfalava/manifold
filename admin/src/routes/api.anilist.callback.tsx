@@ -23,27 +23,36 @@ function readHash(): Capture {
   const raw = globalThis.location.hash.startsWith("#")
     ? globalThis.location.hash.slice(1)
     : globalThis.location.hash;
+
   if (!raw) {
     return { kind: "empty" };
   }
+
   const params = new URLSearchParams(raw);
   const error = params.get("error");
+
   if (error) {
     const hint = params.get("error_description") ?? params.get("message") ?? params.get("hint");
+
     return {
       kind: "error",
       message: hint ? `${error}: ${hint}` : error,
     };
   }
+
   const accessToken = params.get("access_token");
+
   if (!accessToken) {
     return { kind: "empty" };
   }
+
   const expiresRaw = params.get("expires_in");
   const expiresParsed = expiresRaw !== null ? Number(expiresRaw) : Number.NaN;
+
   if (Number.isFinite(expiresParsed) && expiresParsed > 0) {
     return { kind: "token", accessToken, expiresIn: expiresParsed };
   }
+
   return { kind: "token", accessToken };
 }
 
@@ -64,13 +73,16 @@ function AniListCallbackPage() {
       // oxlint-disable-next-line react/set-state-in-effect -- one-shot OAuth return
       setStatus("error");
       setDetail(capture.message);
+
       return;
     }
+
     if (capture.kind === "empty") {
       setStatus("error");
       setDetail(
         "No access_token in the URL. Use Credentials → paste token, or try Authorize again.",
       );
+
       return;
     }
 
@@ -83,6 +95,7 @@ function AniListCallbackPage() {
         } else {
           await importAniListToken({ data: { accessToken: capture.accessToken } });
         }
+
         setStatus("ok");
         setDetail("AniList connected. Returning to Credentials…");
         globalThis.setTimeout(() => {

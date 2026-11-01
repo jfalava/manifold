@@ -36,14 +36,17 @@ const decodeTokenResponse = (value: JsonValue): TokenResponse | undefined => {
   if (!isJsonObject(value) || !isString(value.access_token) || value.access_token.length === 0) {
     return undefined;
   }
+
   const refreshToken = value.refresh_token;
   const expiresIn = value.expires_in;
+
   if (
     (refreshToken !== undefined && refreshToken !== null && !isString(refreshToken)) ||
     (expiresIn !== undefined && !isFiniteNumber(expiresIn))
   ) {
     return undefined;
   }
+
   return {
     access_token: value.access_token,
     ...(isString(refreshToken) && { refresh_token: refreshToken }),
@@ -75,21 +78,26 @@ const loadPersistedTokensEffect = (cachePath: string | undefined): Effect.Effect
     if (!cachePath) {
       return {};
     }
+
     const outcome = yield* fromPromise(async () => {
       // SAFETY: token cache JSON is decoded via isJsonObject / field guards below
       const raw: unknown = JSON.parse(await readFile(cachePath, "utf8"));
+
       if (!isJsonObject(raw)) {
         return {};
       }
+
       return {
         accessToken: isString(raw.accessToken) ? raw.accessToken : undefined,
         refreshToken: isString(raw.refreshToken) ? raw.refreshToken : undefined,
         expiresAt: isFiniteNumber(raw.expiresAt) ? raw.expiresAt : undefined,
       } satisfies PersistedTokens;
     }).pipe(Effect.option);
+
     if (outcome._tag === "None") {
       return {};
     }
+
     return outcome.value;
   });
 
@@ -109,6 +117,7 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
       if (!options.cachePath) {
         return;
       }
+
       const payload: PersistedTokens = { accessToken, refreshToken, expiresAt };
       yield* fromPromise(async () => {
         await mkdir(dirname(options.cachePath!), { recursive: true });
@@ -133,19 +142,24 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
           body: grant.toString(),
         }),
       ).pipe(Effect.mapError((cause) => cliError(`MangaDex ${label} failed: ${cause.message}`)));
+
       if (!response.ok) {
         const detail = yield* fromPromise(() => response.text()).pipe(
           Effect.orElseSucceed(() => ""),
         );
+
         return yield* cliError(
           `MangaDex ${label} failed with HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
         );
       }
+
       const raw = yield* jsonFromResponseEffect(response, `mangadex.${label}`);
       const body = decodeTokenResponse(raw);
+
       if (!body) {
         return yield* cliError(`MangaDex ${label} returned no access_token`);
       }
+
       accessToken = body.access_token;
       refreshToken = body.refresh_token ?? refreshToken;
       expiresAt =
@@ -160,15 +174,18 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
       if (accessToken && epochMillisNow() < expiresAt) {
         return accessToken;
       }
+
       if (!refreshToken && options.cachePath) {
         const stored = yield* loadPersistedTokensEffect(options.cachePath);
         accessToken = stored.accessToken;
         refreshToken = stored.refreshToken;
         expiresAt = stored.expiresAt ?? 0;
+
         if (accessToken && epochMillisNow() < expiresAt) {
           return accessToken;
         }
       }
+
       if (refreshToken) {
         const refreshed = yield* requestTokenEffect(
           createMangaDexRefreshGrant(options.credentials, refreshToken),
@@ -177,19 +194,25 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
           Effect.map(() => true as const),
           Effect.orElseSucceed(() => false as const),
         );
+
         if (refreshed) {
           if (accessToken) {
             return accessToken;
           }
+
           return yield* cliError("MangaDex refresh grant returned no access token");
         }
+
         // Fall through to a fresh password grant.
         refreshToken = undefined;
       }
+
       yield* requestTokenEffect(createMangaDexPasswordGrant(options.credentials), "password grant");
+
       if (!accessToken) {
         return yield* cliError("MangaDex password grant returned no access token");
       }
+
       return accessToken;
     });
 

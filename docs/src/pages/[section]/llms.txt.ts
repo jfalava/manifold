@@ -35,6 +35,7 @@ interface SectionProps {
 
 export async function getStaticPaths() {
   const { groups } = await getIndexedTopLevel();
+
   // SAFETY: value is if they don't exist. at this site
   return (
     groups

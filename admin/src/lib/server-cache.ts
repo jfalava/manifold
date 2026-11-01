@@ -19,6 +19,7 @@ import { isJsonObject, isNumberValue } from "./guards";
 
 /** How long a stored snapshot is served without triggering a refresh. */
 const SOFT_TTL_MS = 60_000;
+
 /** Hard KV expiry — the longest a stale snapshot can ever be served. */
 const KV_TTL_SECONDS = 21_600; // 6h
 const JsonString = Schema.fromJsonString(Schema.Unknown);
@@ -57,15 +58,20 @@ const readKv = Effect.fnUntraced(function* <T>(
   decode: CacheDecoder<T>,
 ) {
   const text = yield* tryPromise(() => kv.get(key, "text")).pipe(Effect.orElseSucceed(() => null));
+
   if (text === null) {
     return null;
   }
+
   const decoded = Schema.decodeOption(JsonString)(text);
   const parsed = Option.isSome(decoded) ? decoded.value : null;
+
   if (!isJsonObject(parsed) || !isNumberValue(parsed.storedAt) || !("value" in parsed)) {
     return null;
   }
+
   const value = decode(parsed.value);
+
   return value === undefined ? null : ({ storedAt: parsed.storedAt, value } satisfies Envelope<T>);
 });
 
@@ -97,11 +103,14 @@ const computeAndStore = Effect.fnUntraced(function* <T>(
 ) {
   const acquired = yield* Effect.sync(() => {
     const existing = inflight.get(key);
+
     if (existing !== undefined) {
       return { deferred: existing, owner: false } as const;
     }
+
     const deferred = Deferred.makeUnsafe<unknown, AdminError>();
     inflight.set(key, deferred);
+
     return {
       deferred,
       epoch: invalidationEpoch.get(key) ?? 0,
@@ -112,11 +121,13 @@ const computeAndStore = Effect.fnUntraced(function* <T>(
   if (!acquired.owner) {
     const value = yield* Deferred.await(acquired.deferred);
     const decoded = decode(value);
+
     if (decoded === undefined) {
       return yield* new AdminError({
         message: `Cache computation for ${key} returned an invalid value`,
       });
     }
+
     return decoded;
   }
 
@@ -129,11 +140,14 @@ const computeAndStore = Effect.fnUntraced(function* <T>(
                 storedAt: DateTime.toEpochMillis(DateTime.nowUnsafe()),
                 value,
               };
+
               l1.set(key, envelope);
+
               if (kv !== null) {
                 yield* writeKv(kv, key, envelope);
               }
             }
+
             yield* Deferred.succeed(acquired.deferred, value);
           })
         : Deferred.succeed(acquired.deferred, value),
@@ -158,42 +172,55 @@ const cachedJsonEffect = Effect.fnUntraced(function* <T>(
   const now = DateTime.toEpochMillis(DateTime.nowUnsafe());
 
   const local = l1.get(key);
+
   if (local !== undefined && now - local.storedAt < SOFT_TTL_MS) {
     const value = decode(local.value);
+
     if (value !== undefined) {
       return value;
     }
+
     l1.delete(key);
   }
 
   const { kv, waitUntil } = yield* workersCacheRuntime;
   const stored = kv === null ? null : yield* readKv(kv, key, decode);
+
   if (stored !== null) {
     l1.set(key, stored);
+
     if (now - stored.storedAt < SOFT_TTL_MS) {
       return stored.value;
     }
+
     // Stale: serve it now, refresh out of band. Without waitUntil the
     // refresh promise may be cancelled after the response — acceptable,
     // the next request retries.
     const refresh = runHost(computeAndStore(key, kv, decode, compute)).catch(() => undefined);
+
     if (waitUntil !== null) {
       waitUntil(refresh);
     }
+
     return stored.value;
   }
 
   // Serve a stale L1 value the same way when KV is unavailable.
   if (local !== undefined) {
     const value = decode(local.value);
+
     if (value === undefined) {
       l1.delete(key);
+
       return yield* computeAndStore(key, kv, decode, compute);
     }
+
     const refresh = runHost(computeAndStore(key, kv, decode, compute)).catch(() => undefined);
+
     if (waitUntil !== null) {
       waitUntil(refresh);
     }
+
     return value;
   }
 
@@ -219,9 +246,11 @@ const invalidateCachedJsonEffect = Effect.fnUntraced(function* (key: string) {
     inflight.delete(key);
   });
   const { kv } = yield* workersCacheRuntime;
+
   if (kv === null) {
     return;
   }
+
   yield* tryPromise(() => kv.delete(key)).pipe(Effect.ignore);
 });
 

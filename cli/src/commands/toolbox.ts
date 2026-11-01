@@ -94,13 +94,17 @@ const apiConfigEffect = (
   Effect.gen(function* () {
     const token = resolveValue(tokenFlag, "MANIFOLD_TOKEN");
     const origin = resolveValue(originFlag, "MANIFOLD_API_ORIGIN") ?? DEFAULT_API_ORIGIN;
+
     if (token) {
       return { origin: origin.replace(/\/$/, ""), token };
     }
+
     const session = yield* fromPromise(() => loadManifoldSession());
+
     if (!session) {
       return yield* cliError("Manifold session missing: run login manifold or set MANIFOLD_TOKEN");
     }
+
     return {
       origin: origin.replace(/\/$/, ""),
       token: session.accessToken,
@@ -136,13 +140,17 @@ const apiCallEffect = <A>(
             ...(!(body === undefined) && { body: jsonBodyString(body) }),
           }),
         );
+
         const text = yield* fromPromise(() => response.text());
+
         const parsed =
           text.length > 0
             ? Option.getOrUndefined(decodeJsonOption(Schema.fromJsonString(Schema.Unknown), text))
             : undefined;
+
         const raw: JsonValue | undefined =
           parsed !== undefined && isJsonValue(parsed) ? parsed : text.length > 0 ? text : undefined;
+
         return { response, raw };
       });
 
@@ -153,12 +161,15 @@ const apiCallEffect = <A>(
           refreshToken: config.refreshToken!,
           expiresAt: config.accessExpiresAt ?? 0,
         };
+
         // Another CLI process can rotate the single-use refresh token during a long sweep.
         const stored = yield* fromPromise(() => loadManifoldSession());
         const session = stored && stored.refreshToken !== snapshot.refreshToken ? stored : snapshot;
+
         if (session !== snapshot && session.expiresAt > epochMillisNow() + 30_000) {
           return session;
         }
+
         return yield* fromPromise(() => refreshManifoldSession(config.origin, session)).pipe(
           Effect.catch((error) =>
             Effect.gen(function* () {
@@ -166,6 +177,7 @@ const apiCallEffect = <A>(
               const latest = yield* fromPromise(() => loadManifoldSession()).pipe(
                 Effect.orElseSucceed(() => undefined),
               );
+
               if (
                 latest &&
                 latest.refreshToken !== session.refreshToken &&
@@ -173,11 +185,13 @@ const apiCallEffect = <A>(
               ) {
                 return latest;
               }
+
               return yield* error;
             }),
           ),
         );
       });
+
     if (
       config.refreshToken &&
       config.accessExpiresAt !== undefined &&
@@ -188,7 +202,9 @@ const apiCallEffect = <A>(
       config.refreshToken = refreshed.refreshToken;
       config.accessExpiresAt = refreshed.expiresAt;
     }
+
     let result = yield* request(config.token);
+
     if (result.response.status === 401 && config.refreshToken) {
       const refreshed = yield* refresh();
       config.token = refreshed.accessToken;
@@ -196,24 +212,31 @@ const apiCallEffect = <A>(
       config.accessExpiresAt = refreshed.expiresAt;
       result = yield* request(config.token);
     }
+
     const { response, raw } = result;
+
     if (!response.ok) {
       const message =
         isJsonObject(raw) && raw.error !== undefined
           ? errorMessage(raw.error)
           : `HTTP ${response.status}`;
+
       return yield* cliError(message);
     }
+
     if (schema !== undefined) {
       if (raw !== undefined && !isJsonValue(raw)) {
         return yield* cliError(`Personal API response is not JSON (${path})`);
       }
+
       const decoded: JsonValue = raw === undefined ? null : raw;
+
       return yield* Effect.try({
         try: () => decodeResponse(schema, decoded, path),
         catch: (cause) => cliError(errorMessage(cause)),
       });
     }
+
     // SAFETY: untyped call sites trust wire until migrated
     return raw as A;
   });
@@ -235,12 +258,15 @@ const registryByAnilistIdEffect = (
   Effect.gen(function* () {
     const all = yield* listRegistryRowsEffect(config);
     const map = new Map<string, RegistryRow>();
+
     for (const row of all) {
       const link = row.providers.find((provider) => provider.provider === "anilist");
+
       if (link) {
         map.set(link.externalId, row);
       }
     }
+
     return map;
   });
 
@@ -255,6 +281,7 @@ const listRegistryRowsEffect = (
     let offset = 0;
     let page: readonly RegistryRow[];
     const all: RegistryRow[] = [];
+
     do {
       const body = yield* apiCallEffect(
         config,
@@ -263,10 +290,12 @@ const listRegistryRowsEffect = (
         undefined,
         RegistryListResponse,
       );
+
       page = body.entries;
       all.push(...page);
       offset += page.length;
     } while (page.length === pageSize);
+
     return all;
   });
 
@@ -317,6 +346,7 @@ const drainApiClient = (config: ApiConfig): DrainApiClient => ({
           undefined,
           OpsListResponse,
         );
+
         return body.ops.map((op): PendingAniListOp => ({
           opId: op.opId,
           kind: op.kind,
@@ -344,6 +374,7 @@ export const opsCommand = Command.make("ops").pipe(
           openFrame("ops pending");
           const config = yield* fromPromise(() => apiConfig(apiOrigin, apiToken));
           let total = 0;
+
           for (const state of ["pending", "failed", "blocked"] as const) {
             const body = yield* apiCallEffect(
               config,
@@ -352,17 +383,22 @@ export const opsCommand = Command.make("ops").pipe(
               undefined,
               OpsListResponse,
             );
+
             frameDetail(`${state}: ${body.ops.length}`);
+
             for (const op of body.ops) {
               frameDetail(
                 `  ${state.toUpperCase()} ${op.opId} ${op.kind} origin=${op.origin} attempts=${op.attempts}`,
               );
+
               if (op.lastError) {
                 frameDetail(`    └ ${op.lastError}`);
               }
             }
+
             total += body.ops.length;
           }
+
           // The shelf mirror queue has no op rows; its DLQ state rides on
           // the summary endpoint.
           const { summary } = yield* apiCallEffect(
@@ -372,12 +408,15 @@ export const opsCommand = Command.make("ops").pipe(
             undefined,
             OpsSummaryResponse,
           );
+
           if (summary.shelfPending > 0 || summary.shelfBlocked > 0) {
             frameDetail(`shelf: pending=${summary.shelfPending} blocked=${summary.shelfBlocked}`);
+
             if (summary.shelfLastBlockedError) {
               frameDetail(`  └ ${summary.shelfLastBlockedError}`);
             }
           }
+
           closeFrame(`Listed ${total} ops`);
         }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
       ),
@@ -395,10 +434,13 @@ export const opsCommand = Command.make("ops").pipe(
       Command.withHandler(({ opId, apply, apiOrigin, apiToken }) =>
         Effect.gen(function* () {
           openFrame("ops retry");
+
           if (!apply) {
             closeFrame(`Dry run: would reset ${opId} to pending. Re-run with --apply.`);
+
             return;
           }
+
           const config = yield* fromPromise(() => apiConfig(apiOrigin, apiToken));
           yield* apiCallEffect(
             config,
@@ -437,23 +479,28 @@ export const opsCommand = Command.make("ops").pipe(
         Effect.gen(function* () {
           openFrame(once ? "ops drain-anilist (once)" : "ops drain-anilist");
           const config = yield* fromPromise(() => apiConfig(apiOrigin, apiToken));
+
           const token = yield* fromPromise(() =>
             resolveAniListToken(Option.getOrUndefined(anilistToken)),
           );
+
           if (!token) {
             return yield* cliError(
               "Missing AniList token: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN.",
             );
           }
+
           if (!Number.isFinite(interval) || interval < 1) {
             return yield* cliError("--interval must be a positive integer (seconds).");
           }
+
           if (!Number.isFinite(limit) || limit < 1 || limit > 100) {
             return yield* cliError("--limit must be between 1 and 100.");
           }
 
           const api = drainApiClient(config);
           let passes = 0;
+
           const progress = createProgress("Drain AniList operations", undefined, {
             announceNonTTY: false,
           });
@@ -464,11 +511,14 @@ export const opsCommand = Command.make("ops").pipe(
                 progress.detail("Fetching pending AniList operations");
                 const summary = yield* drainAniListOpsPassEffect(api, token, { limit });
                 passes += 1;
+
                 if (summary.fetched === 0) {
                   const idle = `pass ${passes}: idle (no pending anilist ops)`;
+
                   if (once) {
                     frameDetail(idle);
                   }
+
                   progress.detail(`${idle} · next check in ${interval}s`);
                 } else {
                   frameDetail(
@@ -480,12 +530,14 @@ export const opsCommand = Command.make("ops").pipe(
             if (once) {
               yield* onePass();
               closeFrame(`drain-anilist once complete (${passes} pass)`);
+
               return;
             }
 
             frameDetail(
               `looping every ${interval}s (Ctrl+C to stop). AniList stays on this host's egress IP.`,
             );
+
             // Long-running unit: never close the frame; journald captures stdout.
             for (;;) {
               const passResult = yield* onePass().pipe(
@@ -497,10 +549,12 @@ export const opsCommand = Command.make("ops").pipe(
                       process.stderr,
                     );
                     progress.detail(`Retrying in ${interval}s`);
+
                     return { ok: false as const };
                   }),
                 ),
               );
+
               void passResult;
               yield* sleep(interval * 1000);
             }
@@ -526,32 +580,39 @@ export const reconcileCommand = Command.make("diff", {
   Command.withHandler(({ anilistToken, apiOrigin, apiToken }) =>
     Effect.gen(function* () {
       openFrame("reconcile diff");
+
       const token = yield* fromPromise(() =>
         resolveAniListToken(Option.getOrUndefined(anilistToken)),
       );
+
       if (!token) {
         return yield* cliError(
           "AniList token missing: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN",
         );
       }
+
       const config = yield* fromPromise(() => apiConfig(apiOrigin, apiToken));
 
       const live: readonly AniListEntry[] = yield* fromPromise(() =>
         fetchAniListMangaEntries(token),
       );
+
       const registry = yield* registryByAnilistIdEffect(config);
 
       let drift = 0;
       let missing = 0;
+
       for (const entry of live) {
         const status = registryStatusFor(entry.status);
         const key = String(entry.mediaId);
         const row = registry.get(key);
+
         if (!row) {
           missing += 1;
           frameDetail(`NOT IN REGISTRY anilist:${key} ${entry.title}`);
           continue;
         }
+
         if ((row.state?.status ?? "(none)") !== status) {
           drift += 1;
           frameDetail(
@@ -559,6 +620,7 @@ export const reconcileCommand = Command.make("diff", {
           );
         }
       }
+
       closeFrame(
         `compared ${live.length} AniList entries against ${registry.size} registry rows; ${drift} drifted, ${missing} unregistered`,
       );
@@ -585,9 +647,11 @@ export const importCommand = Command.make("import", {
   Command.withHandler(({ anilistToken, apply, apiOrigin, apiToken }) =>
     Effect.gen(function* () {
       openFrame("registry import");
+
       const token = yield* fromPromise(() =>
         resolveAniListToken(Option.getOrUndefined(anilistToken)),
       );
+
       if (!token) {
         return yield* cliError(
           "AniList token missing: run login anilist, pass --anilist-token, or set MANIFOLD_ANILIST_TOKEN",
@@ -596,11 +660,13 @@ export const importCommand = Command.make("import", {
 
       const live = yield* fromPromise(() => fetchAniListMangaEntries(token));
       frameDetail(`fetched ${live.length} AniList entries`);
+
       if (!apply) {
         const importable = live.filter((entry) => mappedRegistryStatus(entry.status) !== undefined);
         closeFrame(
           `Dry run: would import ${importable.length}/${live.length} rows. Re-run with --apply.`,
         );
+
         return;
       }
 
@@ -619,13 +685,16 @@ export const importCommand = Command.make("import", {
       );
 
       let imported = 0;
+
       for (let index = 0; index < live.length; index += 1) {
         const entry = live[index];
         const row = resolved.entries[index];
         const status = entry ? mappedRegistryStatus(entry.status) : undefined;
+
         if (!entry || !row || !status) {
           continue;
         }
+
         yield* apiCallEffect(
           config,
           `/v1/entries/${encodeURIComponent(row.id)}/list-state`,
@@ -635,6 +704,7 @@ export const importCommand = Command.make("import", {
         );
         imported += 1;
       }
+
       closeFrame(`registry import complete: ${imported}/${live.length} rows updated`);
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
   ),

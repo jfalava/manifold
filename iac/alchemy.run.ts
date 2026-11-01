@@ -60,6 +60,7 @@ export const MangaDexIndex = Cloudflare.Vectorize.Index("MangaDexIndex", {
 
 export const MangaDexAniListMetadataIndex = Effect.gen(function* () {
   const index = yield* MangaDexIndex;
+
   return yield* Cloudflare.Vectorize.MetadataIndex("MangaDexAniListMetadataIndex", {
     indexName: index.indexName,
     propertyName: "anilistId",
@@ -69,6 +70,7 @@ export const MangaDexAniListMetadataIndex = Effect.gen(function* () {
 
 export const MangaDexMalMetadataIndex = Effect.gen(function* () {
   const index = yield* MangaDexIndex;
+
   return yield* Cloudflare.Vectorize.MetadataIndex("MangaDexMalMetadataIndex", {
     indexName: index.indexName,
     propertyName: "malId",
@@ -246,6 +248,7 @@ export default Alchemy.Stack(
         },
       ],
     });
+
     return {
       url: router.url,
       routerUrl: router.url,

@@ -26,6 +26,7 @@ export type ManifoldUserAgentSurface =
 /** Build the branded User-Agent for one outbound surface. */
 export const manifoldUserAgent = (surface: ManifoldUserAgentSurface): string => {
   const note = surface.trim() || "unknown";
+
   return `${MANIFOLD_USER_AGENT_PRODUCT} (+${MANIFOLD_USER_AGENT_HOME}; manifold/${note})`;
 };
 
@@ -40,5 +41,6 @@ export const withManifoldUserAgent = (
   if (Object.hasOwn(headers, "user-agent") || Object.hasOwn(headers, "User-Agent")) {
     return headers;
   }
+
   return { ...headers, "user-agent": manifoldUserAgent(surface) };
 };

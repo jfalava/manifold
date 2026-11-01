@@ -32,28 +32,36 @@ export const STATUS_FILTER_HINT =
 /** Parse --status. undefined means keep every row ("auto"). */
 export const parseStatusFilter = (value: string): ReadonlySet<RegistryStatus> | undefined => {
   const trimmed = value.trim().toLowerCase();
+
   if (trimmed === "" || trimmed === "auto") {
     return undefined;
   }
+
   const names = trimmed
     .split(",")
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
+
   if (names.length === 0) {
     throw new Error(`--status: no valid statuses in "${value}"`);
   }
+
   const allowed = new Set<RegistryStatus>();
+
   for (const name of names) {
     const mapped = STATUS_ALIASES.get(name);
+
     if (!mapped) {
       throw new Error(
         `--status: unknown status "${name}" (allowed: ${[...STATUS_ALIASES.keys()].join(", ")})`,
       );
     }
+
     for (const status of mapped) {
       allowed.add(status);
     }
   }
+
   return allowed;
 };
 
@@ -64,9 +72,11 @@ export const matchesStatusFilter = (
   if (filter === undefined) {
     return true;
   }
+
   if (status === undefined) {
     return false;
   }
+
   // SAFETY: value matches RegistryStatus at this call site
   return filter.has(status as RegistryStatus);
 };

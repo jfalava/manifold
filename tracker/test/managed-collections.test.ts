@@ -27,6 +27,7 @@ import {
 
 const mocks = vi.hoisted(() => {
   type Runtime = typeof import("@manifold/paperback-runtime");
+
   return {
     // SAFETY: holder starts empty; tests install a makeApi() double before use.
     api: undefined as PersonalApiClient | undefined,
@@ -43,13 +44,16 @@ const mocks = vi.hoisted(() => {
 // oxlint-disable-next-line anti-slop/no-module-mocking
 vi.mock("@manifold/paperback-runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@manifold/paperback-runtime")>();
+
   return {
     ...actual,
     configuredPersonalApi: () => {
       const api = mocks.api;
+
       if (!api) {
         throw new Error("test api not configured");
       }
+
       return api;
     },
     saveAniListStatus: (...args: Parameters<typeof actual.saveAniListStatus>) =>
@@ -75,6 +79,7 @@ import { isString } from "@manifold/json";
 
 const readAppState = (key: string): string | undefined => {
   const value = applicationState.get(key);
+
   return isString(value) ? value : undefined;
 };
 
@@ -93,8 +98,10 @@ describe("managed collection registry resolution", () => {
 
   it("resolves large shelves in bounded batches", async () => {
     const calls: (readonly { readonly providerId: string }[])[] = [];
+
     const resolveEntries: PersonalApiClient["resolveEntries"] = async (inputs) => {
       calls.push(inputs);
+
       return inputs.map((input) => ({
         id: `entry-${input.providerId}`,
         provider: "local" as const,
@@ -124,6 +131,7 @@ describe("managed collection registry resolution", () => {
       if (inputs[0]?.providerId === "51") {
         throw new Error("HTTP 502");
       }
+
       return inputs.map((input) => ({
         id: `entry-${input.providerId}`,
         provider: "local" as const,
@@ -171,7 +179,9 @@ describe("managed collection registry reconciliation", () => {
       if (failSetListState) {
         throw new Error("HTTP 502");
       }
+
       calls.push({ entryId, status: String(change.status) });
+
       return listState(entryId);
     });
     mocks.saveAniListStatus.mockResolvedValue({ mediaListEntryId: 42 });
@@ -184,11 +194,13 @@ describe("managed collection registry reconciliation", () => {
 
     // Device write succeeded and the failed registry reconcile is queued.
     expect(mocks.saveAniListStatus).toHaveBeenCalledOnce();
+
     // SAFETY: the queued-reconcile JSON is fully controlled by this test.
     const queued = JSON.parse(String(readAppState(PENDING_RECONCILES_KEY))) as Record<
       string,
       { kind: string; entryId: string; status: string }
     >;
+
     expect(queued["entry-1"]).toMatchObject({
       kind: "setListState",
       entryId: "entry-1",
@@ -221,6 +233,7 @@ describe("managed collection registry reconciliation", () => {
     mocks.api = makeApi(
       async (entryId, change) => {
         setListStateCalls.push({ entryId, backupIdentity: change.backupIdentity });
+
         return listState(entryId);
       },
       async (entryId) => {
@@ -266,6 +279,7 @@ describe("managed collection registry reconciliation", () => {
           }),
         );
       }
+
       return listState("entry-1");
     });
 
@@ -312,9 +326,11 @@ describe("managed collection registry reconciliation", () => {
       },
       async (entryId) => {
         nukeAttempts += 1;
+
         if (nukeAttempts <= 2) {
           throw new Error("HTTP 503");
         }
+
         nukeCalls.push(entryId);
       },
     );
@@ -327,11 +343,13 @@ describe("managed collection registry reconciliation", () => {
     expect(executed).toBe(1);
     expect(nukeAttempts).toBe(2);
     expect(JSON.parse(String(readAppState(PENDING_NUKES_KEY)))).toEqual({});
+
     // SAFETY: the queued-reconcile JSON is fully controlled by this test.
     const reconciles = JSON.parse(String(readAppState(PENDING_RECONCILES_KEY))) as Record<
       string,
       { kind: string; entryId: string }
     >;
+
     expect(reconciles["entry-1"]).toMatchObject({
       kind: "nukeEntry",
       entryId: "entry-1",

@@ -18,6 +18,7 @@ const GitHubReleaseSchema = Schema.Struct({
 });
 
 type GitHubRelease = Schema.Schema.Type<typeof GitHubReleaseSchema>;
+
 type GitHubAsset = Schema.Schema.Type<typeof GitHubAssetSchema>;
 
 interface SelectedReleaseAsset {
@@ -48,10 +49,13 @@ const selectReleaseAsset = (
   assetName: string,
 ): SelectedReleaseAsset | undefined => {
   const archive = release.assets.find((asset) => asset.name === assetName);
+
   if (!archive) {
     return undefined;
   }
+
   const checksum = release.assets.find((asset) => asset.name === `${archive.name}.sha256`);
+
   return checksum ? { asset: archive, checksum } : undefined;
 };
 
@@ -72,9 +76,11 @@ const newestReleaseWithAsset = (
 ): SelectedCliRelease | undefined =>
   releases.reduce<SelectedCliRelease | undefined>((newest, candidate) => {
     const assets = selectReleaseAsset(candidate, assetName);
+
     if (!assets || (newest && !isNewerRelease(candidate, newest.release))) {
       return newest;
     }
+
     return { release: candidate, assets };
   }, undefined);
 
@@ -91,32 +97,40 @@ export const latestCliRelease = async (
     },
     signal: AbortSignal.timeout(15_000),
   });
+
   if (!response.ok) {
     throw new Error(`GitHub release check failed with HTTP ${response.status}.`);
   }
 
   const body = decodeReleaseList(await response.json());
+
   if (Option.isNone(body)) {
     throw new Error("GitHub returned an invalid releases response.");
   }
 
   const releases = body.value.flatMap((candidate) => {
     const decoded = decodeGitHubRelease(candidate);
+
     if (Option.isNone(decoded)) {
       return [];
     }
+
     return [decoded.value];
   });
+
   const stableReleases = releases.filter(
     (candidate) =>
       !candidate.draft && !candidate.prerelease && /^cli-v\d+\.\d+\.\d+$/.test(candidate.tag_name),
   );
+
   const release = newestRelease(stableReleases);
+
   if (!release) {
     throw new Error("No stable manifold CLI release was found.");
   }
 
   const selected = newestReleaseWithAsset(stableReleases, assetName);
+
   if (!selected) {
     throw new Error(`Release ${release.tag_name} does not contain ${assetName} and its checksum.`);
   }

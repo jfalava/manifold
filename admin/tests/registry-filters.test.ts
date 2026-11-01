@@ -34,6 +34,7 @@ test("status alternatives are ORed, but text and all binding conditions are ANDe
     { ...base, id: "wrong-text", title: "Another Story" },
     { ...base, id: "tombstone", tombstoned: true },
   ];
+
   const filters = {
     text: " JOURNEY ",
     statuses: ["reading", "on_hold"],
@@ -44,6 +45,7 @@ test("status alternatives are ORed, but text and all binding conditions are ANDe
     ],
     unlinked: false,
   };
+
   expect(
     entries.filter((entry) => matchesRegistryFilters(entry, filters)).map((entry) => entry.id),
   ).toEqual(["entry-orbit", "hold"]);
@@ -83,9 +85,11 @@ test("no list status, tombstoned, and no bindings are distinct conditions", () =
 
 test("search retains title, entry ID, external ID, and source-name matching", () => {
   const entry = { ...base, providers: [{ ...base.providers[0]!, sourceName: "Archive North" }] };
+
   for (const text of ["long JOURNEY", "ENTRY-orbit", "al-42", "ARCHIVE north"]) {
     expect(matchesRegistryFilters(entry, { ...EMPTY_REGISTRY_FILTERS, text })).toBe(true);
   }
+
   expect(matchesRegistryFilters(entry, { ...EMPTY_REGISTRY_FILTERS, text: "not here" })).toBe(
     false,
   );

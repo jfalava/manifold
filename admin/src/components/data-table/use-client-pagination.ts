@@ -55,8 +55,10 @@ export function useClientPagination(
       if (controlledPagination !== undefined) {
         const next = isPaginationUpdater(update) ? update(controlledPagination) : update;
         onPaginationChange?.(next);
+
         return;
       }
+
       setLocalPagination(update);
     },
     [controlledPagination, onPaginationChange],
@@ -79,6 +81,7 @@ export function useClientPagination(
   const safePageIndex = useCallback(
     (rowCount: number): number => {
       const maxPageIndex = Math.max(0, Math.ceil(rowCount / pagination.pageSize) - 1);
+
       return Math.min(pagination.pageIndex, maxPageIndex);
     },
     [pagination.pageIndex, pagination.pageSize],

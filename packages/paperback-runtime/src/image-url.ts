@@ -15,6 +15,7 @@ const HTTP_IMAGE_URL = /^https?:\/\/[^\s]+$/i;
 
 export const safeImageUrl = (value: string | undefined): string => {
   const normalized = value?.trim();
+
   return normalized !== undefined && HTTP_IMAGE_URL.test(normalized)
     ? normalized
     : PAPERBACK_FALLBACK_IMAGE_URL;
