@@ -13,9 +13,12 @@ export interface AdminWorkersRuntime {
   readonly waitUntil: ((promise: Promise<unknown>) => void) | null;
 }
 
-export class AdminError extends Schema.TaggedError<AdminError>()("AdminError", {
-  message: Schema.String,
-}) {}
+export class AdminError extends Schema.TaggedError<AdminError, { readonly brand: unique symbol }>()(
+  "AdminError",
+  {
+    message: Schema.String,
+  },
+) {}
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: host-boundary failures are normalized before entering the Effect error channel
 export const toError = (cause: unknown): AdminError => {

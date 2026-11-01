@@ -470,11 +470,9 @@ export const drainAniListOpsPassEffect = (
     );
 
     const mediaListEntryIds = needsListEntryIds
-      ? yield* Effect.gen(function* () {
-          const userId = yield* fetchViewerIdEffect(anilistToken);
-
-          return yield* fetchMediaListEntryIdsEffect(anilistToken, userId);
-        })
+      ? yield* fetchViewerIdEffect(anilistToken).pipe(
+          Effect.flatMap((userId) => fetchMediaListEntryIdsEffect(anilistToken, userId)),
+        )
       : undefined;
 
     const results: DrainOpResult[] = [];

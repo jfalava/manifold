@@ -1145,8 +1145,8 @@ class TrackerSettingsForm extends Form {
     this.pendingAniListToken = value;
   };
 
-  readonly manifoldOAuthSuccess = (firstToken: string, secondToken: string): Promise<void> => {
-    return Effect.runPromise(
+  readonly manifoldOAuthSuccess = (firstToken: string, secondToken: string): Promise<void> =>
+    Effect.runPromise(
       Effect.sync(() => {
         const first = firstToken?.trim();
         const second = secondToken?.trim();
@@ -1175,10 +1175,9 @@ class TrackerSettingsForm extends Form {
         this.reloadForm();
       }),
     );
-  };
 
-  readonly aniListOAuthSuccess = (_refreshToken: string, accessToken: string): Promise<void> => {
-    return Effect.runPromise(
+  readonly aniListOAuthSuccess = (_refreshToken: string, accessToken: string): Promise<void> =>
+    Effect.runPromise(
       Effect.gen({ self: this }, function* () {
         const aniListToken = accessToken?.trim();
 
@@ -1209,7 +1208,6 @@ class TrackerSettingsForm extends Form {
         this.reloadForm();
       }),
     );
-  };
 
   override formDidSubmit(): Promise<void> {
     return Effect.runPromise(

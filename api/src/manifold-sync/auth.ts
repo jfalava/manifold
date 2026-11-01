@@ -339,21 +339,21 @@ const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
             },
             refreshToken,
           )
-        : yield* Effect.gen(function* () {
-            const config = yield* fromPromise(() => getOAuthClientConfig(provider, host.env));
+        : yield* fromPromise(() => getOAuthClientConfig(provider, host.env)).pipe(
+            Effect.map((config) => {
+              const refreshForm = new URLSearchParams({
+                grant_type: "refresh_token",
+                refresh_token: refreshToken,
+                client_id: config.clientId,
+              });
 
-            const refreshForm = new URLSearchParams({
-              grant_type: "refresh_token",
-              refresh_token: refreshToken,
-              client_id: config.clientId,
-            });
+              if (config.clientSecret) {
+                refreshForm.set("client_secret", config.clientSecret);
+              }
 
-            if (config.clientSecret) {
-              refreshForm.set("client_secret", config.clientSecret);
-            }
-
-            return refreshForm;
-          });
+              return refreshForm;
+            }),
+          );
 
     const tokenEndpoint =
       provider === "mangadex"

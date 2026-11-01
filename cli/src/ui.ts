@@ -90,6 +90,7 @@ const runPrompt = <A>(
           }),
         ),
       );
+      // @effect-diagnostics-next-line strictEffectProvide:off -- runPromise boundary for a single prompt.
     }).pipe(withTerminalInputEffect(kind, message), Effect.provide(BunServices.layer)),
   );
 

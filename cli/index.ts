@@ -22,6 +22,7 @@ const program = Command.runWith(makeRootCommand(CLI_VERSION), {
   version: CLI_VERSION,
 })(Bun.argv.slice(2)).pipe(
   Effect.ensuring(Effect.sync(finishProgress)),
+  // @effect-diagnostics-next-line strictEffectProvide:off -- CLI entry point.
   Effect.provide(BunServices.layer),
   Effect.catch((cause) =>
     Effect.gen(function* () {

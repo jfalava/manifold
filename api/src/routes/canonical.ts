@@ -40,9 +40,7 @@ const canonicalProvider = (value: string | null): CanonicalProviderFilter | unde
   return undefined;
 };
 
-const searchLimit = (value: string | null): number => {
-  return boundedInteger(value, 20, 1, 25);
-};
+const searchLimit = (value: string | null): number => boundedInteger(value, 20, 1, 25);
 
 export const handleCanonical = (ctx: RouteContext): RouteEffect =>
   Effect.gen(function* () {
