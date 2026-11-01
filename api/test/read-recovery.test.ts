@@ -131,11 +131,17 @@ describe("queued reads with stale registry IDs", () => {
       external: ["cloudflare:workers"],
     });
 
+    const [output] = built.outputFiles;
+
+    if (!output) {
+      throw new Error("esbuild produced no output");
+    }
+
     worker = new Miniflare(
       convertV4MiniflareOptions({
         name: "read-recovery-test",
         modules: true,
-        script: built.outputFiles[0].text,
+        script: output.text,
         compatibilityDate: "2026-08-28",
         bindings: { MANIFOLD_TOKEN: "fixture-token" },
         durableObjects: { MANIFOLD_SYNC: { className: "TestSync", useSQLite: true } },

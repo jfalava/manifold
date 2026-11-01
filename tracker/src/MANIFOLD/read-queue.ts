@@ -55,7 +55,7 @@ type PendingProgressMap = { [mangaId: string]: PendingProgressEntry };
 const PENDING_PROGRESS_KEY = "manifold.pending-progress";
 const PENDING_PROGRESS_MAX = 200;
 
-const decodePendingSourceManga = (value: JsonValue): SourceManga | undefined => {
+const decodePendingSourceManga = (value: JsonValue | undefined): SourceManga | undefined => {
   if (!isJsonObject(value)) {
     return undefined;
   }

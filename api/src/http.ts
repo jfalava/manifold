@@ -180,11 +180,14 @@ export const attempt = <A>(
     }
   });
 
-export const routeId = (value: string): Effect.Effect<string, ParseRequestError> =>
-  Effect.try({
-    try: () => decodeURIComponent(value),
-    catch: () => new ParseRequestError({ message: "Route identifier is not valid URL encoding" }),
-  });
+export const routeId = (value: string | undefined): Effect.Effect<string, ParseRequestError> =>
+  value === undefined
+    ? Effect.fail(new ParseRequestError({ message: "Route identifier is missing" }))
+    : Effect.try({
+        try: () => decodeURIComponent(value),
+        catch: () =>
+          new ParseRequestError({ message: "Route identifier is not valid URL encoding" }),
+      });
 
 export const boundedInteger = (
   value: string | null,
@@ -226,8 +229,8 @@ export const authorized = async (request: Request, env: Env): Promise<boolean> =
 
     let difference = 0;
 
-    for (let index = 0; index < expectedDigest.length; index += 1) {
-      difference |= suppliedDigest[index] ^ expectedDigest[index];
+    for (const [index, byte] of expectedDigest.entries()) {
+      difference |= byte ^ (suppliedDigest[index] ?? 0);
     }
 
     if (difference === 0) {

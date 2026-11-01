@@ -84,11 +84,17 @@ describe("sync outbox retention and summary", () => {
       external: ["cloudflare:workers"],
     });
 
+    const [output] = built.outputFiles;
+
+    if (!output) {
+      throw new Error("esbuild produced no output");
+    }
+
     worker = new Miniflare(
       convertV4MiniflareOptions({
         name: "ops-retention-test",
         modules: true,
-        script: built.outputFiles[0].text,
+        script: output.text,
         compatibilityDate: "2026-08-28",
         durableObjects: { MANIFOLD_SYNC: { className: "TestSync", useSQLite: true } },
       }),

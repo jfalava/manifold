@@ -47,11 +47,17 @@ describe("canonical fallback with the real registry", () => {
       external: ["cloudflare:workers"],
     });
 
+    const [output] = built.outputFiles;
+
+    if (!output) {
+      throw new Error("esbuild produced no output");
+    }
+
     worker = new Miniflare(
       convertV4MiniflareOptions({
         name: "canonical-fallback",
         modules: true,
-        script: built.outputFiles[0].text,
+        script: output.text,
         compatibilityDate: "2026-08-28",
         durableObjects: { MANIFOLD_SYNC: { className: "TestSync", useSQLite: true } },
         bindings: { MANIFOLD_MAL_CLIENT_ID: "client" },

@@ -185,17 +185,17 @@ export const chooseMangaDexMatch = (
     (candidate) => linkedProviderId(entry, candidate.manga) === entry.providerId,
   );
 
-  if (exactLinks.length === 1) {
-    const candidate = exactLinks[0];
+  const [onlyLink] = exactLinks;
 
+  if (exactLinks.length === 1 && onlyLink) {
     return {
       canonicalId: entry.id,
       status: "matched",
-      candidates: [decisionCandidate(candidate)],
-      externalId: candidate.manga.id,
-      title: candidate.manga.title,
+      candidates: [decisionCandidate(onlyLink)],
+      externalId: onlyLink.manga.id,
+      title: onlyLink.manga.title,
       method: entry.provider === "anilist" ? "anilist-link" : "mal-link",
-      score: Number(candidate.score.toFixed(6)),
+      score: Number(onlyLink.score.toFixed(6)),
       margin: 1,
     };
   }
@@ -206,17 +206,17 @@ export const chooseMangaDexMatch = (
 
   const exactTitles = ordered.filter((candidate) => hasExactTitle(entry, candidate.manga));
 
-  if (exactTitles.length === 1) {
-    const candidate = exactTitles[0];
+  const [onlyTitle] = exactTitles;
 
+  if (exactTitles.length === 1 && onlyTitle) {
     return {
       canonicalId: entry.id,
       status: "matched",
-      candidates: [decisionCandidate(candidate)],
-      externalId: candidate.manga.id,
-      title: candidate.manga.title,
+      candidates: [decisionCandidate(onlyTitle)],
+      externalId: onlyTitle.manga.id,
+      title: onlyTitle.manga.title,
       method: "vectorize",
-      score: Number(candidate.score.toFixed(6)),
+      score: Number(onlyTitle.score.toFixed(6)),
       margin: 1,
     };
   }

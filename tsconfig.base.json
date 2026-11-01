@@ -122,6 +122,7 @@
     "noUnusedParameters": true,
     "noImplicitReturns": true,
     "erasableSyntaxOnly": true,
-    "noImplicitOverride": true
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true
   }
 }

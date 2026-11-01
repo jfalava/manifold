@@ -83,7 +83,7 @@ export const openRegistryReport = (
 
         previous.set(value.entryId, {
           ...value,
-          applied: value.applied ?? header.apply,
+          applied: value.applied ?? header.apply ?? null,
           legacy: header.reportVersion === undefined || value.legacy === true,
         });
       } else if (value.event === "catalog" && isString(value.kind) && isString(value.key)) {

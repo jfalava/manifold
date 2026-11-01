@@ -149,7 +149,7 @@ const isBackupScalar = (value: unknown): value is BackupScalar =>
  * Shelf queue rows predate the last_error DLQ column; old backups omit it.
  * Missing values restore as NULL so v1 backups remain restorable.
  */
-const parseShelfQueueRows = (value: JsonValue): readonly BackupRow[] => {
+const parseShelfQueueRows = (value: JsonValue | undefined): readonly BackupRow[] => {
   if (!Array.isArray(value)) {
     throw new Error("Backup table md_status_queue is not an array");
   }
@@ -183,7 +183,10 @@ const parseShelfQueueRows = (value: JsonValue): readonly BackupRow[] => {
   });
 };
 
-const parseRows = (value: JsonValue, table: RegistryBackupTableName): readonly BackupRow[] => {
+const parseRows = (
+  value: JsonValue | undefined,
+  table: RegistryBackupTableName,
+): readonly BackupRow[] => {
   if (!Array.isArray(value)) {
     throw new Error(`Backup table ${table} is not an array`);
   }

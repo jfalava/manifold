@@ -678,13 +678,15 @@ const HIT_STATUSES: ReadonlySet<string> = new Set(["hit", "stale", "revalidated"
 /** cacheStatus values that never enter the cache (workers/dynamic/bypassed). */
 const UNCACHEABLE_STATUSES: ReadonlySet<string> = new Set(["none", "dynamic", "bypass", "unknown"]);
 
+const DOCS_SURFACE = { surface: "Docs", pathPrefix: "/" };
+
 /** Router mounts, matched in order; "/" catches the docs fallthrough. */
 const SURFACE_PREFIXES: readonly { surface: string; pathPrefix: string }[] = [
   { surface: "Sync API", pathPrefix: "/api" },
   { surface: "Admin panel", pathPrefix: "/admin" },
   { surface: "Paperback catalog", pathPrefix: "/paperback" },
   { surface: "MangaDex cover proxy", pathPrefix: "/mangadex-cover" },
-  { surface: "Docs", pathPrefix: "/" },
+  DOCS_SURFACE,
 ];
 
 interface CacheStatusRow {
@@ -693,7 +695,7 @@ interface CacheStatusRow {
   dimensions: { cacheStatus: string | null; clientRequestPath?: string };
 }
 
-const decodeCacheStatusSlices = (value: JsonValue): CacheStatusSlice[] | undefined => {
+const decodeCacheStatusSlices = (value: JsonValue | undefined): CacheStatusSlice[] | undefined => {
   if (!isJsonArray(value)) {
     return undefined;
   }
@@ -720,7 +722,7 @@ const decodeCacheStatusSlices = (value: JsonValue): CacheStatusSlice[] | undefin
   return statuses;
 };
 
-const decodeSurfaceCacheStats = (value: JsonValue): SurfaceCacheStat[] | undefined => {
+const decodeSurfaceCacheStats = (value: JsonValue | undefined): SurfaceCacheStat[] | undefined => {
   if (!isJsonArray(value)) {
     return undefined;
   }
@@ -844,7 +846,7 @@ const matchSurface = (path: string): { surface: string; pathPrefix: string } =>
   SURFACE_PREFIXES.find(
     ({ pathPrefix }) =>
       pathPrefix === "/" || path === pathPrefix || path.startsWith(`${pathPrefix}/`),
-  ) ?? SURFACE_PREFIXES[SURFACE_PREFIXES.length - 1];
+  ) ?? DOCS_SURFACE;
 
 function emptyCacheSnapshot(reason: string, fetchedAt: string): CacheSnapshot {
   return {

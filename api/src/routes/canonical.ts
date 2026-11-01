@@ -130,7 +130,7 @@ export const handleCanonical = (ctx: RouteContext): RouteEffect =>
     }
 
     if (path.length === 4 && request.method === "GET") {
-      const provider = canonicalProvider(path[2]);
+      const provider = canonicalProvider(path[2] ?? null);
 
       if (!provider || provider === "all" || provider === "auto") {
         return jsonEncoded(ErrorBody, { error: "Unknown canonical provider" }, 404);
