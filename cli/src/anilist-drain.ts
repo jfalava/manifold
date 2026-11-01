@@ -1,34 +1,28 @@
+/** @effect-diagnostics asyncFunction:off */
 /**
  * Host-side AniList outbox drain (oci-agents / always-on CLI).
  *
- * Same contract as packages/paperback-runtime device drain:
+ * Same contract as the packages/paperback-runtime device drain:
  *   GET  /v1/ops/pending/anilist → execute GraphQL → POST /v1/ops/complete
  *
- * Runs on a non-Cloudflare egress IP (prefer IPv6). Does not import the
- * GPL paperback-runtime package; mutations mirror its semantics.
+ * Runs on a non-Cloudflare egress IP (prefer IPv6). The AniList writes are the
+ * device's own client from @manifold/paperback-runtime/anilist; only the
+ * transport differs (fetch here, Application.scheduleRequest on device).
  */
+import { isString, manifoldUserAgent } from "@manifold/json";
 import {
-  isFiniteNumber,
-  isJsonArray,
-  isJsonObject,
-  isString,
-  objectField,
-  type JsonObject,
-} from "@manifold/json";
-import { parseAniListDate, type FuzzyDateInput } from "@manifold/canonical/sources";
+  createAniListClient,
+  decodeAniListViewer,
+  viewerQuery,
+  type AniListTransport,
+} from "@manifold/paperback-runtime/anilist";
 import { Effect } from "effect";
 
-import {
-  parsePendingAniListOp,
-  toAniListGraphqlStatus,
-  type AniListFieldChange,
-  type PendingAniListOp,
-} from "@manifold/contract";
+import { parsePendingAniListOp, type PendingAniListOp } from "@manifold/contract";
 
 export type { PendingAniListOp };
 
-import { cliError, fromPromise, runHost, type CliEffectError } from "@/effect-kit";
-import { __aniListRequestTest, aniListGraphqlEffect } from "@/anilist-request";
+import { cliError, fromPromise, platformFetch, runHost, type CliEffectError } from "@/effect-kit";
 
 const DRAIN_BATCH_LIMIT = 25;
 
@@ -71,222 +65,26 @@ const errorText = (cause: unknown): string => {
   return "unknown error";
 };
 
-const mediaIdOf = (anilistId: string): number => {
-  if (!/^[1-9]\d*$/.test(anilistId)) {
-    throw new Error(`Invalid AniList media id: ${anilistId}`);
-  }
+const fetchTransport: AniListTransport = {
+  post: async ({ url, headers, body }) => {
+    const response = await platformFetch(url, { method: "POST", headers, body });
 
-  const mediaId = Number(anilistId);
-
-  if (!Number.isSafeInteger(mediaId) || mediaId < 1) {
-    throw new Error(`Invalid AniList media id: ${anilistId}`);
-  }
-
-  return mediaId;
+    return {
+      status: response.status,
+      headers: Object.fromEntries(response.headers),
+      text: await response.text(),
+    };
+  },
+  sleep: (ms) => Bun.sleep(ms),
+  userAgent: manifoldUserAgent("cli-drain"),
 };
 
-const fmiDate = (value: string | null): FuzzyDateInput | null => {
-  if (value === null) {
-    return null;
-  }
-
-  const date = parseAniListDate(value);
-
-  if (date === undefined) {
-    throw new Error(`Invalid AniList date: ${value}; expected a real YYYY-MM-DD calendar date`);
-  }
-
-  return date;
-};
-
-const mediaIdEffect = (anilistId: string): Effect.Effect<number, CliEffectError> =>
-  Effect.try({
-    try: () => mediaIdOf(anilistId),
-    catch: (cause) => cliError(errorText(cause)),
-  });
-
-const saveStatusEffect = (
-  token: string,
-  anilistId: string,
-  status: ReturnType<typeof toAniListGraphqlStatus> | null,
-): Effect.Effect<number | undefined, CliEffectError> =>
-  Effect.gen(function* () {
-    const mediaId = yield* mediaIdEffect(anilistId);
-
-    const data = yield* aniListGraphqlEffect(
-      "cli-drain",
-      token,
-      `mutation ($mediaId: Int!, $status: MediaListStatus) {
-        SaveMediaListEntry(mediaId: $mediaId, status: $status, private: true) {
-          id status private
-        }
-      }`,
-      { mediaId, status },
-    );
-
-    const entry = objectField(data, "SaveMediaListEntry");
-    const id = entry?.id;
-
-    return isFiniteNumber(id) ? id : undefined;
-  });
-
-const saveProgressEffect = (
-  token: string,
-  anilistId: string,
-  progress: number,
-): Effect.Effect<void, CliEffectError> =>
-  Effect.gen(function* () {
-    const mediaId = yield* mediaIdEffect(anilistId);
-    const chapters = Math.floor(progress);
-
-    if (!Number.isSafeInteger(chapters) || chapters < 1) {
-      return;
-    }
-
-    // Status is never touched — collections own status transitions.
-    yield* aniListGraphqlEffect(
-      "cli-drain",
-      token,
-      `mutation ($mediaId: Int!, $progress: Int) {
-        SaveMediaListEntry(mediaId: $mediaId, progress: $progress, private: true) {
-          id progress status private
-        }
-      }`,
-      { mediaId, progress: chapters },
-    );
-  });
-
-const saveFieldsEffect = (
-  token: string,
-  anilistId: string,
-  change: AniListFieldChange,
-): Effect.Effect<void, CliEffectError> =>
-  Effect.gen(function* () {
-    const mediaId = yield* mediaIdEffect(anilistId);
-
-    const variables = yield* Effect.try({
-      try: (): JsonObject => ({
-        mediaId,
-        ...(change.status !== undefined && {
-          status: change.status === null ? null : toAniListGraphqlStatus(change.status),
-        }),
-        ...(change.score !== undefined && { score: change.score }),
-        ...(change.notes !== undefined && { notes: change.notes }),
-        ...(change.startedAt !== undefined && { startedAt: fmiDate(change.startedAt) }),
-        ...(change.completedAt !== undefined && { completedAt: fmiDate(change.completedAt) }),
-        ...(change.volumeProgress !== undefined && { progressVolumes: change.volumeProgress }),
-      }),
-      catch: (cause) => cliError(errorText(cause)),
-    });
-
-    yield* aniListGraphqlEffect(
-      "cli-drain",
-      token,
-      `mutation (
-        $mediaId: Int!, $status: MediaListStatus, $score: Float, $notes: String,
-        $startedAt: FuzzyDateInput, $completedAt: FuzzyDateInput, $progressVolumes: Int
-      ) {
-        SaveMediaListEntry(
-          mediaId: $mediaId, status: $status, score: $score, notes: $notes,
-          startedAt: $startedAt, completedAt: $completedAt, progressVolumes: $progressVolumes,
-          private: true
-        ) { id status score notes private }
-      }`,
-      variables,
-    );
-  });
-
-const deleteEntryEffect = (
-  token: string,
-  mediaListEntryId: number,
-): Effect.Effect<void, CliEffectError> =>
-  Effect.gen(function* () {
-    if (!Number.isSafeInteger(mediaListEntryId) || mediaListEntryId < 1) {
-      return yield* cliError(`Invalid AniList list entry id: ${mediaListEntryId}`);
-    }
-
-    const data = yield* aniListGraphqlEffect(
-      "cli-drain",
-      token,
-      `mutation ($id: Int) {
-        DeleteMediaListEntry(id: $id) { deleted }
-      }`,
-      { id: mediaListEntryId },
-    );
-
-    const deleted = objectField(data, "DeleteMediaListEntry")?.deleted;
-
-    if (deleted !== true) {
-      return yield* cliError(
-        `DeleteMediaListEntry did not confirm deletion for ${mediaListEntryId}`,
-      );
-    }
-  });
-
-const fetchMediaListEntryIdsEffect = (
-  token: string,
-  userId: number,
-): Effect.Effect<Readonly<Record<string, number>>, CliEffectError> =>
-  Effect.gen(function* () {
-    const data = yield* aniListGraphqlEffect(
-      "cli-drain",
-      token,
-      `query ($userId: Int!) {
-        MediaListCollection(userId: $userId, type: MANGA) {
-          lists { entries { id mediaId } }
-        }
-      }`,
-      { userId },
-    );
-
-    const ids: Record<string, number> = {};
-    const collection = objectField(data, "MediaListCollection");
-    const lists = collection?.lists;
-
-    if (!isJsonArray(lists)) {
-      return ids;
-    }
-
-    for (const list of lists) {
-      if (!isJsonObject(list)) {
-        continue;
-      }
-
-      const entries = list.entries;
-
-      if (!isJsonArray(entries)) {
-        continue;
-      }
-
-      for (const entry of entries) {
-        if (!isJsonObject(entry)) {
-          continue;
-        }
-
-        const id = entry.id;
-        const mediaId = entry.mediaId;
-
-        if (isFiniteNumber(id) && isFiniteNumber(mediaId)) {
-          ids[String(mediaId)] = id;
-        }
-      }
-    }
-
-    return ids;
-  });
+let aniList = createAniListClient(fetchTransport);
 
 const fetchViewerIdEffect = (token: string): Effect.Effect<number, CliEffectError> =>
-  Effect.gen(function* () {
-    const data = yield* aniListGraphqlEffect("cli-drain", token, `query { Viewer { id } }`);
-    const viewer = objectField(data, "Viewer");
-    const id = viewer?.id;
-
-    if (!isFiniteNumber(id)) {
-      return yield* cliError("AniList returned no Viewer id");
-    }
-
-    return id;
-  });
+  fromPromise(() => aniList.aniListRequest(token, viewerQuery, {}, decodeAniListViewer)).pipe(
+    Effect.map((data) => data.Viewer.id),
+  );
 
 const executeOpEffect = (
   token: string,
@@ -302,35 +100,41 @@ const executeOpEffect = (
 
     switch (parsed.kind) {
       case "anilist.status": {
-        const status = parsed.status === null ? null : toAniListGraphqlStatus(parsed.status);
+        const result = yield* fromPromise(() =>
+          aniList.saveAniListStatus(token, parsed.anilistId, parsed.status),
+        );
 
-        return yield* saveStatusEffect(token, parsed.anilistId, status);
+        return result.mediaListEntryId;
       }
 
       case "anilist.progress": {
-        yield* saveProgressEffect(token, parsed.anilistId, parsed.progress);
+        yield* fromPromise(() =>
+          aniList.saveAniListProgress(token, parsed.anilistId, parsed.progress),
+        );
 
         return undefined;
       }
 
       case "anilist.fields": {
-        yield* saveFieldsEffect(token, parsed.anilistId, parsed.change);
+        yield* fromPromise(() => aniList.saveAniListFields(token, parsed.anilistId, parsed.change));
 
         return parsed.mediaListEntryId;
       }
 
       case "anilist.delete": {
-        let listEntryId = parsed.mediaListEntryId;
-
-        if (listEntryId === undefined && mediaListEntryIds) {
-          listEntryId = mediaListEntryIds[parsed.anilistId];
-        }
+        const listEntryId = parsed.mediaListEntryId ?? mediaListEntryIds?.[parsed.anilistId];
 
         if (listEntryId === undefined) {
           return yield* cliError(`op ${parsed.opId}: no mediaListEntryId for ${parsed.anilistId}`);
         }
 
-        yield* deleteEntryEffect(token, listEntryId);
+        const deleted = yield* fromPromise(() => aniList.deleteAniListEntry(token, listEntryId));
+
+        if (!deleted) {
+          return yield* cliError(
+            `DeleteMediaListEntry did not confirm deletion for ${listEntryId}`,
+          );
+        }
 
         return listEntryId;
       }
@@ -363,7 +167,9 @@ export const drainAniListOpsPassEffect = (
 
     const mediaListEntryIds = needsListEntryIds
       ? yield* fetchViewerIdEffect(anilistToken).pipe(
-          Effect.flatMap((userId) => fetchMediaListEntryIdsEffect(anilistToken, userId)),
+          Effect.flatMap((userId) =>
+            fromPromise(() => aniList.fetchAniListMediaListEntryIds(anilistToken, userId)),
+          ),
         )
       : undefined;
 
@@ -418,12 +224,12 @@ export const drainAniListOpsPass = (
   options?: { readonly limit?: number },
 ): Promise<DrainPassSummary> => runHost(drainAniListOpsPassEffect(api, anilistToken, options));
 
-/** @internal test helper — expose gql throttling state reset if needed later */
+/** @internal Tests drop request spacing and restore it afterwards. */
 export const __drainTest = {
-  resetThrottle: __aniListRequestTest.disableThrottle,
-  restoreThrottle: __aniListRequestTest.restoreThrottle,
-  parseOnly: parsePendingAniListOp,
-  mediaIdOf,
-  fmiDate: (value: string | null): FuzzyDateInput | null => fmiDate(value),
-  toStatus: toAniListGraphqlStatus,
+  resetThrottle: (): void => {
+    aniList = createAniListClient({ ...fetchTransport, minRequestSpacingMs: 0 });
+  },
+  restoreThrottle: (): void => {
+    aniList = createAniListClient(fetchTransport);
+  },
 };

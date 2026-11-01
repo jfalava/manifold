@@ -118,7 +118,7 @@ describe("drainAniListOpsPass", () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const body = typeof init?.body === "string" ? init.body : "";
       if (body.includes("Viewer")) {
-        return Response.json({ data: { Viewer: { id: 1 } } });
+        return Response.json({ data: { Viewer: { id: 1, name: "reader" } } });
       }
       if (body.includes("MediaListCollection")) {
         return Response.json({
@@ -140,12 +140,4 @@ describe("drainAniListOpsPass", () => {
     expect(summary).toEqual({ fetched: 1, ok: 1, failed: 0, reported: 1 });
     expect(completed).toEqual([{ opId: "d1", ok: true, mediaListEntryId: 777 }]);
   }, 20_000);
-});
-
-describe("__drainTest helpers", () => {
-  it("parses FMI dates and rejects invalid ones", () => {
-    expect(__drainTest.fmiDate("2024-02-29")).toEqual({ year: 2024, month: 2, day: 29 });
-    expect(__drainTest.fmiDate(null)).toBeNull();
-    expect(() => __drainTest.fmiDate("2024-02-30")).toThrow(/Invalid AniList date/);
-  });
 });

@@ -10,6 +10,7 @@ interface ResponseLike {
 
 interface ScheduledRequestLike {
   readonly url: string;
+  readonly body?: string;
 }
 
 // Paperback's scheduleRequest rejects with host-provided values; offline
@@ -25,6 +26,7 @@ interface Outcome {
 
 const makeHarness = () => {
   const urls: string[] = [];
+  const bodies: (string | undefined)[] = [];
   let nowMs = 1_000_000;
 
   const install = (respond: (index: number) => Outcome, viewerId?: number): void => {
@@ -33,10 +35,12 @@ const makeHarness = () => {
       Application: {
         getState: () => viewerId,
         getSecureState: () => "token",
+        sleep: (): Promise<void> => Promise.resolve(),
         arrayBufferToUTF8String: (buffer: ArrayBuffer): string => new TextDecoder().decode(buffer),
         scheduleRequest: (request: ScheduledRequestLike): Promise<[ResponseLike, ArrayBuffer]> => {
           const callIndex = index++;
           urls.push(request.url);
+          bodies.push(request.body);
 
           return Promise.resolve().then(() => {
             const outcome = respond(callIndex);
@@ -58,6 +62,7 @@ const makeHarness = () => {
 
   return {
     urls,
+    bodies,
     install,
     loadDrain,
     loadRuntime,
@@ -187,6 +192,55 @@ describe("AniList operation drain", () => {
       "https://graphql.anilist.co",
       "https://manifold.jfa.dev/api/v1/ops/complete",
     ]);
+  });
+  it("reports a delete AniList did not confirm as failed, not drained", async () => {
+    const harness = makeHarness();
+    harness.install((index): Outcome => {
+      if (index === 0) {
+        return {
+          status: 200,
+          body: {
+            ops: [
+              {
+                id: 1,
+                opId: "delete-2",
+                target: "anilist",
+                kind: "anilist.delete",
+                origin: "device",
+                payload: { anilistId: "42", mediaListEntryId: 99 },
+                state: "pending",
+                attempts: 0,
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            ],
+          },
+        };
+      }
+
+      if (index === 1) {
+        return {
+          status: 200,
+          body: {
+            data: { MediaListCollection: { lists: [{ entries: [{ id: 99, mediaId: 42 }] }] } },
+          },
+        };
+      }
+
+      if (index === 2) {
+        return { status: 200, body: { data: { DeleteMediaListEntry: { deleted: false } } } };
+      }
+
+      return { status: 200, body: { updated: 1 } };
+    }, 7);
+    const { drainAniListOps } = await harness.loadDrain();
+
+    await drainAniListOps();
+
+    expect(harness.urls.at(-1)).toBe("https://manifold.jfa.dev/api/v1/ops/complete");
+    expect(JSON.parse(harness.bodies.at(-1) ?? "{}")).toMatchObject({
+      results: [{ opId: "delete-2", ok: false }],
+    });
   });
 });
 

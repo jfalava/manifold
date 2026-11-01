@@ -1,3 +1,4 @@
+import { ANILIST_GRAPHQL_ENDPOINT } from "@manifold/canonical/sources";
 import {
   arrayField,
   isBoolean,
@@ -34,7 +35,7 @@ const USER_AGENT = manifoldUserAgent("cli");
  * includeTextActivities opt-in; anime is never touched.
  */
 
-const API_URL = "https://graphql.anilist.co";
+const API_URL = ANILIST_GRAPHQL_ENDPOINT;
 
 // Bulk deletes hit AniList rate limits routinely: entries and activities share
 // one 429-aware POST path with a bounded retry loop (no unbounded recursion).

@@ -11,7 +11,7 @@ import {
   saveAniListFields,
   saveAniListProgress,
   saveAniListStatus,
-} from "./anilist-graphql.js";
+} from "./anilist-device.js";
 import type { PendingSyncOp } from "./api.js";
 import { parsePendingAniListOp } from "@manifold/contract";
 import { configuredPersonalApi } from "./runtime.js";
@@ -98,7 +98,13 @@ const executeOp = (
           );
         }
 
-        yield* fromPromise(() => deleteAniListEntry(token, listEntryId));
+        const deleted = yield* fromPromise(() => deleteAniListEntry(token, listEntryId));
+
+        if (!deleted) {
+          return yield* paperbackError(
+            `op ${parsed.opId}: AniList did not confirm deleting ${listEntryId}`,
+          );
+        }
 
         return listEntryId;
       }

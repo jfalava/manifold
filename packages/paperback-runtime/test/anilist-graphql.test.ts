@@ -85,9 +85,11 @@ const makeHarness = () => {
     return () => index;
   };
 
-  const loadModule = async () =>
-    // SAFETY: value matches typeof import("../src/anilist-graphql.js") at this call site
-    (await import("../src/anilist-graphql.js")) as typeof import("../src/anilist-graphql.js");
+  // The device client wraps the fake Application above; the shared module supplies queries and errors.
+  const loadModule = async () => ({
+    ...(await import("../src/anilist-graphql.js")),
+    ...(await import("../src/anilist-device.js")),
+  });
 
   return { sleeps, requests, overlappedRef: () => overlapped, install, loadModule };
 };

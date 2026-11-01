@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 import { isJsonValue, requestHref, requestInitText, type JsonValue } from "@manifold/json";
 import { CanonicalSourceError } from "../src/index";
-import { createAniListSource, createMyAnimeListSource } from "../src/sources";
+import { createAniListSource, createMyAnimeListSource, parseAniListDate } from "../src/sources";
 
 const jsonResponse = (body: JsonValue, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -248,5 +248,20 @@ describe("MyAnimeList canonical source", () => {
       provider: "mal",
       message: "MyAnimeList client id is not configured",
     });
+  });
+});
+
+describe("parseAniListDate", () => {
+  it("accepts real calendar dates, including leap days", () => {
+    expect(parseAniListDate("2024-02-29")).toEqual({ year: 2024, month: 2, day: 29 });
+    expect(parseAniListDate("2000-02-29")).toEqual({ year: 2000, month: 2, day: 29 });
+  });
+
+  it("rejects impossible dates and other formats", () => {
+    expect(parseAniListDate("2024-02-30")).toBeUndefined();
+    expect(parseAniListDate("1900-02-29")).toBeUndefined();
+    expect(parseAniListDate("2023-04-31")).toBeUndefined();
+    expect(parseAniListDate("0000-01-01")).toBeUndefined();
+    expect(parseAniListDate("2024-2-01")).toBeUndefined();
   });
 });
