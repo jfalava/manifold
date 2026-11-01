@@ -55,8 +55,7 @@ const selectReleaseAsset = (
   return checksum ? { asset: archive, checksum } : undefined;
 };
 
-const releaseVersion = (tagName: string): string =>
-  tagName.replace(/^cli-/, "").replace(/^v/, "");
+const releaseVersion = (tagName: string): string => tagName.replace(/^cli-/, "").replace(/^v/, "");
 
 const isNewerRelease = (candidate: GitHubRelease, current: GitHubRelease): boolean =>
   isNewerVersion(releaseVersion(candidate.tag_name), releaseVersion(current.tag_name));

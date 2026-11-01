@@ -5,12 +5,7 @@
  * importing that GPL package (CLI stays MIT). Keep in lockstep when op kinds
  * or payload fields change.
  */
-import {
-  isFiniteNumber,
-  isString,
-  type JsonObject,
-  type JsonValue,
-} from "@manifold/json";
+import { isFiniteNumber, isString, type JsonObject, type JsonValue } from "@manifold/json";
 
 /** Registry vocabulary used in list_state / outbox payloads. */
 export type AniListReadingStatus =
@@ -64,9 +59,7 @@ export type ParsedAniListOp =
       readonly mediaListEntryId?: number;
     };
 
-export const parseAniListReadingStatus = (
-  value: string,
-): AniListReadingStatus | undefined => {
+export const parseAniListReadingStatus = (value: string): AniListReadingStatus | undefined => {
   switch (value) {
     case "reading":
     case "on_hold":

@@ -9,7 +9,8 @@ import { withBase } from "../lib/urls";
 import bodyFont from "@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2?url";
 import headingFont from "@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2?url";
 
-const stableRepoUrl = "https://manifold.jfa.dev/paperback/extensions/0.9/stable";
+const stableRepoUrl =
+  "https://manifold.jfa.dev/paperback/extensions/0.9/stable";
 const betaRepoUrl = "https://manifold.jfa.dev/paperback/extensions/0.9/beta";
 const stableAddRepo = `paperback://addRepo?displayName=${encodeURIComponent("Manifold (Stable)")}&url=${encodeURIComponent(stableRepoUrl)}`;
 const betaAddRepo = `paperback://addRepo?displayName=${encodeURIComponent("Manifold (Beta)")}&url=${encodeURIComponent(betaRepoUrl)}`;
@@ -93,14 +94,26 @@ const references = [
   collection="docs"
   head={[bodyFont, headingFont].map((href) => ({
     tag: "link",
-    attrs: { rel: "preload", href, as: "font", type: "font/woff2", crossorigin: "anonymous" },
+    attrs: {
+      rel: "preload",
+      href,
+      as: "font",
+      type: "font/woff2",
+      crossorigin: "anonymous",
+    },
   }))}
 >
   <div data-pagefind-body>
-    <section aria-labelledby="paperback-install-title" class="border-b border-border">
+    <section
+      aria-labelledby="paperback-install-title"
+      class="border-b border-border"
+    >
       <div class="mx-auto flex max-w-5xl flex-col gap-4 px-6 py-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 id="paperback-install-title" class="text-base font-semibold text-foreground">
+          <h2
+            id="paperback-install-title"
+            class="text-base font-semibold text-foreground"
+          >
             Install in Paperback
           </h2>
           <p class="mt-1 max-w-sm text-sm leading-relaxed text-muted-foreground">

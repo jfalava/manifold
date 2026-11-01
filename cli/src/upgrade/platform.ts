@@ -27,7 +27,12 @@ const assetNames = (
   arch: string,
 ): (typeof ASSETS)[keyof typeof ASSETS] | undefined => {
   const key = `${platform}:${arch}`;
-  if (key === "darwin:arm64" || key === "linux:arm64" || key === "linux:x64" || key === "win32:x64") {
+  if (
+    key === "darwin:arm64" ||
+    key === "linux:arm64" ||
+    key === "linux:x64" ||
+    key === "win32:x64"
+  ) {
     return ASSETS[key];
   }
   return undefined;

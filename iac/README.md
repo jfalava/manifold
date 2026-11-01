@@ -24,14 +24,14 @@ Public identifiers are store-bound too — OAuth client IDs, the redirect base
 URL, and the GitHub access gate are the same kind of deployment-wide config and
 move with the secrets, so `iac/.env` carries nothing but the deploy channel:
 
-| Worker binding                           | Existing secret name                     | Consumers  |
-| ---------------------------------------- | ---------------------------------------- | ---------- |
-| `MANIFOLD_OAUTH_REDIRECT_BASE_URL`       | `MANIFOLD_OAUTH_REDIRECT_BASE_URL`       | api        |
-| `MANIFOLD_GITHUB_CLIENT_ID`              | `MANIFOLD_GITHUB_CLIENT_ID`              | api        |
-| `MANIFOLD_GITHUB_ALLOWED_USER_ID`        | `MANIFOLD_GITHUB_ALLOWED_USER_ID`        | api        |
-| `MANIFOLD_ANILIST_CLIENT_ID`             | `MANIFOLD_ANILIST_CLIENT_ID`             | api        |
-| `MANIFOLD_MAL_CLIENT_ID`                 | `MANIFOLD_MAL_CLIENT_ID`                 | api        |
-| `MANIFOLD_MANGADEX_CLIENT_ID`            | `MANIFOLD_MANGADEX_CLIENT_ID`            | api        |
+| Worker binding                     | Existing secret name               | Consumers |
+| ---------------------------------- | ---------------------------------- | --------- |
+| `MANIFOLD_OAUTH_REDIRECT_BASE_URL` | `MANIFOLD_OAUTH_REDIRECT_BASE_URL` | api       |
+| `MANIFOLD_GITHUB_CLIENT_ID`        | `MANIFOLD_GITHUB_CLIENT_ID`        | api       |
+| `MANIFOLD_GITHUB_ALLOWED_USER_ID`  | `MANIFOLD_GITHUB_ALLOWED_USER_ID`  | api       |
+| `MANIFOLD_ANILIST_CLIENT_ID`       | `MANIFOLD_ANILIST_CLIENT_ID`       | api       |
+| `MANIFOLD_MAL_CLIENT_ID`           | `MANIFOLD_MAL_CLIENT_ID`           | api       |
+| `MANIFOLD_MANGADEX_CLIENT_ID`      | `MANIFOLD_MANGADEX_CLIENT_ID`      | api       |
 
 These values are not sensitive, but they rotate with the credentials they pair
 with, so they live in the same store records. At runtime the Worker resolves a

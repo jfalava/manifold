@@ -25,24 +25,25 @@ const LOGIN_KEYCHAIN = process.env.HOME
   ? join(process.env.HOME, "Library", "Keychains", "login.keychain-db")
   : "login.keychain-db";
 
-const outDir = process.argv[2] ? join(process.argv[2]) : mkdtempSync(join(tmpdir(), "manifold-signing-"));
+const outDir = process.argv[2]
+  ? join(process.argv[2])
+  : mkdtempSync(join(tmpdir(), "manifold-signing-"));
 const p12Path = join(outDir, "manifold-signing.p12");
 const p64Path = join(outDir, "manifold-signing.p12.b64");
 const pwPath = join(outDir, "manifold-signing.p12.pw");
 
-const precheck = spawnSync(
-  "security",
-  ["find-certificate", "-c", CN, LOGIN_KEYCHAIN],
-  { encoding: "utf8" },
-);
+const precheck = spawnSync("security", ["find-certificate", "-c", CN, LOGIN_KEYCHAIN], {
+  encoding: "utf8",
+});
 if (!(precheck.status === 0)) {
-  console.error(`[signing:export] "${CN}" not in login keychain. Provision first: bun run signing:provision`);
+  console.error(
+    `[signing:export] "${CN}" not in login keychain. Provision first: bun run signing:provision`,
+  );
   process.exit(1);
 }
 
-const password = Array.from(
-  crypto.getRandomValues(new Uint8Array(16)),
-  (b) => b.toString(16).padStart(2, "0"),
+const password = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+  b.toString(16).padStart(2, "0"),
 ).join("");
 
 // Legacy SHA-1/3DES params so the bundle is readable everywhere (same reason

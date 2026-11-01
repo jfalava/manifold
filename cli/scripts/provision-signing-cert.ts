@@ -32,11 +32,9 @@ const LOGIN_KEYCHAIN = process.env.HOME
 
 // find-identity alone can't detect an imported-but-not-yet-trusted cert here,
 // so probe by name at the certificate level instead.
-const probe = spawnSync(
-  "security",
-  ["find-certificate", "-c", CN, LOGIN_KEYCHAIN],
-  { encoding: "utf8" },
-);
+const probe = spawnSync("security", ["find-certificate", "-c", CN, LOGIN_KEYCHAIN], {
+  encoding: "utf8",
+});
 if (probe.status === 0 && !probe.stderr?.includes("could not be found")) {
   console.error(
     `[signing:provision] keychain already contains "${CN}". Remove it in Keychain Access (login keychain > My Certificates) or set MANIFOLD_SIGN_CN to a different name.`,
@@ -50,9 +48,8 @@ const certPath = join(dir, "cert.pem");
 const p12Path = join(dir, "bundle.p12");
 
 // Ephemeral password for the PKCS#12 export; only used on disk within this run.
-const password = Array.from(
-  crypto.getRandomValues(new Uint8Array(16)),
-  (b) => b.toString(16).padStart(2, "0"),
+const password = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+  b.toString(16).padStart(2, "0"),
 ).join("");
 
 const opensslConfig = join(dir, "openssl.cnf");
@@ -139,7 +136,11 @@ try {
   );
 
   console.info("[signing:provision] adding Code Signing trust setting");
-  run("security", ["add-trusted-cert", "-p", "codeSign", "-k", LOGIN_KEYCHAIN, certPath], "security add-trusted-cert");
+  run(
+    "security",
+    ["add-trusted-cert", "-p", "codeSign", "-k", LOGIN_KEYCHAIN, certPath],
+    "security add-trusted-cert",
+  );
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

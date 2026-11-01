@@ -290,7 +290,9 @@ const deleteEntryEffect = (
     );
     const deleted = objectField(data, "DeleteMediaListEntry")?.deleted;
     if (deleted !== true) {
-      return yield* cliError(`DeleteMediaListEntry did not confirm deletion for ${mediaListEntryId}`);
+      return yield* cliError(
+        `DeleteMediaListEntry did not confirm deletion for ${mediaListEntryId}`,
+      );
     }
   });
 
@@ -361,8 +363,7 @@ const executeOpEffect = (
 
     switch (parsed.kind) {
       case "anilist.status": {
-        const status =
-          parsed.status === null ? null : toAniListGraphqlStatus(parsed.status);
+        const status = parsed.status === null ? null : toAniListGraphqlStatus(parsed.status);
         return yield* saveStatusEffect(token, parsed.anilistId, status);
       }
       case "anilist.progress": {
@@ -379,9 +380,7 @@ const executeOpEffect = (
           listEntryId = mediaListEntryIds[parsed.anilistId];
         }
         if (listEntryId === undefined) {
-          return yield* cliError(
-            `op ${parsed.opId}: no mediaListEntryId for ${parsed.anilistId}`,
-          );
+          return yield* cliError(`op ${parsed.opId}: no mediaListEntryId for ${parsed.anilistId}`);
         }
         yield* deleteEntryEffect(token, listEntryId);
         return listEntryId;
@@ -424,9 +423,7 @@ export const drainAniListOpsPassEffect = (
           ok: true as const,
           mediaListEntryId,
         })),
-        Effect.catch((cause) =>
-          Effect.succeed({ ok: false as const, error: errorText(cause) }),
-        ),
+        Effect.catch((cause) => Effect.succeed({ ok: false as const, error: errorText(cause) })),
       );
       if (!outcome.ok) {
         results.push({ opId: op.opId, ok: false, error: outcome.error, kind: op.kind });
@@ -450,9 +447,7 @@ export const drainAniListOpsPassEffect = (
     }));
 
     const { updated } = yield* fromPromise(() => api.completeOps(reportBody)).pipe(
-      Effect.mapError((cause) =>
-        cliError(`complete ops failed: ${errorText(cause)}`),
-      ),
+      Effect.mapError((cause) => cliError(`complete ops failed: ${errorText(cause)}`)),
     );
 
     return {
@@ -467,8 +462,7 @@ export const drainAniListOpsPass = (
   api: DrainApiClient,
   anilistToken: string,
   options?: { readonly limit?: number },
-): Promise<DrainPassSummary> =>
-  runHost(drainAniListOpsPassEffect(api, anilistToken, options));
+): Promise<DrainPassSummary> => runHost(drainAniListOpsPassEffect(api, anilistToken, options));
 
 /** @internal test helper — expose gql throttling state reset if needed later */
 export const __drainTest = {
@@ -485,4 +479,3 @@ export const __drainTest = {
   fmiDate: (value: string | null): FuzzyDateInput | null => fmiDate(value),
   toStatus: toAniListGraphqlStatus,
 };
-

@@ -381,7 +381,10 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
     search: (query, searchOptions) =>
       Effect.gen(function* () {
         const body = yield* request(anilistSearchQuery, {
-          search: yield* Effect.try({ try: () => requireQuery(query, "anilist"), catch: (e) => (isSourceError(e) ? e : sourceError("anilist", "bad query")) }),
+          search: yield* Effect.try({
+            try: () => requireQuery(query, "anilist"),
+            catch: (e) => (isSourceError(e) ? e : sourceError("anilist", "bad query")),
+          }),
           page: 1,
           perPage: limitFrom(searchOptions),
         });
@@ -393,7 +396,9 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
         const page = data === undefined ? undefined : objectField(data, "Page");
         const media = page === undefined ? undefined : arrayField(page, "media");
         if (!media) {
-          return yield* Effect.fail(sourceError("anilist", "AniList search returned no media array"));
+          return yield* Effect.fail(
+            sourceError("anilist", "AniList search returned no media array"),
+          );
         }
         return media.flatMap((item) => {
           const result = anilistMedia(item);
@@ -404,7 +409,9 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
       Effect.gen(function* () {
         const id = Number.parseInt(providerId, 10);
         if (!Number.isSafeInteger(id)) {
-          return yield* Effect.fail(sourceError("anilist", `Invalid AniList manga id: ${providerId}`));
+          return yield* Effect.fail(
+            sourceError("anilist", `Invalid AniList manga id: ${providerId}`),
+          );
         }
         const body = yield* request(anilistGetQuery, { id });
         const graphQLError = anilistGraphQLError(body);
@@ -418,7 +425,9 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
       Effect.gen(function* () {
         const id = Number.parseInt(idMal, 10);
         if (!Number.isSafeInteger(id)) {
-          return yield* Effect.fail(sourceError("anilist", `Invalid MyAnimeList manga id: ${idMal}`));
+          return yield* Effect.fail(
+            sourceError("anilist", `Invalid MyAnimeList manga id: ${idMal}`),
+          );
         }
         const body = yield* request(anilistGetByMalQuery, { idMal: id });
         const graphQLError = anilistGraphQLError(body);
@@ -433,7 +442,6 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
       }),
   };
 };
-
 
 const malFields = [
   "alternative_titles",
@@ -523,7 +531,10 @@ export const createMyAnimeListSource = (
         if (!options.clientId || options.clientId === "not-configured") {
           return yield* Effect.fail(sourceError("mal", "MyAnimeList client id is not configured"));
         }
-        const normalized = yield* Effect.try({ try: () => requireQuery(query, "mal"), catch: (e) => (isSourceError(e) ? e : sourceError("mal", "bad query")) });
+        const normalized = yield* Effect.try({
+          try: () => requireQuery(query, "mal"),
+          catch: (e) => (isSourceError(e) ? e : sourceError("mal", "bad query")),
+        });
         if (Array.from(normalized).length < 3) {
           return yield* Effect.fail(
             sourceError("mal", "MyAnimeList search requires at least 3 characters", 400),
@@ -536,7 +547,9 @@ export const createMyAnimeListSource = (
         const body = yield* request(href);
         const data = arrayField(body, "data");
         if (!data) {
-          return yield* Effect.fail(sourceError("mal", "MyAnimeList search returned no data array"));
+          return yield* Effect.fail(
+            sourceError("mal", "MyAnimeList search returned no data array"),
+          );
         }
         return data.flatMap((item) => {
           const result = malEntry(isJsonObject(item) ? objectField(item, "node") : undefined);
@@ -554,4 +567,3 @@ export const createMyAnimeListSource = (
       }),
   };
 };
-
