@@ -10,7 +10,13 @@ import { loadRegistrySearchTitles, searchTitlesFor } from "@/registry-titles";
 import { coverageComparisons, coverageDifference } from "@/chapter-coverage";
 import { classifyPage, openBunBrowserView, type BrowserView } from "@/browser-view";
 import { resolveValue } from "@/env-resolve";
-import { cliError, sleepPromise, validateNonNegativeLimit } from "@/effect-kit";
+import {
+  cliError,
+  sleepPromise,
+  validateNonNegativeLimit,
+  validateDelayMs,
+  validateMaxPages,
+} from "@/effect-kit";
 import {
   createKaganeClient,
   hasExactKaganeTitle,
@@ -125,13 +131,9 @@ export const kaganePrefillCommand = Command.make("kagane", {
           const maximum = Option.getOrUndefined(limit);
           validateNonNegativeLimit(maximum);
 
-          if (!Number.isSafeInteger(delay) || delay < 0) {
-            throw cliError("--delay must be a non-negative integer (milliseconds).");
-          }
+          validateDelayMs(delay);
 
-          if (!Number.isSafeInteger(maxPages) || maxPages < 1) {
-            throw cliError("--max-pages must be a positive integer.");
-          }
+          validateMaxPages(maxPages);
 
           const priority =
             sourcePriority.toLowerCase() === "none"

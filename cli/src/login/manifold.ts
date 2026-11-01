@@ -108,10 +108,11 @@ const decodeTokenResponse = (body: JsonValue | undefined): ManifoldSession | und
   };
 };
 
-const exchangeManifoldCodeEffect = (
+/** POSTs one OAuth grant to the Manifold token endpoint and decodes the returned session. */
+const requestManifoldSessionEffect = (
   origin: string,
-  code: string,
-  verifier: string,
+  grant: "exchange" | "refresh",
+  params: Record<string, string>,
 ): Effect.Effect<ManifoldSession, CliEffectError> =>
   Effect.gen(function* () {
     const response = yield* fromPromise(() =>
@@ -124,23 +125,17 @@ const exchangeManifoldCodeEffect = (
           "content-type": "application/x-www-form-urlencoded",
           "user-agent": manifoldUserAgent("cli"),
         },
-        body: new URLSearchParams({
-          grant_type: "authorization_code",
-          client_id: MANIFOLD_CLI_OAUTH_CLIENT_ID,
-          redirect_uri: MANIFOLD_CLI_OAUTH_REDIRECT_URI,
-          code,
-          code_verifier: verifier,
-        }),
+        body: new URLSearchParams({ client_id: MANIFOLD_CLI_OAUTH_CLIENT_ID, ...params }),
       }),
     );
 
     if (!response.ok) {
       return yield* cliError(
-        `Manifold OAuth exchange failed: HTTP ${response.status}. Run login manifold again.`,
+        `Manifold OAuth ${grant} failed: HTTP ${response.status}. Run login manifold again.`,
       );
     }
 
-    const body = yield* jsonFromResponseEffect(response, "manifold.tokens").pipe(
+    const body = yield* jsonFromResponseEffect(response, `manifold.${grant}`).pipe(
       Effect.orElseSucceed(() => undefined),
     );
 
@@ -148,11 +143,23 @@ const exchangeManifoldCodeEffect = (
 
     if (!session) {
       return yield* cliError(
-        "Manifold returned an invalid OAuth session. Run login manifold again.",
+        `Manifold returned an invalid OAuth ${grant} session. Run login manifold again.`,
       );
     }
 
     return session;
+  });
+
+const exchangeManifoldCodeEffect = (
+  origin: string,
+  code: string,
+  verifier: string,
+): Effect.Effect<ManifoldSession, CliEffectError> =>
+  requestManifoldSessionEffect(origin, "exchange", {
+    grant_type: "authorization_code",
+    redirect_uri: MANIFOLD_CLI_OAUTH_REDIRECT_URI,
+    code,
+    code_verifier: verifier,
   });
 
 export const exchangeManifoldCode = (
@@ -183,41 +190,10 @@ const refreshManifoldSessionEffect = (
   session: ManifoldSession,
 ): Effect.Effect<ManifoldSession, CliEffectError> =>
   Effect.gen(function* () {
-    const response = yield* fromPromise(() =>
-      platformFetch(`${normalizeOrigin(origin)}/v1/oauth/token`, {
-        method: "POST",
-        redirect: "error",
-        signal: AbortSignal.timeout(30_000),
-        headers: {
-          accept: "application/json",
-          "content-type": "application/x-www-form-urlencoded",
-          "user-agent": manifoldUserAgent("cli"),
-        },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          client_id: MANIFOLD_CLI_OAUTH_CLIENT_ID,
-          refresh_token: session.refreshToken,
-        }),
-      }),
-    );
-
-    if (!response.ok) {
-      return yield* cliError(
-        `Manifold OAuth refresh failed: HTTP ${response.status}. Run login manifold again.`,
-      );
-    }
-
-    const body = yield* jsonFromResponseEffect(response, "manifold.refresh").pipe(
-      Effect.orElseSucceed(() => undefined),
-    );
-
-    const refreshed = decodeTokenResponse(body);
-
-    if (!refreshed) {
-      return yield* cliError(
-        "Manifold returned an invalid refreshed session. Run login manifold again.",
-      );
-    }
+    const refreshed = yield* requestManifoldSessionEffect(origin, "refresh", {
+      grant_type: "refresh_token",
+      refresh_token: session.refreshToken,
+    });
 
     yield* fromPromise(() => saveManifoldSession(refreshed));
 

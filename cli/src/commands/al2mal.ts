@@ -6,7 +6,7 @@ import { errorMessage } from "@manifold/json";
 
 import { fetchAniListMangaEntries } from "@/anilist";
 import { createMalTitleSearch, runAl2mal, type Al2malReport } from "@/al2mal-core";
-import { apiCall, apiConfig } from "@/commands/toolbox";
+import { apiCall, apiConfig, backupCheckApiFlags } from "@/commands/toolbox";
 import { resolveValue } from "@/env-resolve";
 import { resolveAniListToken } from "@/login/anilist";
 import { loadMalSession, saveMalSession } from "@/login/mal-session";
@@ -59,18 +59,7 @@ export const al2malCommand = Command.make("anilist-to-mal", {
     Flag.optional,
     Flag.withDescription("Only process the first N AniList entries after export."),
   ),
-  apiOrigin: Flag.String("api-origin").pipe(
-    Flag.optional,
-    Flag.withDescription(
-      "Personal API origin for the backup-connection check. Falls back to MANIFOLD_API_ORIGIN.",
-    ),
-  ),
-  apiToken: Flag.String("api-token").pipe(
-    Flag.optional,
-    Flag.withDescription(
-      "Personal API token for the backup-connection check. Falls back to MANIFOLD_TOKEN.",
-    ),
-  ),
+  ...backupCheckApiFlags,
 }).pipe(
   Command.withDescription(
     "Populate MAL manga from your AniList list (status + chapter progress). List↔list only.",

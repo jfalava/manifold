@@ -17,6 +17,23 @@ export const providerIdOf = (
   provider: string,
 ): string | undefined => row.providers.find((link) => link.provider === provider)?.externalId;
 
+export interface RegistrySearchRow {
+  readonly title: string;
+  readonly providers: readonly { readonly provider: string; readonly externalId: string }[];
+}
+
+export interface RegistrySearchTitleOptions {
+  readonly anilistToken?: string;
+  readonly anilistTitles?: (
+    token: string,
+    mediaId: number,
+    signal: AbortSignal,
+  ) => Promise<readonly string[]>;
+  readonly mangaDexTitles?: (id: string, signal: AbortSignal) => Promise<readonly string[]>;
+  readonly onProgress?: (message: string) => void;
+  readonly onIncomplete?: () => void;
+}
+
 /**
  * Collect every language/title variant for registry prefill matching.
  * AniList english/romaji/native/synonyms first; MangaDex alts only when the
@@ -24,21 +41,8 @@ export const providerIdOf = (
  * Shared by registry provider prefills.
  */
 const loadRegistrySearchTitlesEffect = (
-  row: {
-    readonly title: string;
-    readonly providers: readonly { readonly provider: string; readonly externalId: string }[];
-  },
-  options: {
-    readonly anilistToken?: string;
-    readonly anilistTitles?: (
-      token: string,
-      mediaId: number,
-      signal: AbortSignal,
-    ) => Promise<readonly string[]>;
-    readonly mangaDexTitles?: (id: string, signal: AbortSignal) => Promise<readonly string[]>;
-    readonly onProgress?: (message: string) => void;
-    readonly onIncomplete?: () => void;
-  } = {},
+  row: RegistrySearchRow,
+  options: RegistrySearchTitleOptions = {},
 ): Effect.Effect<readonly string[]> =>
   Effect.gen(function* () {
     const titles = [row.title];
@@ -116,19 +120,6 @@ const loadRegistrySearchTitlesEffect = (
   });
 
 export const loadRegistrySearchTitles = (
-  row: {
-    readonly title: string;
-    readonly providers: readonly { readonly provider: string; readonly externalId: string }[];
-  },
-  options: {
-    readonly anilistToken?: string;
-    readonly anilistTitles?: (
-      token: string,
-      mediaId: number,
-      signal: AbortSignal,
-    ) => Promise<readonly string[]>;
-    readonly mangaDexTitles?: (id: string, signal: AbortSignal) => Promise<readonly string[]>;
-    readonly onProgress?: (message: string) => void;
-    readonly onIncomplete?: () => void;
-  } = {},
+  row: RegistrySearchRow,
+  options: RegistrySearchTitleOptions = {},
 ): Promise<readonly string[]> => runHost(loadRegistrySearchTitlesEffect(row, options));

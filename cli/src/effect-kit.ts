@@ -18,6 +18,18 @@ export const validateNonNegativeLimit = (value: number | undefined): void => {
   }
 };
 
+export const validateDelayMs = (value: number): void => {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw cliError("--delay must be a non-negative integer (milliseconds).");
+  }
+};
+
+export const validateMaxPages = (value: number): void => {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw cliError("--max-pages must be a positive integer.");
+  }
+};
+
 /** Promise boundary: rejections become typed failures (not defects). */
 export const fromPromise = <A>(action: () => Promise<A>): Effect.Effect<A, CliEffectError> =>
   Effect.tryPromise({ try: action, catch: (cause) => cliError(errorMessage(cause)) });

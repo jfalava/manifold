@@ -26,6 +26,22 @@ import {
 
 const JsonString = Schema.fromJsonString(Schema.Unknown);
 
+/** Rated-title count and rating sum. Ratings are best-effort: a failed fetch counts as none rated. */
+const bestEffortRatingTotals = <E, R>(
+  ratings: Effect.Effect<Readonly<Record<string, { readonly rating: number }>>, E, R>,
+) =>
+  ratings.pipe(
+    Effect.map((batch) => {
+      const values = Object.values(batch);
+
+      return {
+        rated: values.length,
+        ratingSum: values.reduce((sum, entry) => sum + entry.rating, 0),
+      };
+    }),
+    Effect.orElseSucceed(() => ({ rated: 0, ratingSum: 0 })),
+  );
+
 const mangaDexStatsEffect = (host: SyncHost, mangaDexIds: readonly string[]) =>
   Effect.gen(function* () {
     const wanted = [...new Set(mangaDexIds)].filter((id) => id.length > 0).slice(0, 200);
@@ -362,19 +378,8 @@ const mangaDexLibrarySummaryEffect = (host: SyncHost) =>
 
       if (!sawRatingFlag && data.length > 0) {
         // Best-effort ratings for overview.
-        const ratingResult = yield* client.getRatings(data.map((row) => row.mangaDexId)).pipe(
-          Effect.map((batch) => {
-            let nextRated = 0;
-            let nextSum = 0;
-
-            for (const entry of Object.values(batch)) {
-              nextRated += 1;
-              nextSum += entry.rating;
-            }
-
-            return { rated: nextRated, ratingSum: nextSum };
-          }),
-          Effect.orElseSucceed(() => ({ rated: 0, ratingSum: 0 })),
+        const ratingResult = yield* bestEffortRatingTotals(
+          client.getRatings(data.map((row) => row.mangaDexId)),
         );
 
         rated = ratingResult.rated;
@@ -399,20 +404,7 @@ const mangaDexLibrarySummaryEffect = (host: SyncHost) =>
     }
 
     // Best-effort — overview still works without mean rating.
-    const ratingResult = yield* client.getRatings(mangaDexIds).pipe(
-      Effect.map((batch) => {
-        let nextRated = 0;
-        let nextSum = 0;
-
-        for (const entry of Object.values(batch)) {
-          nextRated += 1;
-          nextSum += entry.rating;
-        }
-
-        return { rated: nextRated, ratingSum: nextSum };
-      }),
-      Effect.orElseSucceed(() => ({ rated: 0, ratingSum: 0 })),
-    );
+    const ratingResult = yield* bestEffortRatingTotals(client.getRatings(mangaDexIds));
 
     const rated = ratingResult.rated;
     const ratingSum = ratingResult.ratingSum;

@@ -11,7 +11,14 @@ import { errorMessage } from "@manifold/json";
 import { apiCall, apiConfig, listRegistryRows, type RegistryRow } from "@/commands/toolbox";
 import { classifyPage, openBunBrowserView, type BrowserView } from "@/browser-view";
 import { resolveValue } from "@/env-resolve";
-import { cliError, jsonBodyString, sleepPromise, validateNonNegativeLimit } from "@/effect-kit";
+import {
+  cliError,
+  jsonBodyString,
+  sleepPromise,
+  validateNonNegativeLimit,
+  validateDelayMs,
+  validateMaxPages,
+} from "@/effect-kit";
 import {
   createManganatoClient,
   hasManganatoAuthor,
@@ -126,16 +133,12 @@ export const manganatoPrefillCommand = Command.make("manganato", {
             const maximum = Option.getOrUndefined(limit);
             validateNonNegativeLimit(maximum);
 
-            if (!Number.isSafeInteger(delay) || delay < 0) {
-              throw cliError("--delay must be a non-negative integer (milliseconds).");
-            }
+            validateDelayMs(delay);
 
             const maxPages = Option.getOrElse(pageLimit, () => 5);
             const continuationMaxPages = Option.getOrElse(pageLimit, () => 20);
 
-            if (!Number.isSafeInteger(maxPages) || maxPages < 1) {
-              throw cliError("--max-pages must be a positive integer.");
-            }
+            validateMaxPages(maxPages);
 
             const chromeUrl = resolveValue(chromeCdpUrl, "MANIFOLD_MANGANATO_CHROME_CDP_URL");
 

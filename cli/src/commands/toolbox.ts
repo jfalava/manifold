@@ -113,6 +113,22 @@ const apiConfigEffect = (
     };
   });
 
+/** `--api-origin`/`--api-token` for commands that check the backup connection before writing. */
+export const backupCheckApiFlags = {
+  apiOrigin: Flag.String("api-origin").pipe(
+    Flag.optional,
+    Flag.withDescription(
+      "Personal API origin for the backup-connection check. Falls back to MANIFOLD_API_ORIGIN.",
+    ),
+  ),
+  apiToken: Flag.String("api-token").pipe(
+    Flag.optional,
+    Flag.withDescription(
+      "Personal API token for the backup-connection check. Falls back to MANIFOLD_TOKEN.",
+    ),
+  ),
+};
+
 export const apiConfig = (
   originFlag: Option.Option<string>,
   tokenFlag: Option.Option<string>,
