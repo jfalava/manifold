@@ -5,13 +5,9 @@
  * `cloudflare:workers` into the client bundle.
  */
 
-export type MangaDexReadingStatus =
-  | "reading"
-  | "on_hold"
-  | "plan_to_read"
-  | "dropped"
-  | "re_reading"
-  | "completed";
+import type { ListStatus } from "@manifold/contract";
+
+export type MangaDexReadingStatus = ListStatus;
 
 // Type alias (not interface) so TanStack Table v9's `TData extends Record<string, any>` constraint accepts it
 export type MangaDexLibraryItem = {

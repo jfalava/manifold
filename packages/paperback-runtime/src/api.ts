@@ -279,8 +279,7 @@ const undefinedOn404 = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
     Effect.catchIf(
       (cause): cause is PersonalApiError & E => isPersonalApiError(cause) && cause.status === 404,
-      // SAFETY: 404 maps to absent resource; callers expect A | undefined
-      (): Effect.Effect<A | undefined, never, never> => Effect.as(Effect.void, undefined),
+      (): Effect.Effect<A | undefined> => Effect.as(Effect.void, undefined),
     ),
   );
 

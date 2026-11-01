@@ -43,6 +43,7 @@ import {
   manifoldUserAgent,
   requestHref,
   requestInitText,
+  type FetchResponse,
 } from "@manifold/json";
 import { Clock, DateTime } from "effect";
 import * as Effect from "effect/Effect";
@@ -108,7 +109,7 @@ const piggybackDrain = (): void => {
 const scheduledAniListFetcher = async (
   input: Parameters<CanonicalFetcher>[0],
   init?: Parameters<CanonicalFetcher>[1],
-): Promise<Response> => {
+): Promise<FetchResponse> => {
   const headers: Record<string, string> = {};
 
   if (isJsonObject(init?.headers)) {
@@ -142,15 +143,12 @@ const scheduledAniListFetcher = async (
     },
   };
 
-  // SAFETY: scheduleRequest surface is a partial Response used by AniList GraphQL client
   return {
     ok: response.status >= 200 && response.status < 300,
     status: response.status,
     headers: headerBag,
     text: async () => body,
-    // SAFETY: JSON.parse result is validated by AniList response parsers
-    json: async () => JSON.parse(body) as unknown,
-  } as Response;
+  };
 };
 
 export class ManifoldTrackerSource

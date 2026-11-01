@@ -80,7 +80,6 @@ export const decodeJwtPayloadJson = (token: string): JsonObject | undefined => {
   }
 
   try {
-    // SAFETY: boundary parse of untrusted JWT payload bytes for status/TTL only.
     const parsed: unknown = JSON.parse(json);
 
     return isJsonObject(parsed) ? parsed : undefined;
@@ -275,7 +274,6 @@ export const deserializeAdminAccessCookies = (
   nowMs: number = Date.now(),
 ): Cookie[] => {
   try {
-    // SAFETY: I/O JSON.parse of the persisted Access cookie blob.
     const parsed: unknown = JSON.parse(raw);
 
     if (!Array.isArray(parsed)) {

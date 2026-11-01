@@ -117,8 +117,7 @@ const readPendingProgress = (): PendingProgressMap => {
   }
 
   try {
-    // SAFETY: state was written by queueProgress from a live SourceManga on
-    // this device; malformed entries are skipped below.
+    // queueProgress wrote this state on this device; malformed entries are skipped below.
     const parsed: unknown = JSON.parse(raw);
 
     if (!isJsonObject(parsed)) {

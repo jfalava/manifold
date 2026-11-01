@@ -1,5 +1,7 @@
 import { epochMillisNow } from "./effect-host";
+import { ListStatus } from "@manifold/contract";
 import { isFiniteNumber, isJsonObject, type JsonObject } from "@manifold/json";
+import { Schema } from "effect";
 import type {
   RegistryEntry,
   ListEvent,
@@ -194,10 +196,11 @@ export const toOp = (row: OpRow): SyncOp => ({
   updatedAt: row.updated_at,
 });
 
+const isListStatus = Schema.is(ListStatus);
+
 export const toListState = (row: ListStateRow): ListState => ({
   entryId: row.entry_id,
-  // SAFETY: value matches ListState["status"] when the stored column is set
-  ...(!(row.status === null) && { status: row.status as ListState["status"] }),
+  ...(isListStatus(row.status) && { status: row.status }),
   ...(!(row.score === null) && { score: row.score }),
   ...(!(row.notes === null) && { notes: row.notes }),
   ...(!(row.started_at === null) && { startedAt: row.started_at }),

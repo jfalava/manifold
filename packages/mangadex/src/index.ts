@@ -13,6 +13,7 @@ import {
   manifoldUserAgent,
   type JsonObject,
   type JsonValue,
+  type FetchResponse,
 } from "@manifold/json";
 
 export const MANGADEX_TOKEN_ENDPOINT =
@@ -124,13 +125,16 @@ export interface MangaDexPaged<T> {
   readonly total?: number;
 }
 
-export type MangaDexReadingStatus =
-  | "reading"
-  | "on_hold"
-  | "plan_to_read"
-  | "dropped"
-  | "re_reading"
-  | "completed";
+export const MangaDexReadingStatus = Schema.Literals([
+  "reading",
+  "on_hold",
+  "plan_to_read",
+  "dropped",
+  "re_reading",
+  "completed",
+]);
+
+export type MangaDexReadingStatus = typeof MangaDexReadingStatus.Type;
 
 export interface MangaDexRating {
   readonly rating: number;
@@ -204,7 +208,10 @@ export interface MangaDexClient {
   ) => Effect.Effect<boolean, MangaDexSourceError>;
 }
 
-export type MangaDexFetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+export type MangaDexFetcher = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<FetchResponse>;
 
 export interface MangaDexClientOptions {
   readonly endpoint?: string;
@@ -433,7 +440,7 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
   // MangaDex throws sporadic 5xx/429 during long sweeps; all writes this
   // client performs are idempotent, so retry those with exponential backoff
   // (honoring Retry-After when present) before surfacing an error.
-  const retryWaitMs = (response: Response | undefined, attempt: number): number => {
+  const retryWaitMs = (response: FetchResponse | undefined, attempt: number): number => {
     if (response) {
       const retryAfter = Number(response.headers.get("retry-after"));
 
@@ -450,7 +457,7 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
     method = "GET",
     body?: JsonValue,
     attempt = 1,
-  ): Effect.Effect<Response, MangaDexSourceError> =>
+  ): Effect.Effect<FetchResponse, MangaDexSourceError> =>
     Effect.gen(function* () {
       const headers: Record<string, string> = {};
       headers.accept = "application/json";
@@ -512,10 +519,14 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
     Effect.gen(function* () {
       const response = yield* request(path);
 
-      const body: unknown = yield* Effect.tryPromise({
-        try: () => response.json(),
+      const text = yield* Effect.tryPromise({
+        try: () => response.text(),
         catch: (cause) => errorFrom(cause),
       });
+
+      const body = yield* Schema.decodeEffect(JsonBodyString)(text).pipe(
+        Effect.mapError(() => errorFrom("MangaDex returned invalid JSON")),
+      );
 
       if (!isJsonObject(body)) {
         return yield* Effect.fail(errorFrom("MangaDex returned a non-object JSON body"));

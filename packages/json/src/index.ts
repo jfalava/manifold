@@ -126,6 +126,14 @@ export function requestHref(input: RequestInfo | URL): string {
   throw new TypeError("requestHref: expected a string URL, URL, or Request");
 }
 
+/** The part of `Response` that Manifold HTTP clients read. Hosts without a Response constructor (Paperback) implement it directly. */
+export interface FetchResponse {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly headers: { get(name: string): string | null };
+  text(): Promise<string>;
+}
+
 export function requestInitText(init: RequestInit | undefined): string | undefined {
   const body = init?.body;
 

@@ -32,10 +32,10 @@ const MATCH_CANDIDATE_LIMIT = 100;
 
 /**
  * Vectorize metadata bag for MangaDex title embeddings.
- * Index signature matches VectorizeVector.metadata value contract.
+ * Vectorize returns this bag as written; the helpers below narrow each value.
  */
 interface VectorMetadata {
-  [key: string]: string | number | boolean | string[];
+  [key: string]: VectorizeVectorMetadata;
 }
 
 export interface EmbeddedMangaDexCandidate {
@@ -376,8 +376,7 @@ const indexedCandidates = (
   matches: Awaited<ReturnType<VectorizeIndex["query"]>>["matches"],
 ): readonly RankedMangaDexCandidate[] =>
   matches.flatMap((match) => {
-    // SAFETY: optional field is VectorMetadata | undefined when present at this call site
-    const manga = vectorCandidate(match.id, match.metadata as VectorMetadata | undefined);
+    const manga = vectorCandidate(match.id, match.metadata);
 
     return manga ? [{ manga, score: match.score }] : [];
   });

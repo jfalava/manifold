@@ -12,6 +12,7 @@ import {
   stringField,
   type JsonObject,
   type JsonValue,
+  type FetchResponse,
 } from "@manifold/json";
 import {
   canonicalId,
@@ -26,7 +27,10 @@ import {
 export const ANILIST_GRAPHQL_ENDPOINT = "https://graphql.anilist.co";
 export const MYANIMELIST_MANGA_ENDPOINT = "https://api.myanimelist.net/v2/manga";
 
-export type CanonicalFetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+export type CanonicalFetcher = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<FetchResponse>;
 
 export interface AniListSourceOptions {
   readonly fetcher?: CanonicalFetcher;
@@ -187,14 +191,18 @@ const requestJson = (
       return yield* Effect.fail(sourceError(provider, message, response.status));
     }
 
-    const body: unknown = yield* Effect.tryPromise({
-      try: () => response.json(),
+    const text = yield* Effect.tryPromise({
+      try: () => response.text(),
       catch: (cause) =>
         sourceError(
           provider,
-          cause instanceof Error ? cause.message : "Canonical provider JSON parse failed",
+          cause instanceof Error ? cause.message : "Canonical provider body read failed",
         ),
     });
+
+    const body = yield* Schema.decodeEffect(JsonBodyString)(text).pipe(
+      Effect.mapError(() => sourceError(provider, "Canonical provider JSON parse failed")),
+    );
 
     if (!isJsonObject(body)) {
       return yield* Effect.fail(
