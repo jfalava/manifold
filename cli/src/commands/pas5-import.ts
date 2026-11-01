@@ -111,7 +111,7 @@ export const planPas5Import = (
           continue;
         }
 
-        const info = archive.__MANGA_INFO_V5[String(source.mangaInfo.id)];
+        const info = archive.__MANGA_INFO_V5[source.mangaInfo.id];
 
         if (!info) {
           throw cliError(`Missing manga info for ${source.sourceId}.`);
