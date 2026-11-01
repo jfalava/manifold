@@ -488,13 +488,9 @@ const isAuthProvider = (value: string): value is AuthProvider => {
   return false;
 };
 
-const loadAuthConnectionsProgram = capture(
-  "auth connections",
-  call("/v1/auth", AuthConnectionsResponse),
-).pipe(Effect.map((result): readonly AuthConnection[] => (result.ok ? result.value : [])));
-
+// A failed load must reach the page; an empty list would render every provider as disconnected.
 export const loadAuthConnections = createServerFn({ method: "GET" }).handler(() =>
-  runHost(loadAuthConnectionsProgram),
+  runHost(call("/v1/auth", AuthConnectionsResponse)),
 );
 
 /**

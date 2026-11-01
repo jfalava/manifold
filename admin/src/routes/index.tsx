@@ -3,11 +3,7 @@ import { Badge, Banner, LayerCard, Meter, Table, Text } from "@cloudflare/kumo";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import {
-  InfrastructureWidgetsSkeleton,
-  LibraryWidgetsSkeleton,
-  StatCardSkeleton,
-} from "../components/loading";
+import { InfrastructureWidgetsSkeleton, LibraryWidgetsSkeleton } from "../components/loading";
 import { getAnalyticsSnapshot, WORKER_CATALOG, type AnalyticsSnapshot } from "../lib/analytics";
 import {
   getLibraryOverview,
@@ -386,7 +382,8 @@ function InfrastructureSection({
     return <InfrastructureWidgetsSkeleton />;
   }
 
-  if (state.status === "error") {
+  // The banner above explains the failure; zero counts here would read as real traffic.
+  if (state.status === "error" || !state.value.ok) {
     return (
       <div className="grid gap-6">
         <div className="grid gap-1.5">
@@ -400,8 +397,6 @@ function InfrastructureSection({
             value={String(WORKER_CATALOG.length)}
             hint="deployed workers and sites"
           />
-          <StatCardSkeleton />
-          <StatCardSkeleton />
         </div>
       </div>
     );
@@ -425,7 +420,7 @@ function InfrastructureSection({
         <StatCard
           label="Requests (24h)"
           value={formatCount(snapshot.totalRequests)}
-          hint={`${snapshot.totalErrors.toLocaleString("en")} errors across the df stack`}
+          hint={`${snapshot.totalErrors.toLocaleString("en")} errors across all workers`}
         />
         <StatCard
           label="Durable Object requests (24h)"
@@ -450,7 +445,7 @@ function InfrastructureSection({
             </Table.Header>
             <Table.Body>
               {WORKER_CATALOG.map((worker) => {
-                const traffic = snapshot.ok ? snapshot.workerTraffic[worker.logical] : undefined;
+                const traffic = snapshot.workerTraffic[worker.logical];
 
                 return (
                   <Table.Row key={worker.logical}>
@@ -467,12 +462,10 @@ function InfrastructureSection({
             </Table.Body>
           </Table>
         </LayerCard>
-        {snapshot.ok && (
-          <p className="text-sm opacity-60">
-            Updated {new Date(snapshot.fetchedAt).toLocaleTimeString("en")} from Cloudflare GraphQL
-            analytics.
-          </p>
-        )}
+        <p className="text-sm opacity-60">
+          Updated {new Date(snapshot.fetchedAt).toLocaleTimeString("en")} from Cloudflare GraphQL
+          analytics.
+        </p>
       </div>
     </div>
   );

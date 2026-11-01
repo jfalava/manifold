@@ -26,12 +26,7 @@ import {
 
 export type { PendingAniListOp };
 
-import {
-  cliError,
-  fromPromise,
-  runHost,
-  type CliEffectError,
-} from "@/effect-kit";
+import { cliError, fromPromise, runHost, type CliEffectError } from "@/effect-kit";
 import { __aniListRequestTest, aniListGraphqlEffect } from "@/anilist-request";
 
 const DRAIN_BATCH_LIMIT = 25;

@@ -630,9 +630,7 @@ function MangaDexLibraryPage() {
           </p>
         )}
       {notice !== undefined && (
-        <Banner variant="default" title="Library updated">
-          {notice}
-        </Banner>
+        <Banner variant="default" title="Library updated" description={notice} />
       )}
 
       <div className="flex flex-wrap items-center gap-2">

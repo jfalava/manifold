@@ -146,17 +146,15 @@ function OperationsPage() {
         </Button>
       </div>
 
-      {error && (
-        <Banner variant="error" title="Action failed">
-          {error}
-        </Banner>
-      )}
+      {error && <Banner variant="error" title="Action failed" description={error} />}
       {loadErrors && Object.keys(loadErrors).length > 0 && (
-        <Banner variant="default" title="Partial load">
-          {Object.entries(loadErrors)
+        <Banner
+          variant="alert"
+          title="Partial load"
+          description={Object.entries(loadErrors)
             .map(([source, message]) => `${source}: ${message}`)
             .join(" · ")}
-        </Banner>
+        />
       )}
 
       <Tabs
@@ -370,7 +368,12 @@ function OpsTable({
       </div>
 
       {pager}
-      <DataTable table={table} emptyText="No ops recorded." loading={loading} skeletonColumns={7} />
+      <DataTable
+        table={table}
+        emptyText={data?.errors.ops === undefined ? "No ops recorded." : "Ops could not be loaded."}
+        loading={loading}
+        skeletonColumns={7}
+      />
       {pager}
     </div>
   );
@@ -523,7 +526,9 @@ function EventsTable({
       {pager}
       <DataTable
         table={table}
-        emptyText="No events recorded."
+        emptyText={
+          data?.errors.events === undefined ? "No events recorded." : "Events could not be loaded."
+        }
         loading={loading}
         skeletonColumns={5}
       />

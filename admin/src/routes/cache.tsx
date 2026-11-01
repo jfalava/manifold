@@ -34,16 +34,22 @@ function CachePage() {
     return <CachePending />;
   }
 
-  if (state.status === "error") {
+  // Zero counts next to the banner would read as real traffic, so a failed load shows only the banner.
+  if (state.status === "error" || !state.value.ok) {
+    const failure =
+      state.status === "error"
+        ? state.message
+        : (state.value.reason ?? "Zone HTTP analytics could not be loaded.");
+
     return (
       <div className="grid gap-6">
         <div className="grid gap-1.5">
           <Text as="h1" variant="heading">
             Cache
           </Text>
-          <Text>Edge cache behaviour on manifold.jfa.dev over the last window.</Text>
+          <Text>Edge cache behaviour on manifold.jfa.dev.</Text>
         </div>
-        <Banner variant="alert" title="Cache analytics unavailable" description={state.message} />
+        <Banner variant="alert" title="Cache analytics unavailable" description={failure} />
       </div>
     );
   }
@@ -60,13 +66,6 @@ function CachePage() {
           Edge cache behaviour on manifold.jfa.dev over the last {snapshot.windowHours} hours.
         </Text>
       </div>
-      {!snapshot.ok && (
-        <Banner
-          variant="alert"
-          title="Cache analytics unavailable"
-          description={snapshot.reason ?? "Zone HTTP analytics could not be loaded."}
-        />
-      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard

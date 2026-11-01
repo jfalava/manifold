@@ -74,7 +74,7 @@ function RequestsPage() {
         <Surface className="px-5 py-10">
           <Empty
             title="No request data yet"
-            description="No invocations recorded for the df stack in the last 24 hours."
+            description="No worker invocations recorded in the last 24 hours."
           />
         </Surface>
       )}

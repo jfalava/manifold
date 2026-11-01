@@ -90,6 +90,7 @@ function parseHashToken(hash: string): HashTokenCapture {
 function CredentialsPage() {
   const [connections, setConnections] = useState<readonly AuthConnection[] | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [loadError, setLoadError] = useState<string | undefined>(undefined);
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [acting, setActing] = useState<string | undefined>(undefined);
@@ -101,9 +102,9 @@ function CredentialsPage() {
 
     try {
       setConnections(await loadAuthConnections());
-      setError(undefined);
+      setLoadError(undefined);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setLoadError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
     }
@@ -228,12 +229,19 @@ function CredentialsPage() {
         </Text>
       </div>
 
+      {loadError !== undefined && (
+        <Banner variant="error" title="Connections unavailable" description={loadError} />
+      )}
       {error !== undefined && <Banner variant="error" title="Action failed" description={error} />}
       {notice !== undefined && <Banner variant="default" title="Updated" description={notice} />}
 
       <Surface>
-        {connections === undefined && busy ? (
+        {connections === undefined && loadError === undefined ? (
           <TableSkeleton columns={5} rows={3} />
+        ) : connections === undefined ? (
+          <p className="px-5 py-4 text-sm opacity-60">
+            Connection status is unknown until the auth API responds.
+          </p>
         ) : (
           <Table>
             <Table.Header>

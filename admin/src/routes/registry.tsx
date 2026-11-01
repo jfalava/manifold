@@ -118,15 +118,9 @@ function RegistryPage() {
         </Button>
       </div>
 
-      {error && (
-        <Banner variant="error" title="Action failed">
-          {error}
-        </Banner>
-      )}
+      {error && <Banner variant="error" title="Action failed" description={error} />}
       {data?.error !== undefined && (
-        <Banner variant="default" title="Partial load">
-          registry: {data.error}
-        </Banner>
+        <Banner variant="alert" title="Registry unavailable" description={data.error} />
       )}
 
       <EntriesTable data={data} loading={busy && data === undefined} onAct={act} />
@@ -678,7 +672,9 @@ function EntriesTable({
       </div>
       <DataTable
         table={table}
-        emptyText="No registry entries match."
+        emptyText={
+          data?.error === undefined ? "No registry entries match." : "Registry could not be loaded."
+        }
         loading={loading}
         skeletonColumns={7}
         renderRow={(row, cells) => (

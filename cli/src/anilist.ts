@@ -8,11 +8,7 @@ import {
   type JsonObject,
 } from "@manifold/json";
 import { Effect } from "effect";
-import {
-  cliError,
-  type CliEffectError,
-  runHost,
-} from "@/effect-kit";
+import { cliError, type CliEffectError, runHost } from "@/effect-kit";
 import { aniListGraphqlEffect } from "@/anilist-request";
 
 export interface AniListEntry {

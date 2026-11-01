@@ -232,7 +232,9 @@ describe("registry import-pas5", () => {
   it("reports partial success if the server rejects a later binding race", () => {
     const result = run(["--apply"], "race");
     expect(result.status).toBe(1);
-    expect(result.registry.writes.map((write: { provider: string }) => write.provider)).toEqual(["mangadex"]);
+    expect(result.registry.writes.map((write: { provider: string }) => write.provider)).toEqual([
+      "mangadex",
+    ]);
     expect(result.report.find((item) => item.event === "entry")).toMatchObject({
       outcome: "error",
       error: "Provider link conflict: raced",

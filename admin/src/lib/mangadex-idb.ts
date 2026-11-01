@@ -85,7 +85,6 @@ export async function readMangaDexLibraryCache(): Promise<{
   try {
     const tx = db.transaction([STORE_ENTRIES, STORE_META], "readonly");
     const items = await readAllEntries(tx.objectStore(STORE_ENTRIES));
-    // SAFETY: IDBRequest.result is typed any; meta store only holds MangaDexLibrarySnapshotMeta.
     const metaRaw: unknown = await requestToPromise(tx.objectStore(STORE_META).get(META_SNAPSHOT));
     const meta = isSnapshotMeta(metaRaw) ? metaRaw : undefined;
     await txDone(tx);
