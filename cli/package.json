@@ -35,7 +35,7 @@
     "signing:export": "bun scripts/export-signing-p12.ts",
     "signing:provision": "bun scripts/provision-signing-cert.ts",
     "test": "vitest run",
-    "typecheck": "tsrs --noEmit",
+    "typecheck": "tsrs --noEmit && tsrs --noEmit -p tsconfig.test.json",
     "upgrade": "bun index.ts upgrade"
   },
   "dependencies": {
