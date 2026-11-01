@@ -90,6 +90,9 @@
     "/favicon.ico",
     "/fonts/IBMPlexSans-Bold.ttf",
     "/index.md",
+    "/licenses",
+    "/licenses/index.md",
+    "/licenses/index.mdx",
     "/llms-full.txt",
     "/llms.txt",
     "/og.png",
@@ -118,11 +121,16 @@
     "/og/cli/registry/manganato.png",
     "/og/cli/registry/xcomic.png",
     "/og/cli/upgrade.png",
+    "/og/licenses.png",
     "/robots.txt",
     "/site.webmanifest"
   ],
   "redirects": [],
   "redirectPages": [],
   "redirectRules": "cloudflare",
-  "opaqueNamespaces": []
+  "mounts": {
+    "docs": ""
+  },
+  "opaqueNamespaces": [],
+  "builtAt": "2026-11-01T21:08:21.775Z"
 }

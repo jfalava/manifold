@@ -35,6 +35,7 @@ const nimbusConfig = defineNimbusConfig({
           "cli/debug-program-status",
         ],
       },
+      "licenses",
     ],
   },
   socialImageAlt: "Manifold documentation preview",
