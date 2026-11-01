@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
-/* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
+/* Last modified by Manifold on 2026-11-01. See ATTRIBUTIONS.md. */
 
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalDate:off */
 /** @effect-diagnostics globalDateInEffect:off */
+import { parseAniListDate, type FuzzyDateInput } from "@manifold/canonical/sources";
 import {
   isFiniteNumber,
   isJsonArray,
@@ -588,43 +589,20 @@ export const saveAniListStatus = (
 
 // Score / notes / dates / volumes — the fields Paperback has no UI for.
 // Managed by the admin panel and drained to AniList by this device.
-const FMI_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** AniList GraphQL FuzzyDateInput for startedAt / completedAt mutations. */
-export type FuzzyDateInput = {
-  readonly year: number;
-  readonly month: number;
-  readonly day: number;
-};
-
 const fmiDate = (value: string | null): FuzzyDateInput | null => {
   if (value === null) {
     return null;
   }
 
-  if (!FMI_DATE.test(value)) {
-    throw paperbackError(`Invalid AniList date: ${value}; expected YYYY-MM-DD`);
+  const date = parseAniListDate(value);
+
+  if (date === undefined) {
+    throw paperbackError(
+      `Invalid AniList date: ${value}; expected a real YYYY-MM-DD calendar date`,
+    );
   }
 
-  const year = Number(value.slice(0, 4));
-  const month = Number(value.slice(5, 7));
-  const day = Number(value.slice(8, 10));
-  const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-
-  const daysInMonth =
-    month === 2
-      ? isLeapYear
-        ? 29
-        : 28
-      : month === 4 || month === 6 || month === 9 || month === 11
-        ? 30
-        : 31;
-
-  if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth) {
-    throw paperbackError(`Invalid AniList date: ${value}; expected a real calendar date`);
-  }
-
-  return { year, month, day };
+  return date;
 };
 
 const saveAniListFieldsEffect = (
@@ -840,3 +818,5 @@ export const saveAniListProgress = (
   anilistId: string,
   progress: number,
 ): Promise<boolean> => Effect.runPromise(saveAniListProgressEffect(token, anilistId, progress));
+
+export type { FuzzyDateInput };

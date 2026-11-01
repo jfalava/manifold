@@ -15,6 +15,7 @@ import {
   objectField,
   type JsonObject,
 } from "@manifold/json";
+import { parseAniListDate, type FuzzyDateInput } from "@manifold/canonical/sources";
 import { Effect } from "effect";
 
 import {
@@ -30,7 +31,6 @@ import { cliError, fromPromise, runHost, type CliEffectError } from "@/effect-ki
 import { __aniListRequestTest, aniListGraphqlEffect } from "@/anilist-request";
 
 const DRAIN_BATCH_LIMIT = 25;
-const FMI_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export type DrainApiClient = {
   readonly pendingAniListOps: (limit?: number) => Promise<readonly PendingAniListOp[]>;
@@ -57,12 +57,6 @@ export type DrainOpResult = {
   readonly error?: string;
   readonly mediaListEntryId?: number;
   readonly kind: string;
-};
-
-type FuzzyDateInput = {
-  readonly year: number;
-  readonly month: number;
-  readonly day: number;
 };
 
 const errorText = (cause: unknown): string => {
@@ -96,29 +90,13 @@ const fmiDate = (value: string | null): FuzzyDateInput | null => {
     return null;
   }
 
-  if (!FMI_DATE.test(value)) {
-    throw new Error(`Invalid AniList date: ${value}; expected YYYY-MM-DD`);
+  const date = parseAniListDate(value);
+
+  if (date === undefined) {
+    throw new Error(`Invalid AniList date: ${value}; expected a real YYYY-MM-DD calendar date`);
   }
 
-  const year = Number(value.slice(0, 4));
-  const month = Number(value.slice(5, 7));
-  const day = Number(value.slice(8, 10));
-  const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-
-  const daysInMonth =
-    month === 2
-      ? isLeapYear
-        ? 29
-        : 28
-      : month === 4 || month === 6 || month === 9 || month === 11
-        ? 30
-        : 31;
-
-  if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth) {
-    throw new Error(`Invalid AniList date: ${value}; expected a real calendar date`);
-  }
-
-  return { year, month, day };
+  return date;
 };
 
 const mediaIdEffect = (anilistId: string): Effect.Effect<number, CliEffectError> =>

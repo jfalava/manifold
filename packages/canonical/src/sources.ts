@@ -13,6 +13,7 @@ import {
   type JsonObject,
   type JsonValue,
   type FetchResponse,
+  uniqueStrings,
 } from "@manifold/json";
 import {
   canonicalId,
@@ -105,30 +106,6 @@ const mangaDexExternalId = (value: JsonValue | undefined): string | undefined =>
   }
 
   return undefined;
-};
-
-const uniqueStrings = (values: readonly (string | undefined)[]): string[] => {
-  const seen = new Set<string>();
-  const result: string[] = [];
-
-  for (const value of values) {
-    const normalized = value?.trim();
-
-    if (!normalized) {
-      continue;
-    }
-
-    const key = normalized.toLocaleLowerCase();
-
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    result.push(normalized);
-  }
-
-  return result;
 };
 
 const sourceError = (
@@ -641,4 +618,41 @@ export const createMyAnimeListSource = (
         return malEntry(body);
       }),
   };
+};
+
+/** AniList GraphQL `FuzzyDateInput`, as sent for `startedAt` / `completedAt`. */
+// A type alias, not an interface, so it stays assignable to JsonValue in GraphQL variables.
+export type FuzzyDateInput = {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+};
+
+const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** Parses a real `YYYY-MM-DD` calendar date (leap years included); anything else is undefined. */
+export const parseAniListDate = (value: string): FuzzyDateInput | undefined => {
+  const match = YMD.exec(value);
+
+  if (!match) {
+    return undefined;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+
+  const daysInMonth =
+    month === 2
+      ? isLeapYear
+        ? 29
+        : 28
+      : month === 4 || month === 6 || month === 9 || month === 11
+        ? 30
+        : 31;
+
+  return year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth
+    ? undefined
+    : { year, month, day };
 };

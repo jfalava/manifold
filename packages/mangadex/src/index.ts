@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
-/* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
+/* Last modified by Manifold on 2026-11-01. See ATTRIBUTIONS.md. */
 
 /** @effect-diagnostics globalFetch:off */
 import * as Data from "effect/Data";
@@ -15,6 +15,7 @@ import {
   type JsonObject,
   type JsonValue,
   type FetchResponse,
+  uniqueStrings,
 } from "@manifold/json";
 
 export const MANGADEX_TOKEN_ENDPOINT =
@@ -261,29 +262,15 @@ const numberValue = (value: JsonValue | undefined): number | undefined => {
 const objectValues = (value: JsonValue | undefined): readonly JsonObject[] =>
   isJsonArray(value) ? value.filter(isJsonObject) : [];
 
-const uniqueStrings = (values: readonly (string | undefined)[]): string[] => {
-  const seen = new Set<string>();
-  const result: string[] = [];
+/** A `/manga`-style collection body as decoded manga plus the server total. */
+const mangaPage = (body: JsonObject) => ({
+  items: (isJsonArray(body.data) ? body.data : []).flatMap((item) => {
+    const manga = mangaFromResource(item);
 
-  for (const value of values) {
-    const normalized = value?.trim();
-
-    if (!normalized) {
-      continue;
-    }
-
-    const key = normalized.toLocaleLowerCase();
-
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    result.push(normalized);
-  }
-
-  return result;
-};
+    return manga === undefined ? [] : [manga];
+  }),
+  total: numberValue(body.total),
+});
 
 const preferredLocalizedValue = (value: JsonValue | undefined): string | undefined => {
   const values = asObject(value);
@@ -636,15 +623,8 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         ];
 
         const body = yield* requestJson(queryPath("/manga", params));
-        const data = isJsonArray(body.data) ? body.data : [];
 
-        const items = data.flatMap((item) => {
-          const manga = mangaFromResource(item);
-
-          return manga === undefined ? [] : [manga];
-        });
-
-        return { items, total: numberValue(body.total) };
+        return mangaPage(body);
       }),
     getManga: (mangaId) =>
       Effect.gen(function* () {
@@ -692,15 +672,8 @@ export const createMangaDexClient = (options: MangaDexClientOptions = {}): Manga
         ];
 
         const body = yield* requestJson(queryPath("/user/follows/manga", params));
-        const data = isJsonArray(body.data) ? body.data : [];
 
-        const items = data.flatMap((item) => {
-          const manga = mangaFromResource(item);
-
-          return manga === undefined ? [] : [manga];
-        });
-
-        return { items, total: numberValue(body.total) };
+        return mangaPage(body);
       }),
     latestChapterSince: (mangaId, publishedAtSince) =>
       Effect.gen(function* () {
