@@ -12,10 +12,10 @@
  * degrades to plain compute.
  */
 
+import { isJsonObject, isFiniteNumber } from "@manifold/json";
 import { DateTime, Deferred, Effect, Option, Schema } from "effect";
 
 import { AdminError, runHost, toError, tryPromise, workersRuntime } from "./effect-host";
-import { isJsonObject, isNumberValue } from "./guards";
 
 /** How long a stored snapshot is served without triggering a refresh. */
 const SOFT_TTL_MS = 60_000;
@@ -66,7 +66,7 @@ const readKv = Effect.fnUntraced(function* <T>(
   const decoded = Schema.decodeOption(JsonString)(text);
   const parsed = Option.isSome(decoded) ? decoded.value : null;
 
-  if (!isJsonObject(parsed) || !isNumberValue(parsed.storedAt) || !("value" in parsed)) {
+  if (!isJsonObject(parsed) || !isFiniteNumber(parsed.storedAt) || !("value" in parsed)) {
     return null;
   }
 

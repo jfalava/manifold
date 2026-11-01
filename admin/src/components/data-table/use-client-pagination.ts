@@ -1,7 +1,5 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
 
-import { isFunctionValue } from "../../lib/guards";
-
 export type ClientPagination = {
   readonly pageIndex: number;
   readonly pageSize: number;
@@ -24,7 +22,7 @@ export type ClientPaginationOptions = {
 function isPaginationUpdater(
   update: SetStateAction<ClientPagination>,
 ): update is (pagination: ClientPagination) => ClientPagination {
-  return isFunctionValue(update);
+  return typeof update === "function";
 }
 
 /**

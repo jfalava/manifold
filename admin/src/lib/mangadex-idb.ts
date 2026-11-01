@@ -1,7 +1,8 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalDate:off */
 /** @effect-diagnostics newPromise:off */
-import { isJsonObject, isNumberValue, isStringValue } from "./guards";
+import { isJsonObject, isFiniteNumber, isString } from "@manifold/json";
+
 import type { MangaDexLibraryItem, MangaDexReadingStatus } from "./mangadex";
 
 const DB_NAME = "manifold-admin-mangadex";
@@ -56,16 +57,16 @@ const openDb = (): Promise<IDBDatabase> =>
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: IndexedDB boundary parser; validates stored JSON before use
 const isLibraryItem = (value: unknown): value is MangaDexLibraryItem => {
-  if (!isJsonObject(value) || !isStringValue(value.mangaDexId) || !isStringValue(value.status)) {
+  if (!isJsonObject(value) || !isString(value.mangaDexId) || !isString(value.status)) {
     return false;
   }
 
-  return value.entryId === null || isStringValue(value.entryId);
+  return value.entryId === null || isString(value.entryId);
 };
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: IndexedDB boundary parser; validates snapshot meta shape
 const isSnapshotMeta = (value: unknown): value is MangaDexLibrarySnapshotMeta =>
-  isJsonObject(value) && isNumberValue(value.fetchedAt) && isNumberValue(value.count);
+  isJsonObject(value) && isFiniteNumber(value.fetchedAt) && isFiniteNumber(value.count);
 
 const readAllEntries = async (store: IDBObjectStore): Promise<MangaDexLibraryItem[]> => {
   // SAFETY: IDBRequest.result is typed any; owned store writes MangaDexLibraryItem rows only.

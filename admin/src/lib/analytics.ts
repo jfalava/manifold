@@ -1,20 +1,24 @@
-import { manifoldUserAgent } from "@manifold/json";
+import {
+  isBoolean,
+  isFiniteNumber,
+  isJsonArray,
+  isJsonObject,
+  isString,
+  manifoldUserAgent,
+  type JsonObject,
+  type JsonValue,
+} from "@manifold/json";
 import { createServerFn } from "@tanstack/react-start";
 import { DateTime, Effect } from "effect";
 
-import { AdminError, platformFetch, runHost, tryPromise, workersRuntime } from "./effect-host";
 import {
-  isBooleanValue,
-  isFunctionValue,
-  isJsonArray,
-  isJsonObject,
-  isNumberValue,
-  isSecretHandleObject,
-  isStringValue,
-  type JsonValue,
-  type JsonObject,
-  type SecretHandle,
-} from "./guards";
+  AdminError,
+  platformFetch,
+  resolveSecret,
+  runHost,
+  tryPromise,
+  workersRuntime,
+} from "./effect-host";
 import { cachedJsonProgram, type ComputedSnapshot } from "./server-cache";
 
 const GRAPHQL_URL = "https://api.cloudflare.com/client/v4/graphql";
@@ -97,7 +101,7 @@ function graphqlErrorMessage(value: JsonValue): string[] {
 
   const message = value.message;
 
-  return isStringValue(message) ? [message] : [];
+  return isString(message) ? [message] : [];
 }
 
 interface DoInvocationsRow {
@@ -113,14 +117,8 @@ interface CacheRows {
   paths: CacheStatusRow[];
 }
 
-const isRecord = (value: unknown): value is JsonObject =>
-  isJsonObject(value) && !Array.isArray(value);
-
-const isFiniteValue = (value: unknown): value is number =>
-  isNumberValue(value) && Number.isFinite(value);
-
 const accountRows = (data: JsonObject, key: string): readonly JsonObject[] | undefined => {
-  const viewer = isRecord(data.viewer) ? data.viewer : undefined;
+  const viewer = isJsonObject(data.viewer) ? data.viewer : undefined;
   const accounts = viewer?.accounts;
 
   if (!isJsonArray(accounts)) {
@@ -133,7 +131,7 @@ const accountRows = (data: JsonObject, key: string): readonly JsonObject[] | und
     return [];
   }
 
-  if (!isRecord(account) || !isJsonArray(account[key]) || !account[key].every(isRecord)) {
+  if (!isJsonObject(account) || !isJsonArray(account[key]) || !account[key].every(isJsonObject)) {
     return undefined;
   }
 
@@ -153,24 +151,24 @@ const decodeInvocationsRows = (data: JsonObject): InvocationsRow[] | undefined =
     const dimensions = row.dimensions;
     const sum = row.sum;
 
-    if (!isRecord(dimensions) || !isRecord(sum) || !isStringValue(dimensions.scriptName)) {
+    if (!isJsonObject(dimensions) || !isJsonObject(sum) || !isString(dimensions.scriptName)) {
       return undefined;
     }
 
     const datetimeHour = dimensions.datetimeHour;
 
-    if (datetimeHour !== undefined && datetimeHour !== null && !isStringValue(datetimeHour)) {
+    if (datetimeHour !== undefined && datetimeHour !== null && !isString(datetimeHour)) {
       return undefined;
     }
 
-    if (!isNumberValue(sum.requests) || !isNumberValue(sum.errors)) {
+    if (!isFiniteNumber(sum.requests) || !isFiniteNumber(sum.errors)) {
       return undefined;
     }
 
     decoded.push({
       dimensions: {
         scriptName: dimensions.scriptName,
-        ...(isStringValue(datetimeHour) && { datetimeHour }),
+        ...(isString(datetimeHour) && { datetimeHour }),
       },
       sum: { requests: sum.requests, errors: sum.errors },
     });
@@ -191,7 +189,7 @@ const decodeDoInvocationsRows = (data: JsonObject): DoInvocationsRow[] | undefin
   for (const row of rows) {
     const sum = row.sum;
 
-    if (!isRecord(sum) || !isNumberValue(sum.requests)) {
+    if (!isJsonObject(sum) || !isFiniteNumber(sum.requests)) {
       return undefined;
     }
 
@@ -213,7 +211,7 @@ const decodeDoStorageRows = (data: JsonObject): DoStorageRow[] | undefined => {
   for (const row of rows) {
     const max = row.max;
 
-    if (!isRecord(max) || (max.storedBytes !== null && !isNumberValue(max.storedBytes))) {
+    if (!isJsonObject(max) || (max.storedBytes !== null && !isFiniteNumber(max.storedBytes))) {
       return undefined;
     }
 
@@ -223,8 +221,47 @@ const decodeDoStorageRows = (data: JsonObject): DoStorageRow[] | undefined => {
   return decoded;
 };
 
+const decodeCacheStatusRows = (value: JsonValue | undefined): CacheStatusRow[] | undefined => {
+  if (!isJsonArray(value) || !value.every(isJsonObject)) {
+    return undefined;
+  }
+
+  const decoded: CacheStatusRow[] = [];
+
+  for (const row of value) {
+    const dimensions = row.dimensions;
+    const sum = row.sum;
+
+    if (!isJsonObject(dimensions) || !isJsonObject(sum) || !isFiniteNumber(row.count)) {
+      return undefined;
+    }
+
+    const cacheStatus = dimensions.cacheStatus;
+    const path = dimensions.clientRequestPath;
+
+    if (
+      (cacheStatus !== undefined && cacheStatus !== null && !isString(cacheStatus)) ||
+      (path !== undefined && path !== null && !isString(path)) ||
+      !isFiniteNumber(sum.edgeResponseBytes)
+    ) {
+      return undefined;
+    }
+
+    decoded.push({
+      count: row.count,
+      sum: { edgeResponseBytes: sum.edgeResponseBytes },
+      dimensions: {
+        cacheStatus: isString(cacheStatus) ? cacheStatus : null,
+        ...(isString(path) && { clientRequestPath: path }),
+      },
+    });
+  }
+
+  return decoded;
+};
+
 const decodeCacheRows = (data: JsonObject): CacheRows | undefined => {
-  const viewer = isRecord(data.viewer) ? data.viewer : undefined;
+  const viewer = isJsonObject(data.viewer) ? data.viewer : undefined;
   const zones = viewer?.zones;
 
   if (!isJsonArray(zones)) {
@@ -237,78 +274,39 @@ const decodeCacheRows = (data: JsonObject): CacheRows | undefined => {
     return { totals: [], paths: [] };
   }
 
-  if (!isRecord(zone)) {
+  if (!isJsonObject(zone)) {
     return undefined;
   }
 
-  const decodeRows = (value: JsonValue | undefined): CacheStatusRow[] | undefined => {
-    if (!isJsonArray(value) || !value.every(isRecord)) {
-      return undefined;
-    }
-
-    const decoded: CacheStatusRow[] = [];
-
-    for (const row of value) {
-      const dimensions = row.dimensions;
-      const sum = row.sum;
-
-      if (!isRecord(dimensions) || !isRecord(sum) || !isNumberValue(row.count)) {
-        return undefined;
-      }
-
-      const cacheStatus = dimensions.cacheStatus;
-      const path = dimensions.clientRequestPath;
-
-      if (
-        (cacheStatus !== undefined && cacheStatus !== null && !isStringValue(cacheStatus)) ||
-        (path !== undefined && path !== null && !isStringValue(path)) ||
-        !isNumberValue(sum.edgeResponseBytes)
-      ) {
-        return undefined;
-      }
-
-      decoded.push({
-        count: row.count,
-        sum: { edgeResponseBytes: sum.edgeResponseBytes },
-        dimensions: {
-          cacheStatus: isStringValue(cacheStatus) ? cacheStatus : null,
-          ...(isStringValue(path) && { clientRequestPath: path }),
-        },
-      });
-    }
-
-    return decoded;
-  };
-
-  const totals = decodeRows(zone.totals);
-  const paths = decodeRows(zone.paths);
+  const totals = decodeCacheStatusRows(zone.totals);
+  const paths = decodeCacheStatusRows(zone.paths);
 
   return totals === undefined || paths === undefined ? undefined : { totals, paths };
 };
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: cache decoder validates the persisted snapshot before use
 const decodeAnalyticsSnapshot = (value: unknown): AnalyticsSnapshot | undefined => {
-  if (!isRecord(value)) {
+  if (!isJsonObject(value)) {
     return undefined;
   }
 
   const reason = value.reason;
 
   if (
-    !isStringValue(value.fetchedAt) ||
-    !isBooleanValue(value.ok) ||
-    (reason !== null && !isStringValue(reason)) ||
-    !isFiniteValue(value.totalRequests) ||
-    !isFiniteValue(value.totalErrors) ||
-    !isFiniteValue(value.doRequests) ||
-    (value.doStoredBytes !== null && !isFiniteValue(value.doStoredBytes))
+    !isString(value.fetchedAt) ||
+    !isBoolean(value.ok) ||
+    (reason !== null && !isString(reason)) ||
+    !isFiniteNumber(value.totalRequests) ||
+    !isFiniteNumber(value.totalErrors) ||
+    !isFiniteNumber(value.doRequests) ||
+    (value.doStoredBytes !== null && !isFiniteNumber(value.doStoredBytes))
   ) {
     return undefined;
   }
 
   const workerTrafficValue = value.workerTraffic;
 
-  if (!isRecord(workerTrafficValue)) {
+  if (!isJsonObject(workerTrafficValue)) {
     return undefined;
   }
 
@@ -317,11 +315,11 @@ const decodeAnalyticsSnapshot = (value: unknown): AnalyticsSnapshot | undefined 
   for (const [logical, traffic] of Object.entries(workerTrafficValue)) {
     const worker = LOGICAL_WORKERS.find((candidate) => candidate === logical);
 
-    if (worker === undefined || !isRecord(traffic)) {
+    if (worker === undefined || !isJsonObject(traffic)) {
       return undefined;
     }
 
-    if (!isFiniteValue(traffic.requests) || !isFiniteValue(traffic.errors)) {
+    if (!isFiniteNumber(traffic.requests) || !isFiniteNumber(traffic.errors)) {
       return undefined;
     }
 
@@ -333,7 +331,7 @@ const decodeAnalyticsSnapshot = (value: unknown): AnalyticsSnapshot | undefined 
 
   const hourlyValue = value.hourly;
 
-  if (!isRecord(hourlyValue)) {
+  if (!isJsonObject(hourlyValue)) {
     return undefined;
   }
 
@@ -350,10 +348,10 @@ const decodeAnalyticsSnapshot = (value: unknown): AnalyticsSnapshot | undefined 
 
     for (const point of points) {
       if (
-        !isRecord(point) ||
-        !isStringValue(point.hour) ||
-        !isFiniteValue(point.requests) ||
-        !isFiniteValue(point.errors)
+        !isJsonObject(point) ||
+        !isString(point.hour) ||
+        !isFiniteNumber(point.requests) ||
+        !isFiniteNumber(point.errors)
       ) {
         return undefined;
       }
@@ -376,32 +374,6 @@ const decodeAnalyticsSnapshot = (value: unknown): AnalyticsSnapshot | undefined 
     hourly,
   };
 };
-
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: secret binding comes from untyped workers env; parsed at I/O boundary via isString/isSecretHandle
-const resolveSecret = Effect.fnUntraced(function* (
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: Alchemy secret bindings are runtime handles; guards parse them before use
-  binding: unknown,
-): Effect.fn.Return<string | null, AdminError> {
-  if (isStringValue(binding)) {
-    return binding;
-  }
-
-  if (isSecretHandleObject(binding)) {
-    const handle: SecretHandle = binding;
-
-    if (isFunctionValue(handle.get)) {
-      const value = yield* tryPromise(() => handle.get!());
-
-      return isStringValue(value) ? value : null;
-    }
-
-    if (isStringValue(handle.value)) {
-      return handle.value;
-    }
-  }
-
-  return null;
-});
 
 function sinceIso(now: DateTime.Utc, hoursAgo: number): string {
   return DateTime.formatIso(DateTime.subtract(now, { hours: hoursAgo }));
@@ -498,12 +470,7 @@ const fetchSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<Analytics
     const accountTag = env.CF_ACCOUNT_ID;
     const apiToken = yield* resolveSecret(env.MANIFOLD_ADMIN_PANEL_ANALYTICS_API);
 
-    if (
-      !isStringValue(apiToken) ||
-      apiToken === "" ||
-      !isStringValue(accountTag) ||
-      accountTag === ""
-    ) {
+    if (!isString(apiToken) || apiToken === "" || !isString(accountTag) || accountTag === "") {
       return emptyAnalyticsSnapshot(
         "MANIFOLD_ADMIN_PANEL_ANALYTICS_API / CF_ACCOUNT_ID bindings are not configured",
         fetchedAt,
@@ -603,7 +570,7 @@ const fetchSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<Analytics
 
     const storedValues = storageData
       .map((row) => row.max.storedBytes)
-      .filter((value): value is number => isNumberValue(value));
+      .filter((value): value is number => isFiniteNumber(value));
 
     const doStoredBytes =
       storedValues && storedValues.length > 0 ? Math.max(...storedValues) : null;
@@ -704,10 +671,10 @@ const decodeCacheStatusSlices = (value: JsonValue | undefined): CacheStatusSlice
 
   for (const status of value) {
     if (
-      !isRecord(status) ||
-      !isStringValue(status.status) ||
-      !isFiniteValue(status.requests) ||
-      !isFiniteValue(status.bytes)
+      !isJsonObject(status) ||
+      !isString(status.status) ||
+      !isFiniteNumber(status.requests) ||
+      !isFiniteNumber(status.bytes)
     ) {
       return undefined;
     }
@@ -731,14 +698,14 @@ const decodeSurfaceCacheStats = (value: JsonValue | undefined): SurfaceCacheStat
 
   for (const surface of value) {
     if (
-      !isRecord(surface) ||
-      !isStringValue(surface.surface) ||
-      !isStringValue(surface.pathPrefix) ||
-      !isFiniteValue(surface.requests) ||
-      !isFiniteValue(surface.hits) ||
-      !isFiniteValue(surface.misses) ||
-      !isFiniteValue(surface.uncacheable) ||
-      !isFiniteValue(surface.bytes)
+      !isJsonObject(surface) ||
+      !isString(surface.surface) ||
+      !isString(surface.pathPrefix) ||
+      !isFiniteNumber(surface.requests) ||
+      !isFiniteNumber(surface.hits) ||
+      !isFiniteNumber(surface.misses) ||
+      !isFiniteNumber(surface.uncacheable) ||
+      !isFiniteNumber(surface.bytes)
     ) {
       return undefined;
     }
@@ -759,22 +726,22 @@ const decodeSurfaceCacheStats = (value: JsonValue | undefined): SurfaceCacheStat
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: cache decoder validates the persisted snapshot before use
 const decodeCacheSnapshot = (value: unknown): CacheSnapshot | undefined => {
-  if (!isRecord(value)) {
+  if (!isJsonObject(value)) {
     return undefined;
   }
 
   const reason = value.reason;
 
   if (
-    !isBooleanValue(value.ok) ||
-    !isStringValue(value.fetchedAt) ||
-    (reason !== null && !isStringValue(reason)) ||
-    !isFiniteValue(value.windowHours) ||
-    !isFiniteValue(value.totalRequests) ||
-    !isFiniteValue(value.totalBytes) ||
-    !isFiniteValue(value.cacheableRequests) ||
-    !isFiniteValue(value.cacheHits) ||
-    !isFiniteValue(value.cachedBytes)
+    !isBoolean(value.ok) ||
+    !isString(value.fetchedAt) ||
+    (reason !== null && !isString(reason)) ||
+    !isFiniteNumber(value.windowHours) ||
+    !isFiniteNumber(value.totalRequests) ||
+    !isFiniteNumber(value.totalBytes) ||
+    !isFiniteNumber(value.cacheableRequests) ||
+    !isFiniteNumber(value.cacheHits) ||
+    !isFiniteNumber(value.cachedBytes)
   ) {
     return undefined;
   }
@@ -829,9 +796,9 @@ const resolveZoneTag = Effect.fnUntraced(function* (
     return yield* new AdminError({ message: "zone lookup returned an unexpected shape" });
   }
 
-  const zone = payload.result.find(isRecord);
+  const zone = payload.result.find(isJsonObject);
 
-  if (!isJsonObject(zone) || !isStringValue(zone.id)) {
+  if (!isJsonObject(zone) || !isString(zone.id)) {
     return yield* new AdminError({
       message: `zone ${ZONE_NAME} not visible to the analytics token`,
     });
@@ -872,7 +839,7 @@ const fetchCacheSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<Cach
     const { env } = yield* workersRuntime();
     const apiToken = yield* resolveSecret(env.MANIFOLD_ADMIN_PANEL_ANALYTICS_API);
 
-    if (!isStringValue(apiToken) || apiToken === "") {
+    if (!apiToken) {
       return emptyCacheSnapshot(
         "MANIFOLD_ADMIN_PANEL_ANALYTICS_API binding is not configured",
         fetchedAt,

@@ -29,25 +29,19 @@ import {
   SyncOp,
   type ListEvent,
 } from "@manifold/contract";
-import { manifoldUserAgent } from "@manifold/json";
+import { isJsonObject, isJsonValue, isString, manifoldUserAgent } from "@manifold/json";
 import { createServerFn } from "@tanstack/react-start";
 import { DateTime, Effect, Option, Schema } from "effect";
 
 import {
   AdminError,
   platformFetch,
+  resolveSecret,
   runHost,
   toError,
   tryPromise,
   workersRuntime,
 } from "./effect-host";
-import {
-  isFunctionValue,
-  isJsonObject,
-  isJsonValue,
-  isStringValue,
-  type SecretHandle,
-} from "./guards";
 import type { MangaDexLibraryItem, MangaDexReadingStatus, MangaDexStat } from "./mangadex";
 import {
   cachedJsonProgram,
@@ -69,33 +63,6 @@ export type SyncOpItem = SyncOp;
 
 export type ListEventItem = ListEvent;
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: secret binding comes from untyped workers env; parsed at I/O boundary
-const resolveSecret = Effect.fnUntraced(function* (
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: Alchemy secret bindings are runtime handles; guards parse them before use
-  binding: unknown,
-): Effect.fn.Return<string, AdminError> {
-  if (isStringValue(binding)) {
-    return binding;
-  }
-
-  if (isJsonObject(binding)) {
-    // SAFETY: binding is validated as JsonObject and SecretHandle shape is owned; narrow to handle type
-    const handle = binding as SecretHandle;
-
-    if (isFunctionValue(handle.get)) {
-      const value = yield* tryPromise(() => handle.get!());
-
-      return isStringValue(value) ? value : "";
-    }
-
-    if (isStringValue(handle.value)) {
-      return handle.value;
-    }
-  }
-
-  return "";
-});
-
 const call = Effect.fnUntraced(function* <A>(
   path: string,
   schema: Schema.ConstraintDecoder<A>,
@@ -111,7 +78,7 @@ const call = Effect.fnUntraced(function* <A>(
   }
 
   const origin =
-    isStringValue(env.MANIFOLD_API_ORIGIN) && env.MANIFOLD_API_ORIGIN !== ""
+    isString(env.MANIFOLD_API_ORIGIN) && env.MANIFOLD_API_ORIGIN !== ""
       ? env.MANIFOLD_API_ORIGIN
       : MANIFOLD_API_ORIGIN;
 
@@ -162,7 +129,7 @@ const call = Effect.fnUntraced(function* <A>(
     let message = `HTTP ${response.status}`;
 
     if (isJsonObject(raw) && "error" in raw) {
-      message = isStringValue(raw.error)
+      message = isString(raw.error)
         ? raw.error
         : yield* Schema.encodeEffect(JsonString)(raw.error).pipe(Effect.mapError(toError));
     }
@@ -571,7 +538,7 @@ export const startMalOAuth = createServerFn({ method: "POST" }).handler(() =>
   runHost(
     call(`/v1/auth/mal/start?return=${encodeURIComponent("/admin/credentials")}`, OAuthStart).pipe(
       Effect.flatMap((start) =>
-        isStringValue(start.authorizationUrl) && start.authorizationUrl.length > 0
+        isString(start.authorizationUrl) && start.authorizationUrl.length > 0
           ? Effect.succeed({ authorizationUrl: start.authorizationUrl })
           : Effect.fail(
               new AdminError({ message: "OAuth start for mal returned no authorization URL" }),
