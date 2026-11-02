@@ -63,10 +63,10 @@ export const resolveSecret = Effect.fnUntraced(function* (
     return binding;
   }
 
-  const { get } = binding;
-
-  if (get) {
-    const value = yield* tryPromise(() => get.call(binding));
+  // Secrets Store bindings are Workers RPC stubs: every property read becomes a
+  // remote method, so call `get` on the binding itself (never `.call`/`.bind`).
+  if (binding.get) {
+    const value = yield* tryPromise(() => binding.get!());
 
     return isString(value) ? value : null;
   }
