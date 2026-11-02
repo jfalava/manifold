@@ -18,7 +18,6 @@ export class AdminError extends Schema.TaggedError<AdminError, { readonly brand:
   },
 ) {}
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: host-boundary failures are normalized before entering the Effect error channel
 export const toError = (cause: unknown): AdminError => {
   if (Schema.is(AdminError)(cause)) {
     return cause;
@@ -66,7 +65,8 @@ export const resolveSecret = Effect.fnUntraced(function* (
   // Secrets Store bindings are Workers RPC stubs: every property read becomes a
   // remote method, so call `get` on the binding itself (never `.call`/`.bind`).
   if (binding.get) {
-    const value = yield* tryPromise(() => binding.get!());
+    const secret = binding;
+    const value = yield* tryPromise(() => secret.get?.() ?? Promise.resolve(undefined));
 
     return isString(value) ? value : null;
   }

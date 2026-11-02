@@ -1,6 +1,7 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalDate:off */
 import { Badge, Banner, Button, Dialog, Input, Surface, Table, Text } from "@cloudflare/kumo";
+import { isString, type JsonValue } from "@manifold/json";
 import { XIcon } from "@phosphor-icons/react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
@@ -17,8 +18,19 @@ import {
   type AuthConnection,
   type AuthProvider,
 } from "../lib/registry";
+import { useRefreshingLoad } from "../lib/use-load";
+
+type CredentialsSearch = {
+  readonly oauth?: string;
+  readonly provider?: string;
+};
 
 export const Route = createFileRoute("/credentials")({
+  validateSearch: (search: { readonly oauth?: JsonValue; readonly provider?: JsonValue }) =>
+    ({
+      ...(isString(search.oauth) && { oauth: search.oauth }),
+      ...(isString(search.provider) && { provider: search.provider }),
+    }) satisfies CredentialsSearch,
   component: CredentialsPage,
 });
 
@@ -44,155 +56,51 @@ function formatWhen(ms: number | undefined): string {
   return new Date(ms).toLocaleString();
 }
 
-type HashTokenCapture = {
-  readonly accessToken?: string;
-  readonly expiresIn?: number;
-  readonly error?: string;
-};
+type OAuthReturn = { readonly notice?: string; readonly error?: string };
 
-function parseHashToken(hash: string): HashTokenCapture {
-  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+/** Banner for a provider OAuth return (`?oauth=connected|denied&provider=…`). */
+function oauthReturn(search: CredentialsSearch): OAuthReturn {
+  const { oauth, provider } = search;
 
-  if (!raw) {
+  if (!oauth || !provider) {
     return {};
   }
 
-  const params = new URLSearchParams(raw);
-  const error = params.get("error");
-  const accessToken = params.get("access_token");
-  const expiresRaw = params.get("expires_in");
-  const expiresParsed = expiresRaw !== null ? Number(expiresRaw) : Number.NaN;
-  const expiresIn = Number.isFinite(expiresParsed) && expiresParsed > 0 ? expiresParsed : undefined;
+  const label =
+    provider === "anilist" || provider === "mal" || provider === "mangadex"
+      ? PROVIDER_LABELS[provider]
+      : provider;
 
-  if (accessToken && expiresIn !== undefined && error) {
-    return { accessToken, expiresIn, error };
+  if (oauth === "connected") {
+    return { notice: `${label} connected.` };
   }
 
-  if (accessToken && expiresIn !== undefined) {
-    return { accessToken, expiresIn };
-  }
-
-  if (accessToken && error) {
-    return { accessToken, error };
-  }
-
-  if (accessToken) {
-    return { accessToken };
-  }
-
-  if (error) {
-    return { error };
-  }
-
-  return {};
+  return oauth === "denied" ? { error: `${label} authorization was denied.` } : {};
 }
 
 function CredentialsPage() {
-  const [connections, setConnections] = useState<readonly AuthConnection[] | undefined>(undefined);
-  const [error, setError] = useState<string | undefined>(undefined);
-  const [loadError, setLoadError] = useState<string | undefined>(undefined);
-  const [notice, setNotice] = useState<string | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+
+  const {
+    data: connections,
+    error: loadError,
+    busy,
+    refresh,
+  } = useRefreshingLoad(loadAuthConnections);
+
+  const [error, setError] = useState(() => oauthReturn(search).error);
+  const [notice, setNotice] = useState(() => oauthReturn(search).notice);
   const [acting, setActing] = useState<string | undefined>(undefined);
   const [aniListTokenDraft, setAniListTokenDraft] = useState("");
   const [pasteOpen, setPasteOpen] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setBusy(true);
-
-    try {
-      setConnections(await loadAuthConnections());
-      setLoadError(undefined);
-    } catch (cause) {
-      setLoadError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
+  // The OAuth return banner is read once into state above; drop the params so a reload doesn't repeat it.
   useEffect(() => {
-    // oxlint-disable-next-line react/set-state-in-effect -- fetch-on-mount syncs with the auth API
-    void refresh();
-  }, [refresh]);
-
-  // MAL code-flow return (?oauth=…) and AniList implicit return (#access_token=…).
-  useEffect(() => {
-    const params = new URLSearchParams(globalThis.location.search);
-    const oauth = params.get("oauth");
-    const provider = params.get("provider");
-
-    if (oauth && provider) {
-      const label =
-        provider === "anilist" || provider === "mal" || provider === "mangadex"
-          ? PROVIDER_LABELS[provider]
-          : provider;
-
-      if (oauth === "connected") {
-        // oxlint-disable-next-line react/set-state-in-effect -- one-shot query banner after OAuth return
-        setNotice(`${label} connected.`);
-      } else if (oauth === "denied") {
-        // oxlint-disable-next-line react/set-state-in-effect -- one-shot query banner after OAuth return
-        setError(`${label} authorization was denied.`);
-      }
-
-      const next = new URL(globalThis.location.href);
-      next.searchParams.delete("oauth");
-      next.searchParams.delete("provider");
-      globalThis.history.replaceState({}, "", next.pathname + next.search + next.hash);
+    if (search.oauth !== undefined || search.provider !== undefined) {
+      void navigate({ search: {}, replace: true });
     }
-
-    const hash = globalThis.location.hash;
-    const captured = parseHashToken(hash);
-
-    if (!captured.accessToken && !captured.error) {
-      return;
-    }
-
-    // Drop the fragment immediately so a refresh cannot re-import.
-    globalThis.history.replaceState(
-      {},
-      "",
-      globalThis.location.pathname + globalThis.location.search,
-    );
-
-    if (captured.error) {
-      // oxlint-disable-next-line react/set-state-in-effect -- one-shot hash banner after OAuth return
-      setError(`AniList authorization failed: ${captured.error}`);
-
-      return;
-    }
-
-    const hashToken = captured.accessToken;
-
-    if (!hashToken) {
-      return;
-    }
-
-    const hashExpiresIn = captured.expiresIn;
-    void (async () => {
-      setActing("login:anilist");
-      setError(undefined);
-      setNotice(undefined);
-
-      try {
-        if (hashExpiresIn !== undefined) {
-          await importAniListToken({
-            data: { accessToken: hashToken, expiresIn: hashExpiresIn },
-          });
-        } else {
-          await importAniListToken({ data: { accessToken: hashToken } });
-        }
-
-        setNotice("AniList connected from browser token.");
-        setAniListTokenDraft("");
-        await refresh();
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      } finally {
-        setActing(undefined);
-      }
-    })();
-  }, [refresh]);
+  }, [navigate, search.oauth, search.provider]);
 
   const byProvider = new Map<AuthProvider, AuthConnection>(
     (connections ?? []).map((row) => [row.provider, row]),
@@ -229,14 +137,14 @@ function CredentialsPage() {
         </Text>
       </div>
 
-      {loadError !== undefined && (
+      {loadError !== null && (
         <Banner variant="error" title="Connections unavailable" description={loadError} />
       )}
       {error !== undefined && <Banner variant="error" title="Action failed" description={error} />}
       {notice !== undefined && <Banner variant="default" title="Updated" description={notice} />}
 
       <Surface>
-        {connections === undefined && loadError === undefined ? (
+        {connections === undefined && loadError === null ? (
           <TableSkeleton columns={5} rows={3} />
         ) : connections === undefined ? (
           <p className="px-5 py-4 text-sm opacity-60">

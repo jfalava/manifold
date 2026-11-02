@@ -15,7 +15,6 @@ export function useLoad<T>(load: () => Promise<T>): LoadState<T> {
 
   useEffect(() => {
     let cancelled = false;
-    // oxlint-disable-next-line react/set-state-in-effect -- SPA widget boot: fetch once on mount
     void (async () => {
       try {
         const value = await load();
@@ -50,25 +49,42 @@ export type Act = (action: () => Promise<void>) => Promise<void>;
 export function useRefreshingLoad<T>(load: () => Promise<T>) {
   const [data, setData] = useState<T>();
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // The mount fetch starts immediately, so the first render is already busy.
+  const [busy, setBusy] = useState(true);
+
+  const settle = useCallback((outcome: { ok: true; value: T } | { ok: false; cause: unknown }) => {
+    if (outcome.ok) {
+      setData(outcome.value);
+      setError(null);
+    } else {
+      setError(outcome.cause instanceof Error ? outcome.cause.message : String(outcome.cause));
+    }
+
+    setBusy(false);
+  }, []);
+
+  // Mount fetch: state only changes after the await, and a stale result is dropped on unmount.
+  useEffect(() => {
+    let cancelled = false;
+
+    void load().then(
+      (value) => !cancelled && settle({ ok: true, value }),
+      (cause: unknown) => !cancelled && settle({ ok: false, cause }),
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [load, settle]);
 
   const refresh = useCallback(async () => {
     setBusy(true);
 
-    try {
-      setData(await load());
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, [load]);
-
-  useEffect(() => {
-    // oxlint-disable-next-line react/set-state-in-effect -- fetch-on-mount syncs with the API; busy must flip before the await
-    void refresh();
-  }, [refresh]);
+    await load().then(
+      (value) => settle({ ok: true, value }),
+      (cause: unknown) => settle({ ok: false, cause }),
+    );
+  }, [load, settle]);
 
   const act = useCallback<Act>(
     async (action) => {

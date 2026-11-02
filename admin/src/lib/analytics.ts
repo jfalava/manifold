@@ -925,7 +925,13 @@ const fetchCacheSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<Cach
 
     for (const row of pathRows) {
       const status = row.dimensions.cacheStatus ?? "unknown";
-      const stat = bySurface.get(matchSurface(row.dimensions.clientRequestPath ?? "/").surface)!;
+      const { surface } = matchSurface(row.dimensions.clientRequestPath ?? "/");
+      const stat = bySurface.get(surface);
+
+      if (stat === undefined) {
+        throw new Error(`Cache surface ${surface} is missing from SURFACE_PREFIXES`);
+      }
+
       stat.requests += row.count;
       stat.bytes += row.sum.edgeResponseBytes;
 

@@ -226,7 +226,6 @@ function MangaDexLibraryPage() {
     }
 
     bootstrapped.current = true;
-    // oxlint-disable-next-line react/set-state-in-effect -- hydrate from IndexedDB, network only when empty
     void (async () => {
       try {
         const cached = await readMangaDexLibraryCache();
@@ -499,7 +498,6 @@ function MangaDexLibraryPage() {
       });
 
     return undefined;
-    // oxlint-disable-next-line react/set-state-in-effect -- lazy page-slice fetch mirrors the refresh-on-mount pattern above
   }, [loading, pagedData, stats]);
 
   const { table, pager } = usePagedTable({

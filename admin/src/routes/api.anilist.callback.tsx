@@ -6,7 +6,9 @@ import { useEffect, useState } from "react";
 
 import { importAniListToken } from "../lib/registry";
 
+// The token lives in the URL fragment, which never reaches the server: render on the client only.
 export const Route = createFileRoute("/api/anilist/callback")({
+  ssr: false,
   component: AniListCallbackPage,
 });
 
@@ -52,12 +54,30 @@ function readHash(): Capture {
   return { kind: "token", accessToken };
 }
 
+const NO_TOKEN =
+  "No access_token in the URL. Use Credentials → paste token, or try Authorize again.";
+
+function initialDetail(capture: Capture): string {
+  switch (capture.kind) {
+    case "token":
+      return "Importing the AniList token…";
+    case "error":
+      return capture.message;
+    case "empty":
+      return NO_TOKEN;
+  }
+}
+
 function AniListCallbackPage() {
-  const [status, setStatus] = useState<"working" | "ok" | "error">("working");
-  const [detail, setDetail] = useState("Reading AniList token from the URL…");
+  const [capture] = useState(readHash);
+
+  const [status, setStatus] = useState<"working" | "ok" | "error">(
+    capture.kind === "token" ? "working" : "error",
+  );
+
+  const [detail, setDetail] = useState(() => initialDetail(capture));
 
   useEffect(() => {
-    const capture = readHash();
     // Drop the fragment so a refresh cannot re-import the bearer.
     globalThis.history.replaceState(
       {},
@@ -65,20 +85,7 @@ function AniListCallbackPage() {
       globalThis.location.pathname + globalThis.location.search,
     );
 
-    if (capture.kind === "error") {
-      // oxlint-disable-next-line react/set-state-in-effect -- one-shot OAuth return
-      setStatus("error");
-      setDetail(capture.message);
-
-      return;
-    }
-
-    if (capture.kind === "empty") {
-      setStatus("error");
-      setDetail(
-        "No access_token in the URL. Use Credentials → paste token, or try Authorize again.",
-      );
-
+    if (capture.kind !== "token") {
       return;
     }
 
@@ -102,7 +109,7 @@ function AniListCallbackPage() {
         setDetail(cause instanceof Error ? cause.message : String(cause));
       }
     })();
-  }, []);
+  }, [capture]);
 
   return (
     <div className="grid gap-6">
