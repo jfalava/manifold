@@ -108,7 +108,12 @@ export const promptInFrame = (message: string): Promise<string> =>
   runPrompt(Prompt.String({ message }), message, "question");
 
 export const promptInFrameWithDefault = (message: string, defaultValue?: string): Promise<string> =>
-  runPrompt(Prompt.String({ message, default: defaultValue }), message, "question");
+  runPrompt(
+    // effect 4.0.6 spreads options over `{ default: "" }`, so an explicit undefined crashes the prompt.
+    Prompt.String(defaultValue === undefined ? { message } : { message, default: defaultValue }),
+    message,
+    "question",
+  );
 
 export const promptSecretInFrame = (message: string): Promise<string> =>
   runPrompt(Prompt.Password({ message }), message, "auth").then(Redacted.value);
