@@ -14,6 +14,7 @@ const memoryStore = (): OAuthClientSecretStore & {
   readonly data: Map<string, string>;
 } => {
   const data = new Map<string, string>();
+
   return {
     data,
     get: async (ref) => data.get(`${ref.service}:${ref.name}`) ?? null,
@@ -28,12 +29,14 @@ const clearAniListEnv = (): (() => void) => {
   const previousSecret = process.env.MANIFOLD_ANILIST_CLIENT_SECRET;
   delete process.env.MANIFOLD_ANILIST_CLIENT_ID;
   delete process.env.MANIFOLD_ANILIST_CLIENT_SECRET;
+
   return () => {
     if (previous === undefined) {
       delete process.env.MANIFOLD_ANILIST_CLIENT_ID;
     } else {
       process.env.MANIFOLD_ANILIST_CLIENT_ID = previous;
     }
+
     if (previousSecret === undefined) {
       delete process.env.MANIFOLD_ANILIST_CLIENT_SECRET;
     } else {
@@ -57,6 +60,7 @@ describe("oauth client credentials", () => {
     const restore = clearAniListEnv();
     process.env.MANIFOLD_ANILIST_CLIENT_ID = "env-id";
     process.env.MANIFOLD_ANILIST_CLIENT_SECRET = "env-secret";
+
     try {
       const resolved = await resolveOAuthClient({
         kind: "anilist",
@@ -66,6 +70,7 @@ describe("oauth client credentials", () => {
         store,
         isTty: false,
       });
+
       expect(resolved).toEqual({
         clientId: "env-id",
         clientSecret: "env-secret",
@@ -81,6 +86,7 @@ describe("oauth client credentials", () => {
     const store = memoryStore();
     await saveStoredOAuthClient("anilist", { clientId: "kc-id", clientSecret: "kc-secret" }, store);
     const restore = clearAniListEnv();
+
     try {
       const resolved = await resolveOAuthClient({
         kind: "anilist",
@@ -91,6 +97,7 @@ describe("oauth client credentials", () => {
         isTty: false,
         wizard: false,
       });
+
       expect(resolved).toEqual({
         clientId: "kc-id",
         clientSecret: "kc-secret",
@@ -105,6 +112,7 @@ describe("oauth client credentials", () => {
     const store = memoryStore();
     const restore = clearAniListEnv();
     const prompts: string[] = [];
+
     try {
       const resolved = await resolveOAuthClient({
         kind: "anilist",
@@ -116,13 +124,16 @@ describe("oauth client credentials", () => {
         wizard: true,
         promptWithDefault: async (message, def) => {
           prompts.push(`${message}|${def ?? ""}`);
+
           return "wizard-id";
         },
         promptSecret: async (message) => {
           prompts.push(message);
+
           return "wizard-secret";
         },
       });
+
       expect(resolved).toEqual({
         clientId: "wizard-id",
         clientSecret: "wizard-secret",
@@ -146,6 +157,7 @@ describe("oauth client credentials", () => {
       store,
     );
     const restore = clearAniListEnv();
+
     try {
       const resolved = await resolveOAuthClient({
         kind: "anilist",
@@ -158,6 +170,7 @@ describe("oauth client credentials", () => {
         promptWithDefault: async (_message, def) => def ?? "",
         promptSecret: async () => "",
       });
+
       expect(resolved).toEqual({
         clientId: "keep-id",
         clientSecret: "keep-secret",
@@ -171,6 +184,7 @@ describe("oauth client credentials", () => {
   it("fails headless when nothing is configured", async () => {
     const store = memoryStore();
     const restore = clearAniListEnv();
+
     try {
       await expect(
         resolveOAuthClient({
@@ -193,6 +207,7 @@ describe("oauth client credentials", () => {
     const previousSecret = process.env.MANIFOLD_MAL_CLIENT_SECRET;
     delete process.env.MANIFOLD_MAL_CLIENT_ID;
     delete process.env.MANIFOLD_MAL_CLIENT_SECRET;
+
     try {
       const resolved = await resolveOAuthClient({
         kind: "mal",
@@ -202,6 +217,7 @@ describe("oauth client credentials", () => {
         store,
         isTty: false,
       });
+
       expect(resolved).toEqual({
         clientId: "mal-id",
         clientSecret: undefined,
@@ -211,6 +227,7 @@ describe("oauth client credentials", () => {
       if (previous !== undefined) {
         process.env.MANIFOLD_MAL_CLIENT_ID = previous;
       }
+
       if (previousSecret !== undefined) {
         process.env.MANIFOLD_MAL_CLIENT_SECRET = previousSecret;
       }

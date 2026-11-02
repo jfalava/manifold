@@ -1,0 +1,91 @@
+/** @effect-diagnostics asyncFunction:off */
+import type { Env, ManifoldSyncStub } from "../src/types";
+
+const unusedBinding = (name: string) => (): never => {
+  throw new Error(`${name} is not used by this test`);
+};
+
+/** Complete `ManifoldSyncStub` whose methods all throw; spread it and override what a test calls. */
+export const unusedSyncStub = (): ManifoldSyncStub => ({
+  createManifoldOAuthAuthorization: unusedBinding(
+    "ManifoldSyncStub.createManifoldOAuthAuthorization",
+  ),
+  completeGithubOAuth: unusedBinding("ManifoldSyncStub.completeGithubOAuth"),
+  exchangeManifoldOAuthToken: unusedBinding("ManifoldSyncStub.exchangeManifoldOAuthToken"),
+  authorizeManifoldAccessToken: unusedBinding("ManifoldSyncStub.authorizeManifoldAccessToken"),
+  revokeManifoldSession: unusedBinding("ManifoldSyncStub.revokeManifoldSession"),
+  createOAuthSession: unusedBinding("ManifoldSyncStub.createOAuthSession"),
+  completeOAuthSession: unusedBinding("ManifoldSyncStub.completeOAuthSession"),
+  cancelOAuthSession: unusedBinding("ManifoldSyncStub.cancelOAuthSession"),
+  loginMangaDex: unusedBinding("ManifoldSyncStub.loginMangaDex"),
+  importAuthToken: unusedBinding("ManifoldSyncStub.importAuthToken"),
+  listAuthConnections: unusedBinding("ManifoldSyncStub.listAuthConnections"),
+  getAuthConnection: unusedBinding("ManifoldSyncStub.getAuthConnection"),
+  disconnectAuth: unusedBinding("ManifoldSyncStub.disconnectAuth"),
+  getAuthAccessToken: unusedBinding("ManifoldSyncStub.getAuthAccessToken"),
+  upsertEntry: unusedBinding("ManifoldSyncStub.upsertEntry"),
+  listEntries: unusedBinding("ManifoldSyncStub.listEntries"),
+  getEntry: unusedBinding("ManifoldSyncStub.getEntry"),
+  linkProvider: unusedBinding("ManifoldSyncStub.linkProvider"),
+  getProgress: unusedBinding("ManifoldSyncStub.getProgress"),
+  recordRead: unusedBinding("ManifoldSyncStub.recordRead"),
+  listPendingSync: unusedBinding("ManifoldSyncStub.listPendingSync"),
+  retryFailedSync: unusedBinding("ManifoldSyncStub.retryFailedSync"),
+  backfillMangaDexShelf: unusedBinding("ManifoldSyncStub.backfillMangaDexShelf"),
+  mangaDexLibrary: unusedBinding("ManifoldSyncStub.mangaDexLibrary"),
+  mangaDexLibrarySummary: unusedBinding("ManifoldSyncStub.mangaDexLibrarySummary"),
+  mangaDexCurrentUser: unusedBinding("ManifoldSyncStub.mangaDexCurrentUser"),
+  mangaDexReadMarkers: unusedBinding("ManifoldSyncStub.mangaDexReadMarkers"),
+  mangaDexFeed: unusedBinding("ManifoldSyncStub.mangaDexFeed"),
+  mangaDexStats: unusedBinding("ManifoldSyncStub.mangaDexStats"),
+  setMangaDexStatus: unusedBinding("ManifoldSyncStub.setMangaDexStatus"),
+  entryByProvider: unusedBinding("ManifoldSyncStub.entryByProvider"),
+  resolveEntry: unusedBinding("ManifoldSyncStub.resolveEntry"),
+  resolveEntries: unusedBinding("ManifoldSyncStub.resolveEntries"),
+  ingestCandidate: unusedBinding("ManifoldSyncStub.ingestCandidate"),
+  searchRegistry: unusedBinding("ManifoldSyncStub.searchRegistry"),
+  listRegistry: unusedBinding("ManifoldSyncStub.listRegistry"),
+  registrySummary: unusedBinding("ManifoldSyncStub.registrySummary"),
+  unlinkProvider: unusedBinding("ManifoldSyncStub.unlinkProvider"),
+  setListState: unusedBinding("ManifoldSyncStub.setListState"),
+  getListState: unusedBinding("ManifoldSyncStub.getListState"),
+  nukeEntry: unusedBinding("ManifoldSyncStub.nukeEntry"),
+  listEvents: unusedBinding("ManifoldSyncStub.listEvents"),
+  pendingAniListOps: unusedBinding("ManifoldSyncStub.pendingAniListOps"),
+  completeOps: unusedBinding("ManifoldSyncStub.completeOps"),
+  retryOp: unusedBinding("ManifoldSyncStub.retryOp"),
+  listOps: unusedBinding("ManifoldSyncStub.listOps"),
+  opsSummary: unusedBinding("ManifoldSyncStub.opsSummary"),
+  backupRegistry: unusedBinding("ManifoldSyncStub.backupRegistry"),
+  listBackups: unusedBinding("ManifoldSyncStub.listBackups"),
+  restoreBackup: unusedBinding("ManifoldSyncStub.restoreBackup"),
+  resumeRegistrySync: unusedBinding("ManifoldSyncStub.resumeRegistrySync"),
+});
+
+/** Complete Worker `Env` double; tests spread it and override the bindings they exercise. */
+export const testEnv = (): Env => ({
+  AI: { run: unusedBinding("AI") },
+  MANGADEX_INDEX: {
+    query: async () => ({ matches: [], count: 0 }),
+    upsert: async () => ({ ids: [], count: 0 }),
+  },
+  MANIFOLD_SYNC: { getByName: unusedSyncStub },
+  ASSETS: {
+    fetch: async () => new Response("not used", { status: 404 }),
+  },
+  ENVIRONMENT: "test",
+  MANIFOLD_TOKEN: "token",
+  MANIFOLD_OAUTH_REDIRECT_BASE_URL: "https://example.test",
+  MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET: "encryption-secret",
+  MANIFOLD_GITHUB_CLIENT_ID: "github-client",
+  MANIFOLD_GITHUB_ALLOWED_USER_ID: "12345",
+  MANIFOLD_GITHUB_CLIENT_SECRET: "github-secret",
+  MANIFOLD_ANILIST_CLIENT_ID: "anilist-client",
+  MANIFOLD_ANILIST_CLIENT_SECRET: "anilist-secret",
+  MANIFOLD_MAL_CLIENT_ID: "not-configured",
+  MANIFOLD_MAL_CLIENT_SECRET: "",
+  MANIFOLD_MANGADEX_CLIENT_ID: "mangadex-client",
+  MANIFOLD_MANGADEX_CLIENT_SECRET: "mangadex-secret",
+  MANIFOLD_MANGADEX_USERNAME: "manga-user",
+  MANIFOLD_MANGADEX_PASSWORD: "manga-password",
+});

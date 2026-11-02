@@ -16,12 +16,15 @@ export const isNewerVersion = (candidate: string, current: string): boolean => {
     throw new Error(`Cannot compare CLI versions "${current}" and "${candidate}".`);
   }
 
-  for (let index = 0; index < candidateParts.length; index += 1) {
-    if (candidateParts[index]! > currentParts[index]!) {
+  // Both tuples always have three parts, so the fallback is never used.
+  for (const [index, part] of candidateParts.entries()) {
+    const other = currentParts[index] ?? 0;
+
+    if (part > other) {
       return true;
     }
 
-    if (candidateParts[index]! < currentParts[index]!) {
+    if (part < other) {
       return false;
     }
   }

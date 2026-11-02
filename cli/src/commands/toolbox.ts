@@ -170,11 +170,11 @@ const apiCallEffect = <A>(
         return { response, raw };
       });
 
-    const refresh = () =>
+    const refresh = (refreshToken: string) =>
       Effect.gen(function* () {
         const snapshot: ManifoldSession = {
           accessToken: config.token,
-          refreshToken: config.refreshToken!,
+          refreshToken,
           expiresAt: config.accessExpiresAt ?? 0,
         };
 
@@ -213,7 +213,7 @@ const apiCallEffect = <A>(
       config.accessExpiresAt !== undefined &&
       config.accessExpiresAt <= epochMillisNow() + 30_000
     ) {
-      const refreshed = yield* refresh();
+      const refreshed = yield* refresh(config.refreshToken);
       config.token = refreshed.accessToken;
       config.refreshToken = refreshed.refreshToken;
       config.accessExpiresAt = refreshed.expiresAt;
@@ -222,7 +222,7 @@ const apiCallEffect = <A>(
     let result = yield* request(config.token);
 
     if (result.response.status === 401 && config.refreshToken) {
-      const refreshed = yield* refresh();
+      const refreshed = yield* refresh(config.refreshToken);
       config.token = refreshed.accessToken;
       config.refreshToken = refreshed.refreshToken;
       config.accessExpiresAt = refreshed.expiresAt;

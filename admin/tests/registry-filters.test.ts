@@ -4,6 +4,18 @@ import type { RegistryListEntry } from "@manifold/contract";
 
 import { EMPTY_REGISTRY_FILTERS, matchesRegistryFilters } from "../src/lib/registry-filters";
 
+const baseProvider: RegistryListEntry["providers"][number] = {
+  provider: "anilist",
+  externalId: "AL-42",
+  updatedAt: 0,
+};
+
+const baseState: NonNullable<RegistryListEntry["state"]> = {
+  entryId: "entry-orbit",
+  status: "reading",
+  updatedAt: 0,
+};
+
 const base: RegistryListEntry = {
   id: "entry-orbit",
   title: "The Long Journey",
@@ -11,15 +23,15 @@ const base: RegistryListEntry = {
   providerId: "42",
   createdAt: 0,
   updatedAt: 0,
-  providers: [{ provider: "anilist", externalId: "AL-42", updatedAt: 0 }],
-  state: { entryId: "entry-orbit", status: "reading", updatedAt: 0 },
+  providers: [baseProvider],
+  state: baseState,
 };
 
 test("status alternatives are ORed, but text and all binding conditions are ANDed", () => {
   const entries: RegistryListEntry[] = [
     base,
-    { ...base, id: "hold", state: { ...base.state!, status: "on_hold" } },
-    { ...base, id: "completed", state: { ...base.state!, status: "completed" } },
+    { ...base, id: "hold", state: { ...baseState, status: "on_hold" } },
+    { ...base, id: "completed", state: { ...baseState, status: "completed" } },
     { ...base, id: "no-anilist", providers: [] },
     {
       ...base,
@@ -84,7 +96,7 @@ test("no list status, tombstoned, and no bindings are distinct conditions", () =
 });
 
 test("search retains title, entry ID, external ID, and source-name matching", () => {
-  const entry = { ...base, providers: [{ ...base.providers[0]!, sourceName: "Archive North" }] };
+  const entry = { ...base, providers: [{ ...baseProvider, sourceName: "Archive North" }] };
 
   for (const text of ["long JOURNEY", "ENTRY-orbit", "al-42", "ARCHIVE north"]) {
     expect(matchesRegistryFilters(entry, { ...EMPTY_REGISTRY_FILTERS, text })).toBe(true);

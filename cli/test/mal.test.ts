@@ -14,6 +14,7 @@ afterEach(() => {
 });
 
 const profile = () => Response.json({ id: 7, name: "reader" });
+
 const page = (ids: number[], next?: string) =>
   Response.json({
     data: ids.map((id) => ({ node: { id, title: `Manga ${id}` } })),
@@ -22,34 +23,42 @@ const page = (ids: number[], next?: string) =>
 
 const requestBodyText = (init: RequestInit | undefined): string => {
   const body = init?.body;
+
   if (isString(body)) {
     return body;
   }
+
   if (body instanceof URLSearchParams) {
     return body.toString();
   }
+
   throw new Error("Expected a URL-encoded request body");
 };
 
 const setup = (...responses: Response[]) => {
   const fetcher = vi.fn(async () => {
     const response = responses.shift();
+
     if (!response) {
       throw new Error("Unexpected request");
     }
+
     return response;
   });
+
   vi.stubGlobal("fetch", fetcher);
   const sleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue(undefined);
   const client = createMalClient({ accessToken: "test-token", sleep });
   const scanned = vi.fn();
   const progress = vi.fn();
+
   return { fetcher, sleep, client, scanned, progress };
 };
 
 describe("MAL manga wipe", () => {
   it("scans all pages before any delete, deduplicates, includes adult entries, and verifies empty", async () => {
     const next = "https://api.myanimelist.net/v2/users/@me/mangalist?offset=1000&limit=1000";
+
     const ctx = setup(
       profile(),
       page([1, 2], next),
@@ -60,6 +69,7 @@ describe("MAL manga wipe", () => {
       new Response(null),
       page([]),
     );
+
     const result = await wipeMalManga({ ...ctx, apply: true });
     expect(result).toEqual({ account: "reader", accountId: 7, scanned: 3, deleted: 3 });
     expect(ctx.scanned).toHaveBeenCalledWith("reader", [
@@ -133,6 +143,7 @@ describe("MAL manga wipe", () => {
       new Response(null),
       page([]),
     );
+
     await expect(wipeMalManga({ ...ctx, apply: true })).rejects.toThrow("HTTP 403");
     expect(await wipeMalManga({ ...ctx, apply: true })).toMatchObject({ scanned: 1, deleted: 1 });
     const deletes = vi.mocked(fetch).mock.calls.filter((call) => call[1]?.method === "DELETE");
@@ -154,6 +165,7 @@ describe("MAL manga wipe", () => {
     const ctx = setup(
       page([1], "https://api.myanimelist.net/v2/users/@me/mangalist?limit=1000&nsfw=true"),
     );
+
     await expect(ctx.client.manga()).rejects.toThrow("pagination repeated");
     expect(ctx.fetcher).toHaveBeenCalledTimes(1);
   });
@@ -212,13 +224,16 @@ describe("MAL authentication and retries", () => {
       Response.json({ access_token: "new", refresh_token: "rotated", expires_in: 3600 }),
       profile(),
     );
+
     const saveSession = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+
     const client = createMalClient({
       session: { clientId: "client", accessToken: "old", refreshToken: "refresh", expiresAt: 0 },
       clientSecret: "secret",
       saveSession,
       sleep: ctx.sleep,
     });
+
     await client.profile();
     expect(saveSession).toHaveBeenCalledWith(
       expect.objectContaining({ accessToken: "new", refreshToken: "rotated" }),
@@ -248,7 +263,9 @@ describe("MAL authentication and retries", () => {
       Response.json({ access_token: "new", expires_in: 3600 }),
       new Response(null, { status: 401 }),
     );
+
     const saveSession = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+
     const client = createMalClient({
       session: {
         clientId: "client",
@@ -259,6 +276,7 @@ describe("MAL authentication and retries", () => {
       saveSession,
       sleep: ctx.sleep,
     });
+
     await expect(client.profile()).rejects.toThrow("HTTP 401");
     expect(saveSession).toHaveBeenCalledWith(expect.objectContaining({ refreshToken: "refresh" }));
     expect(ctx.fetcher).toHaveBeenCalledTimes(3);
@@ -276,6 +294,7 @@ describe("MAL authentication and retries", () => {
       profile(),
       ...Array.from({ length: 4 }, () => new Response(null, { status: 503 })),
     );
+
     await ctx.client.profile();
     expect(ctx.sleep).toHaveBeenCalledWith(12_000);
     await expect(ctx.client.deleteManga(1)).rejects.toThrow("HTTP 503");

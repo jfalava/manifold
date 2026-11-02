@@ -32,8 +32,7 @@ interface ApplicationHarness {
 }
 
 const jsonResponse = (payload: JsonValue): ArrayBuffer =>
-  // SAFETY: Node runtime value is ArrayBuffer in this IAC/CLI context
-  new TextEncoder().encode(JSON.stringify(payload)).buffer as ArrayBuffer;
+  new Uint8Array(new TextEncoder().encode(JSON.stringify(payload))).buffer;
 
 const makeHarness = () => {
   const sleeps: number[] = [];

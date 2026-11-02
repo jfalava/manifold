@@ -69,7 +69,6 @@ export function usePagedTable<TData extends RowData>({
 }: PagedTableOptions<TData>) {
   const pageIndex = paging.safePageIndex(rowCount);
 
-  // oxlint-disable-next-line react/incompatible-library -- TanStack Table's instance getters are inherently non-memoizable; the compiler skips this hook
   const table = useTable({
     features: adminTableFeatures,
     data,

@@ -1,4 +1,5 @@
 /** @effect-diagnostics nodeBuiltinImport:off */
+/** @effect-diagnostics processEnv:off */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -43,18 +44,8 @@ const BETA: ChannelConfig = {
   description: "Current-tree beta channel for MANIFOLD",
 };
 
-type ProcessEnvMap = Record<string, string | undefined>;
-
-type ProcessHost = { readonly env: ProcessEnvMap };
-
-const processHost = (): ProcessHost | undefined => {
-  // SAFETY: optional field is { process?: ProcessHost } when present at this call site
-  const host = globalThis as { process?: ProcessHost };
-
-  return host.process;
-};
-
-const readProcessEnv = (key: string): string | undefined => processHost()?.env[key];
+const readProcessEnv = (key: string): string | undefined =>
+  "process" in globalThis ? process.env[key] : undefined;
 
 const iacEnvFile = resolve(import.meta.dirname, "../../iac/.env");
 

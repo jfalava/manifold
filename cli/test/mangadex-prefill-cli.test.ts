@@ -20,6 +20,7 @@ const run = (
   const directory = mkdtempSync(join(tmpdir(), "mangadex-prefill-cli-"));
   const reportPath = join(directory, "report.jsonl");
   const resumePath = join(directory, "resume.jsonl");
+
   try {
     const result = spawnSync(
       "bun",
@@ -87,6 +88,7 @@ const run = (
       ],
       { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 20_000 },
     );
+
     return { ...result, report: existsSync(reportPath) ? readFileSync(reportPath, "utf8") : "" };
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -103,9 +105,11 @@ describe("registry mangadex CLI", () => {
       "RESOLVE entry-44",
     ]);
     expect(result.stdout).not.toContain("WRITE");
+
     for (const outcome of ["matched", "unmatched", "ambiguous", "skipped"]) {
       expect(result.report).toContain(`"outcome":"${outcome}"`);
     }
+
     expect(result.report).toContain('"completed":true');
     expect(result.report).toContain('"anilistAliases":true');
     expect(result.report).not.toContain("fake-api-token");
@@ -136,15 +140,18 @@ describe("registry mangadex CLI", () => {
         searchPolicy: outcome === "unmatched" ? "old-search" : "mangadex-external-id-aliases-v1",
         selectionPolicy: outcome === "ambiguous" ? "old-selection" : "mangadex-worker-resolver-v1",
       });
+
       expect(refreshed.status).toBe(0);
       expect(refreshed.stdout.match(/RESOLVE entry-\d+/g)).toEqual(["RESOLVE entry-42"]);
       expect(refreshed.report).toContain('"searchPolicy":"mangadex-external-id-aliases-v1"');
       expect(refreshed.report).toContain('"selectionPolicy":"mangadex-worker-resolver-v1"');
+
       const resumed = run(["--limit", "1"], outcome, {
         outcome,
         apply: false,
         report: refreshed.report,
       });
+
       expect(resumed.status).toBe(0);
       expect(resumed.stdout.match(/RESOLVE entry-\d+/g)).toEqual(["RESOLVE entry-43"]);
       expect(resumed.stdout).toContain("RESUME_UNCHANGED true");
@@ -165,6 +172,7 @@ describe("registry mangadex CLI", () => {
       searchPolicy: "old-search",
       selectionPolicy: "mangadex-worker-resolver-v1",
     });
+
     expect(result.status).toBe(0);
     expect(result.stdout.match(/RESOLVE entry-\d+/g)).toEqual(["RESOLVE entry-43"]);
   });
@@ -176,6 +184,7 @@ describe("registry mangadex CLI", () => {
       searchPolicy: "mangadex-external-id-aliases-v1",
       selectionPolicy: "mangadex-worker-resolver-v1",
     });
+
     expect(result.status).toBe(0);
     expect(result.stdout.match(/RESOLVE entry-\d+/g)).toEqual(["RESOLVE entry-42"]);
     expect(result.stdout).not.toContain("WRITE");
@@ -198,6 +207,7 @@ describe("registry mangadex CLI", () => {
       searchPolicy: "mangadex-external-id-aliases-v1",
       selectionPolicy: "mangadex-worker-resolver-v1",
     });
+
     expect(result.status).toBe(0);
     expect(result.stdout.match(/RESOLVE entry-\d+/g)).toEqual(["RESOLVE entry-42"]);
   });
@@ -208,6 +218,7 @@ describe("registry mangadex CLI", () => {
       apply: false,
       anilistAliases: false,
     });
+
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("anilistAliases differs");
     expect(result.stdout).not.toContain("RESOLVE");

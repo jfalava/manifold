@@ -238,7 +238,12 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     );
 
     expect(responses.map((response) => response.status).sort((a, b) => a - b)).toEqual([200, 500]);
-    const loser = responses.find((response) => response.status === 500)!;
+    const loser = responses.find((response) => response.status === 500);
+
+    if (!loser) {
+      throw new Error("Expected one rejected link response");
+    }
+
     expect(await loser.text()).toContain("Provider link conflict");
 
     const rows = await Promise.all(
@@ -248,7 +253,12 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     expect(rows.map((row) => row.providers.length).sort((a, b) => a - b)).toEqual([0, 1]);
     expect(await events()).not.toEqual(beforeEvents);
     const before = await snapshot();
-    const unlinked = rows.find((row) => row.providers.length === 0)!;
+    const unlinked = rows.find((row) => row.providers.length === 0);
+
+    if (!unlinked) {
+      throw new Error("Expected one unlinked entry");
+    }
+
     await link(unlinked.id, "competing", "reject", 500);
     expect(await snapshot()).toEqual(before);
   });

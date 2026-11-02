@@ -1,12 +1,26 @@
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 
-import { Effect } from "effect";
+import { Effect, Match } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { encodeProgramStatus, type ProgramStatus } from "../src/program-status";
+import type { CliEffectError } from "../src/effect-kit";
+import {
+  encodeProgramStatus as encodeProgramStatusSource,
+  type ProgramStatus,
+  type StatusTerminator,
+} from "../src/program-status";
+import { oscPayloads } from "./support/report";
+
+// Typed view: the declared error type reaches a `@/` path-alias import that oxlint's type-aware
+// pass cannot resolve for test files; tsrs checks this annotation against the real signature.
+const encodeProgramStatus: (
+  report: ProgramStatus,
+  terminator?: StatusTerminator,
+) => Effect.Effect<string, CliEffectError> = encodeProgramStatusSource;
 
 const encode = (report: ProgramStatus) => Effect.runPromise(encodeProgramStatus(report));
+
 const run = (...flags: string[]) =>
   spawnSync("bun", ["index.ts", "debug", "program-status", ...flags], {
     cwd: new URL("..", import.meta.url).pathname,
@@ -19,15 +33,18 @@ const interruptAfter = async (args: string[], ready: string) => {
     cwd: new URL("..", import.meta.url).pathname,
     stdio: ["ignore", "pipe", "pipe"],
   });
+
   let stdout = "";
   let stderr = "";
   let interrupted = false;
+
   const interrupt = () => {
     if (!interrupted && (stdout + stderr).includes(ready)) {
       interrupted = true;
       child.kill("SIGINT");
     }
   };
+
   child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
     stdout += chunk;
     interrupt();
@@ -36,10 +53,12 @@ const interruptAfter = async (args: string[], ready: string) => {
     stderr += chunk;
     interrupt();
   });
+
   try {
     await once(child, "close", { signal: AbortSignal.timeout(10_000) });
     expect(interrupted).toBe(true);
     expect(child.exitCode).toBe(130);
+
     return stdout;
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
@@ -92,6 +111,7 @@ describe("OSC 7501 reports", () => {
       title: "é".repeat(96),
       message: "é".repeat(1024),
     };
+
     const result = await encode(report);
     expect(Buffer.byteLength(result)).toBeLessThan(4096);
     await expect(encode({ ...report, title: `${report.title}a` })).rejects.toThrow(
@@ -166,6 +186,7 @@ describe("program status CLI", () => {
       "--terminator",
       "bel",
     );
+
     expect(result.status).toBe(0);
     expect(result.stdout).toBe(
       "\x1b]7501;state=blocked:id=demo/child:kind=question:progress=0:app=test-app:title=Y2Fmw6k=:msg=YTpiO2M9ZA==\x07",
@@ -211,9 +232,11 @@ describe("program status CLI", () => {
       expect(result.status).toBe(0);
       const sequences = result.stdout.split("\x1b\\").filter(Boolean);
       const reports = sequences.filter((sequence) => sequence.startsWith("\x1b]7501;"));
+
       const titles = sequences
         .filter((sequence) => sequence.startsWith("\x1b]2;"))
         .map((sequence) => sequence.slice(4));
+
       expect(titles.slice(0, 5)).toEqual([
         "manifold: Idle",
         "manifold: Working, indeterminate",
@@ -237,9 +260,11 @@ describe("program status CLI", () => {
           ).toString("utf8"),
         ),
       ).toEqual(titles);
+
       for (const state of ["idle", "working", "blocked", "done", "error", "clear"]) {
         expect(reports.some((report) => report.startsWith(`\x1b]7501;state=${state}`))).toBe(true);
       }
+
       for (const kind of ["permission", "question", "auth"]) {
         expect(reports.some((report) => report.includes(`:kind=${kind}:progress=37`))).toBe(true);
         expect(
@@ -248,6 +273,7 @@ describe("program status CLI", () => {
           ),
         ).toBe(true);
       }
+
       expect(reports).toContain("\x1b]7501;state=working:id=manifold-status-demo/sibling");
       expect(reports).not.toContain("\x1b]7501;state=clear");
       expect(reports.at(-2)).toBe("\x1b]7501;state=clear:id=manifold-status-demo");
@@ -276,6 +302,7 @@ describe("program status CLI", () => {
       ],
       "Holding until Ctrl-C.",
     );
+
     expect(stdout).toBe(
       "\x1b]7501;state=blocked:id=demo/child:kind=auth:app=manifold\x1b\\\x1b]7501;state=idle:id=demo/child:app=manifold\x1b\\",
     );
@@ -295,6 +322,7 @@ describe("program status CLI", () => {
       ],
       "\x1b]7501;state=working:id=manifold-status-demo/sibling:app=manifold-worker",
     );
+
     expect(stdout.startsWith("\x1b]2;manifold: Idle\x07")).toBe(true);
     expect(stdout).toContain(
       "\x1b]7501;state=blocked:id=manifold-status-demo/build/approval:kind=permission",
@@ -340,11 +368,10 @@ describe("command program status", () => {
       })));
       process.stderr.write(String(value));
     `);
+
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toBe("42");
-    expect(
-      [...result.stdout.matchAll(/\x1b\]2;([^\x1b]*)\x1b\\/gu)].map((match) => match[1]),
-    ).toEqual([
+    expect(oscPayloads(result.stdout, "2")).toEqual([
       "manifold: Checking",
       "manifold: Checking 0%",
       "manifold: Checking 33%",
@@ -353,9 +380,11 @@ describe("command program status", () => {
       "manifold: Finalizing",
       "manifold: Done",
     ]);
+
     const reports = result.stdout
       .split("\x1b\\")
       .filter((sequence) => sequence.startsWith("\x1b]7501;"));
+
     expect(reports.at(-2)).not.toContain(":progress=");
     expect(reports.at(-1)).toContain("state=done:app=manifold:");
     expect(reports.at(-1)).toContain(
@@ -370,19 +399,26 @@ describe("command program status", () => {
       const operation = withProgramStatus(status => Effect.sync(() => {
         status.phase('Checking');
         status.summary('1 matched; 1 error', ${failure === "rows"});
-      }).pipe(${failure === "cleanup" ? "Effect.ensuring(Effect.die('cleanup failed'))" : failure === "defect" ? "Effect.andThen(Effect.die('original defect'))" : "Effect.as(42)"}));
+      }).pipe(${Match.value(failure).pipe(
+        Match.when("cleanup", () => "Effect.ensuring(Effect.die('cleanup failed'))"),
+        Match.when("defect", () => "Effect.andThen(Effect.die('original defect'))"),
+        Match.orElse(() => "Effect.as(42)"),
+      )}));
       const exit = await Effect.runPromise(Effect.exit(operation));
       if (exit._tag === 'Failure') {
         process.stderr.write(String(exit.cause));
         process.exitCode = 1;
       }
     `);
+
       expect(result.status).toBe(failure === "rows" ? 0 : 1);
+
       if (failure !== "rows") {
         expect(result.stderr).toContain(
           failure === "cleanup" ? "cleanup failed" : "original defect",
         );
       }
+
       expect(result.stdout).toContain("\x1b]7501;state=error:app=manifold:");
       expect(result.stdout).not.toContain("state=done");
       expect(result.stdout).not.toContain("state=idle");
@@ -397,6 +433,7 @@ describe("command program status", () => {
         status.summary('x'.repeat(2049), true);
       })));
     `);
+
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).not.toContain("injected");
     expect(result.stdout).not.toContain(":msg=");
@@ -415,6 +452,7 @@ describe("command program status", () => {
       })));
       process.stderr.write(String(value));
     `);
+
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toBe("42");
   });
@@ -432,6 +470,7 @@ describe("command program status", () => {
       ],
       "\x1b]7501;state=working:app=manifold:",
     );
+
     expect(stdout).toContain("\x1b]2;manifold: Cancelled\x1b\\");
     expect(stdout.match(/state=idle/g)).toHaveLength(1);
     expect(
@@ -460,6 +499,7 @@ describe("command program status", () => {
       release();
       await pending;
     `);
+
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).not.toContain("Too late");
     expect(result.stdout.match(/state=idle/g)).toHaveLength(1);

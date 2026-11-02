@@ -315,8 +315,14 @@ export const pas5ImportCommand = Command.make("import-pas5", {
 
             if (apply && plan.outcome === "ready") {
               try {
+                const { entryId } = plan;
+
+                if (!entryId) {
+                  throw cliError("Ready PAS5 plan has no registry entry id.");
+                }
+
                 for (const link of plan.missingLinks) {
-                  const key = `${plan.entryId}:${identityKey(link)}`;
+                  const key = `${entryId}:${identityKey(link)}`;
 
                   if (written.has(key)) {
                     continue;
@@ -324,7 +330,7 @@ export const pas5ImportCommand = Command.make("import-pas5", {
 
                   await apiCall(
                     config,
-                    `/v1/entries/${encodeURIComponent(plan.entryId!)}/providers`,
+                    `/v1/entries/${encodeURIComponent(entryId)}/providers`,
                     "POST",
                     { ...link, onConflict: "reject" },
                     RegistryEntry,
@@ -332,7 +338,7 @@ export const pas5ImportCommand = Command.make("import-pas5", {
                   written.add(key);
                   record({
                     event: "link",
-                    entryId: plan.entryId!,
+                    entryId,
                     provider: link.provider,
                     externalId: link.externalId,
                   });

@@ -17,7 +17,7 @@
     "lint:docs": "nimbus-docs lint",
     "lint:docs:fix": "nimbus-docs lint --fix",
     "lint:fix": "bun run lint:oxlint:fix && bun run lint:astro:fix && bun run lint:docs:fix",
-    "lint:oxlint": "astro sync && oxlint src --ignore-pattern '**/*.astro'",
+    "lint:oxlint": "astro sync && oxlint src scripts --ignore-pattern '**/*.astro' --report-unused-disable-directives-severity=error",
     "lint:oxlint:fix": "astro sync && oxlint src --ignore-pattern '**/*.astro' --fix",
     "predeploy": "astro check && astro build",
     "prepreview:cf": "astro build",

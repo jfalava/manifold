@@ -277,7 +277,13 @@ export function linkProvider(
 
       if (binding) {
         // Identity replay is a true no-op, including title, timestamps and events.
-        return readEntry(host, entryId)!;
+        const stored = readEntry(host, entryId);
+
+        if (!stored) {
+          throw new Error(`Canonical entry not found: ${entryId}`);
+        }
+
+        return stored;
       }
     }
 

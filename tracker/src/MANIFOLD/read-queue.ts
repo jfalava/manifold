@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
-/* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
+/* Last modified by Manifold on 2026-11-02. See ATTRIBUTIONS.md. */
 
 import {
   ContentRating,
@@ -190,15 +190,17 @@ const queueProgress = (mangaId: string, entry: PendingProgressEntry): void => {
   const ids = Object.keys(pending);
 
   if (!pending[mangaId] && ids.length >= PENDING_PROGRESS_MAX) {
-    let oldestId = ids[0]!;
+    let oldest: { readonly id: string; readonly at: number } | undefined;
 
-    for (const id of ids) {
-      if (pending[id]!.at < pending[oldestId]!.at) {
-        oldestId = id;
+    for (const [id, queued] of Object.entries(pending)) {
+      if (oldest === undefined || queued.at < oldest.at) {
+        oldest = { id, at: queued.at };
       }
     }
 
-    delete pending[oldestId];
+    if (oldest !== undefined) {
+      delete pending[oldest.id];
+    }
   }
 
   pending[mangaId] = entry;

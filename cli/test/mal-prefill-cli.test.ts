@@ -12,6 +12,7 @@ const run = (
   const directory = mkdtempSync(join(tmpdir(), "mal-prefill-cli-"));
   const reportPath = join(directory, "report.jsonl");
   const resumePath = join(directory, "resume.jsonl");
+
   try {
     const result = spawnSync(
       "bun",
@@ -84,6 +85,7 @@ const run = (
       ],
       { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 20_000 },
     );
+
     return { ...result, report: existsSync(reportPath) ? readFileSync(reportPath, "utf8") : "" };
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -171,15 +173,18 @@ describe("registry mal CLI", () => {
         apply: false,
         searchPolicy,
       });
+
       expect(refreshed.status).toBe(0);
       expect(refreshed.stdout.match(/LOOKUP \d+/g)).toEqual(["LOOKUP 42"]);
       expect(refreshed.report).toContain('"searchPolicy":"anilist-idmal-v1"');
       expect(refreshed.report).toContain('"outcome":"unmatched"');
+
       const resumed = run(["--limit", "1"], "unmapped", {
         outcome: "unmatched",
         apply: false,
         report: refreshed.report,
       });
+
       expect(resumed.status).toBe(0);
       expect(resumed.stdout.match(/LOOKUP \d+/g)).toEqual(["LOOKUP 43"]);
       expect(resumed.stdout).not.toContain("WRITE");
@@ -193,6 +198,7 @@ describe("registry mal CLI", () => {
       apply: false,
       searchPolicy: "anilist-idmal-v1",
     });
+
     expect(result.status).toBe(0);
     expect(result.stdout.match(/LOOKUP \d+/g)).toEqual(["LOOKUP 42"]);
     expect(result.stdout).toContain('"externalId":"77"');

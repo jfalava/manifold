@@ -1,8 +1,19 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { objectField } from "@manifold/json";
 import { describe, expect, it } from "vitest";
+
+import {
+  arrayAt,
+  findLine,
+  objectAt,
+  objectsAt,
+  parseJsonObject,
+  readReport,
+  stringAt,
+} from "./support/report";
 
 const run = (
   flags: string[] = [],
@@ -13,10 +24,13 @@ const run = (
   const directory = mkdtempSync(join(tmpdir(), "manifold-xcomic-"));
   const report = join(directory, "report.jsonl");
   const resume = join(directory, "resume.jsonl");
+
   try {
-    if (options.resume)
+    if (options.resume) {
       writeFileSync(resume, options.resume.map((line) => JSON.stringify(line)).join("\n") + "\n");
-    if (checkpoint)
+    }
+
+    if (checkpoint) {
       writeFileSync(
         resume,
         [
@@ -26,6 +40,8 @@ const run = (
           .map((line) => JSON.stringify(line))
           .join("\n") + "\n",
       );
+    }
+
     const result = spawnSync(
       "bun",
       [
@@ -86,15 +102,8 @@ const run = (
       ],
       { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 20_000 },
     );
-    return {
-      ...result,
-      report: existsSync(report)
-        ? readFileSync(report, "utf8")
-            .trim()
-            .split("\n")
-            .map((line) => JSON.parse(line))
-        : [],
-    };
+
+    return { ...result, report: readReport(report) };
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -113,8 +122,14 @@ describe("registry xcomic", () => {
       failed.report
         .filter((line) => line.kind === "read")
         .some((line) => {
-          const inventory = JSON.parse(line.data).data?.get_comic_chapterList_uniqList;
-          return inventory?.paging.pages === 2 && inventory.items.length === 0;
+          const data = objectField(parseJsonObject(stringAt(line, "data")), "data");
+          const inventory = data && objectField(data, "get_comic_chapterList_uniqList");
+
+          return (
+            inventory !== undefined &&
+            objectAt(inventory, "paging").pages === 2 &&
+            arrayAt(inventory, "items").length === 0
+          );
         }),
     ).toBe(false);
     const recovered = run(["--apply"], "normal", { resume: failed.report });
@@ -125,6 +140,7 @@ describe("registry xcomic", () => {
     expect(recovered.stdout).not.toContain("READ search");
     expect(recovered.stdout).toContain("SELECTION_BEFORE_WRITE true");
     expect(recovered.stdout).toContain('"externalId":"large"');
+
     for (const line of failed.report.filter((line) => line.kind === "read")) {
       expect(
         recovered.report.find((cached) => cached.kind === "read" && cached.key === line.key),
@@ -135,19 +151,33 @@ describe("registry xcomic", () => {
   it("refetches a schema-valid but incomplete cached final chapter page", () => {
     const preview = run();
     expect(preview.status, preview.stderr).toBe(0);
+
     const resume = preview.report.map((line) => {
-      if (line.kind !== "read") return line;
-      const body = JSON.parse(line.data);
-      const inventory = body.data?.get_comic_chapterList_uniqList;
-      if (
-        !inventory?.items.some((item: { data: { id: string } }) =>
-          item.data.id.startsWith("large-2-"),
-        )
-      )
+      if (line.kind !== "read") {
         return line;
-      inventory.items = [];
-      return { ...line, data: JSON.stringify(body) };
+      }
+
+      const body = parseJsonObject(stringAt(line, "data"));
+      const data = objectField(body, "data");
+      const inventory = data && objectField(data, "get_comic_chapterList_uniqList");
+
+      if (
+        !inventory ||
+        !objectsAt(inventory, "items").some((item) =>
+          stringAt(objectAt(item, "data"), "id").startsWith("large-2-"),
+        )
+      ) {
+        return line;
+      }
+
+      const emptied = {
+        ...body,
+        data: { ...data, get_comic_chapterList_uniqList: { ...inventory, items: [] } },
+      };
+
+      return { ...line, data: JSON.stringify(emptied) };
     });
+
     expect(resume).not.toEqual(preview.report);
     const result = run(["--apply"], "normal", { resume });
     expect(result.status, result.stderr).toBe(0);
@@ -165,14 +195,18 @@ describe("registry xcomic", () => {
       const failed = run(["--apply"], `interrupt-${stage}`);
       expect(failed.status).toBe(1);
       expect(failed.stdout).not.toContain("WRITE");
+
       const ids = failed.report
         .filter((line) => line.kind === "candidates")
-        .flatMap((line) => line.data);
+        .flatMap((line) => arrayAt(line, "data"));
+
       expect(ids).toContain("small");
+
       if (stage !== "pager") {
         expect(ids).toContain("large");
         expect(failed.stdout).not.toContain("READ detail large");
       }
+
       for (const cache of ["removed", "expired"]) {
         const resume = failed.report.flatMap((line) =>
           line.kind !== "read"
@@ -181,6 +215,7 @@ describe("registry xcomic", () => {
               ? []
               : [{ ...line, savedAt: Date.now() - 86_400_001 }],
         );
+
         const recovered = run(["--apply"], "omit", { resume });
         expect(recovered.status, recovered.stderr).toBe(0);
         expect(recovered.stdout).toContain("READ search 1");
@@ -209,16 +244,17 @@ describe("registry xcomic", () => {
     expect(complete.stdout).not.toContain("READ chapters large 1");
     expect(complete.stdout).toContain("READ chapters large 2");
     expect(complete.stdout).not.toContain("READ search");
-    expect(complete.report.find((line) => line.event === "entry").selectedId).toBe("large");
+    expect(findLine(complete.report, (line) => line.event === "entry").selectedId).toBe("large");
     const lower = run(["--apply", "--max-pages", "1"], "normal", { resume: complete.report });
     expect(lower.status, lower.stderr).toBe(0);
-    expect(lower.report.find((line) => line.event === "entry").outcome).toBe("deferred");
+    expect(findLine(lower.report, (line) => line.event === "entry").outcome).toBe("deferred");
     expect(lower.stdout).not.toMatch(/^READ /m);
     expect(lower.stdout).not.toContain("WRITE");
     const applied = run(["--apply", "--max-pages", "2"], "normal", { resume: lower.report });
     expect(applied.status, applied.stderr).toBe(0);
     expect(applied.stdout).not.toMatch(/^READ /m);
     expect(applied.stdout).toContain("SELECTION_BEFORE_WRITE true");
+
     for (const line of complete.report.filter((line) => line.kind === "read")) {
       expect(
         applied.report.find((cached) => cached.kind === "read" && cached.key === line.key),
@@ -228,6 +264,7 @@ describe("registry xcomic", () => {
 
   it("refetches invalid, expired and future cache records before applying", () => {
     const preview = run();
+
     for (const invalid of ["schema", "expired", "future"]) {
       const resume = preview.report.map((line) =>
         line.kind !== "read"
@@ -239,6 +276,7 @@ describe("registry xcomic", () => {
                 : { savedAt: Date.now() + (invalid === "future" ? 86_400_000 : -86_400_001) }),
             },
       );
+
       const result = run(["--apply"], "normal", { resume });
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain("READ search 1");
@@ -253,9 +291,9 @@ describe("registry xcomic", () => {
     (size) => {
       const result = run(["--apply"], `crossing-${size}`);
       expect(result.status, result.stderr).toBe(0);
-      const entry = result.report.find((line) => line.event === "entry");
+      const entry = findLine(result.report, (line) => line.event === "entry");
       expect(entry).toMatchObject({ outcome: "ambiguous", selectedId: null });
-      expect(entry.selection.comparisons).toContainEqual({
+      expect(objectAt(entry, "selection").comparisons).toContainEqual({
         from: "small",
         to: "large",
         difference: { gained: size === "equal" ? [8] : [3, 4, 5, 8], lost: [2] },
@@ -292,23 +330,23 @@ describe("registry xcomic", () => {
   it("chooses complete distinct normal chapter coverage, not advertised counts, badges or the pilot's larger count", () => {
     const result = run();
     expect(result.status, result.stderr).toBe(0);
-    const entry = result.report.find((item) => item.entryId === "target");
+    const entry = findLine(result.report, (item) => item.entryId === "target");
     expect(entry).toMatchObject({ outcome: "matched", selectedId: "large" });
     expect(
-      entry.candidates.find((candidate: { id: string }) => candidate.id === "large").coverage,
+      findLine(objectsAt(entry, "candidates"), (candidate) => candidate.id === "large").coverage,
     ).toEqual({
       unit: "chapters",
       count: 5,
       numbers: [1, 2, 3, 4, 5],
     });
     expect(
-      entry.candidates.find((candidate: { id: string }) => candidate.id === "empty"),
+      objectsAt(entry, "candidates").find((candidate) => candidate.id === "empty"),
     ).toMatchObject({
       advertisedChapters: null,
       coverage: { unit: "chapters", count: 0, numbers: [] },
     });
     expect(
-      entry.candidates.find((candidate: { id: string }) => candidate.id === "pilot").reasons,
+      findLine(objectsAt(entry, "candidates"), (candidate) => candidate.id === "pilot").reasons,
     ).toContain("contradictory anilist ID");
     expect(result.stdout).not.toContain("WRITE");
   });
@@ -357,7 +395,7 @@ describe("registry xcomic", () => {
   ])("fails closed on %s instead of selecting an easier competitor", (scenario) => {
     const result = run(["--apply"], scenario);
     expect(result.status).toBe(1);
-    expect(result.report.find((item) => item.entryId === "target").outcome).toBe(
+    expect(findLine(result.report, (item) => item.entryId === "target").outcome).toBe(
       ["challenge", "rate-limit"].includes(scenario) ? "blocked" : "errors",
     );
     expect(result.stdout).not.toContain("WRITE");
@@ -368,10 +406,12 @@ describe("registry xcomic", () => {
     const complete = run([], "paged");
     expect(complete.status, complete.stderr).toBe(0);
     expect(complete.stdout).toContain("SEARCH 3");
-    expect(complete.report.find((item) => item.entryId === "target").selectedId).toBe("large");
+    expect(findLine(complete.report, (item) => item.entryId === "target").selectedId).toBe("large");
     const incomplete = run(["--apply", "--max-pages", "1"], "paged");
     expect(incomplete.status).toBe(0);
-    expect(incomplete.report.find((item) => item.entryId === "target").outcome).toBe("deferred");
+    expect(findLine(incomplete.report, (item) => item.entryId === "target").outcome).toBe(
+      "deferred",
+    );
     expect(incomplete.stdout).not.toContain("WRITE");
   });
 
@@ -391,9 +431,11 @@ describe("registry xcomic", () => {
   it("rejects owned editions, reports real misses and avoids catalog work for limit zero", () => {
     const conflict = run(["--apply"], "owned");
     expect(conflict.status).toBe(1);
-    expect(conflict.report.find((item) => item.entryId === "target").outcome).toBe("conflicts");
+    expect(findLine(conflict.report, (item) => item.entryId === "target").outcome).toBe(
+      "conflicts",
+    );
     expect(conflict.stdout).not.toContain("WRITE");
-    expect(run([], "empty").report.find((item) => item.entryId === "target").outcome).toBe(
+    expect(findLine(run([], "empty").report, (item) => item.entryId === "target").outcome).toBe(
       "unmatched",
     );
     expect(run(["--limit", "0"], "challenge").status).toBe(0);

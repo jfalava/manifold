@@ -26,6 +26,16 @@ const canonical = {
   metadata: { coverUrl: "https://example.test/mal.jpg", description: "MAL details" },
 };
 
+const hasNotesCallback = (
+  form: Form,
+): form is Form & { notesChanged(value: string): Promise<void> } =>
+  "notesChanged" in form && typeof form.notesChanged === "function";
+
+const hasStatusCallback = (
+  form: Form,
+): form is Form & { statusSelected(values: string[]): Promise<void> } =>
+  "statusSelected" in form && typeof form.statusSelected === "function";
+
 const parseJsonObject = (value: PaperbackRequest["body"]): Record<string, JsonValue> => {
   if (!isString(value)) {
     throw new Error("Expected a JSON request body");
@@ -188,16 +198,11 @@ describe("Paperback canonical fallback", () => {
       const form = await tracker.getMangaProgressManagementForm(details);
 
       // Exercise the public form callback, not the private state implementation.
-      // SAFETY: the tracker returns a Form with its public notes callback attached.
-      const callbacks = form as Form & {
-        notesChanged?: (value: string) => Promise<void>;
-      };
-
-      if (callbacks.notesChanged === undefined) {
+      if (!hasNotesCallback(form)) {
         throw new Error("Missing notes callback");
       }
 
-      await callbacks.notesChanged("Local notes");
+      await form.notesChanged("Local notes");
       await form.formDidSubmit?.();
 
       const save = requests.find(
@@ -220,16 +225,11 @@ describe("Paperback canonical fallback", () => {
       await tracker.getMangaDetails(entry.id),
     );
 
-    // SAFETY: the tracker returns a Form with its public status callback attached.
-    const callbacks = form as Form & {
-      statusSelected?: (values: string[]) => Promise<void>;
-    };
-
-    if (callbacks.statusSelected === undefined) {
+    if (!hasStatusCallback(form)) {
       throw new Error("Missing status callback");
     }
 
-    await callbacks.statusSelected(["completed"]);
+    await form.statusSelected(["completed"]);
 
     const save = requests.find(
       (request) => request.method === "POST" && request.url.endsWith("/list-state"),

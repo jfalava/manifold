@@ -16,23 +16,27 @@ import {
   applicationState,
   listState,
   makeApi,
-  MANAGED_COLLECTIONS,
+  managedCollection,
   PENDING_NUKES_KEY,
   PENDING_RECONCILES_KEY,
+  readStoredObject,
   sourceManga,
 } from "./managed-collections-fixtures";
 
 const mocks = vi.hoisted(() => {
   type Runtime = typeof import("@manifold/paperback-runtime");
 
-  return {
-    // SAFETY: holder starts empty; tests install a makeApi() double before use.
-    api: undefined as PersonalApiClient | undefined,
+  // Holder starts empty; tests install a makeApi() double before use.
+  type ApiHolder = { api: PersonalApiClient | undefined };
+
+  const holder: ApiHolder = { api: undefined };
+
+  return Object.assign(holder, {
     saveAniListStatus: vi.fn<Runtime["saveAniListStatus"]>(),
     deleteAniListEntry: vi.fn<Runtime["deleteAniListEntry"]>(),
     fetchAniListLibrary: vi.fn<Runtime["fetchAniListLibrary"]>(),
     fetchAniListMediaListEntryIds: vi.fn<Runtime["fetchAniListMediaListEntryIds"]>(),
-  };
+  });
 });
 
 // SAFETY: managed-collections imports its AniList/registry IO functions
@@ -90,7 +94,7 @@ describe("managed collection registry resolution", () => {
     applicationState.set(ANILIST_SESSION_KEY, "token");
     applicationState.set(ANILIST_VIEWER_ID_KEY, 1);
 
-    await expect(getSourceMangaInManagedCollection(MANAGED_COLLECTIONS[0]!)).resolves.toEqual([]);
+    await expect(getSourceMangaInManagedCollection(managedCollection(0))).resolves.toEqual([]);
   });
 
   it("resolves large shelves in bounded batches", async () => {
@@ -184,7 +188,7 @@ describe("managed collection registry reconciliation", () => {
     mocks.saveAniListStatus.mockResolvedValue({ mediaListEntryId: 42 });
 
     await commitManagedCollectionChanges({
-      collection: MANAGED_COLLECTIONS[0]!,
+      collection: managedCollection(0),
       additions: [sourceManga("entry-1", "A1")],
       deletions: [],
     });
@@ -192,11 +196,7 @@ describe("managed collection registry reconciliation", () => {
     // Device write succeeded and the failed registry reconcile is queued.
     expect(mocks.saveAniListStatus).toHaveBeenCalledOnce();
 
-    // SAFETY: the queued-reconcile JSON is fully controlled by this test.
-    const queued = JSON.parse(String(readAppState(PENDING_RECONCILES_KEY))) as Record<
-      string,
-      { kind: string; entryId: string; status: string }
-    >;
+    const queued = readStoredObject(PENDING_RECONCILES_KEY);
 
     expect(queued["entry-1"]).toMatchObject({
       kind: "setListState",
@@ -341,11 +341,7 @@ describe("managed collection registry reconciliation", () => {
     expect(nukeAttempts).toBe(2);
     expect(JSON.parse(String(readAppState(PENDING_NUKES_KEY)))).toEqual({});
 
-    // SAFETY: the queued-reconcile JSON is fully controlled by this test.
-    const reconciles = JSON.parse(String(readAppState(PENDING_RECONCILES_KEY))) as Record<
-      string,
-      { kind: string; entryId: string }
-    >;
+    const reconciles = readStoredObject(PENDING_RECONCILES_KEY);
 
     expect(reconciles["entry-1"]).toMatchObject({
       kind: "nukeEntry",
@@ -370,7 +366,7 @@ describe("managed collection registry reconciliation", () => {
     mocks.saveAniListStatus.mockResolvedValue({ mediaListEntryId: 7 });
 
     await commitManagedCollectionChanges({
-      collection: MANAGED_COLLECTIONS[4]!,
+      collection: managedCollection(4),
       additions: [sourceManga("entry-1", "A1")],
       deletions: [],
     });

@@ -168,6 +168,15 @@ const builtinRules: DummyRuleMap = {
   "import/no-mutable-exports": "error",
 };
 
+// Rules that may never be disabled: casts, non-null assertions and setState in
+// effects all have a typed alternative. scripts/check-lint-directives.ts fails
+// lint:global on any disable comment that names one of these.
+export const strictRules = {
+  "typescript/consistent-type-assertions": ["error", { assertionStyle: "never" }],
+  "typescript/no-non-null-assertion": "error",
+  "react/set-state-in-effect": "error",
+} satisfies DummyRuleMap;
+
 // Strict application base: type-aware linting over the built-in plugins plus
 // the vendored anti-slop rules. Workspace configs spread this and add their
 // own jsPlugins registration and ignorePatterns.
@@ -200,6 +209,7 @@ export const baseConfig: OxlintConfig = {
   rules: {
     ...builtinRules,
     ...antiSlopRules,
+    ...strictRules,
   },
 };
 

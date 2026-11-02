@@ -6,47 +6,16 @@ import type { RegistryEntry } from "@manifold/contract";
 import { getRegistryCanonical, searchCanonical } from "../src/canonical";
 import { handleCanonical } from "../src/routes/canonical";
 import type { Env } from "../src/types";
+import { testEnv } from "./env-fixture";
 
-/**
- * Cloudflare Ai / VectorizeIndex are branded platform types; test doubles only
- * implement the methods searchCanonical calls. TypeScript rejects a direct
- * Env assertion for that mismatch, so we bridge via a typed helper.
- */
 const environment = (clientId = "not-configured"): Env => {
   const emptyEmbeddings: number[][] = [];
-  const emptyMatches: never[] = [];
 
-  const fixture = {
+  return {
+    ...testEnv(),
     AI: { run: async () => ({ data: emptyEmbeddings }) },
-    MANGADEX_INDEX: {
-      query: async () => ({ matches: emptyMatches, count: 0 }),
-      upsert: async () => ({ mutationId: "test" }),
-    },
-    MANIFOLD_SYNC: {
-      getByName: (): never => {
-        throw new Error("ManifoldSync is not used by canonical search");
-      },
-    },
-    ASSETS: {
-      fetch: async () => new Response("not used", { status: 404 }),
-    },
-    ENVIRONMENT: "test",
-    MANIFOLD_TOKEN: "token",
-    MANIFOLD_OAUTH_REDIRECT_BASE_URL: "https://example.test",
-    MANIFOLD_OAUTH_TOKEN_ENCRYPTION_SECRET: "encryption-secret",
-    MANIFOLD_ANILIST_CLIENT_ID: "anilist-client",
-    MANIFOLD_ANILIST_CLIENT_SECRET: "anilist-secret",
     MANIFOLD_MAL_CLIENT_ID: clientId,
-    MANIFOLD_MAL_CLIENT_SECRET: "",
-    MANIFOLD_MANGADEX_CLIENT_ID: "mangadex-client",
-    MANIFOLD_MANGADEX_CLIENT_SECRET: "mangadex-secret",
-    MANIFOLD_MANGADEX_USERNAME: "manga-user",
-    MANIFOLD_MANGADEX_PASSWORD: "manga-password",
   };
-
-  // SAFETY: fixture implements the Env surface searchCanonical reads
-  // @ts-expect-error Ai/VectorizeIndex platform brands are wider than test doubles
-  return fixture;
 };
 
 const anilistBody = {

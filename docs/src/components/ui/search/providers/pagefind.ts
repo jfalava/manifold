@@ -33,6 +33,17 @@ interface PagefindApi {
   ): Promise<PagefindSearchResponse>;
 }
 
+function isPagefindApi(value: unknown): value is PagefindApi {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "init" in value &&
+    typeof value.init === "function" &&
+    "search" in value &&
+    typeof value.search === "function"
+  );
+}
+
 let pagefind: PagefindApi | undefined;
 
 /**
@@ -71,10 +82,14 @@ export const provider: SearchProvider = {
     );
 
     const pagefindUrl = new URL("pagefind/pagefind.js", baseUrl);
-    // SAFETY: value matches PagefindApi; at this call site
-    pagefind = (await import(
-      /* @vite-ignore */ pagefindUrl.href
-    )) as PagefindApi;
+
+    const mod: unknown = await import(/* @vite-ignore */ pagefindUrl.href);
+
+    if (!isPagefindApi(mod)) {
+      throw new Error(`Pagefind module at ${pagefindUrl.href} is invalid`);
+    }
+
+    pagefind = mod;
     await pagefind.init();
   },
 

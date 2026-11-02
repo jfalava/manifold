@@ -9,7 +9,7 @@
     "destroy": "alchemy destroy",
     "dev": "alchemy dev",
     "format": "oxfmt",
-    "lint": "oxlint",
+    "lint": "oxlint --report-unused-disable-directives-severity=error",
     "plan": "alchemy plan",
     "typecheck": "tsrs --noEmit"
   },

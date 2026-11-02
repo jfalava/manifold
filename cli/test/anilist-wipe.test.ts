@@ -2,6 +2,7 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   deleteActivity,
   deleteEntry,
+  fetchMangaActivities,
   fetchMangaEntries,
   fetchViewer,
   retryAfterMs,
@@ -35,6 +36,7 @@ describe("anilist wipe activity selection", () => {
       textActivity(3, "Picking up the light novel series"),
       textActivity(4, "New manhwa recommendation"),
     ];
+
     expect(selectWipeActivities(activities)).toEqual([]);
   });
 
@@ -44,17 +46,49 @@ describe("anilist wipe activity selection", () => {
       textActivity(2, "Reading progress: finished this series!"),
       textActivity(3, "I read the news this morning"),
     ];
+
     expect(selectWipeActivities(activities)).toEqual([]);
   });
 
-  it("never targets unknown activity types, including anime list activity", () => {
-    // SAFETY: test fixture intentionally simulates an out-of-union activity
-    // type (ANIME_LIST) to prove selection drops unknown types; the fixture
-    // JSON is fully controlled here.
-    const animeListActivity = JSON.parse(
-      '{"type":"ANIME_LIST","id":1,"status":"watching"}',
-    ) as Activity;
-    expect(selectWipeActivities([animeListActivity])).toEqual([]);
+  it("never targets unknown activity types, including anime list activity", async () => {
+    // An out-of-union type can only arrive as wire data, so feed it through the fetch boundary.
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          200,
+          JSON.stringify({
+            data: {
+              Page: {
+                pageInfo: { hasNextPage: false },
+                activities: [
+                  { type: "ANIME_LIST", id: 1, status: "watching" },
+                  {
+                    type: "MANGA_LIST",
+                    id: 2,
+                    status: "reading",
+                    progress: "12",
+                    media: { title: { english: "Some Manga" } },
+                  },
+                ],
+              },
+            },
+          }),
+        ),
+      ),
+    );
+
+    try {
+      for (const includeTextActivities of [false, true]) {
+        const fetched = fetchMangaActivities("token", 7, undefined, { includeTextActivities });
+        await vi.advanceTimersByTimeAsync(3000);
+        await expect(fetched).resolves.toEqual([mangaListActivity(2)]);
+      }
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
   });
 
   it("includes TEXT activities only with the explicit includeTextActivities opt-in", () => {
@@ -62,6 +96,7 @@ describe("anilist wipe activity selection", () => {
       mangaListActivity(1),
       textActivity(2, "already watched the anime, great show"),
     ];
+
     const selected = selectWipeActivities(activities, { includeTextActivities: true });
     expect(selected).toHaveLength(2);
     expect(selected).toEqual(activities);
@@ -76,6 +111,7 @@ describe("anilist wipe deletion envelopes", () => {
   const stubFetch = (response: Response): ReturnType<typeof vi.fn> => {
     const fetcher = vi.fn(async () => response);
     vi.stubGlobal("fetch", fetcher);
+
     return fetcher;
   };
 
@@ -83,12 +119,16 @@ describe("anilist wipe deletion envelopes", () => {
     if (responses.length === 0) {
       throw new Error("stubFetchSequence needs at least one response");
     }
+
     const fetcher = vi.fn();
+
     for (const response of responses.slice(0, -1)) {
       fetcher.mockResolvedValueOnce(response);
     }
+
     fetcher.mockResolvedValue(responses[responses.length - 1]);
     vi.stubGlobal("fetch", fetcher);
+
     return fetcher;
   };
 
@@ -174,6 +214,7 @@ describe("anilist wipe deletion envelopes", () => {
         rateLimited(),
         jsonResponse(200, JSON.stringify({ data: { DeleteMediaListEntry: { deleted: true } } })),
       ]);
+
       await expect(deleteEntry("token", 1)).resolves.toBe(true);
       expect(fetcher).toHaveBeenCalledTimes(2);
     });
@@ -188,6 +229,7 @@ describe("anilist wipe deletion envelopes", () => {
         rateLimited(),
         jsonResponse(200, JSON.stringify({ data: { DeleteMediaListEntry: { deleted: true } } })),
       ]);
+
       await expect(deleteEntry("token", 1)).resolves.toBe(false);
       // 1 initial attempt + 5 retries; the trailing success is never reached.
       expect(fetcher).toHaveBeenCalledTimes(6);
@@ -265,6 +307,7 @@ describe("anilist wipe deletion envelopes", () => {
         rateLimited(),
         jsonResponse(200, JSON.stringify({ data: { DeleteActivity: { deleted: true } } })),
       ]);
+
       await expect(deleteActivity("token", 1)).resolves.toEqual({
         success: true,
         alreadyDeleted: false,

@@ -22,6 +22,12 @@ type SettingsCallbacks = Form & {
   manifoldTokenChanged(value: string): Promise<void>;
 };
 
+const hasSettingsCallbacks = (form: Form): form is SettingsCallbacks =>
+  "manifoldOAuthSuccess" in form &&
+  typeof form.manifoldOAuthSuccess === "function" &&
+  "manifoldTokenChanged" in form &&
+  typeof form.manifoldTokenChanged === "function";
+
 const installApplication = (responseStatus = 200) => {
   vi.spyOn(Form.prototype, "reloadForm").mockImplementation(() => undefined);
   const secureState = new Map<string, string>();
@@ -42,8 +48,7 @@ const installApplication = (responseStatus = 200) => {
     arrayBufferToUTF8String: (buffer: ArrayBuffer) => new TextDecoder().decode(buffer),
     scheduleRequest: async (request: ScheduledRequest) => {
       requests.push(request);
-      // SAFETY: TextEncoder returns an ArrayBuffer-backed Uint8Array here.
-      const body = new TextEncoder().encode('{"entries":[]}').buffer as ArrayBuffer;
+      const body = new Uint8Array(new TextEncoder().encode('{"entries":[]}')).buffer;
 
       return [{ status: responseStatus, headers: {} }, body];
     },
@@ -56,8 +61,11 @@ const settingsForm = async (): Promise<SettingsCallbacks> => {
   const { ManifoldTrackerSource } = await import("../src/MANIFOLD/main");
   const form = await new ManifoldTrackerSource().getSettingsForm();
 
-  // SAFETY: this settings form declares both callbacks in its selector configuration.
-  return form as SettingsCallbacks;
+  if (!hasSettingsCallbacks(form)) {
+    throw new Error("Settings form is missing its OAuth or token callback");
+  }
+
+  return form;
 };
 
 describe("Manifold API settings authentication", () => {

@@ -409,7 +409,7 @@ const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Pro
           continue;
         }
 
-        const ch = buffer[0]!;
+        const ch = buffer.charAt(0);
         buffer = buffer.slice(1);
 
         if (ch === "\u0003") {

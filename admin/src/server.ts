@@ -18,40 +18,16 @@
  */
 import handler, { createServerEntry } from "@tanstack/react-start/server-entry";
 
+import { runHost, workersRuntime } from "./lib/effect-host";
+
 const MOUNT = "/admin";
 
-type AssetsFetcher = {
-  fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-};
-
-/**
- * Cloudflare host proxies (ASSETS, service bindings) are not plain objects and
- * may not support `in`. Match jfa.dev/function/router `isFetcher`.
- */
-function isFetcher(value: unknown): value is AssetsFetcher {
-  if (value === null || value === undefined || Object(value) !== value) {
-    return false;
-  }
-
-  // SAFETY: host binding; shape is not a plain object.
-  const fetchFn = (value as { fetch?: unknown }).fetch;
-
-  return Object.prototype.toString.call(fetchFn).endsWith("Function]");
-}
-
-async function getAssetsFetcher(): Promise<AssetsFetcher | null> {
+/** The ASSETS binding inside workerd; null under Vite's Node SSR runner, which serves assets itself. */
+async function getAssetsFetcher(): Promise<Fetcher | null> {
   try {
-    // `cloudflare:workers` exists only inside workerd. Vite's Node SSR runner
-    // must still be able to render the app, where its own asset middleware
-    // serves static files instead.
-    // SAFETY: workerd exposes the host module with this env shape; the fetcher is narrowed below.
-    const workers = (await import(/* @vite-ignore */ "cloudflare:workers")) as {
-      readonly env?: { readonly ASSETS?: unknown };
-    };
+    const { env } = await runHost(workersRuntime());
 
-    const assets = workers.env?.ASSETS;
-
-    return isFetcher(assets) ? assets : null;
+    return env.ASSETS ?? null;
   } catch {
     return null;
   }

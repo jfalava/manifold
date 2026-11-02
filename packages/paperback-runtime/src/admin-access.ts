@@ -130,17 +130,17 @@ const base64UrlToUtf8 = (segment: string): string | undefined => {
     let out = "";
 
     for (let i = 0; i < bytes.length;) {
-      const c = bytes[i]!;
+      const c = bytes[i] ?? 0;
 
       if (c < 0x80) {
         out += String.fromCharCode(c);
         i += 1;
       } else if (c < 0xe0 && i + 1 < bytes.length) {
-        out += String.fromCharCode(((c & 0x1f) << 6) | (bytes[i + 1]! & 0x3f));
+        out += String.fromCharCode(((c & 0x1f) << 6) | ((bytes[i + 1] ?? 0) & 0x3f));
         i += 2;
       } else if (c < 0xf0 && i + 2 < bytes.length) {
         out += String.fromCharCode(
-          ((c & 0x0f) << 12) | ((bytes[i + 1]! & 0x3f) << 6) | (bytes[i + 2]! & 0x3f),
+          ((c & 0x0f) << 12) | (((bytes[i + 1] ?? 0) & 0x3f) << 6) | ((bytes[i + 2] ?? 0) & 0x3f),
         );
         i += 3;
       } else {

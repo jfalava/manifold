@@ -1,5 +1,5 @@
 /** @effect-diagnostics asyncFunction:off */
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { requestHref, requestInitText } from "@manifold/json";
 
@@ -16,9 +16,38 @@ import {
   MANIFOLD_OAUTH_REDIRECT_URI,
   revokeManifoldSession,
 } from "../src/manifold-sync/manifold-oauth";
-import type { SyncHost } from "../src/manifold-sync/host";
+import type { SqlHost } from "../src/manifold-sync/host";
+import type { Env } from "../src/types";
+import { testEnv } from "./env-fixture";
 
-const environment = {
+const isBigInt = (value: SQLOutputValue): value is bigint => typeof value === "bigint";
+
+const sqliteParameter = (value: SqlStorageValue): SQLInputValue =>
+  value instanceof ArrayBuffer ? new Uint8Array(value) : value;
+
+const storageValue = (value: SQLOutputValue): SqlStorageValue => {
+  if (isBigInt(value)) {
+    return Number(value);
+  }
+
+  return value instanceof Uint8Array ? new Uint8Array(value).buffer : value;
+};
+
+const storageRow = (row: Record<string, SQLOutputValue>): Record<string, SqlStorageValue> =>
+  Object.fromEntries(Object.entries(row).map(([key, value]) => [key, storageValue(value)]));
+
+const requiredSearchParam = (href: string, name: string): string => {
+  const value = new URL(href).searchParams.get(name);
+
+  if (!value) {
+    throw new Error(`Missing ${name} in ${href}`);
+  }
+
+  return value;
+};
+
+const environment: Env = {
+  ...testEnv(),
   MANIFOLD_OAUTH_REDIRECT_BASE_URL: "https://manifold.example",
   MANIFOLD_GITHUB_CLIENT_ID: "github-client-id",
   MANIFOLD_GITHUB_ALLOWED_USER_ID: "12345",
@@ -28,27 +57,32 @@ const environment = {
 const makeHost = () => {
   const database = new DatabaseSync(":memory:");
 
-  const sql = {
-    exec<T>(query: string, ...parameters: (string | number)[]) {
-      if (parameters.length === 0 && query.includes(";")) {
-        database.exec(query);
-        const empty: T[] = [];
+  // Overload mirrors `SqlStorage.exec`: row types are declared by the caller, not checked.
+  function exec<T extends Record<string, SqlStorageValue>>(
+    query: string,
+    ...parameters: SqlStorageValue[]
+  ): { toArray(): T[] };
+  function exec(query: string, ...parameters: SqlStorageValue[]) {
+    if (parameters.length === 0 && query.includes(";")) {
+      database.exec(query);
 
-        return { toArray: () => empty };
-      }
+      const empty: Record<string, SqlStorageValue>[] = [];
 
-      // SAFETY: test queries only select the fields represented by the requested row type.
-      const rows = database.prepare(query).all(...parameters) as T[];
+      return { toArray: () => empty };
+    }
 
-      return { toArray: () => rows };
-    },
-  };
+    const rows = database
+      .prepare(query)
+      .all(...parameters.map(sqliteParameter))
+      .map(storageRow);
 
-  // SAFETY: this adapter implements the subset of DurableObjectState storage used by the OAuth module.
-  const host = {
-    ctx: { storage: { sql } },
+    return { toArray: () => rows };
+  }
+
+  const host: SqlHost = {
+    ctx: { storage: { sql: { exec } } },
     env: environment,
-  } as SyncHost;
+  };
 
   migrate(host);
 
@@ -78,8 +112,7 @@ describe("Manifold GitHub OAuth", () => {
       });
 
       const authorizationUrl = new URL(start.authorizationUrl);
-      const providerState = authorizationUrl.searchParams.get("state");
-      expect(providerState).toBeTruthy();
+      const providerState = requiredSearchParam(start.authorizationUrl, "state");
       expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
       expect(authorizationUrl.searchParams.get("scope")).toBe("read:user");
 
@@ -107,18 +140,18 @@ describe("Manifold GitHub OAuth", () => {
 
       vi.stubGlobal("fetch", githubFetch);
 
-      const callback = await completeGithubOAuth(host, providerState!, "github-code");
+      const callback = await completeGithubOAuth(host, providerState, "github-code");
       const callbackUrl = new URL(callback.redirectUri);
       expect(callbackUrl.protocol).toBe("paperback:");
       expect(callbackUrl.searchParams.get("state")).toBe("paperback-state");
-      const authorizationCode = callbackUrl.searchParams.get("code");
+      const authorizationCode = requiredSearchParam(callback.redirectUri, "code");
       expect(authorizationCode).toMatch(/^mf_code_/);
 
       const session = await exchangeManifoldOAuthToken(host, {
         grantType: "authorization_code",
         clientId: MANIFOLD_OAUTH_CLIENT_ID,
         redirectUri: MANIFOLD_OAUTH_REDIRECT_URI,
-        code: authorizationCode!,
+        code: authorizationCode,
         codeVerifier: verifier,
       });
 
@@ -130,7 +163,7 @@ describe("Manifold GitHub OAuth", () => {
           grantType: "authorization_code",
           clientId: MANIFOLD_OAUTH_CLIENT_ID,
           redirectUri: MANIFOLD_OAUTH_REDIRECT_URI,
-          code: authorizationCode!,
+          code: authorizationCode,
           codeVerifier: verifier,
         }),
       ).rejects.toThrow("invalid or expired");
@@ -157,7 +190,7 @@ describe("Manifold GitHub OAuth", () => {
         codeChallengeMethod: "S256",
       });
 
-      const providerState = new URL(start.authorizationUrl).searchParams.get("state");
+      const providerState = requiredSearchParam(start.authorizationUrl, "state");
       vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
         if (requestHref(input).includes("access_token")) {
           return Response.json({ access_token: "github-access-token" });
@@ -165,14 +198,14 @@ describe("Manifold GitHub OAuth", () => {
 
         return Response.json({ id: 12345 });
       });
-      const callback = await completeGithubOAuth(host, providerState!, "github-code");
-      const code = new URL(callback.redirectUri).searchParams.get("code");
+      const callback = await completeGithubOAuth(host, providerState, "github-code");
+      const code = requiredSearchParam(callback.redirectUri, "code");
 
       const original = await exchangeManifoldOAuthToken(host, {
         grantType: "authorization_code",
         clientId: MANIFOLD_OAUTH_CLIENT_ID,
         redirectUri: MANIFOLD_OAUTH_REDIRECT_URI,
-        code: code!,
+        code,
         codeVerifier: verifier,
       });
 
@@ -216,14 +249,14 @@ describe("Manifold GitHub OAuth", () => {
         codeChallengeMethod: "S256",
       });
 
-      const providerState = new URL(start.authorizationUrl).searchParams.get("state");
+      const providerState = requiredSearchParam(start.authorizationUrl, "state");
       vi.stubGlobal("fetch", async (input: RequestInfo | URL) =>
         requestHref(input).includes("access_token")
           ? Response.json({ access_token: "github-access-token" })
           : Response.json({ id: 99999 }),
       );
 
-      const callback = await completeGithubOAuth(host, providerState!, "github-code");
+      const callback = await completeGithubOAuth(host, providerState, "github-code");
       const callbackUrl = new URL(callback.redirectUri);
       expect(callbackUrl.searchParams.get("error")).toBe("access_denied");
       expect(callbackUrl.searchParams.get("code")).toBeNull();
@@ -248,14 +281,14 @@ describe("Manifold GitHub OAuth", () => {
         codeChallengeMethod: "S256",
       });
 
-      const providerState = new URL(start.authorizationUrl).searchParams.get("state");
+      const providerState = requiredSearchParam(start.authorizationUrl, "state");
       vi.stubGlobal("fetch", async (input: RequestInfo | URL) =>
         requestHref(input).includes("access_token")
           ? Response.json({ access_token: "github-access-token" })
           : Response.json({ id: 99999 }),
       );
 
-      const callback = await completeGithubOAuth(host, providerState!, "github-code");
+      const callback = await completeGithubOAuth(host, providerState, "github-code");
       const callbackUrl = new URL(callback.redirectUri);
       expect(callbackUrl.origin + callbackUrl.pathname).toBe(MANIFOLD_CLI_OAUTH_REDIRECT_URI);
       expect(callbackUrl.searchParams.get("error")).toBe("access_denied");

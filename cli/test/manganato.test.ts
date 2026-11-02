@@ -1,7 +1,8 @@
-import { runInNewContext } from "node:vm";
+import { runInNewContext, type Context } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
-import type { JsonObject } from "@manifold/json";
+import { isJsonValue, requestInitText, type JsonObject, type JsonValue } from "@manifold/json";
 import type { BrowserView } from "../src/browser-view";
+import type { ChapterCoverage } from "../src/chapter-coverage";
 import {
   createManganatoClient,
   loadManganatoChapterReference,
@@ -16,8 +17,10 @@ import {
   type ManganatoChapterReference,
   type ManganatoDetails,
 } from "../src/manganato";
+import { objectAt, parseJsonObject, required } from "./support/report";
 
 const identity = { titles: ["Giji Harem", "Pseudo Harem"], authors: ["Saitou Yuu"] };
+
 const candidate: ManganatoDetails = {
   id: "pseudo-harem",
   title: "Pseudo-Harem",
@@ -25,47 +28,93 @@ const candidate: ManganatoDetails = {
   authors: ["Yuu Saitou"],
 };
 
+/** Mirrors the client's coverage result; tsrs checks the `coverage` annotation below against it. */
+type TestCoverage = ChapterCoverage & {
+  readonly latestChapterUpdatedAt?: number;
+  readonly inventory: {
+    readonly rawRecords: number;
+    readonly duplicateRecords: number;
+    readonly excludedNegativeRecords: number;
+    readonly normalizedRecords: number;
+  };
+};
+
+/** Runs a client-generated browser script against a stand-in page and returns its JSON result. */
+const runPageScript = async (script: string, page: Context): Promise<JsonValue> => {
+  const result: unknown = await runInNewContext(script, page);
+
+  if (!isJsonValue(result)) {
+    throw new Error("Browser script returned a non-JSON value");
+  }
+
+  return result;
+};
+
 // Fixtures are browser transport responses; selection and pagination use the public client.
 const clientFor = (
-  responses: readonly unknown[],
+  responses: readonly (JsonValue | Error)[],
   maxPages = 20,
   options: {
     catalog?: readonly JsonObject[];
     onCache?: (record: JsonObject) => void;
     onBlocked?: (error: ManganatoBlockedError) => Promise<void>;
-    execute?: (script: string) => Promise<unknown>;
+    execute?: (script: string) => Promise<JsonValue>;
   } = {},
 ) => {
   let index = 0;
+
+  // BrowserView.evaluate lets the caller pick the result type, like Bun.WebView: the wire value is
+  // untrusted and the client decodes it. The overload models that contract without a cast.
+  function evaluate<T = JsonValue>(script: string): Promise<T>;
+  async function evaluate(script: string): Promise<JsonValue> {
+    if (options.execute) {
+      return options.execute(script);
+    }
+
+    const response = responses[index];
+    index += 1;
+
+    if (response === undefined) {
+      throw new Error("Unexpected additional browser request");
+    }
+
+    if (response instanceof Error) {
+      throw response;
+    }
+
+    return response;
+  }
+
   const view: BrowserView = {
     title: "MangaNato",
     url: "https://www.manganato.gg/",
-    navigate: async () => {},
-    close: () => {},
+    navigate: async () => undefined,
+    close: () => undefined,
     cdp: async () => {
       throw new Error("Unexpected CDP request");
     },
-    evaluate: async <T>(script: string) => {
-      // SAFETY: browser script results deliberately cross an untrusted transport boundary.
-      if (options.execute) return (await options.execute(script)) as T;
-      if (index >= responses.length) throw new Error("Unexpected additional browser request");
-      const response = responses[index++];
-      if (response instanceof Error) throw response;
-      // SAFETY: intentionally emulate the untrusted wire return from BrowserView.evaluate.
-      return response as T;
-    },
+    evaluate,
   };
+
   const client = createManganatoClient({ view, delay: 0, maxPages, ...options });
+  // The result type reaches a `@/` path-alias import that oxlint's type-aware pass cannot resolve.
+  const coverage: (id: string) => Promise<TestCoverage> = client.coverage;
+
   return {
     details: client.details,
-    coverage: client.coverage,
+    coverage,
     search: async (query: string) => {
       const results: ManganatoDetails[] = [];
-      for await (const hits of client.search(query)) results.push(...hits);
+
+      for await (const hits of client.search(query)) {
+        results.push(...hits);
+      }
+
       return results;
     },
   };
 };
+
 const page = (ids: readonly string[], next: string | null = null) => ({
   status: 200,
   challenged: false,
@@ -93,11 +142,13 @@ describe("MangaNato identity and complete search", () => {
         },
       }),
     );
+
     try {
       const identity = await loadManganatoIdentity(
         { title: "Original Romaji", providers: [{ provider: "mangadex", externalId: "md-id" }] },
-        () => {},
+        () => undefined,
       );
+
       expect(manganatoSearchPlans(identity.discoveryTitles).map((plan) => plan.title)).toEqual([
         "Quasar Nebula",
         "Giji Harem",
@@ -148,11 +199,13 @@ describe("MangaNato identity and complete search", () => {
 
   it("saves validated pages and successful details without treating a partial search as complete", async () => {
     const catalog: JsonObject[] = [];
+
     const client = clientFor(
       [page(["one"]), { status: 200, challenged: false, data: candidate }],
       5,
       { onCache: (record) => catalog.push(record) },
     );
+
     await client.search("Pseudo");
     await client.details(candidate.id);
     expect(catalog.map((record) => record.kind)).toEqual(["page", "details"]);
@@ -175,9 +228,11 @@ describe("MangaNato identity and complete search", () => {
       }).search("pseudo"),
     ).toEqual([candidate]);
     const partial: JsonObject[] = [];
+
     const capped = clientFor([page(["one"], "/search/story/pseudo?page=2")], 1, {
       onCache: (record) => partial.push(record),
     });
+
     await expect(capped.search("pseudo")).rejects.toBeInstanceOf(ManganatoPageBudgetError);
     expect(partial).toHaveLength(1);
     await expect(clientFor([], 1, { catalog: partial }).search("pseudo")).rejects.toBeInstanceOf(
@@ -192,6 +247,7 @@ describe("MangaNato identity and complete search", () => {
 
   it("does not renew old page timestamps when a later resume finishes the query", async () => {
     vi.useFakeTimers();
+
     try {
       vi.setSystemTime(new Date("2026-10-24T12:00:00Z"));
       const catalog: JsonObject[] = [];
@@ -224,6 +280,7 @@ describe("MangaNato identity and complete search", () => {
 
   it("expires cached catalog reads at 24 hours and rejects wrong origins or mismatched details", async () => {
     vi.useFakeTimers();
+
     try {
       vi.setSystemTime(new Date("2026-10-24T12:00:00Z"));
       const catalog: JsonObject[] = [];
@@ -234,18 +291,22 @@ describe("MangaNato identity and complete search", () => {
       expect((await clientFor([page(["new"])], 5, { catalog }).search("pseudo"))[0]?.id).toBe(
         "new",
       );
+
+      const cached = required(catalog[0], "cached search page");
+
       const invalid = [
-        { ...catalog[0]!, origin: "https://other.test", savedAt: Date.now() },
-        { ...catalog[0]!, query: "different", savedAt: Date.now() },
-        { ...catalog[0]!, savedAt: Date.now() + 1 },
+        { ...cached, origin: "https://other.test", savedAt: Date.now() },
+        { ...cached, query: "different", savedAt: Date.now() },
+        { ...cached, savedAt: Date.now() + 1 },
         {
-          ...catalog[0]!,
+          ...cached,
           kind: "details",
           key: candidate.id,
           data: [{ ...candidate, id: "wrong" }],
           savedAt: Date.now(),
         },
       ];
+
       expect(
         (await clientFor([page(["live"])], 5, { catalog: invalid }).search("pseudo"))[0]?.id,
       ).toBe("live");
@@ -291,17 +352,18 @@ describe("MangaNato identity and complete search", () => {
       for (const [expected, actual] of [
         [first, second],
         [second, first],
-      ]) {
+      ] as const) {
         expect(
-          selectManganatoCandidate({ ...identity, authors: [expected!] }, [
+          selectManganatoCandidate({ ...identity, authors: [expected] }, [
             {
               ...candidate,
-              authors: [actual!.split(" ").reverse().join(" ").toUpperCase() + " (Story & Art)"],
+              authors: [actual.split(" ").reverse().join(" ").toUpperCase() + " (Story & Art)"],
             },
           ])?.id,
         ).toBe(candidate.id);
       }
     }
+
     for (const [expected, actual] of [
       ["Sano Yuki", "Sano Yuuki"],
       ["Atou Ren", "Ato Ren"],
@@ -324,8 +386,10 @@ describe("MangaNato identity and complete search", () => {
       { authors: [] },
       { authors: ["Saitou Yuki"] },
       { authors: ["Unknown"] },
-    ])
+    ]) {
       expect(selectManganatoCandidate(identity, [{ ...candidate, ...change }])).toBeUndefined();
+    }
+
     expect(selectManganatoCandidate({ ...identity, authors: [] }, [candidate])).toBeUndefined();
   });
 
@@ -335,6 +399,7 @@ describe("MangaNato identity and complete search", () => {
         selectManganatoCandidate(identity, [candidate, { ...candidate, id: "duplicate", authors }]),
       ).toBeUndefined();
     }
+
     expect(selectManganatoCandidate(identity, [candidate, candidate])?.id).toBe(candidate.id);
   });
 
@@ -346,7 +411,9 @@ describe("MangaNato identity and complete search", () => {
       chapters: 20,
       status: "FINISHED",
     };
+
     const withReference = { ...identity, chapterReference };
+
     const different = {
       ...candidate,
       authors: ["Different Pen Name"],
@@ -356,6 +423,7 @@ describe("MangaNato identity and complete search", () => {
         numbers: Array.from({ length: 19 }, (_, i) => i + 1),
       },
     };
+
     expect(selectManganatoCandidate(withReference, [different])?.id).toBe(candidate.id);
     expect(manganatoMatchEvidence(withReference, different)).toMatchObject({
       author: "different",
@@ -363,6 +431,7 @@ describe("MangaNato identity and complete search", () => {
       score: 85,
       eligible: true,
     });
+
     for (const reference of [
       { ...chapterReference, chapters: null },
       { ...chapterReference, chapters: 0 },
@@ -378,10 +447,12 @@ describe("MangaNato identity and complete search", () => {
         selectManganatoCandidate({ ...identity, chapterReference: reference }, [candidate])?.id,
       ).toBe(candidate.id);
     }
+
     for (const authors of [[], ["Unknown"], ["Updating"], ["   "]]) {
       expect(selectManganatoCandidate(withReference, [{ ...different, authors }])).toBeUndefined();
       expect(selectManganatoCandidate({ ...withReference, authors }, [different])).toBeUndefined();
     }
+
     for (const numbers of [
       Array.from({ length: 18 }, (_, i) => i + 1),
       Array.from({ length: 22 }, (_, i) => i + 1),
@@ -395,6 +466,7 @@ describe("MangaNato identity and complete search", () => {
         ]),
       ).toBeUndefined();
     }
+
     expect(
       selectManganatoCandidate(withReference, [
         { ...different, title: "Pseudo Harem Official Anthology" },
@@ -409,16 +481,19 @@ describe("MangaNato identity and complete search", () => {
       authors,
       coverage: { unit: "chapters" as const, count: numbers.length, numbers },
     });
+
     const anchor = listing(
       "anchor",
       candidate.authors,
       Array.from({ length: 20 }, (_, i) => i + 1),
     );
+
     const supported = listing(
       "supported",
       ["Different Creator"],
       [...Array.from({ length: 20 }, (_, i) => i + 2), 20.5],
     );
+
     for (const pool of [
       [anchor, supported],
       [supported, anchor],
@@ -431,6 +506,7 @@ describe("MangaNato identity and complete search", () => {
         overlap: [{ anchorId: "anchor", shared: 19, smaller: 20, fraction: 0.95 }],
       });
     }
+
     for (const other of [
       listing(
         "below",
@@ -450,13 +526,16 @@ describe("MangaNato identity and complete search", () => {
       { ...supported, authors: ["Unknown"] },
       { ...supported, coverage: undefined },
       { ...supported, title: "Pseudo Harem 2" },
-    ])
+    ]) {
       expect(manganatoMatchEvidence(identity, other, [anchor, other]).eligible).toBe(false);
+    }
+
     const short = listing(
       "short",
       ["Different Creator"],
       Array.from({ length: 10 }, (_, i) => i + 1),
     );
+
     expect(selectManganatoCandidate(identity, [short, anchor])?.id).toBe("anchor");
     expect(
       selectManganatoCandidate(identity, [anchor, { ...supported, coverage: anchor.coverage }]),
@@ -466,11 +545,13 @@ describe("MangaNato identity and complete search", () => {
 
   it("recommends missing-credit duplicates without granting eligibility or changing identities", () => {
     const numbers = Array.from({ length: 20 }, (_, i) => i + 1);
+
     const anchor = {
       ...candidate,
       id: "anchor",
       coverage: { unit: "chapters" as const, count: 20, numbers, latestChapterUpdatedAt: 100 },
     };
+
     const missing = {
       ...candidate,
       id: "missing",
@@ -482,7 +563,9 @@ describe("MangaNato identity and complete search", () => {
         latestChapterUpdatedAt: 200,
       },
     };
+
     const original = JSON.stringify(identity);
+
     for (const pool of [
       [anchor, missing],
       [missing, anchor],
@@ -505,11 +588,14 @@ describe("MangaNato identity and complete search", () => {
         eligible: false,
       });
     }
+
     expect(JSON.stringify(identity)).toBe(original);
+
     const smaller = {
       ...missing,
       coverage: { ...anchor.coverage, count: 10, numbers: numbers.slice(0, 10) },
     };
+
     expect(recommendManganatoCandidate(identity, [anchor, smaller])?.candidateId).toBe("anchor");
     const equal = { ...missing, coverage: { ...anchor.coverage, latestChapterUpdatedAt: 200 } };
     expect(recommendManganatoCandidate(identity, [anchor, equal])?.candidateId).toBe("missing");
@@ -522,6 +608,7 @@ describe("MangaNato identity and complete search", () => {
         { ...equal, coverage: { ...anchor.coverage, latestChapterUpdatedAt: undefined } },
       ]),
     ).toBeUndefined();
+
     for (const other of [
       { ...smaller, coverage: { ...smaller.coverage, count: 9, numbers: numbers.slice(0, 9) } },
       {
@@ -530,8 +617,10 @@ describe("MangaNato identity and complete search", () => {
       },
       { ...missing, coverage: { ...missing.coverage, numbers: [...numbers.slice(1), 20.5, 21] } },
       { ...missing, title: "Different work" },
-    ])
+    ]) {
       expect(recommendManganatoCandidate(identity, [anchor, other])).toBeUndefined();
+    }
+
     expect(
       recommendManganatoCandidate({ ...identity, manualReview: true }, [anchor, missing]),
     ).toBeUndefined();
@@ -563,6 +652,7 @@ describe("MangaNato identity and complete search", () => {
         numbers: Array.from({ length: count }, (_, i) => first + i),
       },
     });
+
     const anchor = { ...listing("anchor", 1, 100), authors: candidate.authors };
     const supported = listing("supported", 6, 100);
     expect(manganatoMatchEvidence(identity, supported, [anchor, supported]).overlap).toMatchObject([
@@ -575,6 +665,7 @@ describe("MangaNato identity and complete search", () => {
     expect(recommendManganatoCandidate(identity, [anchor, bridge, chained])).toBeUndefined();
     const missing = listing("missing", 1, 101);
     expect(recommendManganatoCandidate(identity, [anchor, missing])?.candidateId).toBe("missing");
+
     for (const edition of [
       "Side Stories",
       "Side–Stories",
@@ -592,13 +683,15 @@ describe("MangaNato identity and complete search", () => {
       for (const pool of [
         [{ ...anchor, title: `Pseudo Harem ${edition}`, aliases: ["Pseudo Harem"] }, missing],
         [anchor, { ...missing, title: `Pseudo Harem ${edition}`, aliases: ["Pseudo Harem"] }],
-      ])
+      ]) {
         expect(recommendManganatoCandidate(identity, pool)).toBeUndefined();
+      }
     }
   });
 
   it("selects a newer advancing integer run and reports lost zero/fractional positions without weakening identity", () => {
     const numbers = Array.from({ length: 20 }, (_, i) => i + 1);
+
     const listing = (id: string, numbers: number[], date = 100) => ({
       ...candidate,
       id,
@@ -609,9 +702,11 @@ describe("MangaNato identity and complete search", () => {
         latestChapterUpdatedAt: date,
       },
     });
+
     // The older listing has MORE positions, but the newer one advances the integer run.
     const older = listing("older", [0, ...numbers, 1.5, 2.5]);
     const advancing = listing("advancing", [...numbers, 21], 200);
+
     for (const pool of [
       [older, advancing],
       [advancing, older],
@@ -624,6 +719,7 @@ describe("MangaNato identity and complete search", () => {
         },
       });
     }
+
     for (const other of [
       listing("same-integers", [...numbers, 3.5], 200),
       listing("older-date", [...numbers, 21], 99),
@@ -637,6 +733,7 @@ describe("MangaNato identity and complete search", () => {
     ]) {
       expect(selectManganatoCandidate(identity, [older, other])).toBeUndefined();
     }
+
     const additionalInteger = listing("additional-integer", [...numbers, 22], 150);
     expect(
       selectManganatoCandidate(identity, [older, advancing, additionalInteger]),
@@ -684,9 +781,11 @@ describe("MangaNato identity and complete search", () => {
         numbers: Array.from({ length: count }, (_, i) => first + i),
       },
     });
+
     const anchor = listing("anchor", candidate.authors, 1, 20);
     const rescued = listing("rescued", ["Different Creator"], 1, 40);
     const transitive = listing("transitive", ["Third Creator"], 21, 20);
+
     for (const pool of [
       [anchor, rescued, transitive],
       [transitive, rescued, anchor],
@@ -695,6 +794,7 @@ describe("MangaNato identity and complete search", () => {
       expect(manganatoMatchEvidence(identity, transitive, pool).eligible).toBe(false);
       expect(selectManganatoCandidate(identity, pool)).toBeUndefined();
     }
+
     expect(
       manganatoMatchEvidence(
         { ...identity, authors: ["Kanalina"] },
@@ -720,6 +820,7 @@ describe("MangaNato identity and complete search", () => {
         status: "FINISHED",
       },
     };
+
     const supported = {
       ...candidate,
       authors: ["Different Pen Name"],
@@ -729,6 +830,7 @@ describe("MangaNato identity and complete search", () => {
         numbers: Array.from({ length: 20 }, (_, i) => i + 1),
       },
     };
+
     const larger = {
       ...candidate,
       id: "larger",
@@ -738,6 +840,7 @@ describe("MangaNato identity and complete search", () => {
         numbers: Array.from({ length: 24 }, (_, i) => i + 1),
       },
     };
+
     expect(selectManganatoCandidate(withReference, [supported, larger])?.id).toBe("larger");
     expect(selectManganatoCandidate(withReference, [larger, supported])?.id).toBe("larger");
     expect(
@@ -765,9 +868,16 @@ describe("MangaNato identity and complete search", () => {
     let idMal = 456;
     let failed = false;
     vi.stubGlobal("fetch", async (_input: RequestInfo | URL, init?: RequestInit) => {
-      const { variables } = JSON.parse(String(init?.body));
-      if (failed) return new Response("unavailable", { status: 503 });
-      if (variables.idMal !== 456) return Response.json({ data: { Media: null } });
+      const variables = objectAt(parseJsonObject(requestInitText(init) ?? ""), "variables");
+
+      if (failed) {
+        return new Response("unavailable", { status: 503 });
+      }
+
+      if (variables.idMal !== 456) {
+        return Response.json({ data: { Media: null } });
+      }
+
       return Response.json({
         data: {
           Media: {
@@ -782,9 +892,10 @@ describe("MangaNato identity and complete search", () => {
       });
     });
     const row = { providers: [{ provider: "mal", externalId: "456" }] };
-    const incomplete = () => {};
+    const incomplete = () => undefined;
+
     try {
-      const reference = await loadManganatoChapterReference(row, () => {}, incomplete);
+      const reference = await loadManganatoChapterReference(row, () => undefined, incomplete);
       expect(reference).toMatchObject({
         provider: "anilist",
         providerId: "123",
@@ -793,9 +904,9 @@ describe("MangaNato identity and complete search", () => {
       });
       expect(reference?.titles).toContain("Pseudo Harem");
       idMal = 999;
-      expect(await loadManganatoChapterReference(row, () => {}, incomplete)).toBeUndefined();
+      expect(await loadManganatoChapterReference(row, () => undefined, incomplete)).toBeUndefined();
       failed = true;
-      expect(await loadManganatoChapterReference(row, () => {}, incomplete)).toBeUndefined();
+      expect(await loadManganatoChapterReference(row, () => undefined, incomplete)).toBeUndefined();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -806,34 +917,40 @@ describe("MangaNato identity and complete search", () => {
       ...candidate,
       coverage: { unit: "chapters" as const, count: 2, numbers: [1, 2] },
     };
+
     const large = {
       ...candidate,
       id: "larger",
       coverage: { unit: "chapters" as const, count: 3, numbers: [1, 2, 3] },
     };
+
     expect(selectManganatoCandidate(identity, [small, large])?.id).toBe("larger");
     expect(selectManganatoCandidate(identity, [large, small])?.id).toBe("larger");
+
     for (const other of [
       { ...large, coverage: small.coverage },
       { ...large, coverage: undefined },
       { ...large, coverage: { ...large.coverage, unit: "unknown" as const } },
       { ...large, authors: [] },
       { ...large, authors: ["Other Creator"] },
-    ])
+    ]) {
       expect(selectManganatoCandidate(identity, [small, other])).toBeUndefined();
+    }
   });
 
   it("scopes user-confirmed listings to their bound work and keeps publication-version conflicts manual", async () => {
     const confirmed = await loadManganatoIdentity(
       { title: "Kichiku Eiyuu", providers: [{ provider: "anilist", externalId: "139415" }] },
-      () => {},
+      () => undefined,
     );
+
     const listing = {
       id: "savage-hero",
       title: "Savage Hero",
       aliases: [],
       authors: [],
     };
+
     expect(selectManganatoCandidate(confirmed, [listing])?.id).toBe("savage-hero");
     expect(manganatoMatchEvidence(confirmed, listing)).toMatchObject({
       userConfirmed: true,
@@ -844,21 +961,25 @@ describe("MangaNato identity and complete search", () => {
     expect(
       selectManganatoCandidate(confirmed, [{ ...listing, title: "Savage Hero 2" }]),
     ).toBeUndefined();
+
     const unrelated = await loadManganatoIdentity(
       { title: "Savage Hero", providers: [{ provider: "anilist", externalId: "999" }] },
-      () => {},
+      () => undefined,
     );
+
     expect(selectManganatoCandidate(unrelated, [listing])).toBeUndefined();
+
     const manual = await loadManganatoIdentity(
       {
         title: "Dorei wo Choukyoushite Harem Tsukuru",
         providers: [{ provider: "anilist", externalId: "149329" }],
       },
-      () => {},
+      () => undefined,
     );
+
     expect(
       selectManganatoCandidate({ ...manual, authors: ["aldehyde"] }, [
-        { ...listing, title: manual.titles[0]!, authors: ["aldehyde"] },
+        { ...listing, title: required(manual.titles[0], "manual title"), authors: ["aldehyde"] },
       ]),
     ).toBeUndefined();
   });
@@ -897,8 +1018,9 @@ describe("MangaNato identity and complete search", () => {
     async (id, title, alternate, first, second) => {
       const reviewed = await loadManganatoIdentity(
         { title, providers: [{ provider: "anilist", externalId: id }] },
-        () => {},
+        () => undefined,
       );
+
       const smaller = {
         id: first,
         title,
@@ -906,6 +1028,7 @@ describe("MangaNato identity and complete search", () => {
         authors: [],
         coverage: { unit: "chapters" as const, count: 2, numbers: [1, 2] },
       };
+
       const larger = {
         id: second,
         title: alternate,
@@ -913,6 +1036,7 @@ describe("MangaNato identity and complete search", () => {
         authors: [],
         coverage: { unit: "chapters" as const, count: 3, numbers: [1, 2, 3] },
       };
+
       expect(selectManganatoCandidate(reviewed, [smaller, larger])?.id).toBe(second);
       expect(selectManganatoCandidate(reviewed, [larger, smaller])?.id).toBe(second);
       expect(
@@ -929,8 +1053,9 @@ describe("MangaNato identity and complete search", () => {
     async (id, title, listingTitle, preferredId) => {
       const reviewed = await loadManganatoIdentity(
         { title, providers: [{ provider: "anilist", externalId: id }] },
-        () => {},
+        () => undefined,
       );
+
       const preferred = {
         id: preferredId,
         title: listingTitle,
@@ -938,6 +1063,7 @@ describe("MangaNato identity and complete search", () => {
         authors: [],
         coverage: { unit: "chapters" as const, count: 2, numbers: [1, 2] },
       };
+
       const other = {
         ...preferred,
         id: "other",
@@ -949,7 +1075,9 @@ describe("MangaNato identity and complete search", () => {
           latestChapterUpdatedAt: Date.parse("2026-10-01T00:00:00Z"),
         },
       };
+
       const withAuthors = { ...reviewed, authors: ["A Creator"] };
+
       for (const candidates of [
         [other, preferred],
         [preferred, other],
@@ -957,6 +1085,7 @@ describe("MangaNato identity and complete search", () => {
       ]) {
         expect(selectManganatoCandidate(withAuthors, candidates)?.id).toBe(preferredId);
       }
+
       expect(selectManganatoCandidate(withAuthors, [other])).toBeUndefined();
       expect(
         selectManganatoCandidate(withAuthors, [{ ...preferred, title: "Different work" }, other]),
@@ -967,10 +1096,12 @@ describe("MangaNato identity and complete search", () => {
       expect(
         selectManganatoCandidate({ ...withAuthors, manualReview: true }, [preferred]),
       ).toBeUndefined();
+
       const unrelated = await loadManganatoIdentity(
         { title: listingTitle, providers: [{ provider: "anilist", externalId: "999" }] },
-        () => {},
+        () => undefined,
       );
+
       expect(selectManganatoCandidate(unrelated, [preferred])).toBeUndefined();
     },
   );
@@ -986,16 +1117,20 @@ describe("MangaNato identity and complete search", () => {
         latestChapterUpdatedAt,
       },
     });
+
     const older = listing("older", [1, 2, 3], Date.parse("2025-06-05T03:00:25Z"));
     const newer = listing("newer", [3, 1, 2], Date.parse("2025-06-06T11:14:48Z"));
     const smaller = listing("smaller", [1, 2], Date.parse("2026-08-12T15:37:18Z"));
+
     for (const pool of [
       [older, smaller, newer],
       [newer, smaller, older],
     ]) {
       expect(selectManganatoCandidate(identity, pool)?.id).toBe("newer");
     }
+
     expect(selectManganatoCandidate(identity, [older, smaller])?.id).toBe("older");
+
     for (const other of [
       listing("missing-date", [1, 2, 3]),
       listing("same-date", [1, 2, 3], older.coverage.latestChapterUpdatedAt),
@@ -1023,11 +1158,14 @@ describe("MangaNato identity and complete search", () => {
         },
       },
     });
+
     const catalog: JsonObject[] = [];
     const response = inventory(["2025-06-06T11:14:48.000000Z", "2025-06-05T03:00:25.000000Z"]);
+
     const coverage = await clientFor([response], 5, {
       onCache: (record) => catalog.push(record),
     }).coverage("pseudo");
+
     expect(coverage).toMatchObject({
       count: 2,
       latestChapterUpdatedAt: Date.parse("2025-06-06T11:14:48Z"),
@@ -1042,6 +1180,7 @@ describe("MangaNato identity and complete search", () => {
     expect(await clientFor([inventory(["2024-02-29T00:00:00Z"])]).coverage("pseudo")).toMatchObject(
       { latestChapterUpdatedAt: Date.parse("2024-02-29T00:00:00Z") },
     );
+
     for (const date of [
       undefined,
       null,
@@ -1074,12 +1213,15 @@ describe("MangaNato identity and complete search", () => {
         },
       },
     });
+
     const catalog: JsonObject[] = [];
+
     const first = inventory(0, true, [
       { chapter_slug: "chapter-1", chapter_num: 1 },
       { chapter_slug: "chapter-1-other-upload", chapter_num: 1 },
       { chapter_slug: "chapter-1.5", chapter_num: 1.5 },
     ]);
+
     const last = inventory(3, false, [{ chapter_slug: "chapter-5000", chapter_num: 5000 }]);
     const expected = { unit: "chapters", count: 3, numbers: [1, 1.5, 5000] };
     expect(
@@ -1101,7 +1243,7 @@ describe("MangaNato identity and complete search", () => {
     const unknown = inventory(0, false, [{ chapter_slug: "extra", chapter_num: null }]);
     unknown.data.data.pagination.total = 1;
     expect((await clientFor([unknown]).coverage("pseudo")).unit).toBe("unknown");
-    const invalid = { ...catalog[0]!, id: "other" };
+    const invalid = { ...required(catalog[0], "cached coverage page"), id: "other" };
     await expect(clientFor([], 5, { catalog: [invalid] }).coverage("pseudo")).rejects.toThrow(
       /Unexpected/,
     );
@@ -1116,6 +1258,7 @@ describe("MangaNato identity and complete search", () => {
       { chapter_slug: "chapter-58-3", chapter_num: "58.3" },
       { chapter_slug: "chapter-58-31", chapter_num: 58.31 },
     ];
+
     const response = (chapters: typeof records, offset: number, hasMore: boolean) => ({
       status: 200,
       challenged: false,
@@ -1127,8 +1270,10 @@ describe("MangaNato identity and complete search", () => {
         },
       },
     });
+
     for (const first of [records, [...records].reverse()]) {
       const catalog: JsonObject[] = [];
+
       const coverage = await clientFor(
         [
           response(first, 0, true),
@@ -1137,6 +1282,7 @@ describe("MangaNato identity and complete search", () => {
         5,
         { onCache: (record) => catalog.push(record) },
       ).coverage("pseudo");
+
       expect(coverage).toEqual({
         unit: "chapters",
         count: 4,
@@ -1168,6 +1314,7 @@ describe("MangaNato identity and complete search", () => {
         },
       },
     });
+
     const coverage = await clientFor([
       response([
         { chapter_slug: "zero", chapter_num: 0 },
@@ -1177,7 +1324,9 @@ describe("MangaNato identity and complete search", () => {
         { chapter_slug: "tiny", chapter_num: 0.000000000001 },
       ]),
     ]).coverage("pseudo");
+
     expect(coverage.numbers).toEqual([0, 0.000000000001, 58.1, 58.2, 58.300000001]);
+
     for (const number of [null, "", "Special", "-Special", "NaN", "0x10", "1e2"]) {
       expect(
         (
@@ -1187,6 +1336,7 @@ describe("MangaNato identity and complete search", () => {
         ).unit,
       ).toBe("unknown");
     }
+
     expect(
       await clientFor([response([{ chapter_slug: "negative", chapter_num: "-1.5" }])]).coverage(
         "pseudo",
@@ -1223,6 +1373,7 @@ describe("MangaNato identity and complete search", () => {
     await expect(clientFor([response([], 0, 1)]).coverage("pseudo")).rejects.toThrow(
       /inconsistent/,
     );
+
     for (const numbers of [
       [1, 2],
       [1, null],
@@ -1235,12 +1386,14 @@ describe("MangaNato identity and complete search", () => {
         ]).coverage("pseudo"),
       ).rejects.toThrow(/conflicting/);
     }
+
     await expect(
       clientFor([
         response([{ chapter_slug: "same", chapter_num: 1 }], 0, 2),
         response([{ chapter_slug: "same", chapter_num: 1 }], 1, 2),
       ]).coverage("pseudo"),
     ).rejects.toThrow(/repeated.*across pages/);
+
     for (const later of [1, -1]) {
       await expect(
         clientFor([
@@ -1303,6 +1456,7 @@ describe("MangaNato identity and complete search", () => {
       ).rejects.toThrow(/pagination/);
       expect(catalog).toEqual([]);
     }
+
     await expect(
       clientFor([page(["one"], "/search/story/pseudo?page=2")], 1).search("pseudo"),
     ).rejects.toThrow(/Incomplete/);
@@ -1313,14 +1467,17 @@ describe("MangaNato identity and complete search", () => {
 
   it("distinguishes a real empty result from access restrictions and malformed responses", async () => {
     expect(await clientFor([page([])]).search("pseudo")).toEqual([]);
+
     for (const response of [
       { status: 200, challenged: true, data: null },
       { status: 403, challenged: false, data: null },
       { status: 429, challenged: false, data: null },
-    ])
+    ]) {
       await expect(clientFor([response]).search("pseudo")).rejects.toBeInstanceOf(
         ManganatoBlockedError,
       );
+    }
+
     await expect(
       clientFor([{ status: 200, challenged: false, data: { items: [], next: null } }]).search(
         "pseudo",
@@ -1328,7 +1485,7 @@ describe("MangaNato identity and complete search", () => {
     ).rejects.toThrow();
   });
 
-  it.each([
+  it.each<JsonValue | Error>([
     { status: 200, challenged: true, data: null },
     { status: 403, challenged: false, data: null },
     { status: 429, challenged: false, data: null },
@@ -1339,6 +1496,7 @@ describe("MangaNato identity and complete search", () => {
     async (blocked) => {
       const catalog: JsonObject[] = [];
       const waits: string[] = [];
+
       const client = clientFor(
         [page(["one"], "/search/story/pseudo?page=2"), blocked, blocked, page(["two"])],
         5,
@@ -1352,6 +1510,7 @@ describe("MangaNato identity and complete search", () => {
           },
         },
       );
+
       expect((await client.search("pseudo")).map((hit) => hit.id)).toEqual(["one", "two"]);
       expect(waits).toHaveLength(2);
       expect(waits.every((message) => message.includes("page=2"))).toBe(true);
@@ -1378,7 +1537,7 @@ describe("MangaNato identity and complete search", () => {
     async (response) => {
       const client = clientFor([], 5, {
         execute: (script) =>
-          runInNewContext(script, {
+          runPageScript(script, {
             location: { origin: "https://www.manganato.gg" },
             AbortSignal,
             fetch: async () => ({
@@ -1390,6 +1549,7 @@ describe("MangaNato identity and complete search", () => {
             }),
           }),
       });
+
       await expect(client.coverage("target")).rejects.toBeInstanceOf(ManganatoBlockedError);
     },
   );
@@ -1399,11 +1559,14 @@ describe("MangaNato identity and complete search", () => {
     async (stage) => {
       const client = clientFor([], 5, {
         execute: (script) =>
-          runInNewContext(script, {
+          runPageScript(script, {
             location: { origin: "https://www.manganato.gg" },
             AbortSignal: { timeout: () => AbortSignal.abort() },
             fetch: async () => {
-              if (stage === "fetch") throw new Error("Aborted");
+              if (stage === "fetch") {
+                throw new Error("Aborted");
+              }
+
               return {
                 status: 200,
                 headers: new Headers(),
@@ -1414,10 +1577,11 @@ describe("MangaNato identity and complete search", () => {
             },
           }),
       });
-      await expect(client.coverage("target")).rejects.toMatchObject({
-        reason: "timeout",
-        message: expect.stringContaining("request timed out"),
-      });
+
+      const failure = client.coverage("target");
+
+      await expect(failure).rejects.toMatchObject({ reason: "timeout" });
+      await expect(failure).rejects.toThrow("request timed out");
     },
   );
 });

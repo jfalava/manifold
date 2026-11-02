@@ -4,10 +4,12 @@ import {
   shouldAdvanceProgress,
   toRegistryEntry,
   type EntryRow,
-  type ProviderRow,
+  type StoredProviderRow,
 } from "../src/sync-rows.js";
 
-const baseRow = (overrides: Partial<EntryRow> = {}): EntryRow => ({
+const baseRow = (
+  overrides: Partial<StoredProviderRow<EntryRow>> = {},
+): StoredProviderRow<EntryRow> => ({
   id: "ae13e11b-9e53-45db-8d72-18b7c07bb377",
   provider: "anilist",
   provider_id: "123",
@@ -58,8 +60,8 @@ describe("toRegistryEntry", () => {
         updated_at: 1,
       },
       {
-        // SAFETY: intentional corrupt historical provider for sanitize coverage
-        provider: "unknown" as ProviderRow["provider"],
+        // Intentional corrupt historical provider for sanitize coverage.
+        provider: "unknown",
         external_id: "z",
         title: null,
         source_name: null,
@@ -81,8 +83,8 @@ describe("toRegistryEntry", () => {
   it("coerces empty required strings so encode never fails", () => {
     const entry = toRegistryEntry(
       baseRow({
-        // SAFETY: Intentional corrupt provider value in test fixture to verify fallback to "local".
-        provider: "not-a-provider" as EntryRow["provider"],
+        // Intentional corrupt provider value to verify fallback to "local".
+        provider: "not-a-provider",
         provider_id: "  ",
         title: "",
       }),

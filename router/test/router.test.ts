@@ -21,17 +21,14 @@ interface TestEnv {
 }
 
 function makeEnv(): TestEnv {
-  const calls = {
-    // SAFETY: HTTP value is the expected RecordedRequest[] after the preceding check
-    SYNC_API: [] as RecordedRequest[],
-    // SAFETY: HTTP value is the expected RecordedRequest[] after the preceding check
-    DOCS_WORKER: [] as RecordedRequest[],
-    // SAFETY: HTTP value is the expected RecordedRequest[] after the preceding check
-    ADMIN: [] as RecordedRequest[],
+  const calls: TestEnv["calls"] = {
+    SYNC_API: [],
+    DOCS_WORKER: [],
+    ADMIN: [],
   };
 
   const stub = (binding: BindingName): Fetcher => {
-    const fetcher = {
+    const fetcher: Fetcher = {
       fetch: async (input: Request | URL | string, init?: RequestInit) => {
         const request =
           input instanceof Request
@@ -53,8 +50,7 @@ function makeEnv(): TestEnv {
       },
     };
 
-    // SAFETY: test double supplies the Fetcher.fetch surface the router calls
-    return fetcher as Fetcher;
+    return fetcher;
   };
 
   return {

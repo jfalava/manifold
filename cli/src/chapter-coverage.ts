@@ -67,21 +67,25 @@ export const mostCovered = <T extends { readonly coverage?: ChapterCoverage }>(
     return candidates;
   }
 
-  if (candidates.some((candidate) => candidate.coverage?.unit !== "chapters")) {
+  const covered = candidates.flatMap((candidate) =>
+    candidate.coverage?.unit === "chapters" ? [{ candidate, coverage: candidate.coverage }] : [],
+  );
+
+  if (covered.length !== candidates.length) {
     return [];
   }
 
-  const maximum = Math.max(...candidates.map((candidate) => candidate.coverage!.count));
-  const required = new Set(candidates.flatMap((candidate) => candidate.coverage!.numbers));
+  const maximum = Math.max(...covered.map(({ coverage }) => coverage.count));
+  const required = new Set(covered.flatMap(({ coverage }) => coverage.numbers));
 
-  return candidates.filter((candidate) => {
-    if (candidate.coverage!.count !== maximum) {
-      return false;
+  return covered.flatMap(({ candidate, coverage }) => {
+    if (coverage.count !== maximum) {
+      return [];
     }
 
-    const positions = new Set(candidate.coverage!.numbers);
+    const positions = new Set(coverage.numbers);
 
-    return [...required].every((position) => positions.has(position));
+    return [...required].every((position) => positions.has(position)) ? [candidate] : [];
   });
 };
 

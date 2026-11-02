@@ -2,25 +2,23 @@ import { deflateRawSync } from "node:zlib";
 
 import { describe, expect, test } from "vitest";
 
-import {
-  assetNameFor,
-  checksumFromFile,
-  downloadBytes,
-  executableNameFor,
-  executablePath,
-  extractZipBinary,
-  isNewerVersion,
-  latestCliRelease,
-  parseCliVersion,
-} from "../src/upgrade";
+// Leaf modules rather than the `../src/upgrade` barrel: the barrel re-exports through the `@/`
+// path alias, which oxlint's type-aware pass does not resolve for test files.
+import { extractZipBinary } from "../src/upgrade/archive";
+import { checksumFromFile, downloadBytes } from "../src/upgrade/install";
+import { assetNameFor, executableNameFor, executablePath } from "../src/upgrade/platform";
+import { latestCliRelease } from "../src/upgrade/release";
+import { isNewerVersion, parseCliVersion } from "../src/upgrade/version";
 
 const appendBytes = (parts: ReadonlyArray<Uint8Array>): Uint8Array => {
   const result = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
   let offset = 0;
+
   for (const part of parts) {
     result.set(part, offset);
     offset += part.length;
   }
+
   return result;
 };
 
@@ -57,6 +55,7 @@ const makeZip = (fileName: string, contents: string): Uint8Array => {
   endView.setUint16(10, 1, true);
   endView.setUint32(12, central.length, true);
   endView.setUint32(16, local.length, true);
+
   return appendBytes([local, central, end]);
 };
 
@@ -104,11 +103,14 @@ describe("upgrade command helpers", () => {
 
   test("retries transient download failures", async () => {
     let attempts = 0;
+
     const fetcher = async () => {
       attempts += 1;
+
       if (attempts < 3) {
         throw new Error("The socket connection was closed unexpectedly.");
       }
+
       return new Response(new Uint8Array([1, 2, 3]));
     };
 
@@ -120,6 +122,7 @@ describe("upgrade command helpers", () => {
 
   test("selects a stable CLI release and its zip assets", async () => {
     const asset = "manifold-cli-linux-x64.zip";
+
     const fetcher = async () =>
       new Response(
         JSON.stringify([

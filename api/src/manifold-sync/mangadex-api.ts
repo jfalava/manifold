@@ -192,16 +192,18 @@ const mangaDexLibraryEffect = (host: SyncHost, status?: string) =>
           Effect.map((batch) => {
             const byId = new Map(Object.entries(batch));
 
-            return base.map((row) =>
-              byId.has(row.mangaDexId)
+            return base.map((row) => {
+              const rated = byId.get(row.mangaDexId);
+
+              return rated
                 ? {
                     ...row,
                     hasRating: true as const,
-                    rating: byId.get(row.mangaDexId)!.rating,
-                    ratingCreatedAt: byId.get(row.mangaDexId)!.createdAt,
+                    rating: rated.rating,
+                    ratingCreatedAt: rated.createdAt,
                   }
-                : { ...row, hasRating: false as const },
-            );
+                : { ...row, hasRating: false as const };
+            });
           }),
           Effect.orElseSucceed(() => base),
         );

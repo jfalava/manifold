@@ -48,14 +48,16 @@ const loadRegistrySearchTitlesEffect = (
     const titles = [row.title];
     const anilistId = providerIdOf(row, "anilist");
 
-    if (anilistId && options.anilistToken) {
+    const { anilistToken, mangaDexTitles } = options;
+
+    if (anilistId && anilistToken) {
       const parsed = Number(anilistId);
 
       if (Number.isInteger(parsed) && parsed > 0) {
         options.onProgress?.("Loading AniList aliases (20s timeout)");
         yield* Effect.tryPromise({
           try: (signal) =>
-            (options.anilistTitles ?? fetchAniListTitles)(options.anilistToken!, parsed, signal),
+            (options.anilistTitles ?? fetchAniListTitles)(anilistToken, parsed, signal),
           catch: (cause) => cliError(errorMessage(cause)),
         }).pipe(
           Effect.timeout("20 seconds"),
@@ -91,9 +93,9 @@ const loadRegistrySearchTitlesEffect = (
     return yield* Effect.gen(function* () {
       const signal = yield* Effect.abortSignal;
 
-      if (options.mangaDexTitles) {
+      if (mangaDexTitles) {
         return yield* Effect.tryPromise({
-          try: () => options.mangaDexTitles!(mangadexId, signal),
+          try: () => mangaDexTitles(mangadexId, signal),
           catch: (cause) => cliError(errorMessage(cause)),
         });
       }

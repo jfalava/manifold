@@ -23,6 +23,7 @@ function initPageActions(root: HTMLElement): () => void {
     return () => undefined;
   }
 
+  const markdownUrl: string = mdUrl;
   let resetTimer: number | undefined;
 
   function showState(state: "copied" | "error") {
@@ -51,7 +52,7 @@ function initPageActions(root: HTMLElement): () => void {
 
   async function handleCopyPage() {
     try {
-      const res = await fetch(mdUrl!);
+      const res = await fetch(markdownUrl);
 
       if (!res.ok) {
         showState("error");

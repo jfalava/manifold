@@ -10,6 +10,7 @@ import {
   antiSlopEffectRules,
   antiSlopJsPlugins,
   antiSlopRules,
+  strictRules,
 } from "../oxlint.config.ts";
 
 const MOUNT_PATH = "/admin/";
@@ -184,6 +185,7 @@ export default defineConfig({
       // Side-effect-only stylesheet imports are the standard Vite pattern.
       "import/no-unassigned-import": ["warn", { allow: ["**/*.css"] }],
       ...antiSlopRules,
+      ...strictRules,
       ...antiSlopEffectRules,
     },
   },

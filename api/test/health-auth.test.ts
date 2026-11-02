@@ -2,14 +2,13 @@
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 
-import type { Env } from "../src/types";
+import { testEnv } from "./env-fixture";
 import { handleAuth } from "../src/routes/health-auth";
 
 const devicePage = async (): Promise<string> => {
   const effect = handleAuth({
     request: new Request("https://api.manifold.test/v1/auth/anilist/device"),
-    // SAFETY: the device branch never touches env; it only renders the page.
-    env: {} as Env,
+    env: testEnv(),
     url: new URL("https://api.manifold.test/v1/auth/anilist/device"),
     path: ["v1", "auth", "anilist", "device"],
   });

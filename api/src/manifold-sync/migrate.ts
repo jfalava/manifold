@@ -1,7 +1,7 @@
-import type { SyncHost } from "./host";
+import type { SqlHost } from "./host";
 import { now } from "./constants";
 
-export function migrate(host: SyncHost): void {
+export function migrate(host: SqlHost): void {
   host.ctx.storage.sql.exec(`
     CREATE TABLE IF NOT EXISTS canonical_entries (
       id TEXT PRIMARY KEY,
@@ -188,7 +188,7 @@ export function migrate(host: SyncHost): void {
 }
 
 /** Also run inside restore's transaction: old snapshots must not revive a retired source. */
-export function retireComix(host: SyncHost): void {
+export function retireComix(host: SqlHost): void {
   // Keep UUIDs, list state, numeric progress, event IDs, and pending external
   // work. Historical keys are opaque; hex preserves identity without exposing
   // a retired source namespace or confusing it with a live MangaDex chapter.
@@ -206,7 +206,7 @@ export function retireComix(host: SyncHost): void {
   `);
 }
 
-export function migrateLegacyOutbox(host: SyncHost): void {
+export function migrateLegacyOutbox(host: SqlHost): void {
   const legacy = host.ctx.storage.sql
     .exec<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_outbox'",

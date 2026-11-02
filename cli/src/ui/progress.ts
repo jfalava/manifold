@@ -91,7 +91,7 @@ export class LiveProgress {
     this.suspended = false;
 
     if (this.container === undefined) {
-      this.container = new cliProgress.MultiBar({
+      const container = new cliProgress.MultiBar({
         stream: this.stream,
         format: "{line}",
         fps: 5,
@@ -103,12 +103,15 @@ export class LiveProgress {
         stopOnComplete: false,
         gracefulExit: false,
       });
+
+      this.container = container;
+
       const pendingLines: string[] = [];
-      this.container.on("redraw-post", () => {
+      container.on("redraw-post", () => {
         this.renderedLines = [...pendingLines];
         this.renderedColumns = Math.max(1, this.stream.columns ?? 80);
       });
-      this.container.on("stop-pre-clear", () => {
+      container.on("stop-pre-clear", () => {
         const columns = Math.max(1, this.stream.columns ?? 80);
 
         if (columns >= this.renderedColumns) {
@@ -139,7 +142,7 @@ export class LiveProgress {
         }
       });
       this.bars = visible.map((line, index) =>
-        this.container!.create(
+        container.create(
           1,
           0,
           { line },
@@ -166,9 +169,10 @@ export class LiveProgress {
           },
         ),
       );
-      this.container.update();
+      container.update();
     } else {
-      visible.forEach((line, index) => this.bars[index]!.update(0, { line }));
+      // pause() resets bars whenever the row count changes, so every visible line has a bar.
+      visible.forEach((line, index) => this.bars[index]?.update(0, { line }));
     }
   }
 

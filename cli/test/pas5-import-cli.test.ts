@@ -1,12 +1,34 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import {
+  arrayAt,
+  findLine,
+  objectsAt,
+  parseJsonObject,
+  readReport,
+  required,
+} from "./support/report";
+
+/** The fixture's final `RESULT {writes,rows}` line. */
+const registryResult = (stdout: string) => {
+  const line = required(
+    stdout.split("\n").find((candidate) => candidate.startsWith("RESULT ")),
+    "RESULT line",
+  );
+
+  const registry = parseJsonObject(line.slice("RESULT ".length));
+
+  return { writes: objectsAt(registry, "writes"), rows: arrayAt(registry, "rows") };
+};
+
 const run = (flags: string[] = [], scenario = "normal") => {
   const directory = mkdtempSync(join(tmpdir(), "manifold-pas5-import-"));
   const report = join(directory, "report.jsonl");
+
   try {
     const result = spawnSync(
       "bun",
@@ -106,24 +128,13 @@ const run = (flags: string[] = [], scenario = "normal") => {
       ],
       { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 20_000 },
     );
-    const readReport = (path: string) =>
-      existsSync(path)
-        ? readFileSync(path, "utf8")
-            .trim()
-            .split("\n")
-            .map((line) => JSON.parse(line))
-        : [];
+
     return {
       ...result,
       report: readReport(report),
       repeat: readReport(join(directory, "repeat.jsonl")),
       permissions: existsSync(report) ? statSync(report).mode & 0o777 : undefined,
-      registry: JSON.parse(
-        result.stdout
-          .split("\n")
-          .find((line) => line.startsWith("RESULT "))!
-          .slice(7),
-      ),
+      registry: registryResult(result.stdout),
     };
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -172,13 +183,13 @@ describe("registry import-pas5", () => {
       outcome: "unchanged",
       missingLinks: [],
     });
-    expect(result.repeat.find((item) => item.event === "summary").linksWritten).toBe(0);
+    expect(findLine(result.repeat, (item) => item.event === "summary").linksWritten).toBe(0);
   });
 
   it("can resolve an untracked library through an existing exact native link", () => {
     const result = run(["--apply"], "native-anchor");
     expect(result.status, result.stderr).toBe(0);
-    expect(result.registry.writes.map((write: { provider: string }) => write.provider)).toEqual([
+    expect(result.registry.writes.map((write) => write.provider)).toEqual([
       "kagane",
       "manganato",
       "xcomic",
@@ -211,7 +222,7 @@ describe("registry import-pas5", () => {
     const result = run(["--apply"], "unresolved");
     expect(result.status, result.stderr).toBe(0);
     expect(result.registry.writes).toEqual([]);
-    expect(result.report.find((item) => item.event === "entry").outcome).toBe("unresolved");
+    expect(findLine(result.report, (item) => item.event === "entry").outcome).toBe("unresolved");
   });
 
   it("deduplicates writes when two library entries reference the same bindings", () => {
@@ -232,9 +243,7 @@ describe("registry import-pas5", () => {
   it("reports partial success if the server rejects a later binding race", () => {
     const result = run(["--apply"], "race");
     expect(result.status).toBe(1);
-    expect(result.registry.writes.map((write: { provider: string }) => write.provider)).toEqual([
-      "mangadex",
-    ]);
+    expect(result.registry.writes.map((write) => write.provider)).toEqual(["mangadex"]);
     expect(result.report.find((item) => item.event === "entry")).toMatchObject({
       outcome: "error",
       error: "Provider link conflict: raced",

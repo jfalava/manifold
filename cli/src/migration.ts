@@ -297,11 +297,13 @@ const runMigrationEffect = (
 
         let chaptersToMark = 0;
 
-        if (options.includeProgress && entry.progress !== undefined && entry.progress >= 1) {
+        const { progress } = entry;
+
+        if (options.includeProgress && progress !== undefined && progress >= 1) {
           yield* sleep(MD_REQUEST_INTERVAL_MS);
 
           const chapterIds = yield* withMangaDexClient(tokenManager, (client) =>
-            chapterIdsUpToEffect((id) => client.getChapters(id), match.manga.id, entry.progress!),
+            chapterIdsUpToEffect((id) => client.getChapters(id), match.manga.id, progress),
           );
 
           chaptersToMark = chapterIds.length;

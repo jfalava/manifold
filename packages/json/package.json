@@ -9,7 +9,7 @@
   "scripts": {
     "check": "oxlint --fix",
     "format": "oxfmt",
-    "lint": "oxlint",
+    "lint": "oxlint --report-unused-disable-directives-severity=error",
     "test": "vitest run",
     "typecheck": "tsrs --noEmit"
   },

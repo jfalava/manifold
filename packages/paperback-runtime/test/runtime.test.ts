@@ -49,8 +49,7 @@ const installApplication = (
       scheduleRequest: async (request: ScheduledRequest) => {
         requests.push(request);
         const outcome = respond(request, index++);
-        // SAFETY: TextEncoder always returns a Uint8Array backed by an ArrayBuffer here.
-        const body = new TextEncoder().encode(JSON.stringify(outcome.body)).buffer as ArrayBuffer;
+        const body = new Uint8Array(new TextEncoder().encode(JSON.stringify(outcome.body))).buffer;
 
         return [{ status: outcome.status, headers: {} }, body];
       },

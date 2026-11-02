@@ -9,11 +9,10 @@ import { Code as AstroCode } from "astro:components";
 import { defaultCodeTransformers } from "@cloudflare/nimbus-docs";
 
 type Props = Parameters<typeof AstroCode>[0];
-// SAFETY: value matches Props; at this call site
-const rawProps = Astro.props as Props;
+const rawProps: Props = Astro.props;
 const usesNimbusDefaultThemes =
   !("theme" in rawProps) && !("themes" in rawProps);
-const themed = usesNimbusDefaultThemes
+const themed: Props = usesNimbusDefaultThemes
   ? {
       ...rawProps,
       themes: { light: "github-light", dark: "github-dark" },
@@ -21,18 +20,12 @@ const themed = usesNimbusDefaultThemes
     }
   : rawProps;
 const userTransformers = themed.transformers ?? [];
-const props = {
+const props: Props = {
   ...themed,
   transformers: defaultCodeTransformers({
     beforeTitleTransformers: userTransformers,
   }),
 };
-// One boundary cast back to Astro's own `<Code>` props. Everything above is
-// runtime-valid; the only type friction is nominal — nimbus-docs and Astro
-// can resolve different `@shikijs/types` copies (e.g. 4.2.x vs 4.1.x), so the
-// `ShikiTransformer`/`ThemePresets` shapes differ on paper while matching at
-// runtime. `Astro.props` was already `as Props`; re-asserting here keeps the
-// component compiling regardless of which shiki types version dedupes in.
 ---
 
-<AstroCode {...(props as Props)} />
+<AstroCode {...props} />

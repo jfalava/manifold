@@ -2,11 +2,15 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Match } from "effect";
 import { describe, expect, it } from "vitest";
+
+import { oscPayloads, parseJsonLines } from "./support/report";
 
 const run = (scenario = "matched", flags: string[] = [], terminal = "tty") => {
   const directory = mkdtempSync(join(tmpdir(), "manganato-status-"));
   const report = join(directory, "report.jsonl");
+
   try {
     const result = spawnSync(
       "bun",
@@ -60,19 +64,18 @@ const run = (scenario = "matched", flags: string[] = [], terminal = "tty") => {
       ],
       { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 15_000 },
     );
+
     return {
       ...result,
-      journal: readFileSync(report, "utf8")
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line)),
-      titles: [...result.stderr.matchAll(/\x1b\]2;([^\x1b]*)\x1b\\/gu)].map((match) => match[1]),
-      reports: [...result.stderr.matchAll(/\x1b\]7501;([^\x1b]*)\x1b\\/gu)].map((match) =>
+      journal: parseJsonLines(readFileSync(report, "utf8")),
+      titles: oscPayloads(result.stderr, "2"),
+      reports: oscPayloads(result.stderr, "7501").map((payload) =>
         Object.fromEntries(
-          match[1]!.split(":").map((field) => {
+          payload.split(":").map((field) => {
             const separator = field.indexOf("=");
             const key = field.slice(0, separator);
             const value = field.slice(separator + 1);
+
             return [
               key,
               key === "title" || key === "msg"
@@ -116,7 +119,10 @@ describe("registry manganato program status", () => {
     ).toEqual(["matched", "matched", "matched"]);
     expect(result.stdout.match(/WRITE /g) ?? []).toHaveLength(apply ? 3 : 0);
     expect(result.stdout).not.toContain("\x1b]7501;");
-    if (apply) expect(result.stdout).toContain('"onConflict":"reject"');
+
+    if (apply) {
+      expect(result.stdout).toContain('"onConflict":"reject"');
+    }
   });
 
   it.each(["challenge", "row-error", "unmatched"])(
@@ -127,11 +133,11 @@ describe("registry manganato program status", () => {
       expect(result.reports.at(-1)?.state).toBe(scenario === "unmatched" ? "done" : "error");
       expect(result.reports.some((report) => report.state === "blocked")).toBe(false);
       expect(result.reports.at(-1)?.msg).toContain(
-        scenario === "unmatched"
-          ? "3 unmatched"
-          : scenario === "challenge"
-            ? "1 challenged"
-            : "3 errors",
+        Match.value(scenario).pipe(
+          Match.when("unmatched", () => "3 unmatched"),
+          Match.when("challenge", () => "1 challenged"),
+          Match.orElse(() => "3 errors"),
+        ),
       );
     },
   );

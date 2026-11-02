@@ -2,7 +2,10 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Match } from "effect";
 import { describe, expect, it } from "vitest";
+
+import { findLine, objectAt, objectsAt, parseJsonLines, stringAt } from "./support/report";
 
 const run = (
   failure:
@@ -60,6 +63,7 @@ const run = (
   const first = join(directory, "first.jsonl");
   const second = join(directory, "second.jsonl");
   const third = join(directory, "third.jsonl");
+
   try {
     const result = spawnSync(
       "bun",
@@ -309,24 +313,14 @@ const run = (
       ],
       { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 20_000 },
     );
+
     expect(result.status, result.stderr + result.stdout).toBe(0);
+
     return {
       ...result,
-      first: readFileSync(first, "utf8")
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line)),
-      second: readFileSync(second, "utf8")
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line)),
-      third:
-        failure === "budget"
-          ? readFileSync(third, "utf8")
-              .trim()
-              .split("\n")
-              .map((line) => JSON.parse(line))
-          : [],
+      first: parseJsonLines(readFileSync(first, "utf8")),
+      second: parseJsonLines(readFileSync(second, "utf8")),
+      third: failure === "budget" ? parseJsonLines(readFileSync(third, "utf8")) : [],
     };
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -346,6 +340,7 @@ describe("registry manganato resume", () => {
       const directory = mkdtempSync(join(tmpdir(), "manganato-reviewed-"));
       const previous = join(directory, "previous.jsonl");
       const report = join(directory, "report.jsonl");
+
       try {
         const result = spawnSync(
           "bun",
@@ -448,13 +443,13 @@ describe("registry manganato resume", () => {
           ],
           { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 15_000 },
         );
+
         expect(result.status, result.stderr + result.stdout).toBe(
           preferredFailure === "none" ? 0 : 1,
         );
-        const records = readFileSync(report, "utf8")
-          .trim()
-          .split("\n")
-          .map((line) => JSON.parse(line));
+
+        const records = parseJsonLines(readFileSync(report, "utf8"));
+
         expect(
           records
             .filter((line) => line.event === "entry")
@@ -473,11 +468,11 @@ describe("registry manganato resume", () => {
           ["210954", "matched", "im-still-looking-up-at-you"],
           [
             "153502",
-            preferredFailure === "none"
-              ? "matched"
-              : preferredFailure === "owned"
-                ? "conflicts"
-                : "errors",
+            Match.value(preferredFailure).pipe(
+              Match.when("none", () => "matched"),
+              Match.when("owned", () => "conflicts"),
+              Match.orElse(() => "errors"),
+            ),
             preferredFailure === "none" || preferredFailure === "owned" ? "quinpath-romance" : null,
           ],
           ["130872", "matched", "fuzoroi-no-renri"],
@@ -519,27 +514,29 @@ describe("registry manganato resume", () => {
           errors: preferredFailure === "wrong-title" || preferredFailure === "unreadable" ? 1 : 0,
           conflicts: preferredFailure === "owned" ? 1 : 0,
         });
-        expect(
-          records.find((line) => line.event === "entry" && line.entryId === "130872"),
-        ).toMatchObject({
+
+        const fuzoroi = findLine(
+          records,
+          (line) => line.event === "entry" && line.entryId === "130872",
+        );
+
+        expect(fuzoroi).toMatchObject({
           candidateIds: [
             "fuzoroi-no-renri-side-stories",
             "rationalization-of-irregularities",
             "fuzoroi-no-renri",
           ],
           selectionPolicy: 11,
-          note: expect.stringContaining("user-selected listing"),
         });
+        expect(stringAt(fuzoroi, "note")).toContain("user-selected listing");
         expect(
-          records.find((line) => line.event === "entry" && line.entryId === "139415")?.candidates,
-        ).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              id: "savage-hero",
-              evidence: expect.objectContaining({ userConfirmed: true, author: "missing" }),
-            }),
-          ]),
-        );
+          objectsAt(
+            findLine(records, (line) => line.event === "entry" && line.entryId === "139415"),
+            "candidates",
+          )
+            .filter((candidate) => candidate.id === "savage-hero")
+            .map((candidate) => candidate.evidence),
+        ).toContainEqual(expect.objectContaining({ userConfirmed: true, author: "missing" }));
       } finally {
         rmSync(directory, { recursive: true, force: true });
       }
@@ -731,25 +728,27 @@ describe("registry manganato resume", () => {
 
   it("tries the canonical romanized full title when the complete registry-title search misses", () => {
     const result = run("fulltitleromanized");
-    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+    const entry = findLine(result.first, (line) => line.event === "entry");
+
+    expect(entry).toMatchObject({
       outcome: "matched",
       selectedId: "two",
-      discovery: {
-        usefulQuery: "kimi to tsuzuru utakata",
-        attempts: expect.arrayContaining([
-          expect.objectContaining({
-            query: "the summer you were there",
-            status: "complete",
-            candidateIds: [],
-          }),
-          expect.objectContaining({
-            query: "kimi to tsuzuru utakata",
-            status: "complete",
-            candidateIds: ["one", "two"],
-          }),
-        ]),
-      },
+      discovery: { usefulQuery: "kimi to tsuzuru utakata" },
     });
+    expect(objectAt(entry, "discovery").attempts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          query: "the summer you were there",
+          status: "complete",
+          candidateIds: [],
+        }),
+        expect.objectContaining({
+          query: "kimi to tsuzuru utakata",
+          status: "complete",
+          candidateIds: ["one", "two"],
+        }),
+      ]),
+    );
   });
 
   it.each([
@@ -821,10 +820,14 @@ describe("registry manganato resume", () => {
         selectedId,
         candidateIds: ["one", "two"],
       });
+
       if (mode === "fulltitleknown") {
-        expect(result.second.find((line) => line.event === "entry").discovery.usefulQuery).toBe(
-          "the summer you were there",
-        );
+        expect(
+          objectAt(
+            findLine(result.second, (line) => line.event === "entry"),
+            "discovery",
+          ).usefulQuery,
+        ).toBe("the summer you were there");
       } else {
         expect(result.stdout).not.toContain("SEARCH 1 the_summer_you_were_there");
       }
@@ -898,7 +901,7 @@ describe("registry manganato resume", () => {
     (acceptance) => {
       const result = run("missingactive", acceptance);
       const report = acceptance === "resume" ? result.second : result.first;
-      const entry = report.find((line) => line.event === "entry");
+      const entry = findLine(report, (line) => line.event === "entry");
       expect(entry).toMatchObject({
         outcome: "matched",
         selectedId: "two",
@@ -911,7 +914,7 @@ describe("registry manganato resume", () => {
         recommendation: { requiresOptIn: true, acceptEligible: true },
       });
       expect(
-        entry.candidates.find((candidate: { id: string }) => candidate.id === "two").evidence,
+        findLine(objectsAt(entry, "candidates"), (candidate) => candidate.id === "two").evidence,
       ).toMatchObject({
         author: "missing",
         eligible: false,
@@ -960,14 +963,18 @@ describe("registry manganato resume", () => {
         report.findIndex((line) => line.event === "entry"),
       );
       expect(result.stdout).toContain("SELECTION");
-      if (acceptance === "dry-run") expect(result.stdout).not.toContain("WRITE");
-      else {
+
+      if (acceptance === "dry-run") {
+        expect(result.stdout).not.toContain("WRITE");
+      } else {
         expect(result.stdout).toContain("PREWRITE_DECISION");
         expect(result.stdout).toContain("WRITE");
         expect(result.stdout.indexOf("SELECTION")).toBeLessThan(result.stdout.indexOf("WRITE"));
       }
-      if (acceptance === "resume")
-        expect(result.first.find((line) => line.event === "entry").outcome).toBe("ambiguous");
+
+      if (acceptance === "resume") {
+        expect(findLine(result.first, (line) => line.event === "entry").outcome).toBe("ambiguous");
+      }
     },
   );
 
@@ -984,12 +991,14 @@ describe("registry manganato resume", () => {
 
   it("rejects an owned recommendation even with opt-in and apply", () => {
     const result = run("missingowned", "apply");
-    expect(result.first.find((line) => line.event === "entry")).toMatchObject({
+    const entry = findLine(result.first, (line) => line.event === "entry");
+
+    expect(entry).toMatchObject({
       outcome: "conflicts",
       selectedId: "two",
       acceptedRecommendation: true,
-      note: expect.stringContaining("already belongs to owner"),
     });
+    expect(stringAt(entry, "note")).toContain("already belongs to owner");
     expect(result.stdout).not.toContain("WRITE");
   });
 
@@ -1038,12 +1047,11 @@ describe("registry manganato resume", () => {
     (failure) => {
       const result = run(failure, "apply");
       expect(result.first.find((line) => line.event === "entry")).toMatchObject({
-        outcome:
-          failure === "missingcapped"
-            ? "deferred"
-            : failure === "missinginventory"
-              ? "errors"
-              : "ambiguous",
+        outcome: Match.value(failure).pipe(
+          Match.when("missingcapped", () => "deferred"),
+          Match.when("missinginventory", () => "errors"),
+          Match.orElse(() => "ambiguous"),
+        ),
         selectedId: null,
         recommendation: null,
       });
@@ -1281,7 +1289,9 @@ describe("registry manganato resume", () => {
       expect(result.stdout).toContain('"onConflict":"reject"');
       expect(result.stdout).toContain("BROWSER_CLOSED");
       expect(
-        result.first.some((line) => line.event === "progress" && line.message.includes("PAUSED")),
+        result.first.some(
+          (line) => line.event === "progress" && stringAt(line, "message").includes("PAUSED"),
+        ),
       ).toBe(true);
     },
   );
@@ -1306,12 +1316,14 @@ describe("registry manganato resume", () => {
       completed: false,
       counts: { errors: 1, challenged: 0 },
     });
-    expect(
-      result.first.find((line) => line.entryId === "pending" && line.event === "entry"),
-    ).toMatchObject({
-      outcome: "errors",
-      note: expect.stringContaining("request timed out"),
-    });
+
+    const pending = findLine(
+      result.first,
+      (line) => line.entryId === "pending" && line.event === "entry",
+    );
+
+    expect(pending).toMatchObject({ outcome: "errors" });
+    expect(stringAt(pending, "note")).toContain("request timed out");
   });
 
   it("retries ambiguous rows when their earlier author lookup failed", () => {

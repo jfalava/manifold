@@ -211,9 +211,9 @@ const resolveOAuthClientEffect = (
     const missingSecret = input.requireSecret && (!clientSecret || clientSecret.length === 0);
     const needsInteractive = wizard || missingId || missingSecret;
 
-    if (!needsInteractive) {
+    if (!needsInteractive && clientId) {
       return {
-        clientId: clientId!,
+        clientId,
         clientSecret: clientSecret && clientSecret.length > 0 ? clientSecret : undefined,
         prompted: false,
       };

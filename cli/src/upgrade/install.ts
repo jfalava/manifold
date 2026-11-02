@@ -33,7 +33,7 @@ const isRetryableNetworkError = (cause: unknown): boolean =>
   cause instanceof Error && /connection|fetch|network|socket|timeout/i.test(cause.message);
 
 const waitForRetry = (attempt: number): Promise<void> => {
-  const delay = RETRY_DELAYS_MS[attempt - 1] ?? RETRY_DELAYS_MS.at(-1)!;
+  const delay = RETRY_DELAYS_MS[attempt - 1] ?? RETRY_DELAYS_MS[1];
 
   return new Promise((resolve) => setTimeout(resolve, delay));
 };

@@ -53,8 +53,10 @@ function initFilter(root: HTMLElement): (() => void) | null {
     return null;
   }
 
+  const filterInput: HTMLInputElement = inputElement;
+
   function handleInput() {
-    const query = inputElement!.value.trim().toLowerCase();
+    const query = filterInput.value.trim().toLowerCase();
 
     if (!query) {
       resetFilter(root);
@@ -67,9 +69,9 @@ function initFilter(root: HTMLElement): (() => void) | null {
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
-      inputElement!.value = "";
+      filterInput.value = "";
       handleInput();
-      inputElement!.blur();
+      filterInput.blur();
     }
   }
 
@@ -256,11 +258,10 @@ function initPersistence(root: HTMLElement): (() => void) | null {
       return;
     }
 
-    // SAFETY: DOM query returns the expected element type in this document
-    const active = document.activeElement as HTMLElement | null;
+    const active = document.activeElement;
 
     if (
-      active &&
+      active instanceof HTMLElement &&
       (active.tagName === "INPUT" ||
         active.tagName === "TEXTAREA" ||
         active.isContentEditable)

@@ -9,7 +9,7 @@
     "check": "vp check --fix",
     "dev": "vp dev",
     "format": "vp fmt",
-    "lint": "vp lint",
+    "lint": "vp lint --report-unused-disable-directives-severity=error",
     "preview": "vp preview",
     "serve": "vp preview",
     "test": "bun test tests",

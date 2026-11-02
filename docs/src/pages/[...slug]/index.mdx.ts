@@ -38,8 +38,7 @@ export async function getStaticPaths() {
       params: {
         slug: item.entry.id === "index" ? undefined : item.entry.id,
       },
-      // SAFETY: value matches SlugProps, at this call site
-      props: { item } as SlugProps,
+      props: { item } satisfies SlugProps,
     }));
 }
 

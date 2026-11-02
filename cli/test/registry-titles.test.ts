@@ -17,6 +17,7 @@ describe("registry search aliases", () => {
         { provider: "mangadex", externalId: "md-1" },
       ],
     };
+
     expect(providerIdOf(row, "anilist")).toBe("123");
     expect(providerIdOf(row, "kagane")).toBeUndefined();
   });
@@ -44,6 +45,7 @@ describe("registry search aliases", () => {
       },
       { anilistToken: "token", anilistTitles: anilistFixtureTitles },
     );
+
     expect(titles).toEqual([
       "Tonari no Uchuubito ga Kowai",
       "My Neighbor Furi-san is Scary",
@@ -60,24 +62,30 @@ describe("registry search aliases", () => {
       {
         mangaDexTitles: async (id) => {
           expect(id).toBe("md-1");
+
           return ["My Neighbor Furi-san is Scary", "Tonari no Furi-san ga Tonikaku Kowai"];
         },
       },
     );
+
     expect(titles).toContain("My Neighbor Furi-san is Scary");
   });
 
   it("cancels stalled alias lookups after 20s and preserves fallback titles", async () => {
     vi.useFakeTimers();
+
     try {
       const signals: AbortSignal[] = [];
       vi.stubGlobal("fetch", (_input: RequestInfo | URL, init?: RequestInit) => {
         if (!init?.signal) {
           throw new Error("Alias fetch must support cancellation");
         }
+
         signals.push(init.signal);
-        return new Promise<Response>(() => {});
+
+        return new Promise<Response>(() => undefined);
       });
+
       const anilist = loadRegistrySearchTitles(
         {
           title: "Known title",
@@ -91,10 +99,12 @@ describe("registry search aliases", () => {
           mangaDexTitles: async () => ["Fallback alias"],
         },
       );
+
       const mangadex = loadRegistrySearchTitles({
         title: "Other title",
         providers: [{ provider: "mangadex", externalId: "md-2" }],
       });
+
       await vi.advanceTimersByTimeAsync(19_999);
       expect(signals.map((signal) => signal.aborted)).toEqual([false, false]);
       await vi.advanceTimersByTimeAsync(1);
