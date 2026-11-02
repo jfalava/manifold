@@ -69,7 +69,7 @@
     "inspect:realm": "node scripts/inspect-paperback-realm.mjs",
     "license:check": "uvx --from 'reuse[charset-normalizer]==6.2.0' reuse lint",
     "lint": "bun run lint:global",
-    "lint:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac lint && bun run license:check",
+    "lint:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac lint && bun scripts/check-lint-directives.ts && bun run license:check",
     "manifold": "bun run --cwd cli manifold",
     "plan": "bun run build:catalog && bun run --cwd iac plan",
     "plan:api": "bun run plan",

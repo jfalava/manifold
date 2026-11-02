@@ -13,7 +13,7 @@
     "check": "oxlint --fix",
     "dev": "paperback-cli serve --watch",
     "format": "oxfmt",
-    "lint": "oxlint",
+    "lint": "oxlint --report-unused-disable-directives-severity=error",
     "serve": "paperback-cli serve",
     "test": "vitest run",
     "typecheck": "tsrs --noEmit"
