@@ -21,15 +21,14 @@ import {
 } from "@/effect-kit";
 
 /** AniList's degraded limit is ~30 req/min; 2.5 s spacing keeps every CLI caller at ≤24 req/min. */
-const DEFAULT_REQUEST_INTERVAL_MS = 2_500;
+const REQUEST_INTERVAL_MS = 2_500;
 const MAX_RATE_LIMIT_RETRIES = 5;
 
-let requestIntervalMs = DEFAULT_REQUEST_INTERVAL_MS;
 let lastRequestAt = 0;
 
 const throttleEffect = (): Effect.Effect<void> =>
   Effect.gen(function* () {
-    const wait = requestIntervalMs - (epochMillisNow() - lastRequestAt);
+    const wait = REQUEST_INTERVAL_MS - (epochMillisNow() - lastRequestAt);
 
     if (wait > 0) {
       yield* sleep(wait);
@@ -103,15 +102,3 @@ export const aniListGraphqlEffect = (
 
     return data;
   });
-
-/** @internal Tests disable spacing between AniList requests and restore it afterwards. */
-export const __aniListRequestTest = {
-  disableThrottle: (): void => {
-    lastRequestAt = 0;
-    requestIntervalMs = 0;
-  },
-  restoreThrottle: (): void => {
-    lastRequestAt = 0;
-    requestIntervalMs = DEFAULT_REQUEST_INTERVAL_MS;
-  },
-};
