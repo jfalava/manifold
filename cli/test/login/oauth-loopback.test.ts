@@ -108,6 +108,7 @@ describe("loopback callback pages", () => {
   ])("renders the outcome for %s", async (query, status, title, outcome) => {
     const codes: string[] = [];
     const failures: string[] = [];
+
     const response = handleLoopbackRequest(
       new Request(`http://127.0.0.1/callback?${query}&error_description=private-detail`),
       {
@@ -118,6 +119,7 @@ describe("loopback callback pages", () => {
         onError: (error) => failures.push(error.message),
       },
     );
+
     expect(response.status).toBe(status);
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(response.headers.get("cache-control")).toBe("no-store");
@@ -129,6 +131,7 @@ describe("loopback callback pages", () => {
     expect(body).not.toContain("private-detail");
     expect(body).not.toContain("<script");
     expect(body.includes("You can close this tab.")).toBe(status === 200);
+
     if (outcome === "secret-code") {
       expect(codes).toEqual(["secret-code"]);
       expect(failures).toEqual([]);
@@ -150,10 +153,11 @@ describe("loopback callback pages", () => {
         pathname: "/callback",
         expectedState: "s",
         providerLabel: '<script>alert("provider")</script>',
-        onCode: () => {},
-        onError: () => {},
+        onCode: () => undefined,
+        onError: () => undefined,
       },
     );
+
     const body = await response.text();
     expect(body).toContain("&lt;script&gt;alert(&quot;provider&quot;)&lt;/script&gt;");
     expect(body).not.toContain("<script>");
@@ -164,6 +168,7 @@ describe("loopback callback pages", () => {
     ["POST", "/callback"],
   ])("ignores unrelated requests: %s %s", async (method, path) => {
     const outcomes: string[] = [];
+
     const response = handleLoopbackRequest(new Request(`http://127.0.0.1${path}`, { method }), {
       pathname: "/callback",
       expectedState: "s",
@@ -171,6 +176,7 @@ describe("loopback callback pages", () => {
       onCode: (code) => outcomes.push(code),
       onError: (error) => outcomes.push(error.message),
     });
+
     expect(response.status).toBe(404);
     expect(await response.text()).toBe("Not found");
     expect(outcomes).toEqual([]);
@@ -227,6 +233,7 @@ describe("loopback callback pages", () => {
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
+
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("All callback outcomes delivered");
   });

@@ -116,20 +116,22 @@ const authorKey = (value: string): string =>
 
 // User-confirmed full-author aliases. Do not generalize these spellings to other authors.
 const authorAliases = new Map(
-  [
-    ["Sano Yuto", "Yuuto Sano"],
-    ["Ohtsuki Ichika", "Ootsuki Ichika"],
-    ["Matsuena Shun", "Syun Matsuena"],
-    ["Maijo Ohtaro", "Maijou Outarou"],
-    ["Yoneshiro Kyou", "Kyo Yoneshiro"],
-    ["Atou Rie", "Ato Rie"],
-    ["Ookubo Atsushi", "Ohkubo Atsushi"],
-    ["Soumatou", "Somato"],
-    ["Naito Marcey", "Naitou Marcey"],
-    ["Kitou Sakeru", "Sakeru Kito"],
-    ["Ohno Tsutomu", "Tsutomu Oono"],
-    ["Necoco", "Nekoko"],
-  ].map(([primary, alias]) => [authorKey(alias!), authorKey(primary!)]),
+  (
+    [
+      ["Sano Yuto", "Yuuto Sano"],
+      ["Ohtsuki Ichika", "Ootsuki Ichika"],
+      ["Matsuena Shun", "Syun Matsuena"],
+      ["Maijo Ohtaro", "Maijou Outarou"],
+      ["Yoneshiro Kyou", "Kyo Yoneshiro"],
+      ["Atou Rie", "Ato Rie"],
+      ["Ookubo Atsushi", "Ohkubo Atsushi"],
+      ["Soumatou", "Somato"],
+      ["Naito Marcey", "Naitou Marcey"],
+      ["Kitou Sakeru", "Sakeru Kito"],
+      ["Ohno Tsutomu", "Tsutomu Oono"],
+      ["Necoco", "Nekoko"],
+    ] as const
+  ).map(([primary, alias]) => [authorKey(alias), authorKey(primary)]),
 );
 
 const missingAuthorKeys = new Set(["unknown", "updating", "n a"]);
@@ -581,50 +583,59 @@ export const selectManganatoCandidate = (
   }
 
   // MangaNato checks containment below, with its own reviewed active-listing exception.
-  if (plausible.some((item) => item.coverage?.unit !== "chapters")) {
+  const covered = plausible.flatMap((item) =>
+    item.coverage?.unit === "chapters" ? [{ item, coverage: item.coverage }] : [],
+  );
+
+  if (covered.length !== plausible.length) {
     return undefined;
   }
 
-  const maximum = Math.max(...plausible.map((item) => item.coverage!.count));
-  const winners = plausible.filter((item) => item.coverage!.count === maximum);
+  const maximum = Math.max(...covered.map(({ coverage }) => coverage.count));
+  const winners = covered.filter(({ coverage }) => coverage.count === maximum);
+  const [leader] = winners;
 
-  if (!winners.length || !winners[0]!.coverage!.count) {
+  if (!leader?.coverage.count) {
     return undefined;
   }
 
-  const positions = new Set(winners[0]!.coverage!.numbers);
+  const positions = new Set(leader.coverage.numbers);
 
   // A higher count must not hide chapters available only in a competing listing.
-  if (plausible.some((item) => item.coverage!.numbers.some((number) => !positions.has(number)))) {
-    if (
-      plausible.some(
-        (item) =>
-          editionKey(item.title) !== editionKey(identity.titles[0] ?? "") ||
-          !Number.isFinite(item.coverage!.latestChapterUpdatedAt) ||
-          item.coverage!.latestChapterUpdatedAt! <= 0,
-      )
-    ) {
+  if (covered.some(({ coverage }) => coverage.numbers.some((number) => !positions.has(number)))) {
+    const datedListings = covered.flatMap(({ item, coverage }) => {
+      const updatedAt = coverage.latestChapterUpdatedAt;
+
+      return updatedAt !== undefined &&
+        Number.isFinite(updatedAt) &&
+        updatedAt > 0 &&
+        editionKey(item.title) === editionKey(identity.titles[0] ?? "")
+        ? [{ item, coverage, updatedAt }]
+        : [];
+    });
+
+    if (datedListings.length !== covered.length) {
       return undefined;
     }
 
-    const active = plausible.find((item) => {
-      if (!denseChapterRun(item)) {
+    const active = datedListings.find((listing) => {
+      if (!denseChapterRun(listing.item)) {
         return false;
       }
 
-      const integers = chapterPositions(item);
+      const integers = chapterPositions(listing.item);
 
-      return plausible.every((other) => {
-        if (other.id === item.id) {
+      return datedListings.every((other) => {
+        if (other.item.id === listing.item.id) {
           return true;
         }
 
-        const otherIntegers = chapterPositions(other);
+        const otherIntegers = chapterPositions(other.item);
 
         return (
           integers.size > otherIntegers.size &&
           [...otherIntegers].every((number) => integers.has(number)) &&
-          item.coverage!.latestChapterUpdatedAt! > other.coverage!.latestChapterUpdatedAt!
+          listing.updatedAt > other.updatedAt
         );
       });
     });
@@ -633,18 +644,18 @@ export const selectManganatoCandidate = (
       return undefined;
     }
 
-    const available = new Set(active.coverage!.numbers);
+    const available = new Set(active.coverage.numbers);
 
     return {
-      ...active,
+      ...active.item,
       selection: {
         basis: "active-listing",
-        lostPositions: plausible
+        lostPositions: covered
           .values()
-          .filter((item) => item.id !== active.id)
-          .map((item) => ({
+          .filter(({ item }) => item.id !== active.item.id)
+          .map(({ item, coverage }) => ({
             candidateId: item.id,
-            numbers: item.coverage!.numbers.filter((number) => !available.has(number)),
+            numbers: coverage.numbers.filter((number) => !available.has(number)),
           }))
           .filter((item) => item.numbers.length > 0)
           .toArray(),
@@ -653,23 +664,25 @@ export const selectManganatoCandidate = (
   }
 
   if (winners.length === 1) {
-    return winners[0];
+    return leader.item;
   }
 
-  if (
-    winners.some(
-      (item) =>
-        !Number.isFinite(item.coverage!.latestChapterUpdatedAt) ||
-        item.coverage!.latestChapterUpdatedAt! <= 0,
-    )
-  ) {
+  const datedWinners = winners.flatMap(({ item, coverage }) => {
+    const updatedAt = coverage.latestChapterUpdatedAt;
+
+    return updatedAt !== undefined && Number.isFinite(updatedAt) && updatedAt > 0
+      ? [{ item, updatedAt }]
+      : [];
+  });
+
+  if (datedWinners.length !== winners.length) {
     return undefined;
   }
 
-  const latest = Math.max(...winners.map((item) => item.coverage!.latestChapterUpdatedAt!));
-  const newest = winners.filter((item) => item.coverage!.latestChapterUpdatedAt === latest);
+  const latest = Math.max(...datedWinners.map(({ updatedAt }) => updatedAt));
+  const newest = datedWinners.filter(({ updatedAt }) => updatedAt === latest);
 
-  return newest.length === 1 ? newest[0] : undefined;
+  return newest.length === 1 ? newest[0]?.item : undefined;
 };
 
 /** Hypothetical identity evidence. Acceptance is explicit and never changes real eligibility. */
@@ -786,11 +799,17 @@ export const manganatoSearchPlans = (
 
   return titles
     .flatMap((title) => {
-      const queries = manganatoSearchWords(title).slice(0, 2);
+      const [first, ...rest] = manganatoSearchWords(title).slice(0, 2);
+
+      if (first === undefined) {
+        return [];
+      }
+
+      const queries = [first, ...rest] as const;
       // Near-identical romanizations often produce the same search; do not spend another alias slot.
       const key = [...queries].sort().join("|");
 
-      if (!key || seen.has(key)) {
+      if (seen.has(key)) {
         return [];
       }
 
@@ -798,7 +817,7 @@ export const manganatoSearchPlans = (
 
       return [{ title, queries }];
     })
-    .sort((a, b) => compareSearchWords(a.queries[0]!, b.queries[0]!))
+    .sort((a, b) => compareSearchWords(a.queries[0], b.queries[0]))
     .slice(0, 3);
 };
 
@@ -1034,11 +1053,17 @@ export const loadManganatoChapterReference = async (
       },
     });
 
-    const entry = await runHost(
-      (anilistId ? source.getById(anilistId) : source.getByIdMal!(malId!)).pipe(
-        Effect.timeout("20 seconds"),
-      ),
-    );
+    const lookup = anilistId
+      ? source.getById(anilistId)
+      : malId && source.getByIdMal
+        ? source.getByIdMal(malId)
+        : undefined;
+
+    if (!lookup) {
+      throw cliError("AniList source cannot look up MAL IDs");
+    }
+
+    const entry = await runHost(lookup.pipe(Effect.timeout("20 seconds")));
 
     const mangadexId = providerIdOf(row, "mangadex");
 
@@ -1154,7 +1179,7 @@ export const createManganatoClient = (options: {
 
       if (
         entry.kind === "details" &&
-        (entry.data.length !== 1 || entry.data[0]!.id !== entry.key)
+        (entry.data.length !== 1 || entry.data[0]?.id !== entry.key)
       ) {
         continue;
       }
@@ -1294,12 +1319,12 @@ export const createManganatoClient = (options: {
   };
 
   const getDetails = async (id: string): Promise<ManganatoDetails> => {
-    const saved = cached("details", id);
+    const [saved] = cached("details", id) ?? [];
 
     if (saved) {
       options.onProgress?.(`Cached details: ${id}`);
 
-      return saved[0]!;
+      return saved;
     }
 
     const result = await read(
@@ -1407,10 +1432,11 @@ export const createManganatoClient = (options: {
               : NaN;
 
           if (
+            !date ||
             !Number.isFinite(timestamp) ||
             timestamp <= 0 ||
             timestamp > epochMillisNow() ||
-            DateTime.formatIso(DateTime.makeUnsafe(timestamp)).slice(0, 19) !== date!.slice(0, 19)
+            DateTime.formatIso(DateTime.makeUnsafe(timestamp)).slice(0, 19) !== date.slice(0, 19)
           ) {
             completeDates = false;
           } else {

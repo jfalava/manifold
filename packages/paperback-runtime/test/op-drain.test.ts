@@ -16,8 +16,7 @@ interface ScheduledRequestLike {
 // Paperback's scheduleRequest rejects with host-provided values; offline
 // surfaces as a message-less `{}`. The harness replays those shapes.
 const jsonBuffer = (payload: JsonValue): ArrayBuffer =>
-  // SAFETY: TextEncoder always yields an ArrayBuffer in the test runtime
-  new TextEncoder().encode(JSON.stringify(payload)).buffer as ArrayBuffer;
+  new Uint8Array(new TextEncoder().encode(JSON.stringify(payload))).buffer;
 
 interface Outcome {
   readonly status: number;
@@ -52,13 +51,9 @@ const makeHarness = () => {
     });
   };
 
-  const loadDrain = async () =>
-    // SAFETY: value matches typeof import("../src/op-drain.js") at this call site
-    (await import("../src/op-drain.js")) as typeof import("../src/op-drain.js");
+  const loadDrain = async () => import("../src/op-drain.js");
 
-  const loadRuntime = async () =>
-    // SAFETY: value matches typeof import("../src/runtime.js") at this call site
-    (await import("../src/runtime.js")) as typeof import("../src/runtime.js");
+  const loadRuntime = async () => import("../src/runtime.js");
 
   return {
     urls,

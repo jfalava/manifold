@@ -300,11 +300,13 @@ const chooseTitleMatch = (
     [hit.title, ...hit.aliases].some((title) => wanted.has(normalizeTitle(title))),
   );
 
-  if (exact.length === 1) {
-    return { hit: exact[0]!, method: "title-exact" };
+  const [exactHit, ...otherExact] = exact;
+
+  if (exactHit && otherExact.length === 0) {
+    return { hit: exactHit, method: "title-exact" };
   }
 
-  if (exact.length > 1) {
+  if (exactHit) {
     return undefined;
   }
 
@@ -321,8 +323,10 @@ const chooseTitleMatch = (
     );
   });
 
-  if (partial.length === 1) {
-    return { hit: partial[0]!, method: "title-partial" };
+  const [partialHit, ...otherPartial] = partial;
+
+  if (partialHit && otherPartial.length === 0) {
+    return { hit: partialHit, method: "title-partial" };
   }
 
   return undefined;

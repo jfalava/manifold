@@ -1,11 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SourceManga, TrackedMangaChapterReadAction } from "@paperback/types";
+import {
+  ContentRating,
+  type SourceManga,
+  type TrackedMangaChapterReadAction,
+} from "@paperback/types";
 import type { PersonalReadInput } from "@manifold/paperback-runtime";
 
 import { processReadActions } from "../src/MANIFOLD/read-queue.js";
 
 // Installs the Application global stub backed by an in-memory map.
-import { applicationState, PENDING_PROGRESS_KEY_SAFE } from "./managed-collections-fixtures";
+import {
+  applicationState,
+  PENDING_PROGRESS_KEY_SAFE,
+  readStoredObject,
+} from "./managed-collections-fixtures";
 
 beforeEach(() => {
   applicationState.clear();
@@ -18,8 +26,7 @@ const manga = (id: string): SourceManga => ({
     synopsis: "",
     primaryTitle: id,
     secondaryTitles: [],
-    // SAFETY: intentional never-widen for exhaustive/test placeholder
-    contentRating: "SAFE" as never,
+    contentRating: ContentRating.EVERYONE,
     additionalInfo: {},
   },
 });
@@ -31,17 +38,25 @@ const action = (
   mangaId = "anilist:141756",
   chapterSourceId = "MangaDex",
   chapterMangaId = "manga-id",
-): TrackedMangaChapterReadAction =>
-  // SAFETY: test fixture supplies the TrackedMangaChapterReadAction fields processReadActions reads
-  ({
+): TrackedMangaChapterReadAction => {
+  const read: TrackedMangaChapterReadAction = {
     id,
     chapterId,
     chapterSourceId,
     chapterMangaId,
-    ...(!(chapterNum === undefined) && { chapterNum }),
+    chapterNum: chapterNum ?? 0,
     creationDate: new Date(0),
+    errorCount: 0,
     sourceManga: manga(mangaId),
-  }) as TrackedMangaChapterReadAction;
+  };
+
+  if (chapterNum === undefined) {
+    // The Paperback host can deliver actions without chapterNum despite the declared type.
+    Reflect.deleteProperty(read, "chapterNum");
+  }
+
+  return read;
+};
 
 describe("processReadActions", () => {
   it("records every read but pushes AniList once with the highest chapter", async () => {
@@ -111,18 +126,16 @@ describe("processReadActions", () => {
     // entries instead of doubling upstream load during a rate-limit window.
     expect(pushProgress).toHaveBeenCalledTimes(2);
 
-    // SAFETY: the queued-progress JSON is fully controlled by this test.
-    const queued = JSON.parse(String(applicationState.get(PENDING_PROGRESS_KEY_SAFE))) as Record<
-      string,
-      { chapterNum: number; sourceManga: SourceManga }
-    >;
+    const queued = readStoredObject(PENDING_PROGRESS_KEY_SAFE);
 
     expect(queued["anilist:1"]).toMatchObject({ chapterNum: 4 });
     expect(queued["anilist:2"]).toMatchObject({ chapterNum: 7 });
     // Only the fields the push reads are persisted — no thumbnails or prose.
-    expect(queued["anilist:1"]?.sourceManga).toMatchObject({
-      mangaId: "anilist:1",
-      mangaInfo: { thumbnailUrl: "", synopsis: "", primaryTitle: "" },
+    expect(queued["anilist:1"]).toMatchObject({
+      sourceManga: {
+        mangaId: "anilist:1",
+        mangaInfo: { thumbnailUrl: "", synopsis: "", primaryTitle: "" },
+      },
     });
   });
 
@@ -202,7 +215,7 @@ describe("processReadActions", () => {
 
   it("rejects retired sources without advancing progress and routes native MangaDex reads", async () => {
     const recordRead = vi.fn().mockResolvedValue({});
-    const pushProgress = vi.fn().mockResolvedValue(true);
+    const pushProgress = vi.fn(async (_sourceManga: SourceManga, _chapterNum: number) => true);
 
     const result = await processReadActions(
       [
@@ -222,8 +235,7 @@ describe("processReadActions", () => {
     });
     // A rejected source must not push its higher chapter number to AniList.
     expect(pushProgress).toHaveBeenCalledTimes(1);
-    // SAFETY: optional field is | [SourceManga, number] | undefined when present at this call site
-    const progressCall = pushProgress.mock.calls[0] as [SourceManga, number] | undefined;
+    const progressCall = pushProgress.mock.calls[0];
     expect(progressCall?.[0]?.mangaId).toBe("anilist:141756");
     expect(progressCall?.[1]).toBe(13);
   });
@@ -266,11 +278,7 @@ describe("processReadActions", () => {
     expect(result.failedItems).toEqual([]);
     expect(pushProgress).toHaveBeenCalledTimes(1);
 
-    // SAFETY: the queued-progress JSON is fully controlled by this test.
-    const queued = JSON.parse(String(applicationState.get(PENDING_PROGRESS_KEY_SAFE))) as Record<
-      string,
-      { chapterNum: number }
-    >;
+    const queued = readStoredObject(PENDING_PROGRESS_KEY_SAFE);
 
     expect(queued["anilist:1"]).toMatchObject({ chapterNum: 5 });
 

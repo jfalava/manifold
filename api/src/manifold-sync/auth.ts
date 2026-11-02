@@ -317,11 +317,13 @@ const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
       return yield* fromPromise(() => decryptToken(host.env, row.access_token));
     }
 
-    if (!row.refresh_token) {
+    const storedRefreshToken = row.refresh_token;
+
+    if (!storedRefreshToken) {
       return yield* apiError(`Auth provider requires reauthorization: ${provider}`);
     }
 
-    const refreshToken = yield* fromPromise(() => decryptToken(host.env, row.refresh_token!));
+    const refreshToken = yield* fromPromise(() => decryptToken(host.env, storedRefreshToken));
 
     const form =
       provider === "mangadex"
@@ -397,8 +399,10 @@ const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
     const expiresAt = token.expires_in ? timestamp + token.expires_in * 1000 : null;
     const encryptedAccess = yield* fromPromise(() => encryptToken(host.env, token.access_token));
 
-    const encryptedRefresh = token.refresh_token
-      ? yield* fromPromise(() => encryptToken(host.env, token.refresh_token!))
+    const tokenRefresh = token.refresh_token;
+
+    const encryptedRefresh = tokenRefresh
+      ? yield* fromPromise(() => encryptToken(host.env, tokenRefresh))
       : null;
 
     host.ctx.storage.sql.exec(
@@ -433,8 +437,10 @@ const persistTokenEffect = (host: SyncHost, provider: AuthProvider, token: OAuth
       encryptToken(host.env, token.access_token),
     );
 
-    const encryptedRefreshToken = token.refresh_token
-      ? yield* fromPromise(() => encryptToken(host.env, token.refresh_token!))
+    const tokenRefresh = token.refresh_token;
+
+    const encryptedRefreshToken = tokenRefresh
+      ? yield* fromPromise(() => encryptToken(host.env, tokenRefresh))
       : null;
 
     const expiresAt = token.expires_in ? timestamp + token.expires_in * 1000 : null;

@@ -13,7 +13,7 @@ import type {
 } from "../sync-rows";
 import { now } from "./constants";
 import { apiError, fromPromise } from "./from-promise";
-import type { SyncHost } from "./host";
+import type { SqlHost } from "./host";
 
 export const MANIFOLD_OAUTH_CLIENT_ID = "paperback";
 export const MANIFOLD_OAUTH_REDIRECT_URI = "paperback://manifold-login";
@@ -99,7 +99,7 @@ const redirectWithError = (
   error,
 });
 
-const startManifoldOAuthEffect = (host: SyncHost, input: ManifoldOAuthAuthorizationInput) =>
+const startManifoldOAuthEffect = (host: SqlHost, input: ManifoldOAuthAuthorizationInput) =>
   Effect.gen(function* () {
     if (
       !isSupportedClient(input.clientId, input.redirectUri) ||
@@ -164,12 +164,12 @@ const startManifoldOAuthEffect = (host: SyncHost, input: ManifoldOAuthAuthorizat
   });
 
 export const createManifoldOAuthAuthorization = (
-  host: SyncHost,
+  host: SqlHost,
   input: ManifoldOAuthAuthorizationInput,
 ): Promise<{ readonly authorizationUrl: string }> =>
   Effect.runPromise(startManifoldOAuthEffect(host, input));
 
-const completeGithubOAuthEffect = (host: SyncHost, state: string, code?: string, error?: string) =>
+const completeGithubOAuthEffect = (host: SqlHost, state: string, code?: string, error?: string) =>
   Effect.gen(function* () {
     const request = host.ctx.storage.sql
       .exec<ManifoldOAuthRequestRow>(
@@ -278,7 +278,7 @@ const completeGithubOAuthEffect = (host: SyncHost, state: string, code?: string,
   });
 
 export const completeGithubOAuth = (
-  host: SyncHost,
+  host: SqlHost,
   state: string,
   code?: string,
   error?: string,
@@ -286,7 +286,7 @@ export const completeGithubOAuth = (
   Effect.runPromise(completeGithubOAuthEffect(host, state, code, error));
 
 const issueAuthorizationCodeEffect = (
-  host: SyncHost,
+  host: SqlHost,
   request: ManifoldOAuthRequestRow,
   subject: string,
 ): Effect.Effect<string, never> =>
@@ -311,7 +311,7 @@ const issueAuthorizationCodeEffect = (
   });
 
 const createSessionEffect = (
-  host: SyncHost,
+  host: SqlHost,
   subject: string,
 ): Effect.Effect<ManifoldOAuthTokenResponse, never> =>
   Effect.gen(function* () {
@@ -343,7 +343,7 @@ const createSessionEffect = (
     };
   });
 
-const exchangeManifoldOAuthTokenEffect = (host: SyncHost, input: ManifoldOAuthTokenInput) =>
+const exchangeManifoldOAuthTokenEffect = (host: SqlHost, input: ManifoldOAuthTokenInput) =>
   Effect.gen(function* () {
     if (
       input.clientId !== MANIFOLD_OAUTH_CLIENT_ID &&
@@ -394,11 +394,13 @@ const exchangeManifoldOAuthTokenEffect = (host: SyncHost, input: ManifoldOAuthTo
     }
 
     if (input.grantType === "refresh_token") {
-      if (!input.refreshToken) {
+      const inputRefreshToken = input.refreshToken;
+
+      if (!inputRefreshToken) {
         return yield* apiError("Manifold OAuth refresh token is missing");
       }
 
-      const refreshTokenHash = yield* fromPromise(() => hashOpaque(input.refreshToken!));
+      const refreshTokenHash = yield* fromPromise(() => hashOpaque(inputRefreshToken));
 
       const row = host.ctx.storage.sql
         .exec<ManifoldSessionRow>(
@@ -424,12 +426,12 @@ const exchangeManifoldOAuthTokenEffect = (host: SyncHost, input: ManifoldOAuthTo
   });
 
 export const exchangeManifoldOAuthToken = (
-  host: SyncHost,
+  host: SqlHost,
   input: ManifoldOAuthTokenInput,
 ): Promise<ManifoldOAuthTokenResponse> =>
   Effect.runPromise(exchangeManifoldOAuthTokenEffect(host, input));
 
-const authorizeManifoldAccessTokenEffect = (host: SyncHost, accessToken: string) =>
+const authorizeManifoldAccessTokenEffect = (host: SqlHost, accessToken: string) =>
   Effect.gen(function* () {
     if (!accessToken) {
       return false;
@@ -450,11 +452,11 @@ const authorizeManifoldAccessTokenEffect = (host: SyncHost, accessToken: string)
   });
 
 export const authorizeManifoldAccessToken = (
-  host: SyncHost,
+  host: SqlHost,
   accessToken: string,
 ): Promise<boolean> => Effect.runPromise(authorizeManifoldAccessTokenEffect(host, accessToken));
 
-const revokeManifoldSessionEffect = (host: SyncHost, token: string) =>
+const revokeManifoldSessionEffect = (host: SqlHost, token: string) =>
   Effect.gen(function* () {
     if (!token) {
       return;
@@ -471,5 +473,5 @@ const revokeManifoldSessionEffect = (host: SyncHost, token: string) =>
     );
   });
 
-export const revokeManifoldSession = (host: SyncHost, token: string): Promise<void> =>
+export const revokeManifoldSession = (host: SqlHost, token: string): Promise<void> =>
   Effect.runPromise(revokeManifoldSessionEffect(host, token));

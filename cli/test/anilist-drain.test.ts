@@ -1,3 +1,4 @@
+import { requestInitText, type JsonObject } from "@manifold/json";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,11 +8,10 @@ import {
   type PendingAniListOp,
 } from "../src/anilist-drain";
 
-const op = (opId: string, kind: string, payload: Record<string, unknown>): PendingAniListOp => ({
+const op = (opId: string, kind: string, payload: JsonObject): PendingAniListOp => ({
   opId,
   kind,
-  // SAFETY: test fixtures are plain JSON objects
-  payload: payload as PendingAniListOp["payload"],
+  payload,
   attempts: 0,
 });
 
@@ -28,6 +28,7 @@ describe("drainAniListOpsPass", () => {
         throw new Error("completeOps must not run on empty queue");
       },
     };
+
     await expect(drainAniListOpsPass(api, "token")).resolves.toEqual({
       fetched: 0,
       ok: 0,
@@ -39,12 +40,14 @@ describe("drainAniListOpsPass", () => {
   it("executes status ops and reports completion", async () => {
     __drainTest.resetThrottle();
     const completed: unknown[] = [];
+
     const api: DrainApiClient = {
       pendingAniListOps: async () => [
         op("s1", "anilist.status", { anilistId: "42", status: "reading" }),
       ],
       completeOps: async (results) => {
         completed.push(...results);
+
         return { updated: results.length };
       },
     };
@@ -68,6 +71,7 @@ describe("drainAniListOpsPass", () => {
   it("marks failed ops without aborting the batch", async () => {
     __drainTest.resetThrottle();
     const completed: unknown[] = [];
+
     const api: DrainApiClient = {
       pendingAniListOps: async () => [
         op("bad", "anilist.status", { anilistId: "not-a-number", status: "reading" }),
@@ -75,6 +79,7 @@ describe("drainAniListOpsPass", () => {
       ],
       completeOps: async (results) => {
         completed.push(...results);
+
         return { updated: results.length };
       },
     };
@@ -82,7 +87,8 @@ describe("drainAniListOpsPass", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_url: string, init?: RequestInit) => {
-        const body = typeof init?.body === "string" ? init.body : "";
+        const body = requestInitText(init) ?? "";
+
         if (body.includes("progress")) {
           return Response.json({
             data: {
@@ -90,6 +96,7 @@ describe("drainAniListOpsPass", () => {
             },
           });
         }
+
         return Response.json({ data: { SaveMediaListEntry: { id: 1 } } });
       }),
     );
@@ -107,19 +114,23 @@ describe("drainAniListOpsPass", () => {
   it("resolves delete mediaListEntryId from the bulk map when missing", async () => {
     __drainTest.resetThrottle();
     const completed: unknown[] = [];
+
     const api: DrainApiClient = {
       pendingAniListOps: async () => [op("d1", "anilist.delete", { anilistId: "55" })],
       completeOps: async (results) => {
         completed.push(...results);
+
         return { updated: results.length };
       },
     };
 
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-      const body = typeof init?.body === "string" ? init.body : "";
+      const body = requestInitText(init) ?? "";
+
       if (body.includes("Viewer")) {
         return Response.json({ data: { Viewer: { id: 1, name: "reader" } } });
       }
+
       if (body.includes("MediaListCollection")) {
         return Response.json({
           data: {
@@ -129,11 +140,14 @@ describe("drainAniListOpsPass", () => {
           },
         });
       }
+
       if (body.includes("DeleteMediaListEntry")) {
         return Response.json({ data: { DeleteMediaListEntry: { deleted: true } } });
       }
+
       return Response.json({ errors: [{ message: "unexpected query" }] }, { status: 400 });
     });
+
     vi.stubGlobal("fetch", fetchMock);
 
     const summary = await drainAniListOpsPass(api, "token");

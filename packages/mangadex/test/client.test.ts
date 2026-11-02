@@ -580,7 +580,13 @@ describe("MangaDex client", () => {
     });
     expect(result["manga-2"]).toBeUndefined();
 
-    const url = new URL(requests.find((value) => value.includes("/rating"))!);
+    const ratingRequest = requests.find((value) => value.includes("/rating"));
+
+    if (!ratingRequest) {
+      throw new Error("Expected a /rating request");
+    }
+
+    const url = new URL(ratingRequest);
     expect(url.pathname).toBe("/rating");
     expect(url.searchParams.getAll("manga[]")).toEqual(["manga-1", "manga-2"]);
   });

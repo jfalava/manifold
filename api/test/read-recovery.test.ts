@@ -14,6 +14,16 @@ import {
   type JsonValue,
 } from "@manifold/json";
 
+const requiredArrayField = (record: JsonObject, key: string): readonly JsonValue[] => {
+  const value = arrayField(record, key);
+
+  if (!value) {
+    throw new Error(`Snapshot is missing ${key}`);
+  }
+
+  return value;
+};
+
 const fixture = `
 import { ManifoldSync } from './src/manifold-sync.ts';
 import api from './src/index.ts';
@@ -385,7 +395,7 @@ describe("queued reads with stale registry IDs", () => {
     expect(after.md_status_queue).toEqual(before.md_status_queue);
     expect(after.list_events).toEqual(before.list_events);
     expect(arrayField(after, "canonical_entries")).toHaveLength(
-      arrayField(before, "canonical_entries")!.length,
+      requiredArrayField(before, "canonical_entries").length,
     );
     expect(await snapshotEntry("retired-only")).toEqual({
       id: "retired-only",
@@ -397,20 +407,20 @@ describe("queued reads with stale registry IDs", () => {
       tombstoned_at: 99,
     });
     expect(arrayField(after, "provider_links")).toEqual(
-      arrayField(before, "provider_links")!.filter(
+      requiredArrayField(before, "provider_links").filter(
         (row) => isJsonObject(row) && row.provider !== "comix",
       ),
     );
     const historicalKey = "historical:636F6D69783A636861707465722D3132";
     expect(arrayField(after, "progress_state")).toEqual(
-      arrayField(before, "progress_state")!.map((row) =>
+      requiredArrayField(before, "progress_state").map((row) =>
         isJsonObject(row) && row.entry_id === "retired-only"
           ? { ...row, chapter_key: historicalKey, provider: null, source_chapter_id: null }
           : row,
       ),
     );
     expect(arrayField(after, "read_events")).toEqual(
-      arrayField(before, "read_events")!.map((row) =>
+      requiredArrayField(before, "read_events").map((row) =>
         isJsonObject(row) && row.event_id === "retired-event"
           ? { ...row, chapter_key: historicalKey }
           : row,

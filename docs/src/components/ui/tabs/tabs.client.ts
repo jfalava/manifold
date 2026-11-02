@@ -18,11 +18,9 @@ function initTabContainer(container: HTMLElement): () => void {
 
   // Scope to this container so a nested <Tabs>'s triggers don't flip the
   // parent into manual mode (or vice-versa), independent of mount order.
-  // SAFETY: value is HTMLElement).closest("[data-nb-tabs]") === container) at this site
   const existingTriggers = Array.from(
-    container.querySelectorAll("[data-nb-tabs-trigger]"),
-    // SAFETY: DOM query returns the expected element type in this document
-  ).filter((t) => (t as HTMLElement).closest("[data-nb-tabs]") === container);
+    container.querySelectorAll<HTMLElement>("[data-nb-tabs-trigger]"),
+  ).filter((t) => t.closest("[data-nb-tabs]") === container);
 
   const synthesize = existingTriggers.length === 0;
 

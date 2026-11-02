@@ -1,10 +1,69 @@
 import { spawnSync } from "node:child_process";
-import { Writable } from "node:stream";
+import { Socket } from "node:net";
 
 import { Terminal } from "@xterm/headless";
 import { describe, expect, it, vi } from "vitest";
 
 import { createRun, makePhaseReporter, wrapFrameText } from "../src/ui";
+import { required } from "./support/report";
+
+const unused = (method: string): never => {
+  throw new Error(`TerminalStream.${method} is not used by the progress renderer`);
+};
+
+/**
+ * A TTY-shaped stream with exactly the write/dimension capabilities the progress
+ * renderer uses; cursor helpers throw so any new dependency on them is visible.
+ */
+class TerminalStream extends Socket implements NodeJS.WriteStream {
+  readonly isTTY = true;
+  columns: number;
+  readonly rows = 24;
+  readonly #sink: (text: string) => void;
+
+  constructor(columns: number, sink: (text: string) => void) {
+    super();
+    this.columns = columns;
+    this.#sink = sink;
+  }
+
+  override _write(
+    chunk: Buffer | string,
+    _encoding: BufferEncoding,
+    callback: (error?: Error | null) => void,
+  ): void {
+    this.#sink(String(chunk));
+    callback();
+  }
+
+  clearLine(): boolean {
+    return unused("clearLine");
+  }
+
+  clearScreenDown(): boolean {
+    return unused("clearScreenDown");
+  }
+
+  cursorTo(): boolean {
+    return unused("cursorTo");
+  }
+
+  moveCursor(): boolean {
+    return unused("moveCursor");
+  }
+
+  getColorDepth(): number {
+    return unused("getColorDepth");
+  }
+
+  hasColors(): boolean {
+    return unused("hasColors");
+  }
+
+  getWindowSize(): [number, number] {
+    return unused("getWindowSize");
+  }
+}
 
 describe("wrapFrameText", () => {
   it("returns a single empty line for empty input", () => {
@@ -14,6 +73,7 @@ describe("wrapFrameText", () => {
   it("splits long URLs so each chunk fits the rail content width", () => {
     const url =
       "https://anilist.co/api/v2/oauth/authorize?client_id=49218&redirect_uri=http%3A%2F%2F127.0.0.1%3A8767%2Fcallback&response_type=code&state=7b536466-4338-4cb7-9c72-83edb45d420c";
+
     const chunks = wrapFrameText(url, 40);
     expect(chunks.every((c) => c.length <= 40)).toBe(true);
     expect(chunks.join("")).toBe(url);
@@ -31,6 +91,7 @@ describe("hierarchical terminal output", () => {
     "replaces statuses at %i columns with cursor-line reflow=%s",
     async (columns, reflowCursorLine) => {
       vi.stubEnv("TERM", "xterm-256color");
+
       const terminal = new Terminal({
         cols: columns,
         rows: 24,
@@ -38,31 +99,36 @@ describe("hierarchical terminal output", () => {
         allowProposedApi: true,
         reflowCursorLine,
       });
+
       let raw = "";
       const initialColumns: number = columns;
-      const stream = Object.assign(
-        new Writable({
-          write(chunk, _encoding, callback) {
-            raw += String(chunk);
-            terminal.write(String(chunk));
-            callback();
-          },
-        }),
-        { isTTY: true, columns: initialColumns, rows: 24 },
-      );
+
+      const stream = new TerminalStream(initialColumns, (text) => {
+        raw += text;
+        terminal.write(text);
+      });
+
       const read = async () => {
         await new Promise<void>((resolve) => terminal.write("", resolve));
+
         return Array.from({ length: terminal.buffer.active.length }, (_, index) =>
-          terminal.buffer.active.getLine(index)!.translateToString(true),
+          required(
+            terminal.buffer.active.getLine(index),
+            `terminal line ${index}`,
+          ).translateToString(true),
         ).filter(Boolean);
       };
+
       const tick = () => new Promise((resolve) => setTimeout(resolve, 230));
       const reports: string[] = [];
+
       const stdout = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
         reports.push(String(chunk));
         terminal.write(String(chunk).replace(/\n/g, "\r\n"));
+
         return true;
       });
+
       try {
         await createRun(
           [
@@ -87,7 +153,10 @@ describe("hierarchical terminal output", () => {
                 expect(lines[2]).toMatch(/^ {8}󰒓 \/search/);
                 expect(terminal.buffer.active.baseY).toBe(0);
 
-                for (let index = 0; index < 200; index++) reporter.detail(`Old status ${index}`);
+                for (let index = 0; index < 200; index++) {
+                  reporter.detail(`Old status ${index}`);
+                }
+
                 reporter.detail("PAUSED · solve in Chrome · Enter retries");
                 await tick();
                 lines = await read();
@@ -108,11 +177,13 @@ describe("hierarchical terminal output", () => {
                 lines = await read();
                 expect(lines.filter((line) => line.includes("SELECTION"))).toHaveLength(1);
                 expect(lines.filter((line) => line.includes("Search catalog"))).toHaveLength(1);
+
                 if (columns === 80) {
                   // At 35 columns, these wide graphemes need three rows, not ceil(70/35).
                   reporter.item("界".repeat(32));
                   reporter.detail("Retrying request");
                   await tick();
+
                   for (const width of [35, 140, 34, 80]) {
                     terminal.resize(width, 24);
                     stream.columns = width;
@@ -150,9 +221,8 @@ describe("hierarchical terminal output", () => {
                   },
                 ]),
             },
-            // This stream has precisely the write/dimension capabilities used by cli-progress.
           ],
-          { stream: stream as NodeJS.WriteStream },
+          { stream },
         ).run();
         expect((await read()).join("\n")).toContain("SELECTION");
         expect((await read()).join("\n")).not.toContain("Push entries");
@@ -175,6 +245,7 @@ describe("hierarchical terminal output", () => {
       timeout: 10000,
       env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
     });
+
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("SELECTION sample-entry");
     expect(result.stdout).not.toContain("\x1b");

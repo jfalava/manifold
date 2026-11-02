@@ -12,18 +12,26 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "@manifold/json";
 import type { RegistryRow } from "../src/commands/toolbox";
 import { openRegistryReport } from "../src/registry-report";
+import { required } from "./support/report";
 
 const directories: string[] = [];
-const paths = () => {
+
+const paths = (): [first: string, second: string, third: string] => {
   const directory = mkdtempSync(join(tmpdir(), "registry-resume-"));
   directories.push(directory);
-  return ["first", "second", "third"].map((name) => join(directory, `${name}.jsonl`));
+  const path = (name: string) => join(directory, `${name}.jsonl`);
+
+  return [path("first"), path("second"), path("third")];
 };
+
 afterEach(() => {
-  for (const directory of directories.splice(0))
+  for (const directory of directories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
+  }
 });
+
 const settings = { apiOrigin: "https://registry.test", language: "en" };
+
 const row = (id = "a"): RegistryRow => ({
   id,
   provider: "anilist",
@@ -39,6 +47,7 @@ describe("registry report resume", () => {
   it("reopens ambiguities for inference opt-in and preserves accepted decisions across two resumes", () => {
     const [first, second, third] = paths();
     const retryWhen = { selectionPolicy: 11, acceptRecommendations: false };
+
     const decision = {
       selectedId: "newer",
       selection: {
@@ -48,6 +57,7 @@ describe("registry report resume", () => {
       acceptedRecommendation: true,
       recommendation: { candidateId: "newer", requiresOptIn: true, acceptEligible: true },
     };
+
     const report = openRegistryReport("manganato", false, settings, first);
     report.entry(row(), { outcome: "ambiguous", selectionPolicy: 11, retryWhen });
     report.entry(row("legacy"), { outcome: "ambiguous", selectionPolicy: 11 });
@@ -64,6 +74,7 @@ describe("registry report resume", () => {
     });
     resumed.close();
     const again = openRegistryReport("manganato", false, settings, third, second);
+
     try {
       expect(again.skip(row(), { ...retryWhen, acceptRecommendations: true })).toBe(true);
       expect(again.skip(row(), retryWhen)).toBe(true);
@@ -79,12 +90,14 @@ describe("registry report resume", () => {
     const [first, second, third] = paths();
     const report = openRegistryReport("manganato", false, settings, first);
     const candidates = [{ id: "romanized" }, { id: "translated" }];
+
     const chapterReference = {
       provider: "anilist",
       providerId: "123",
       chapters: 20,
       status: "FINISHED",
     };
+
     const provenance = {
       discovery: {
         limitedCoverage: true,
@@ -101,6 +114,7 @@ describe("registry report resume", () => {
       candidateIds: ["romanized", "translated"],
       note: "Tied coverage",
     };
+
     report.entry(row(), { outcome: "ambiguous", candidates, chapterReference, ...provenance });
     report.entry(row("b"), { outcome: "ambiguous", selectionPolicy: 1 });
     report.close();
@@ -109,6 +123,7 @@ describe("registry report resume", () => {
     expect(resumed.skip(row("b"), { selectionPolicy: 1 })).toBe(true);
     resumed.close();
     const again = openRegistryReport("manganato", false, settings, third, second);
+
     try {
       expect(again.skip(row(), { selectionPolicy: 1 })).toBe(false);
       expect(again.checkpoint(row())?.candidates).toEqual(candidates);
@@ -135,6 +150,7 @@ describe("registry report resume", () => {
     report.entry(row("b"), { outcome: "unmatched", searchPolicy: 1 });
     report.entry(row("c"), { outcome: "errors", note: "page limit or repeated pagination" });
     report.entry(row("d"), { outcome: "ambiguous", searchPolicy: 1 });
+
     const catalog = {
       event: "catalog",
       kind: "search",
@@ -143,6 +159,7 @@ describe("registry report resume", () => {
       savedAt: 123,
       data: [],
     };
+
     report.record(catalog);
     report.close();
     const resumed = openRegistryReport("manganato", false, settings, second, first);
@@ -154,6 +171,7 @@ describe("registry report resume", () => {
     expect(resumed.skip({ ...row(), title: "Changed" }, retryWhen)).toBe(false);
     resumed.close();
     const again = openRegistryReport("manganato", false, settings, third, second);
+
     try {
       expect(again.skip(row(), retryWhen)).toBe(true);
       expect(again.skip(row(), { ...retryWhen, maxPages: 6 })).toBe(false);
@@ -169,6 +187,7 @@ describe("registry report resume", () => {
     "%s skips completed checks but retries failures, missing checkpoints and incomplete evidence",
     (provider) => {
       const [first, second] = paths();
+
       const outcomes = [
         "matched",
         "ambiguous",
@@ -179,20 +198,26 @@ describe("registry report resume", () => {
         "challenged",
         "blocked",
       ];
+
       const report = openRegistryReport(provider, false, settings, first);
-      for (const outcome of outcomes) report.entry(row(outcome), { outcome });
+
+      for (const outcome of outcomes) {
+        report.entry(row(outcome), { outcome });
+      }
+
       report.entry(row("incomplete"), { outcome: "unmatched", retryable: true });
       report.close();
-      const original = readFileSync(first!, "utf8");
+      const original = readFileSync(first, "utf8");
       const resumed = openRegistryReport(provider, false, settings, second, first);
+
       try {
         expect(outcomes.filter((outcome) => resumed.skip(row(outcome)))).toEqual(
           outcomes.slice(0, 4),
         );
         expect(resumed.skip(row("incomplete"))).toBe(false);
         expect(resumed.skip(row("interrupted"))).toBe(false);
-        expect(readFileSync(first!, "utf8")).toBe(original);
-        expect(statSync(second!).mode & 0o777).toBe(0o600);
+        expect(readFileSync(first, "utf8")).toBe(original);
+        expect(statSync(second).mode & 0o777).toBe(0o600);
       } finally {
         resumed.close();
       }
@@ -207,6 +232,7 @@ describe("registry report resume", () => {
       report.entry(row("b"), { outcome: "ambiguous" });
       report.close();
       const resumed = openRegistryReport("manganato", true, settings, second, first);
+
       try {
         expect(resumed.skip(row())).toBe(false);
         expect(resumed.skip(row("b"))).toBe(applied);
@@ -227,6 +253,7 @@ describe("registry report resume", () => {
     resumed.entry(row("c"), { outcome: "unmatched" });
     resumed.close();
     const again = openRegistryReport("xcomic", false, settings, third, second);
+
     try {
       expect(["a", "b", "c", "d"].map((id) => again.skip(row(id)))).toEqual([
         true,
@@ -241,18 +268,22 @@ describe("registry report resume", () => {
 
   it("retries changed matching inputs but ignores timestamps and provider ordering", () => {
     const [first, second] = paths();
+
     const original = {
       ...row(),
       providers: [...row().providers, { provider: "mal" as const, externalId: "71", updatedAt: 1 }],
     };
+
     const report = openRegistryReport("kagane", false, settings, first);
     report.entry(original, { outcome: "ambiguous" });
     report.close();
     const resumed = openRegistryReport("kagane", false, settings, second, first);
+
     try {
       expect(
         resumed.skip({ ...original, updatedAt: 99, providers: [...original.providers].reverse() }),
       ).toBe(true);
+
       for (const changed of [
         { ...original, title: "Corrected title" },
         { ...original, providerId: "different" },
@@ -260,9 +291,13 @@ describe("registry report resume", () => {
           ...original,
           providers: [{ provider: "anilist" as const, externalId: "other", updatedAt: 1 }],
         },
-        { ...original, state: { ...original.state!, status: "plan_to_read" as const } },
-      ])
+        {
+          ...original,
+          state: { ...required(original.state, "row state"), status: "plan_to_read" as const },
+        },
+      ]) {
         expect(resumed.skip(changed)).toBe(false);
+      }
     } finally {
       resumed.close();
     }
@@ -290,7 +325,7 @@ describe("registry report resume", () => {
     expect(() => openRegistryReport("kagane", false, settings, first, first)).toThrow(/new file/);
     expect(() => openRegistryReport("kagane", false, settings, first)).toThrow(/EEXIST/);
     writeFileSync(
-      first!,
+      first,
       JSON.stringify({ event: "run", provider: "kagane", reportVersion: 2, settings }),
     );
     expect(() => openRegistryReport("kagane", false, settings, second, first)).toThrow(/version/);
@@ -308,7 +343,7 @@ describe("registry report resume", () => {
     (provider, header) => {
       const [first, second, third] = paths();
       writeFileSync(
-        first!,
+        first,
         [
           { event: "run", apply: true, ...header },
           { event: "entry", entryId: "a", title: "Title a", outcome: "ambiguous" },
@@ -323,6 +358,7 @@ describe("registry report resume", () => {
       expect(resumed.skip(row("b"))).toBe(false);
       resumed.close();
       const again = openRegistryReport(provider, true, settings, third, second);
+
       try {
         expect(again.skip(row())).toBe(true);
       } finally {
@@ -336,15 +372,15 @@ describe("registry report resume", () => {
     const report = openRegistryReport("xcomic", false, settings, first);
     report.entry(row(), { outcome: "ambiguous" });
     report.close();
-    appendFileSync(first!, '{"event":"entry","entryId":');
+    appendFileSync(first, '{"event":"entry","entryId":');
     const resumed = openRegistryReport("xcomic", false, settings, second, first);
     expect(resumed.skip(row())).toBe(true);
     resumed.close();
-    appendFileSync(first!, '\n{"event":"summary"}\n');
+    appendFileSync(first, '\n{"event":"summary"}\n');
     expect(() => openRegistryReport("xcomic", false, settings, third, first)).toThrow(
       /Invalid resume report line/,
     );
-    writeFileSync(first!, '{"event":"entry","entryId":"a"}\n');
+    writeFileSync(first, '{"event":"entry","entryId":"a"}\n');
     expect(() => openRegistryReport("xcomic", false, settings, third, first)).toThrow(/precede/);
   });
 });

@@ -114,14 +114,16 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
 
   const persistTokensEffect = (): Effect.Effect<void, CliEffectError> =>
     Effect.gen(function* () {
-      if (!options.cachePath) {
+      const { cachePath } = options;
+
+      if (!cachePath) {
         return;
       }
 
       const payload: PersistedTokens = { accessToken, refreshToken, expiresAt };
       yield* fromPromise(async () => {
-        await mkdir(dirname(options.cachePath!), { recursive: true });
-        await writeFile(options.cachePath!, JSON.stringify(payload), { mode: 0o600 });
+        await mkdir(dirname(cachePath), { recursive: true });
+        await writeFile(cachePath, JSON.stringify(payload), { mode: 0o600 });
       }).pipe(
         Effect.mapError((cause) => cliError(`MangaDex token cache write failed: ${cause.message}`)),
       );

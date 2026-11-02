@@ -16,6 +16,7 @@ import {
 import { createAuthorizationUrl, getOAuthClientConfig } from "../src/oauth";
 import { handleOAuth } from "../src/routes/oauth";
 import type { Env, ManifoldSyncStub } from "../src/types";
+import { testEnv, unusedSyncStub } from "./env-fixture";
 
 const environment = {
   MANIFOLD_ANILIST_CLIENT_ID: "anilist-client",
@@ -131,20 +132,17 @@ describe("Manifold GitHub OAuth callback", () => {
   }): Promise<Response> => {
     const url = new URL("https://manifold.example/v1/oauth/github/callback?state=callback-state");
 
-    const callbackStub: Pick<ManifoldSyncStub, "completeGithubOAuth"> = {
+    const sync: ManifoldSyncStub = {
+      ...unusedSyncStub(),
       completeGithubOAuth: async () => completeResult,
     };
 
-    // SAFETY: this callback route only calls completeGithubOAuth on the stub.
-    const sync = callbackStub as ManifoldSyncStub;
-
-    const env = {
-      // SAFETY: the route only reads MANIFOLD_SYNC on this callback path.
-      ...({} as Env),
+    const env: Env = {
+      ...testEnv(),
       MANIFOLD_SYNC: {
         getByName: () => sync,
       },
-    } satisfies Env;
+    };
 
     const response = await Effect.runPromise(
       handleOAuth({

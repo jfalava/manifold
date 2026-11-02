@@ -1,8 +1,23 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { arrayField } from "@manifold/json";
 import { describe, expect, it } from "vitest";
+
+import {
+  asObject,
+  findLine,
+  matchGroup,
+  objectAt,
+  objectsAt,
+  parseJson,
+  parseJsonArray,
+  parseJsonObject,
+  readReport,
+  required,
+  stringAt,
+} from "./support/report";
 
 const run = (
   flags: string[] = [],
@@ -13,10 +28,13 @@ const run = (
   const directory = mkdtempSync(join(tmpdir(), "manifold-kagane-"));
   const report = join(directory, "report.jsonl");
   const resume = join(directory, "resume.jsonl");
+
   try {
-    if (options.resume)
+    if (options.resume) {
       writeFileSync(resume, options.resume.map((line) => JSON.stringify(line)).join("\n") + "\n");
-    if (checkpoint)
+    }
+
+    if (checkpoint) {
       writeFileSync(
         resume,
         [
@@ -32,6 +50,8 @@ const run = (
           .map((line) => JSON.stringify(line))
           .join("\n") + "\n",
       );
+    }
+
     const result = spawnSync(
       "bun",
       [
@@ -219,15 +239,8 @@ const run = (
       ],
       { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 20_000 },
     );
-    return {
-      ...result,
-      report: existsSync(report)
-        ? readFileSync(report, "utf8")
-            .trim()
-            .split("\n")
-            .map((line) => JSON.parse(line))
-        : [],
-    };
+
+    return { ...result, report: readReport(report) };
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -242,12 +255,21 @@ describe("registry kagane", () => {
       expect(result.stdout).toContain("PAUSE_STABLE");
       expect(result.stdout.match(/^WRITE /gm)).toHaveLength(1);
       expect(result.stdout).toContain("BROWSER_CLOSED");
-      const requests: { path: string; method: string; body: string | null }[] = JSON.parse(
-        result.stdout.match(/^FINAL_REQUESTS (.+)$/m)![1]!,
+
+      const requests = parseJsonArray(matchGroup(result.stdout, /^FINAL_REQUESTS (.+)$/m)).map(
+        (request) => asObject(request, "request"),
       );
-      const searches = requests.filter((request) => request.path.includes("/search/series"));
+
+      const searches = requests.filter((request) =>
+        stringAt(request, "path").includes("/search/series"),
+      );
+
       expect(searches).toHaveLength(stage === "startup" ? 1 : 2);
-      if (stage === "request") expect(searches[1]).toEqual(searches[0]);
+
+      if (stage === "request") {
+        expect(searches[1]).toEqual(searches[0]);
+      }
+
       expect(result.report.find((line) => line.event === "entry")).toMatchObject({
         outcome: "matched",
         selectedId: "series/one",
@@ -258,7 +280,9 @@ describe("registry kagane", () => {
         counts: { matched: 1, challenged: 0, errors: 0 },
       });
       expect(
-        result.report.some((line) => line.event === "progress" && line.message.includes("PAUSED")),
+        result.report.some(
+          (line) => line.event === "progress" && stringAt(line, "message").includes("PAUSED"),
+        ),
       ).toBe(true);
     },
   );
@@ -276,11 +300,14 @@ describe("registry kagane", () => {
     expect(result.stdout).toContain("PAUSE_STABLE");
     expect(result.stdout).not.toMatch(/^WRITE /m);
     expect(result.stdout).not.toContain("SEARCH Nothing");
-    if (action !== "cancel") expect(result.stdout).toContain("BROWSER_CLOSED");
-    const requests: { path: string }[] = JSON.parse(
-      result.stdout.match(/^FINAL_REQUESTS (.+)$/m)![1]!,
-    );
-    expect(requests.map((request) => request.path)).toEqual(
+
+    if (action !== "cancel") {
+      expect(result.stdout).toContain("BROWSER_CLOSED");
+    }
+
+    const requests = parseJsonArray(matchGroup(result.stdout, /^FINAL_REQUESTS (.+)$/m));
+
+    expect(requests.map((request) => stringAt(asObject(request, "request"), "path"))).toEqual(
       stage === "startup" ? [] : ["/api/v2/sources/list", "/api/v2/search/series?page=0&size=35"],
     );
     expect(result.report.some((line) => line.applied === true)).toBe(false);
@@ -298,8 +325,9 @@ describe("registry kagane", () => {
       failed.report
         .filter((line) => line.kind === "read")
         .some((line) => {
-          const body = JSON.parse(line.data);
-          return body.next_cursor === null && body.items?.length === 0;
+          const body = parseJsonObject(stringAt(line, "data"));
+
+          return body.next_cursor === null && arrayField(body, "items")?.length === 0;
         }),
     ).toBe(false);
 
@@ -310,6 +338,7 @@ describe("registry kagane", () => {
     ]);
     expect(recovered.stdout).toContain("SELECTION_BEFORE_WRITE true");
     expect(recovered.stdout).toContain('"externalId":"series/one"');
+
     for (const line of failed.report.filter((line) => line.kind === "read")) {
       expect(
         recovered.report.find((cached) => cached.kind === "read" && cached.key === line.key),
@@ -320,10 +349,15 @@ describe("registry kagane", () => {
   it("rejects a schema-valid but incomplete cached final inventory page before applying", () => {
     const preview = run(["--limit", "1"]);
     expect(preview.status, preview.stderr).toBe(0);
+
     const resume = preview.report.map((line) => {
-      if (line.kind !== "read" || !line.key.includes("before=cursor")) return line;
+      if (line.kind !== "read" || !stringAt(line, "key").includes("before=cursor")) {
+        return line;
+      }
+
       return { ...line, data: JSON.stringify({ items: [], next_cursor: null }) };
     });
+
     expect(resume).not.toEqual(preview.report);
     const result = run(["--apply", "--limit", "1"], "normal", { resume });
     expect(result.status, result.stderr).toBe(0);
@@ -345,32 +379,39 @@ describe("registry kagane", () => {
       deferredReason: "page_budget",
     });
     expect(interrupted.stdout).not.toContain("WRITE");
+
     const complete = run(["--max-pages", "2", "--limit", "1"], "normal", {
       resume: interrupted.report,
     });
+
     expect(complete.status, complete.stderr).toBe(0);
     expect(
-      complete.report.find((line) => line.event === "entry" && line.entryId === "target")
+      findLine(complete.report, (line) => line.event === "entry" && line.entryId === "target")
         .selectedId,
     ).toBe("series/one");
     expect(complete.stdout.match(/^READ .+$/gm)).toEqual([
       "READ /api/v2/series/series%2Fone/books?limit=200&before=cursor",
     ]);
+
     const lower = run(["--apply", "--max-pages", "1", "--limit", "1"], "normal", {
       resume: complete.report,
     });
+
     expect(lower.status, lower.stderr).toBe(0);
     expect(
-      lower.report.find((line) => line.event === "entry" && line.entryId === "target").outcome,
+      findLine(lower.report, (line) => line.event === "entry" && line.entryId === "target").outcome,
     ).toBe("deferred");
     expect(lower.stdout).not.toMatch(/^READ /m);
     expect(lower.stdout).not.toContain("WRITE");
+
     const applied = run(["--apply", "--max-pages", "2", "--limit", "1"], "normal", {
       resume: lower.report,
     });
+
     expect(applied.status, applied.stderr).toBe(0);
     expect(applied.stdout).not.toMatch(/^READ /m);
     expect(applied.stdout).toContain("SELECTION_BEFORE_WRITE true");
+
     for (const line of complete.report.filter((line) => line.kind === "read")) {
       expect(
         applied.report.find((cached) => cached.kind === "read" && cached.key === line.key),
@@ -380,6 +421,7 @@ describe("registry kagane", () => {
 
   it("refetches invalid, expired and future catalog bodies before applying", () => {
     const preview = run(["--limit", "1"]);
+
     for (const invalid of ["schema", "expired", "future"]) {
       const resume = preview.report.map((line) =>
         line.kind !== "read"
@@ -391,6 +433,7 @@ describe("registry kagane", () => {
                 : { savedAt: Date.now() + (invalid === "future" ? 86_400_000 : -86_400_001) }),
             },
       );
+
       const result = run(["--apply", "--limit", "1"], "normal", { resume });
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain("READ /api/v2/search/series?page=0");
@@ -408,12 +451,16 @@ describe("registry kagane", () => {
         ["--apply", "--source-priority", "Kodansha Comics"],
         `identity-crossing-${size}`,
       );
+
       expect(result.status, result.stderr).toBe(0);
-      const entry = result.report.find(
+
+      const entry = findLine(
+        result.report,
         (line) => line.event === "entry" && line.entryId === "target",
       );
+
       expect(entry).toMatchObject({ outcome: "ambiguous", selectedId: null });
-      expect(entry.selection.comparisons).toContainEqual({
+      expect(objectAt(entry, "selection").comparisons).toContainEqual({
         from: "series/one",
         to: "series/two",
         difference: { gained: size === "equal" ? [8] : [8, 9], lost: [3] },
@@ -425,9 +472,11 @@ describe("registry kagane", () => {
   it("revalidates a known competitor omitted by fresh search and keeps priority for identical inventories", () => {
     const prior = run(["--source-priority", "Kodansha Comics"], "identity-crossing-equal");
     const resume = prior.report.filter((line) => line.kind !== "read");
+
     const result = run(["--apply", "--source-priority", "Kodansha Comics"], "identity-omit", {
       resume,
     });
+
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("READ /api/v2/series/series%2Ftwo");
     expect(result.stdout).toContain(
@@ -461,7 +510,9 @@ describe("registry kagane", () => {
     ]);
     // Omission means unrestricted on Kagane, unlike MangaDex's safe+suggestive default.
     expect(
-      [...result.stdout.matchAll(/^SEARCH_BODY (.+)$/gm)].map((match) => JSON.parse(match[1]!)),
+      [...result.stdout.matchAll(/^SEARCH_BODY (.+)$/gm)].map((match) =>
+        parseJson(required(match[1], "SEARCH_BODY payload")),
+      ),
     ).toEqual([
       { title: "A Story", content_lang: ["en"] },
       { title: "Nothing", content_lang: ["en"] },
@@ -485,7 +536,8 @@ describe("registry kagane", () => {
     (pool) => {
       const result = run(["--apply"], `excluded-source-${pool}`);
       expect(result.status, result.stderr).toBe(0);
-      const entry = result.report.find((item) => item.entryId === "target");
+      const entry = findLine(result.report, (item) => item.entryId === "target");
+
       if (pool === "mixed") {
         expect(entry).toMatchObject({ outcome: "matched", selectedId: "series/one" });
         expect(result.stdout).toContain('"externalId":"series/one"');
@@ -493,7 +545,8 @@ describe("registry kagane", () => {
         expect(entry).toMatchObject({ outcome: "unmatched", selectedId: null });
         expect(result.stdout).not.toContain("WRITE");
       }
-      expect(entry.candidates.map((candidate: { id: string }) => candidate.id)).not.toContain(
+
+      expect(objectsAt(entry, "candidates").map((candidate) => candidate.id)).not.toContain(
         "mangadex-series",
       );
     },
@@ -506,6 +559,7 @@ describe("registry kagane", () => {
       expect(result.stdout + result.stderr).toContain("native MangaDex provider");
       expect(result.stdout).not.toContain("REGISTRY_PAGE");
     }
+
     const empty = run(["--apply"], "excluded-catalog");
     expect(empty.status).toBe(1);
     expect(empty.stdout + empty.stderr).toContain("No non-MangaDex Kagane sources");
@@ -534,6 +588,7 @@ describe("registry kagane", () => {
   it.each(["owned", "duplicate", "server-conflict"])("rejects %s claims", (scenario) => {
     const result = run(["--apply"], scenario);
     expect(result.status).toBe(1);
+
     if (scenario === "owned") {
       expect(result.stdout).toContain("CONFLICT target");
       expect(result.stdout).not.toContain("WRITE");
@@ -553,6 +608,7 @@ describe("registry kagane", () => {
       expect(result.status).toBe(1);
       expect(result.stdout).not.toContain("UNMATCHED target");
       expect(result.stdout).not.toContain("WRITE");
+
       if (scenario === "challenge") {
         expect(result.stdout + result.stderr).toContain("--chrome-cdp-url");
       }
@@ -570,17 +626,21 @@ describe("registry kagane", () => {
     expect(result.stdout).toContain('"externalId":"series/two"');
     expect(result.stdout).not.toContain('"externalId":"series/one"');
     expect(
-      result.report.find((entry) => entry.entryId === "target").candidates[0].matchedIds,
+      objectsAt(
+        findLine(result.report, (entry) => entry.entryId === "target"),
+        "candidates",
+      )[0]?.matchedIds,
     ).toEqual(["anilist", "mal"]);
   });
 
   it("searches globally and chooses greater coverage before the preferred source", () => {
     const result = run(["--apply", "--source-priority", "Kodansha Comics"], "identity-coverage");
     expect(result.status, result.stderr).toBe(0);
-    const entry = result.report.find((item) => item.entryId === "target");
+    const entry = findLine(result.report, (item) => item.entryId === "target");
     expect(entry.selectedId).toBe("series/one");
     expect(
-      entry.candidates.find((candidate: { id: string }) => candidate.id === "series/one").coverage,
+      findLine(objectsAt(entry, "candidates"), (candidate) => candidate.id === "series/one")
+        .coverage,
     ).toEqual({
       unit: "chapters",
       count: 5,
@@ -600,7 +660,7 @@ describe("registry kagane", () => {
     expect(result.status, result.stderr).toBe(
       scenario === "identity-incomplete" || scenario === "identity-loop" ? 1 : 0,
     );
-    expect(result.report.find((item) => item.entryId === "target").selectedId).toBeNull();
+    expect(findLine(result.report, (item) => item.entryId === "target").selectedId).toBeNull();
     expect(result.stdout).not.toContain("WRITE");
   });
 
@@ -643,11 +703,13 @@ describe("registry kagane", () => {
       ["--apply", "--source-priority", "Kodansha Comics"],
       "identity-contradiction",
     );
+
     expect(result.status, result.stderr).toBe(0);
-    const entry = result.report.find((item) => item.entryId === "target");
+    const entry = findLine(result.report, (item) => item.entryId === "target");
     expect(entry.selectedId).toBe("series/one");
     expect(
-      entry.candidates.find((candidate: { id: string }) => candidate.id === "series/two").reasons,
+      findLine(objectsAt(entry, "candidates"), (candidate) => candidate.id === "series/two")
+        .reasons,
     ).toContain("contradictory mal ID");
   });
 
@@ -665,6 +727,7 @@ describe("registry kagane", () => {
       ],
       scenario,
     );
+
     expect(result.status, result.stderr).toBe(0);
     expect(result.report.find((entry) => entry.entryId === "target")).toMatchObject({
       outcome: "ambiguous",
@@ -685,31 +748,38 @@ describe("registry kagane", () => {
   it("compares MangaDex UUIDs rather than trusting a source name or matching title", () => {
     const result = run(["--apply"], "identity-mangadex");
     expect(result.status, result.stderr).toBe(0);
-    const entry = result.report.find((item) => item.entryId === "target");
+    const entry = findLine(result.report, (item) => item.entryId === "target");
     expect(entry.selectedId).toBe("series/two");
     expect(
-      entry.candidates.find((candidate: { id: string }) => candidate.id === "series/one").reasons,
+      findLine(objectsAt(entry, "candidates"), (candidate) => candidate.id === "series/one")
+        .reasons,
     ).toContain("contradictory mangadex ID");
   });
 
   it("completes searches beyond page 20 but refuses a truncated result or repeated page", () => {
     const complete = run(["--apply"], "long-search");
     expect(complete.status, complete.stderr).toBe(0);
-    expect(complete.report.find((entry) => entry.entryId === "target").selectedId).toBe("page-20");
+    expect(findLine(complete.report, (entry) => entry.entryId === "target").selectedId).toBe(
+      "page-20",
+    );
+
     const progress = complete.report.findIndex(
       (entry) =>
-        entry.event === "progress" && entry.message.includes('Search "A Story" page 21/21'),
+        entry.event === "progress" &&
+        stringAt(entry, "message").includes('Search "A Story" page 21/21'),
     );
+
     expect(progress).toBeGreaterThan(0);
     expect(progress).toBeLessThan(complete.report.findIndex((entry) => entry.entryId === "target"));
-    expect(complete.report[progress].message).toContain(
+    expect(stringAt(complete.report[progress], "message")).toContain(
       '1/2 A Story [all non-MangaDex sources]: Search "A Story" page 21/21',
     );
     expect(complete.stdout + complete.stderr).not.toContain('Search "A Story" page 21/21');
+
     for (const scenario of ["long-search", "stuck-search"]) {
       const incomplete = run(["--apply", "--max-pages", "20"], scenario);
       expect(incomplete.status).toBe(scenario === "long-search" ? 0 : 1);
-      expect(incomplete.report.find((entry) => entry.entryId === "target").outcome).toBe(
+      expect(findLine(incomplete.report, (entry) => entry.entryId === "target").outcome).toBe(
         scenario === "long-search" ? "deferred" : "errors",
       );
       expect(incomplete.stdout).not.toContain("WRITE");
@@ -720,7 +790,7 @@ describe("registry kagane", () => {
     const result = run(["--apply"], "retry");
     expect(result.status, result.stderr).toBe(0);
     expect(result.report.filter((entry) => entry.event === "retry")).toHaveLength(2);
-    expect(result.report.find((entry) => entry.entryId === "target").outcome).toBe("matched");
+    expect(findLine(result.report, (entry) => entry.entryId === "target").outcome).toBe("matched");
     expect(result.report.at(-1)).toMatchObject({
       event: "summary",
       completed: true,
@@ -736,7 +806,7 @@ describe("registry kagane", () => {
       expect(result.status).toBe(1);
       expect(result.stdout).not.toContain("SEARCH Nothing");
       expect(result.stdout).not.toContain("WRITE");
-      expect(result.report.find((entry) => entry.entryId === "target").error).toContain(
+      expect(findLine(result.report, (entry) => entry.entryId === "target").error).toContain(
         "Retry-After exceeds 120s",
       );
       expect(result.report.at(-1)).toMatchObject({ completed: false, counts: { errors: 1 } });
@@ -749,7 +819,7 @@ describe("registry kagane", () => {
     expect(result.stdout).toContain("Completed with errors:");
     expect(result.stdout).not.toContain("Stopped:");
     expect(result.stdout).not.toContain("Applied:");
-    expect(result.report.find((entry) => entry.entryId === "target").note).toContain(
+    expect(findLine(result.report, (entry) => entry.entryId === "target").note).toContain(
       "unexpected response schema",
     );
     expect(result.report.at(-1)).toMatchObject({ completed: true, counts: { errors: 1 } });

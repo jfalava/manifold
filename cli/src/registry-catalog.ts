@@ -31,9 +31,14 @@ export const registryCatalog = (options: {
   return {
     read(key: string): string | undefined {
       const entry = reads.get(key);
-      const age = entry ? epochMillisNow() - entry.savedAt : -1;
 
-      return age >= 0 && age < 86_400_000 ? entry!.data : undefined;
+      if (!entry) {
+        return undefined;
+      }
+
+      const age = epochMillisNow() - entry.savedAt;
+
+      return age >= 0 && age < 86_400_000 ? entry.data : undefined;
     },
     forget(key: string): void {
       reads.delete(key);

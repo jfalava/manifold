@@ -1,8 +1,11 @@
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics schemaSync:off */
 import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
 import { requestHref } from "@manifold/json";
 import { catalogApp } from "../src/catalog";
 import type { Env } from "../src/types";
+import { testEnv } from "./env-fixture";
 
 const assets = new Map<string, string>([
   ["/LICENSE", "license-text"],
@@ -32,9 +35,8 @@ const assets = new Map<string, string>([
   ["/beta/MANIFOLD-beta/icon.png", "beta-png"],
 ]);
 
-// SAFETY: test fixture supplies only the Worker Env bindings catalog routes use
-const env = {
-  ENVIRONMENT: "test",
+const env: Env = {
+  ...testEnv(),
   ASSETS: {
     fetch: async (input: Request | string) => {
       const pathname = new URL(requestHref(input)).pathname;
@@ -47,7 +49,7 @@ const env = {
       return new Response(body, { status: 200 });
     },
   },
-} as Env;
+};
 
 const get = (path: string) => catalogApp.request(`https://manifold.jfa.dev${path}`, {}, env);
 
@@ -57,15 +59,16 @@ describe("Paperback catalog routes", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
 
-    // SAFETY: parsed JSON matches the trusted/test versioning payload shape
-    const body = (await response.json()) as {
-      license: string;
-      licenseUrl: string;
-      mitLicense: string;
-      mitLicenseUrl: string;
-      attributionsUrl: string;
-      sources: readonly { id: string; version: string }[];
-    };
+    const body = Schema.decodeUnknownSync(
+      Schema.Struct({
+        license: Schema.String,
+        licenseUrl: Schema.String,
+        mitLicense: Schema.String,
+        mitLicenseUrl: Schema.String,
+        attributionsUrl: Schema.String,
+        sources: Schema.Array(Schema.Struct({ id: Schema.String, version: Schema.String })),
+      }),
+    )(await response.json());
 
     expect(body.license).toBe("GPL-3.0-or-later");
     expect(body.licenseUrl).toBe("/extensions/0.9/stable/LICENSE");
@@ -79,10 +82,11 @@ describe("Paperback catalog routes", () => {
     const response = await get("/extensions/0.9/beta/versioning.json");
     expect(response.status).toBe(200);
 
-    // SAFETY: parsed JSON matches the trusted/test versioning payload shape
-    const body = (await response.json()) as {
-      sources: readonly { id: string; name: string }[];
-    };
+    const body = Schema.decodeUnknownSync(
+      Schema.Struct({
+        sources: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String })),
+      }),
+    )(await response.json());
 
     expect(body.sources.map((source) => source.id)).toEqual(["MANIFOLD-beta"]);
     expect(body.sources[0]?.name).toBe("MANIFOLD beta");
@@ -108,8 +112,11 @@ describe("Paperback catalog routes", () => {
   it("serves info.json from staged assets", async () => {
     const response = await get("/extensions/0.9/stable/MANIFOLD/info.json");
     expect(response.status).toBe(200);
-    // SAFETY: parsed JSON matches { id: string; name: string } for this trusted/test payload
-    const body = (await response.json()) as { id: string; name: string };
+
+    const body = Schema.decodeUnknownSync(
+      Schema.Struct({ id: Schema.String, name: Schema.String }),
+    )(await response.json());
+
     expect(body.id).toBe("MANIFOLD");
     expect(body.name).toBe("MANIFOLD");
   });

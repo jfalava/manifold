@@ -20,6 +20,7 @@ describe("loadDotEnv", () => {
     const file = join(directory, ".env");
     const keys = ["MANIFOLD_TEST_QUOTED", "MANIFOLD_TEST_HASH"];
     loadedKeys.push(...keys);
+
     try {
       writeFileSync(file, 'MANIFOLD_TEST_QUOTED="value" # comment\nMANIFOLD_TEST_HASH="a # b"\n');
       loadDotEnv(file);

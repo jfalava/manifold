@@ -26,6 +26,7 @@ describe("remote mutation safeguards", () => {
         cwd: new URL("..", import.meta.url).pathname,
         encoding: "utf8",
       });
+
     const registry = help(["registry"]);
     expect(registry.status).toBe(0);
     expect(registry.stdout).not.toContain("comix");

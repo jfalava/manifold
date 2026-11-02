@@ -664,11 +664,16 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                       ]);
                     }
 
-                    if (acceptRecommendations && recommendation?.acceptEligible) {
-                      const candidate = candidates.get(recommendation.candidateId)!;
+                    // Recommendations are computed from these candidates, so an accepted ID is always present.
+                    const recommended =
+                      acceptRecommendations && recommendation?.acceptEligible
+                        ? candidates.get(recommendation.candidateId)
+                        : undefined;
+
+                    if (recommended) {
                       selected = {
-                        ...candidate,
-                        ...(recommendation.selection && {
+                        ...recommended,
+                        ...(recommendation?.selection && {
                           selection: recommendation.selection,
                         }),
                       };
@@ -703,23 +708,32 @@ export const manganatoPrefillCommand = Command.make("manganato", {
                             selection: selected.selection ?? null,
                             titles: [...titles],
                             authors: [...authors],
-                            candidates: [...candidates.values()].map((candidate) => ({
-                              id: candidate.id,
-                              title: candidate.title,
-                              authors: [...candidate.authors],
-                              evidence: manganatoMatchEvidence(matchingIdentity, candidate, [
-                                ...candidates.values(),
-                              ]),
-                              coverage: {
-                                unit: candidate.coverage!.unit,
-                                count: candidate.coverage!.count,
-                                integerChapters: candidate.coverage!.numbers.filter(
-                                  (number) => number >= 1 && Number.isInteger(number),
-                                ).length,
-                                latestChapterUpdatedAt:
-                                  candidate.coverage!.latestChapterUpdatedAt ?? null,
-                              },
-                            })),
+                            candidates: [...candidates.values()].map((candidate) => {
+                              const { coverage } = candidate;
+
+                              if (!coverage) {
+                                throw cliError(
+                                  `manganato:${candidate.id} has no chapter coverage for the decision record`,
+                                );
+                              }
+
+                              return {
+                                id: candidate.id,
+                                title: candidate.title,
+                                authors: [...candidate.authors],
+                                evidence: manganatoMatchEvidence(matchingIdentity, candidate, [
+                                  ...candidates.values(),
+                                ]),
+                                coverage: {
+                                  unit: coverage.unit,
+                                  count: coverage.count,
+                                  integerChapters: coverage.numbers.filter(
+                                    (number) => number >= 1 && Number.isInteger(number),
+                                  ).length,
+                                  latestChapterUpdatedAt: coverage.latestChapterUpdatedAt ?? null,
+                                },
+                              };
+                            }),
                           };
 
                           record(decision);

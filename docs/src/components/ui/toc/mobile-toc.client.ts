@@ -37,6 +37,8 @@ function initMobileToc(root: HTMLElement): () => void {
     return () => undefined;
   }
 
+  const selectEl: HTMLSelectElement = select;
+
   // Paired so slug/element indices stay aligned; `inBand` indexes into this.
   type Heading = { slug: string; el: HTMLElement };
 
@@ -54,8 +56,8 @@ function initMobileToc(root: HTMLElement): () => void {
   let suppressTimer: ReturnType<typeof setTimeout> | undefined;
 
   function setActive(slug: string) {
-    if (select!.value !== slug) {
-      select!.value = slug;
+    if (selectEl.value !== slug) {
+      selectEl.value = slug;
     }
   }
 

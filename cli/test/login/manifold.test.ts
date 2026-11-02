@@ -9,6 +9,7 @@ import {
   MANIFOLD_CLI_OAUTH_CLIENT_ID,
   MANIFOLD_CLI_OAUTH_REDIRECT_URI,
 } from "../../src/login/manifold";
+import { numberAt, parseJsonObject, stringAt } from "../support/report";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -20,14 +21,18 @@ describe("Manifold CLI OAuth", () => {
   it("creates a loopback PKCE authorization request", async () => {
     const auth = await createManifoldAuthorization("https://manifold.example/api/");
     const url = new URL(auth.url);
+
     const challenge = await crypto.subtle.digest(
       "SHA-256",
       new TextEncoder().encode(auth.verifier),
     );
+
     let binary = "";
+
     for (const byte of new Uint8Array(challenge)) {
       binary += String.fromCharCode(byte);
     }
+
     const expectedChallenge = btoa(binary)
       .replaceAll("+", "-")
       .replaceAll("/", "_")
@@ -44,17 +49,21 @@ describe("Manifold CLI OAuth", () => {
   it("exchanges a callback code without exposing provider credentials", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(requestHref(input)).toBe("https://manifold.example/api/v1/oauth/token");
+
       const body =
         init?.body instanceof URLSearchParams
           ? init.body.toString()
           : (requestInitText(init) ?? "");
+
       expect(body).not.toContain("github");
+
       return Response.json({
         access_token: "mf_access_cli",
         refresh_token: "mf_refresh_cli",
         expires_in: 900,
       });
     });
+
     vi.stubGlobal("fetch", fetcher);
 
     await expect(
@@ -74,11 +83,24 @@ describe("Manifold CLI OAuth", () => {
 
 describe("Manifold API session recovery", () => {
   const origin = "https://manifold.example/api";
+
   const session = (generation: number, expiresAt = Date.now() + 900_000) => ({
     accessToken: `access-${generation}`,
     refreshToken: `refresh-${generation}`,
     expiresAt,
   });
+
+  /** Decodes what the CLI wrote back to `Bun.secrets` into the `session()` shape. */
+  const storedSession = (value: string): ReturnType<typeof session> => {
+    const record = parseJsonObject(value);
+
+    return {
+      accessToken: stringAt(record, "accessToken"),
+      refreshToken: stringAt(record, "refreshToken"),
+      expiresAt: numberAt(record, "expiresAt"),
+    };
+  };
+
   const config = () => apiConfig(Option.some(origin), Option.none());
 
   it.each(["expiry", "401"] as const)(
@@ -91,7 +113,7 @@ describe("Manifold API session recovery", () => {
         secrets: {
           get: async () => JSON.stringify(stored),
           set: async ({ value }: { value: string }) => {
-            stored = JSON.parse(value);
+            stored = storedSession(value);
           },
         },
       });
@@ -100,16 +122,20 @@ describe("Manifold API session recovery", () => {
           const grant = new URLSearchParams(
             init?.body instanceof URLSearchParams ? init.body.toString() : requestInitText(init),
           );
+
           if (grant.get("refresh_token") !== `refresh-${generation}`) {
             return Response.json({ error: "invalid_grant" }, { status: 400 });
           }
+
           generation++;
+
           return Response.json({
             access_token: `access-${generation}`,
             refresh_token: `refresh-${generation}`,
             expires_in: 900,
           });
         }
+
         return generation > 0 &&
           new Headers(init?.headers).get("authorization") === `Bearer access-${generation}`
           ? Response.json({ linked: "senpai-kanojo" })
@@ -153,7 +179,7 @@ describe("Manifold API session recovery", () => {
       secrets: {
         get: async () => JSON.stringify(stored),
         set: async ({ value }: { value: string }) => {
-          stored = JSON.parse(value);
+          stored = storedSession(value);
         },
       },
     });
@@ -167,12 +193,14 @@ describe("Manifold API session recovery", () => {
         ) {
           return new Response(null, { status: 400 });
         }
+
         return Response.json({
           access_token: "access-2",
           refresh_token: "refresh-2",
           expires_in: 900,
         });
       }
+
       return new Headers(init?.headers).get("authorization") === "Bearer access-2"
         ? Response.json({ recovered: true })
         : new Response(null, { status: 401 });
@@ -192,6 +220,7 @@ describe("Manifold API session recovery", () => {
     let requests = 0;
     vi.stubGlobal("fetch", async () => {
       requests++;
+
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     });
     await expect(apiCall(stale, "/v1/registry", "GET", undefined, Schema.Unknown)).rejects.toThrow(
@@ -209,8 +238,10 @@ describe("Manifold API session recovery", () => {
       if (requestHref(input).endsWith("/oauth/token")) {
         refreshes++;
         stored = session(1);
+
         return Response.json({ error: "invalid_grant" }, { status: 400 });
       }
+
       return new Headers(init?.headers).get("authorization") === "Bearer access-1"
         ? Response.json({ recovered: true })
         : new Response(null, { status: 401 });
@@ -227,6 +258,7 @@ describe("Manifold API session recovery", () => {
     let requests = 0;
     vi.stubGlobal("fetch", async () => {
       requests++;
+
       return Response.json({ error: "invalid_grant" }, { status: 400 });
     });
     await expect(
@@ -250,12 +282,15 @@ describe("Manifold API session recovery", () => {
       vi.stubGlobal("fetch", async (_input: RequestInfo | URL, init?: RequestInit) => {
         requests++;
         expect(new Headers(init?.headers).get("authorization")).toBe("Bearer explicit-token");
+
         return Response.json({ error: "Unauthorized explicit token" }, { status: 401 });
       });
+
       const explicit = await apiConfig(
         Option.some(origin),
         source === "flag" ? Option.some("explicit-token") : Option.none(),
       );
+
       await expect(
         apiCall(explicit, "/v1/registry", "GET", undefined, Schema.Unknown),
       ).rejects.toThrow("Unauthorized explicit token");

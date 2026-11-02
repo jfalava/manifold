@@ -6,3 +6,10 @@ declare module "*.astro" {
   const Component: AstroComponentFactory;
   export default Component;
 }
+
+declare namespace App {
+  interface Locals {
+    /** Per-request id counters owned by components such as PackageManagers. */
+    __nbCounters?: Map<string, number>;
+  }
+}

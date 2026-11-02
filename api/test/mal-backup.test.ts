@@ -33,19 +33,14 @@ const entry: RegistryEntry = {
   providers: [{ provider: "anilist", externalId: "42", updatedAt: 0 }],
 };
 
-const environment = (): Pick<Env, "AI" | "MANIFOLD_MAL_CLIENT_ID"> => {
-  const fixture = {
-    MANIFOLD_MAL_CLIENT_ID: "test-client",
-    AI: {
-      run: async () => {
-        throw new Error("Unexpected embedding request");
-      },
+const environment = (): Pick<Env, "AI" | "MANIFOLD_MAL_CLIENT_ID"> => ({
+  MANIFOLD_MAL_CLIENT_ID: "test-client",
+  AI: {
+    run: async () => {
+      throw new Error("Unexpected embedding request");
     },
-  };
-
-  // @ts-expect-error Ai's platform brand is wider than this resolver test double.
-  return fixture;
-};
+  },
+});
 
 afterEach(() => vi.unstubAllGlobals());
 

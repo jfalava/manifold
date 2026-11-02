@@ -24,7 +24,8 @@ import type {
   UpsertEntryInput,
 } from "./domain";
 import type { MangaDexChapter, MangaDexPaged } from "@manifold/mangadex";
-import type { Ai, SecretsStoreSecret, VectorizeIndex } from "@cloudflare/workers-types";
+import type { AiModels, SecretsStoreSecret, VectorizeIndex } from "@cloudflare/workers-types";
+import type { MANGADEX_EMBEDDING_MODEL } from "./mangadex-match";
 import type { MangaDexEntryStat } from "./mangadex-stats";
 import type { OAuthStart } from "./oauth";
 import type {
@@ -112,9 +113,22 @@ export interface ManifoldSyncStub {
 /** Worker binding that may be a plain string (local dev) or a Secrets Store secret. */
 export type RuntimeSecret = string | SecretsStoreSecret;
 
+type EmbeddingModel = AiModels[typeof MANGADEX_EMBEDDING_MODEL];
+
+/** Workers AI surface Manifold calls: default `run` on the embedding model. `Ai` satisfies it. */
+export interface EmbeddingAi {
+  run(
+    model: typeof MANGADEX_EMBEDDING_MODEL,
+    inputs: EmbeddingModel["inputs"],
+  ): Promise<EmbeddingModel["postProcessedOutputs"]>;
+}
+
+/** Vectorize surface Manifold calls. `VectorizeIndex` satisfies it. */
+export type MangaDexVectorIndex = Pick<VectorizeIndex, "query" | "upsert">;
+
 export interface Env {
-  AI: Ai;
-  MANGADEX_INDEX: VectorizeIndex;
+  AI: EmbeddingAi;
+  MANGADEX_INDEX: MangaDexVectorIndex;
   REGISTRY_BACKUPS?: R2Bucket;
   MANIFOLD_SYNC: {
     getByName(name: string): ManifoldSyncStub;

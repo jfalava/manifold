@@ -30,6 +30,7 @@ describe("AniList authorization", () => {
     const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       Response.json({ access_token: "SECRET_TOKEN", expires_in: "SECRET_VALUE" }),
     );
+
     vi.stubGlobal("fetch", fetcher);
     await expect(exchangeAniListCode("client", "secret", "code")).rejects.toThrow(
       /^AniList returned an invalid token response\. Run login anilist again\.$/,
@@ -90,9 +91,11 @@ describe("resolveAniListToken", () => {
 
   it("prefers an explicit flag, then MANIFOLD_ANILIST_TOKEN, over the keychain", async () => {
     process.env.MANIFOLD_ANILIST_TOKEN = "env-token";
+
     const store = secrets(
       JSON.stringify({ accessToken: "keychain", expiresAt: Date.now() + 3_600_000 }),
     );
+
     await expect(resolveAniListToken("flag-token", store)).resolves.toBe("flag-token");
     await expect(resolveAniListToken(undefined, store)).resolves.toBe("env-token");
     expect(store.get).not.toHaveBeenCalled();
@@ -102,6 +105,7 @@ describe("resolveAniListToken", () => {
     const store = secrets(
       JSON.stringify({ accessToken: "keychain", expiresAt: Date.now() + 3_600_000 }),
     );
+
     await expect(resolveAniListToken(undefined, store)).resolves.toBe("keychain");
   });
 

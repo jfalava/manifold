@@ -8,8 +8,8 @@ import {
 } from "@manifold/contract";
 import { errorMessage, isFiniteNumber, isString, manifoldUserAgent } from "@manifold/json";
 import { createMangaDexClient, type MangaDexManga } from "@manifold/mangadex";
-import type { Ai, VectorizeIndex } from "@cloudflare/workers-types";
-import type { Env } from "./types";
+import type { VectorizeIndex } from "@cloudflare/workers-types";
+import type { EmbeddingAi, Env, MangaDexVectorIndex } from "./types";
 import { apiError, fromPromise } from "./manifold-sync/from-promise";
 
 export type {
@@ -346,7 +346,7 @@ const uniqueManga = (values: readonly MangaDexManga[]): MangaDexManga[] => {
 // below a hundred titles, so candidate embeddings go out in small batches.
 const EMBED_BATCH_SIZE = 16;
 
-const embedMangaTitlesEffect = (ai: Ai, texts: readonly string[]) =>
+const embedMangaTitlesEffect = (ai: EmbeddingAi, texts: readonly string[]) =>
   Effect.gen(function* () {
     if (texts.length === 0) {
       return [];
@@ -369,8 +369,10 @@ const embedMangaTitlesEffect = (ai: Ai, texts: readonly string[]) =>
     return vectors;
   });
 
-export const embedMangaTitles = (ai: Ai, texts: readonly string[]): Promise<readonly number[][]> =>
-  Effect.runPromise(embedMangaTitlesEffect(ai, texts));
+export const embedMangaTitles = (
+  ai: EmbeddingAi,
+  texts: readonly string[],
+): Promise<readonly number[][]> => Effect.runPromise(embedMangaTitlesEffect(ai, texts));
 
 const indexedCandidates = (
   matches: Awaited<ReturnType<VectorizeIndex["query"]>>["matches"],
@@ -382,7 +384,7 @@ const indexedCandidates = (
   });
 
 const queryIndex = (
-  index: VectorizeIndex,
+  index: MangaDexVectorIndex,
   vector: readonly number[],
   entry: MangaDexMatchInput,
 ): Effect.Effect<readonly RankedMangaDexCandidate[]> =>

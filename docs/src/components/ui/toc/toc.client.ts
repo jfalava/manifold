@@ -11,22 +11,25 @@ const BOTTOM_EPSILON = 2;
 const REVEAL_PADDING = 12;
 
 function initToc(root: HTMLElement): () => void {
-  const nav = root.querySelector<HTMLElement>("nav");
+  const navQuery = root.querySelector<HTMLElement>("nav");
 
-  const activePath = root.querySelector<SVGPathElement>(
+  const activePathQuery = root.querySelector<SVGPathElement>(
     "[data-nb-toc-rail-active]",
   );
 
   const links = root.querySelectorAll<HTMLElement>("[data-nb-toc-link]");
 
-  if (!nav || !activePath || links.length === 0) {
+  if (!navQuery || !activePathQuery || links.length === 0) {
     return () => undefined;
   }
+
+  const nav: HTMLElement = navQuery;
+  const activePath: SVGPathElement = activePathQuery;
 
   const scrollHost =
     root.closest<HTMLElement>("[data-nb-toc-scroll-host]") ?? root;
 
-  const slugs = Array.from(links).map((l) => l.dataset.nbSlug!);
+  const slugs = Array.from(links).map((l) => l.dataset.nbSlug ?? "");
 
   // Observe only resolvable headings, each carrying its original index, so
   // scroll-spy stays aligned with the full-length links/segments even when a
@@ -39,7 +42,7 @@ function initToc(root: HTMLElement): () => void {
     return () => undefined;
   }
 
-  const indexOfEl = new Map<HTMLElement, number>(
+  const indexOfEl = new Map<Element, number>(
     observed.map((o) => [o.el, o.index]),
   );
 
@@ -52,7 +55,7 @@ function initToc(root: HTMLElement): () => void {
   // Measure the rail from the DOM so the path stays pixel-perfect over the
   // static gray rail, capturing each link's arc-length range as we go.
   function buildRail() {
-    const navRect = nav!.getBoundingClientRect();
+    const navRect = nav.getBoundingClientRect();
 
     const m = Array.from(links).map((link) => {
       const r = link.getBoundingClientRect();
@@ -75,9 +78,9 @@ function initToc(root: HTMLElement): () => void {
     // activePath doubles as the scratch measurer here; the full `d` is written
     // back once at the end.
     const measure = (subPath: string) => {
-      activePath!.setAttribute("d", subPath);
+      activePath.setAttribute("d", subPath);
 
-      return activePath!.getTotalLength();
+      return activePath.getTotalLength();
     };
 
     let cumulative = 0;
@@ -117,7 +120,7 @@ function initToc(root: HTMLElement): () => void {
       prevYBot = cur.yBot;
     }
 
-    activePath!.setAttribute("d", d);
+    activePath.setAttribute("d", d);
     segments = newSegments;
     totalLength = cumulative;
   }
@@ -130,19 +133,19 @@ function initToc(root: HTMLElement): () => void {
     }
 
     if (instant) {
-      activePath!.setAttribute("data-initial", "true");
+      activePath.setAttribute("data-initial", "true");
       // Force recalc so only opacity transitions on first paint (no dash sweep).
-      void activePath!.getBoundingClientRect();
+      void activePath.getBoundingClientRect();
     }
 
-    activePath!.style.strokeDasharray = `${seg.length} ${totalLength + 1}`;
-    activePath!.style.strokeDashoffset = String(-seg.start);
+    activePath.style.strokeDasharray = `${seg.length} ${totalLength + 1}`;
+    activePath.style.strokeDashoffset = String(-seg.start);
 
     if (instant) {
       requestAnimationFrame(() => {
-        activePath!.setAttribute("data-ready", "true");
+        activePath.setAttribute("data-ready", "true");
         requestAnimationFrame(() => {
-          activePath!.removeAttribute("data-initial");
+          activePath.removeAttribute("data-initial");
         });
       });
     }
@@ -204,8 +207,7 @@ function initToc(root: HTMLElement): () => void {
   const spy = new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
-        // SAFETY: DOM query returns the expected element type in this document
-        const i = indexOfEl.get(entry.target as HTMLElement);
+        const i = indexOfEl.get(entry.target);
 
         if (i === undefined) {
           continue;
@@ -337,16 +339,16 @@ function initToc(root: HTMLElement): () => void {
         return;
       }
 
-      // SAFETY: DOM query returns the expected element type in this document
-      const link = (e.target as Element).closest<HTMLElement>(
-        "[data-nb-toc-link]",
-      );
+      const link =
+        e.target instanceof Element
+          ? e.target.closest<HTMLElement>("[data-nb-toc-link]")
+          : null;
 
       if (!link) {
         return;
       }
 
-      const i = slugs.indexOf(link.dataset.nbSlug!);
+      const i = slugs.indexOf(link.dataset.nbSlug ?? "");
 
       if (i === -1) {
         return;

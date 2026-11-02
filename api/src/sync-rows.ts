@@ -249,14 +249,19 @@ const nonEmpty = (value: string | null | undefined): string | undefined => {
 const finiteMs = (value: number | null | undefined, fallback: number): number =>
   isFiniteNumber(value) ? value : fallback;
 
+/** Durable row as read back: historical data may hold a provider outside the current union. */
+export type StoredProviderRow<Row> = {
+  [Key in keyof Row]: Key extends "provider" ? string : Row[Key];
+};
+
 /**
  * Build a wire-safe RegistryEntry from durable rows.
  * Drops corrupt provider links and coerces empty required strings so response
  * encode never 500s on historical DO data (empty external_id, bad provider, …).
  */
 export const toRegistryEntry = (
-  row: EntryRow,
-  providerRows: readonly ProviderRow[],
+  row: StoredProviderRow<EntryRow>,
+  providerRows: readonly StoredProviderRow<ProviderRow>[],
 ): RegistryEntry => {
   const nowMs = epochMillisNow();
   const providers: ProviderLink[] = [];

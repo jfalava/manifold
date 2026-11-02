@@ -101,10 +101,12 @@ export function errorMessage(cause: unknown): string {
   }
 }
 
-const isRequestHrefString = (value: RequestInfo | URL): value is string =>
-  typeof value === "string";
+/** What `requestHref` reads: a URL string, or anything with `href` (URL) or `url` (Request). */
+type RequestHrefInput = string | { readonly href: string } | { readonly url: string };
 
-export function requestHref(input: RequestInfo | URL): string {
+const isRequestHrefString = (value: RequestHrefInput): value is string => typeof value === "string";
+
+export function requestHref(input: RequestHrefInput): string {
   // Strings first: MangaDex/AniList fetchers always pass absolute URL strings.
   // Do not touch global URL/Request — Paperback's extension JSC sandbox may not
   // define them, and `instanceof URL` then throws "Can't find variable: URL"

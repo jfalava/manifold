@@ -174,10 +174,10 @@ export const openRegistryReport = (
     });
 
     // Carry all latest outcomes, including failures, so chains do not resurrect old successes.
-    for (const entry of previous.values()) {
+    for (const [entryId, entry] of previous) {
       record({
         event: "checkpoint",
-        entryId: entry.entryId!,
+        entryId,
         title: entry.title ?? null,
         outcome: entry.outcome ?? null,
         fingerprint: entry.fingerprint ?? null,

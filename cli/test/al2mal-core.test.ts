@@ -70,12 +70,14 @@ describe("createMalTitleSearch", () => {
 
   it("throws quietly (no console) on HTTP 400 so the bar can count errors", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
     const fetcher = vi.fn(
       async () =>
         new Response(JSON.stringify({ message: "invalid q", error: "bad_request" }), {
           status: 400,
         }),
     );
+
     const search = createMalTitleSearch("client", fetcher, instant);
     await expect(search("Some Title")).rejects.toThrow("MAL title search HTTP 400");
     expect(error).not.toHaveBeenCalled();
@@ -96,6 +98,7 @@ describe("createMalTitleSearch", () => {
         ],
       }),
     );
+
     const search = createMalTitleSearch("client", fetcher, instant);
     await expect(search("Berserk")).resolves.toEqual([
       {
@@ -125,6 +128,7 @@ describe("createMalTitleSearch", () => {
       .fn()
       .mockResolvedValueOnce(new Response(null, { status: 429, headers: { "retry-after": "1" } }))
       .mockResolvedValueOnce(Response.json({ data: [] }));
+
     const sleep = vi.fn(async () => undefined);
     const search = createMalTitleSearch("client", fetcher, sleep);
     await expect(search("One Piece")).resolves.toEqual([]);
@@ -142,6 +146,7 @@ describe("matchAniListToMal", () => {
       search,
       { includeProgress: true },
     );
+
     expect(result).toMatchObject({
       kind: "matched",
       value: {
@@ -158,11 +163,13 @@ describe("matchAniListToMal", () => {
       { id: 5, title: "Berserk", aliases: ["ベルセルク"] },
       { id: 6, title: "Berserk Max", aliases: [] },
     ];
+
     const result = await matchAniListToMal(
       entry({ mediaId: 2, title: "Berserk", status: "COMPLETED", titles: ["Berserk"] }),
       titleSearch,
       { includeProgress: false },
     );
+
     expect(result).toMatchObject({
       kind: "matched",
       value: {
@@ -178,11 +185,13 @@ describe("matchAniListToMal", () => {
       { id: 1, title: "One Piece", aliases: [] },
       { id: 2, title: "One Piece", aliases: ["OP"] },
     ];
+
     const result = await matchAniListToMal(
       entry({ mediaId: 3, title: "One Piece", status: "CURRENT" }),
       titleSearch,
       { includeProgress: true },
     );
+
     expect(result).toMatchObject({
       kind: "unmatched",
       value: { reason: "Ambiguous or weak MAL title match" },
@@ -191,11 +200,13 @@ describe("matchAniListToMal", () => {
 
   it("accepts a unique partial title when no exact hit", async () => {
     const titleSearch: Al2malSearch = async () => [{ id: 8, title: "Vinland Saga", aliases: [] }];
+
     const result = await matchAniListToMal(
       entry({ mediaId: 4, title: "Vinland", status: "PAUSED" }),
       titleSearch,
       { includeProgress: false },
     );
+
     expect(result).toMatchObject({
       kind: "matched",
       value: {
@@ -208,13 +219,16 @@ describe("matchAniListToMal", () => {
 
   it("does not call MAL search when no title is usable as q", async () => {
     const titleSearch = vi.fn(async () => [{ id: 1, title: "X", aliases: [] }]);
+
     const result = await matchAniListToMal(
       entry({ mediaId: 5, title: "OK", status: "CURRENT", titles: ["OK", "A"] }),
       titleSearch,
       { includeProgress: false },
     );
+
     expect(titleSearch).not.toHaveBeenCalled();
     expect(result.kind).toBe("unmatched");
+
     if (result.kind === "unmatched") {
       expect(result.value.reason).toContain("3–64 characters");
     }
@@ -224,12 +238,15 @@ describe("matchAniListToMal", () => {
     const titleSearch: Al2malSearch = async () => {
       throw new Error('Canonical provider returned HTTP 400: body={"message":"invalid q"}');
     };
+
     const result = await matchAniListToMal(
       entry({ mediaId: 6, title: "Some Long Title", status: "CURRENT" }),
       titleSearch,
       { includeProgress: false },
     );
+
     expect(result.kind).toBe("unmatched");
+
     if (result.kind === "unmatched") {
       expect(result.value.reason).toContain("MAL title search failed");
     }
@@ -239,6 +256,7 @@ describe("matchAniListToMal", () => {
 describe("runAl2mal", () => {
   it("dry-run never writes", async () => {
     const updateManga = vi.fn();
+
     const report = await runAl2mal({
       entries: [entry({ mediaId: 1, title: "A", status: "CURRENT", malId: "10", progress: 2 })],
       search: async () => [],
@@ -246,6 +264,7 @@ describe("runAl2mal", () => {
       dryRun: true,
       includeProgress: true,
     });
+
     expect(report).toMatchObject({
       scanned: 1,
       matched: [{ malId: 10 }],
@@ -258,6 +277,7 @@ describe("runAl2mal", () => {
 
   it("apply PATCHes status, reread, and chapter progress", async () => {
     const updateManga = vi.fn(async () => undefined);
+
     const report = await runAl2mal({
       entries: [
         entry({ mediaId: 1, title: "A", status: "REPEATING", malId: "10", progress: 7 }),
@@ -268,6 +288,7 @@ describe("runAl2mal", () => {
       dryRun: false,
       includeProgress: true,
     });
+
     expect(updateManga).toHaveBeenCalledTimes(1);
     expect(updateManga).toHaveBeenCalledWith(10, {
       status: "reading",
@@ -290,6 +311,7 @@ describe("runAl2mal", () => {
         throw new Error("HTTP 500");
       }
     });
+
     const report = await runAl2mal({
       entries: [
         entry({ mediaId: 1, title: "A", status: "CURRENT", malId: "1" }),
@@ -300,6 +322,7 @@ describe("runAl2mal", () => {
       dryRun: false,
       includeProgress: false,
     });
+
     expect(report.written).toBe(1);
     expect(report.failed).toBe(1);
     expect(report.matched[0]?.error).toContain("HTTP 500");

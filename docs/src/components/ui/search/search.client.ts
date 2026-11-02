@@ -123,8 +123,7 @@ export function initSearch(config: SearchConfig): SearchInstance {
     }
 
     option.addEventListener("click", (domEvent) => {
-      // SAFETY: DOM query returns the expected element type in this document
-      if ((domEvent.target as Element | null)?.closest("a")) {
+      if (domEvent.target instanceof Element && domEvent.target.closest("a")) {
         return;
       }
 
@@ -304,10 +303,10 @@ function bindGlobals() {
   globalsBound = true;
 
   document.addEventListener("click", (domEvent) => {
-    // SAFETY: DOM query returns the expected element type in this document
-    const trigger = (domEvent.target as Element | null)?.closest(
-      "[data-search-trigger]",
-    );
+    const trigger =
+      domEvent.target instanceof Element
+        ? domEvent.target.closest("[data-search-trigger]")
+        : null;
 
     if (!trigger) {
       return;
@@ -344,8 +343,11 @@ function bindGlobals() {
 // on astro:before-swap. Replaces the hand-rolled data-search-ready init loop;
 // data-search-ready is now just the "wired" marker primaryDialog() selects on.
 mount("[data-search-dialog]", (root) => {
-  // SAFETY: DOM query returns the expected element type in this document
-  const dialog = root as SearchDialogElement;
+  if (!(root instanceof HTMLDialogElement)) {
+    return () => undefined;
+  }
+
+  const dialog: SearchDialogElement = root;
   dialog.setAttribute("data-search-ready", "true");
 
   const input = dialog.querySelector<HTMLInputElement>("[data-search-input]");

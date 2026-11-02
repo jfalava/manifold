@@ -174,8 +174,11 @@ export const createMalClient = (options: {
       session = { ...next, refreshToken: next.refreshToken ?? session.refreshToken };
       token = session.accessToken;
 
-      if (options.saveSession) {
-        yield* fromPromise(() => options.saveSession!(session!)).pipe(
+      const { saveSession } = options;
+      const saved = session;
+
+      if (saveSession) {
+        yield* fromPromise(() => saveSession(saved)).pipe(
           Effect.mapError((cause) => cliError(`MAL session save failed: ${cause.message}`)),
         );
       }

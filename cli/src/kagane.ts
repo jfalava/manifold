@@ -484,24 +484,24 @@ export const identityFromUrl = (value: string): ProviderIdentity | undefined => 
   }
 
   const host = url.hostname.replace(/^www\./, "");
-  const parts = url.pathname.split("/").filter(Boolean);
+  const [section, id = ""] = url.pathname.split("/").filter(Boolean);
 
-  if (parts[0] === "manga" && /^[1-9]\d*$/.test(parts[1] ?? "")) {
+  if (section === "manga" && /^[1-9]\d*$/.test(id)) {
     if (host === "anilist.co") {
-      return { provider: "anilist", externalId: parts[1]! };
+      return { provider: "anilist", externalId: id };
     }
 
     if (host === "myanimelist.net") {
-      return { provider: "mal", externalId: parts[1]! };
+      return { provider: "mal", externalId: id };
     }
   }
 
   if (
     host === "mangadex.org" &&
-    parts[0] === "title" &&
-    /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(parts[1] ?? "")
+    section === "title" &&
+    /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(id)
   ) {
-    return { provider: "mangadex", externalId: parts[1]!.toLowerCase() };
+    return { provider: "mangadex", externalId: id.toLowerCase() };
   }
 
   return undefined;
