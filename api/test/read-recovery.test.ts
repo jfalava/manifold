@@ -162,7 +162,7 @@ describe("queued reads with stale registry IDs", () => {
     await worker?.dispose();
   });
 
-  it.each(["mangadex", "kagane", "manganato", "xcomic"])(
+  it.each(["mangadex", "kagane", "manganato", "xcomic", "chikari"])(
     "recovers missing UUIDs using exact %s links and keeps retries idempotent",
     async (provider) => {
       const current = await entry(provider, `native-${provider}`);
@@ -197,7 +197,7 @@ describe("queued reads with stale registry IDs", () => {
     },
   );
 
-  it.each(["kagane", "manganato", "xcomic"])(
+  it.each(["kagane", "manganato", "xcomic", "chikari"])(
     "accepts %s reads over HTTP and records them as progress",
     async (provider) => {
       const target = await entry("anilist", `http-${provider}`);
@@ -469,17 +469,17 @@ describe("queued reads with stale registry IDs", () => {
     expect(await request({ action: "snapshot" })).toEqual(after);
   });
 
-  it("rejects retired-provider HTTP writes before they can resurrect entries or observe links", async () => {
+  it("rejects malformed-provider HTTP writes before they can resurrect entries or observe links", async () => {
     const target = await entry("anilist", "retired-write-target");
     await request({ action: "nuke", id: target.id });
     const before = await request({ action: "snapshot" });
-    const identity = { provider: "comix", providerId: "old-id", title: "Retired" };
+    const identity = { provider: "Not A Provider", providerId: "old-id", title: "Retired" };
 
     for (const [path, body] of [
       ["/v1/registry/ingest", identity],
       ["/v1/canonical/resolve", identity],
-      [`/v1/entries/${target.id}/providers`, { provider: "comix", externalId: "old-id" }],
-      [`/v1/entries/${target.id}/read`, read("comix", "old-id", "late-event")],
+      [`/v1/entries/${target.id}/providers`, { provider: "Not A Provider", externalId: "old-id" }],
+      [`/v1/entries/${target.id}/read`, read("Not A Provider", "old-id", "late-event")],
     ] as const) {
       const response = await worker.dispatchFetch(`https://manifold.jfa.dev${path}`, {
         method: "POST",

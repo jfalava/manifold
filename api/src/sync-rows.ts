@@ -1,5 +1,5 @@
 import { epochMillisNow } from "./effect-host";
-import { ListStatus } from "@manifold/contract";
+import { ListStatus, RegistryProvider } from "@manifold/contract";
 import { isFiniteNumber, isJsonObject, type JsonObject } from "@manifold/json";
 import { Schema } from "effect";
 import type {
@@ -221,17 +221,7 @@ export const toListEvent = (row: ListEventRow): ListEvent => ({
 
 const CANONICAL_PROVIDERS: ReadonlySet<string> = new Set(["anilist", "mal", "local"]);
 
-const REGISTRY_PROVIDERS: ReadonlySet<string> = new Set([
-  "anilist",
-  "mal",
-  "mangadex",
-  "kagane",
-  "manganato",
-  "xcomic",
-]);
-
-const isRegistryProvider = (provider: string): provider is ProviderLink["provider"] =>
-  REGISTRY_PROVIDERS.has(provider);
+const isRegistryProvider = Schema.is(RegistryProvider);
 
 const isCanonicalProvider = (provider: string): provider is RegistryEntry["provider"] =>
   CANONICAL_PROVIDERS.has(provider);

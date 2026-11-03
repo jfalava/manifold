@@ -4,20 +4,21 @@ export const CanonicalProvider = Schema.Literals(["anilist", "mal", "local"]);
 
 export type CanonicalProvider = Schema.Schema.Type<typeof CanonicalProvider>;
 
+/**
+ * A provider name: the Paperback source ID lowercased (MangaDex → mangadex,
+ * XCOMIC → xcomic). Open on purpose: every tracked entry has an AniList or MAL
+ * canonical identity, so a content source is only an observed link and any
+ * installed Paperback source can record reads without a code change.
+ */
+const ProviderName = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9._-]{0,63}$/));
+
 /** Providers whose chapters Paperback reads and the registry records. */
-export const ContentProvider = Schema.Literals(["mangadex", "kagane", "manganato", "xcomic"]);
+export const ContentProvider = ProviderName;
 
 export type ContentProvider = Schema.Schema.Type<typeof ContentProvider>;
 
-/** Providers that appear in registry links. */
-export const RegistryProvider = Schema.Literals([
-  "anilist",
-  "mal",
-  "mangadex",
-  "kagane",
-  "manganato",
-  "xcomic",
-]);
+/** Providers that appear in registry links: canonical (anilist, mal) or content. */
+export const RegistryProvider = ProviderName;
 
 export type RegistryProvider = Schema.Schema.Type<typeof RegistryProvider>;
 

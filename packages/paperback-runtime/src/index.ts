@@ -27,6 +27,8 @@ export {
   type PersonalApiClient,
 } from "./api.js";
 
+export { ContentProvider } from "@manifold/contract";
+
 export { scheduledPersonalRequester, secureStateString, configuredPersonalApi } from "./runtime.js";
 
 export { bridgeErrorDetail, errorMessage } from "./errors.js";
@@ -79,8 +81,6 @@ export {
   type ProviderSearchInput,
   type ProviderSearchScope,
 } from "./provider-candidate.js";
-
-export { UPSTREAM_SOURCES } from "./upstream-sources.js";
 
 export {
   MANIFOLD_ADMIN_ORIGIN,

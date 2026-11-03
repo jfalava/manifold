@@ -213,13 +213,13 @@ describe("processReadActions", () => {
     expect(pushProgress).not.toHaveBeenCalled();
   });
 
-  it("rejects retired sources without advancing progress and routes native MangaDex reads", async () => {
+  it("rejects malformed source IDs without advancing progress and routes native MangaDex reads", async () => {
     const recordRead = vi.fn().mockResolvedValue({});
     const pushProgress = vi.fn(async (_sourceManga: SourceManga, _chapterNum: number) => true);
 
     const result = await processReadActions(
       [
-        action("a", "8295088", 99, "anilist:141756", "Comix", "retired-manga"),
+        action("a", "8295088", 99, "anilist:141756", "Asura Scans", "bad-manga"),
         action("b", "df2e5603-uuid", 13, "anilist:141756", "MangaDex", "md-manga"),
       ],
       { recordRead, pushProgress },
@@ -240,7 +240,7 @@ describe("processReadActions", () => {
     expect(progressCall?.[1]).toBe(13);
   });
 
-  it("records MangaNato, XCOMIC and Kagane reads under their own provider", async () => {
+  it("records any Paperback source under its lowercased source ID", async () => {
     const recordRead = vi.fn().mockResolvedValue({});
     const pushProgress = vi.fn(async (_sourceManga: SourceManga, _chapterNum: number) => true);
 
@@ -249,11 +249,13 @@ describe("processReadActions", () => {
         action("nato", "chapter-12", 12, "uuid-nato", "MangaNato", "a-couple-of-cuckoos"),
         action("xc", "7945217c", 30, "uuid-xc", "XCOMIC", "rg2zpm"),
         action("kg", "kg-ch-4", 4, "uuid-kg", "Kagane", "kg-manga"),
+        // No code knows this source: any installed Paperback source records.
+        action("ck", "188", 188, "uuid-ck", "Chikari", "mato-seihei-no-slave"),
       ],
       { recordRead, pushProgress },
     );
 
-    expect(result).toEqual({ successfulItems: ["nato", "xc", "kg"], failedItems: [] });
+    expect(result).toEqual({ successfulItems: ["nato", "xc", "kg", "ck"], failedItems: [] });
     expect(recordRead.mock.calls).toEqual([
       [
         "uuid-nato",
@@ -272,24 +274,33 @@ describe("processReadActions", () => {
         }),
       ],
       ["uuid-kg", expect.objectContaining({ provider: "kagane", chapterKey: "kagane:kg-ch-4" })],
+      [
+        "uuid-ck",
+        expect.objectContaining({
+          provider: "chikari",
+          chapterKey: "chikari:188",
+          sourceMangaId: "mato-seihei-no-slave",
+        }),
+      ],
     ]);
     expect(pushProgress.mock.calls.map(([sourceManga, num]) => [sourceManga.mangaId, num])).toEqual(
       [
         ["uuid-nato", 12],
         ["uuid-xc", 30],
         ["uuid-kg", 4],
+        ["uuid-ck", 188],
       ],
     );
   });
 
-  it("rejects unknown chapter sources instead of treating them as MangaDex", async () => {
+  it("rejects an empty chapter source instead of treating it as MangaDex", async () => {
     const recordRead = vi.fn().mockResolvedValue({});
     const pushProgress = vi.fn().mockResolvedValue(true);
 
-    const result = await processReadActions(
-      [action("bad", "chapter", 1, "anilist:1", "OtherSource")],
-      { recordRead, pushProgress },
-    );
+    const result = await processReadActions([action("bad", "chapter", 1, "anilist:1", "")], {
+      recordRead,
+      pushProgress,
+    });
 
     expect(result).toEqual({ successfulItems: [], failedItems: ["bad"] });
     expect(recordRead).not.toHaveBeenCalled();

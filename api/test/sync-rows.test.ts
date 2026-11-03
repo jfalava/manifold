@@ -43,7 +43,7 @@ describe("toRegistryEntry", () => {
     expect(entry.providers).toHaveLength(2);
   });
 
-  it("drops empty external ids and unknown providers", () => {
+  it("drops empty external ids and malformed providers but keeps unknown ones", () => {
     const entry = toRegistryEntry(baseRow(), [
       {
         provider: "mangadex",
@@ -61,8 +61,16 @@ describe("toRegistryEntry", () => {
       },
       {
         // Intentional corrupt historical provider for sanitize coverage.
-        provider: "unknown",
+        provider: "Not A Provider",
         external_id: "z",
+        title: null,
+        source_name: null,
+        updated_at: 1,
+      },
+      {
+        // Providers are open: a source no code names still surfaces.
+        provider: "chikari",
+        external_id: "mato-seihei-no-slave",
         title: null,
         source_name: null,
         updated_at: 1,
@@ -76,7 +84,10 @@ describe("toRegistryEntry", () => {
       },
     ]);
 
-    expect(entry.providers).toEqual([{ provider: "kagane", externalId: "hid1", updatedAt: 1 }]);
+    expect(entry.providers).toEqual([
+      { provider: "chikari", externalId: "mato-seihei-no-slave", updatedAt: 1 },
+      { provider: "kagane", externalId: "hid1", updatedAt: 1 },
+    ]);
     expect(() => encodeResponse(RegistryEntry, entry)).not.toThrow();
   });
 
