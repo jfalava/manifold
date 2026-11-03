@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
-/* Last modified by Manifold on 2026-11-02. See ATTRIBUTIONS.md. */
+/* Last modified by Manifold on 2026-11-03. See ATTRIBUTIONS.md. */
 
 import {
   ContentRating,
@@ -13,6 +13,7 @@ import {
   errorMessage,
   type PersonalReadInput,
   type PersonalReadingProgress,
+  UPSTREAM_SOURCES,
 } from "@manifold/paperback-runtime";
 import { Clock, Effect, Result } from "effect";
 import { fromPromise, trackerError } from "./effect-error.js";
@@ -26,7 +27,7 @@ export interface ReadQueueDeps {
 }
 
 interface ChapterProvenance {
-  readonly provider: "mangadex";
+  readonly provider: PersonalReadInput["provider"];
   readonly chapterKey: string;
 }
 
@@ -260,11 +261,15 @@ const flushPendingProgressEffect = (
   });
 
 const chapterProvenance = (chapterSourceId: string, sourceChapterId: string): ChapterProvenance => {
-  if (chapterSourceId === "MangaDex") {
-    return { provider: "mangadex", chapterKey: `mangadex:${sourceChapterId}` };
+  const upstream = UPSTREAM_SOURCES.find((source) => source.sourceId === chapterSourceId);
+
+  if (!upstream) {
+    throw trackerError(
+      `Unsupported chapter source: ${chapterSourceId} (supported: ${UPSTREAM_SOURCES.map((source) => source.sourceId).join(", ")})`,
+    );
   }
 
-  throw trackerError(`Unsupported chapter source: ${chapterSourceId}`);
+  return { provider: upstream.provider, chapterKey: `${upstream.provider}:${sourceChapterId}` };
 };
 
 const processReadActionsEffect = (

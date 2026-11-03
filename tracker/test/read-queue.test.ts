@@ -240,6 +240,48 @@ describe("processReadActions", () => {
     expect(progressCall?.[1]).toBe(13);
   });
 
+  it("records MangaNato, XCOMIC and Kagane reads under their own provider", async () => {
+    const recordRead = vi.fn().mockResolvedValue({});
+    const pushProgress = vi.fn(async (_sourceManga: SourceManga, _chapterNum: number) => true);
+
+    const result = await processReadActions(
+      [
+        action("nato", "chapter-12", 12, "uuid-nato", "MangaNato", "a-couple-of-cuckoos"),
+        action("xc", "7945217c", 30, "uuid-xc", "XCOMIC", "rg2zpm"),
+        action("kg", "kg-ch-4", 4, "uuid-kg", "Kagane", "kg-manga"),
+      ],
+      { recordRead, pushProgress },
+    );
+
+    expect(result).toEqual({ successfulItems: ["nato", "xc", "kg"], failedItems: [] });
+    expect(recordRead.mock.calls).toEqual([
+      [
+        "uuid-nato",
+        expect.objectContaining({
+          provider: "manganato",
+          chapterKey: "manganato:chapter-12",
+          sourceMangaId: "a-couple-of-cuckoos",
+        }),
+      ],
+      [
+        "uuid-xc",
+        expect.objectContaining({
+          provider: "xcomic",
+          chapterKey: "xcomic:7945217c",
+          sourceMangaId: "rg2zpm",
+        }),
+      ],
+      ["uuid-kg", expect.objectContaining({ provider: "kagane", chapterKey: "kagane:kg-ch-4" })],
+    ]);
+    expect(pushProgress.mock.calls.map(([sourceManga, num]) => [sourceManga.mangaId, num])).toEqual(
+      [
+        ["uuid-nato", 12],
+        ["uuid-xc", 30],
+        ["uuid-kg", 4],
+      ],
+    );
+  });
+
   it("rejects unknown chapter sources instead of treating them as MangaDex", async () => {
     const recordRead = vi.fn().mockResolvedValue({});
     const pushProgress = vi.fn().mockResolvedValue(true);

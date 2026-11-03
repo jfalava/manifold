@@ -74,6 +74,7 @@ export {
   parseProviderCandidateId,
   providerCandidateId,
   toProviderCandidateSearchResult,
+  UPSTREAM_SOURCES,
   type ProviderCandidate,
   type MangaDexCandidateInput,
   type ProviderSearchInput,

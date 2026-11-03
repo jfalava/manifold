@@ -6,6 +6,7 @@ import { cliError, newId, validateNonNegativeLimit } from "@/effect-kit";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 import { errorMessage, isFiniteNumber, type JsonObject } from "@manifold/json";
+import { UPSTREAM_SOURCES } from "@manifold/paperback-runtime";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
@@ -51,14 +52,6 @@ import {
 
 const SOURCE_ID = "ManifoldSource";
 const TRACKER_SOURCE_ID = "MANIFOLD";
-
-// Native source IDs and unmodified manga IDs verified against a device PAS5 export.
-export const UPSTREAM_SOURCES = [
-  { provider: "mangadex", sourceId: "MangaDex" },
-  { provider: "kagane", sourceId: "Kagane" },
-  { provider: "manganato", sourceId: "MangaNato" },
-  { provider: "xcomic", sourceId: "XCOMIC" },
-] as const;
 
 const DEFAULT_BASE_HINT = "a real device export (*.pas5) — restore may REPLACE the library";
 

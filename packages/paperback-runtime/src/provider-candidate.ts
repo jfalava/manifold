@@ -1,5 +1,5 @@
 import { ContentRating, type SearchResultItem } from "@paperback/types";
-import type { IngestCandidateInput, RegistryProvider } from "@manifold/contract";
+import type { ContentProvider, IngestCandidateInput, RegistryProvider } from "@manifold/contract";
 import type { CanonicalEntry } from "@manifold/canonical";
 import { safeImageUrl } from "./image-url.js";
 
@@ -44,6 +44,14 @@ const isRegistryProvider = (value: string): value is RegistryProvider =>
   value === "kagane" ||
   value === "manganato" ||
   value === "xcomic";
+
+// Native Paperback source IDs and unmodified manga IDs verified against a device PAS5 export.
+export const UPSTREAM_SOURCES = [
+  { provider: "mangadex", sourceId: "MangaDex" },
+  { provider: "kagane", sourceId: "Kagane" },
+  { provider: "manganato", sourceId: "MangaNato" },
+  { provider: "xcomic", sourceId: "XCOMIC" },
+] as const satisfies readonly { readonly provider: ContentProvider; readonly sourceId: string }[];
 
 const PROVIDER_LABELS = {
   anilist: "AniList",
