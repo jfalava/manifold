@@ -22,7 +22,12 @@ const registryResult = (stdout: string) => {
 
   const registry = parseJsonObject(line.slice("RESULT ".length));
 
-  return { writes: objectsAt(registry, "writes"), rows: arrayAt(registry, "rows") };
+  return {
+    writes: objectsAt(registry, "writes"),
+    reads: objectsAt(registry, "reads"),
+    aniList: objectsAt(registry, "aniList"),
+    rows: arrayAt(registry, "rows"),
+  };
 };
 
 const run = (flags: string[] = [], scenario = "normal") => {
@@ -52,7 +57,9 @@ const run = (flags: string[] = [], scenario = "normal") => {
         kagane:source('kagane','Kagane','kagane-uuid'),
         nato:source('nato','MangaNato','a-story-slug'),
         xcomic:source('xcomic','XCOMIC','edition-id'),
-        retired:source('retired','Comix','retired-id'),
+        // Any Paperback source is a provider; only the retired Manifold content source is ignored.
+        chikari:source('chikari','Chikari','chikari-id'),
+        legacy:source('legacy','ManifoldSource','legacy-id'),
         // A malformed unreferenced cache record must not prevent importing the library.
         cached:null,
       };
@@ -63,6 +70,18 @@ const run = (flags: string[] = [], scenario = "normal") => {
       const libraries = {library};
       const row = (id, anilist) => ({id, provider:'anilist', providerId:anilist, title:'Registry title', createdAt:1,updatedAt:2, providers:[{provider:'anilist',externalId:anilist,updatedAt:1}], state:{entryId:id,status:'on_hold',score:8,updatedAt:2}});
       const rows = [row('target','123')];
+      const archiveExtra = {};
+      if (scenario === 'untracked' || scenario === 'untracked-ahead') {
+        library.attachedSources = library.attachedSources.filter(ref => ref.id !== 'tracker');
+        rows[0].providers.push({provider:'mangadex',externalId:'md-uuid',updatedAt:1});
+        rows[0].progress = {entryId:'target',chapterKey:'mangadex:old',chapterNumber:scenario === 'untracked' ? 3 : 12,readAt:1,version:1};
+        const chapter = (id, sourceManga, chapNum, extra = {}) => ({id, chapterId:'ch-'+id, chapNum, sourceManga:{id:sourceManga}, ...extra});
+        // Sharded like device exports. c3 is furthest but unread; c5 belongs to no attached source.
+        archiveExtra['__CHAPTER_V5-1'] = {c1:chapter('c1','md',5,{volume:1}), c2:chapter('c2','md',12,{volume:2})};
+        archiveExtra['__CHAPTER_V5-2'] = {c3:chapter('c3','kagane',20), c4:chapter('c4','nato',9), c5:chapter('c5','elsewhere',40)};
+        archiveExtra['__CHAPTER_PROGRESS_MARKER_V5-1'] = {m1:{completed:true,chapter:{id:'c1'}}, m3:{completed:false,chapter:{id:'c3'}}};
+        archiveExtra['__CHAPTER_PROGRESS_MARKER_V5-2'] = {m2:{completed:true,chapter:{id:'c2'}}, m4:{completed:true,chapter:{id:'c4'}}, m5:{completed:true,chapter:{id:'c5'}}};
+      }
       if (scenario === 'native-anchor' || scenario === 'unresolved') {
         library.attachedSources = library.attachedSources.filter(ref => ref.id !== 'tracker');
         if (scenario === 'native-anchor') rows[0].providers.push({provider:'mangadex',externalId:'md-uuid',updatedAt:1});
@@ -98,13 +117,27 @@ const run = (flags: string[] = [], scenario = "normal") => {
       if (scenario === 'duplicate-library') libraries.duplicate = {...library,id:'duplicate'};
       if (scenario === 'broken-reference') delete sources.kagane;
       if (scenario === 'missing-info') delete infos.xcomic;
-      const archive = {__LIBRARY_MANGA_V5:libraries,__SOURCE_MANGA_V5:sources,__MANGA_INFO_V5:infos};
+      const archive = {__LIBRARY_MANGA_V5:libraries,__SOURCE_MANGA_V5:sources,__MANGA_INFO_V5:infos,...archiveExtra};
       if (scenario === 'malformed-archive') delete archive.__SOURCE_MANGA_V5;
       const original = buildPas5Zip(Object.fromEntries(Object.entries(archive).map(([name,value]) => [name,JSON.stringify(value)])));
       writeFileSync(input, original);
       const writes = [];
+      const reads = [];
+      const aniList = [];
       globalThis.fetch = async (request, init = {}) => {
         const url = new URL(String(request));
+        if (init.method === 'POST' && url.hostname === 'graphql.anilist.co') {
+          const body = JSON.parse(init.body);
+          aniList.push({authorization:init.headers?.Authorization ?? init.headers?.authorization, variables:body.variables});
+          return Response.json({data:{SaveMediaListEntry:{id:1,progress:body.variables.progress,status:'CURRENT',private:true}}});
+        }
+        if (init.method === 'POST' && url.pathname.endsWith('/target/read')) {
+          const body = JSON.parse(init.body);
+          reads.push(body);
+          const previous = rows[0].progress?.chapterNumber ?? 0;
+          if (body.chapterNumber > previous) rows[0].progress = {entryId:'target',chapterKey:body.chapterKey,chapterNumber:body.chapterNumber,readAt:body.readAt ?? 1,version:2};
+          return Response.json(rows[0].progress);
+        }
         if (init.method === 'GET' && url.pathname.endsWith('/registry')) return Response.json({entries:rows});
         if (init.method === 'POST' && url.pathname.endsWith('/target/providers')) {
           const body = JSON.parse(init.body);
@@ -123,7 +156,7 @@ const run = (flags: string[] = [], scenario = "normal") => {
         if (scenario === 'repeat') await invoke(${JSON.stringify(join(directory, "repeat.jsonl"))});
       } catch(error) {console.error(error);process.exitCode=1;}
       if (!readFileSync(input).equals(original)) throw new Error('Original archive changed');
-      console.info('RESULT',JSON.stringify({writes,rows}));
+      console.info('RESULT',JSON.stringify({writes,reads,aniList,rows}));
     `,
       ],
       { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 20_000 },
@@ -159,21 +192,25 @@ describe("registry import-pas5", () => {
       authors: ["Author Name"],
       artists: ["Artist A", "Artist B"],
       shareUrls: ["https://example.test/story"],
-      ignoredSourceIds: ["Comix"],
+      tracked: true,
+      ignoredSourceIds: ["ManifoldSource"],
       missingLinks: [
         { provider: "mangadex", externalId: "md-uuid" },
         { provider: "kagane", externalId: "kagane-uuid" },
         { provider: "manganato", externalId: "a-story-slug" },
         { provider: "xcomic", externalId: "edition-id" },
+        { provider: "chikari", externalId: "chikari-id" },
       ],
     });
+    expect(result.report.find((item) => item.event === "entry")).not.toHaveProperty("backfill");
     expect(JSON.stringify(result.report)).not.toContain("fake-private-token");
   });
 
   it("applies missing links, preserves registry state and makes a repeated import a no-op", () => {
     const result = run(["--apply"], "repeat");
     expect(result.status, result.stderr).toBe(0);
-    expect(result.registry.writes).toHaveLength(4);
+    expect(result.registry.writes).toHaveLength(5);
+    expect(result.registry.reads).toEqual([]);
     expect(result.registry.rows[0]).toMatchObject({
       title: "Registry title",
       updatedAt: 2,
@@ -193,7 +230,68 @@ describe("registry import-pas5", () => {
       "kagane",
       "manganato",
       "xcomic",
+      "chikari",
     ]);
+  });
+
+  it("flags an untracked entry and plans its furthest completed chapter without writing", () => {
+    const result = run([], "untracked");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.registry.writes).toEqual([]);
+    expect(result.registry.reads).toEqual([]);
+    expect(result.registry.aniList).toEqual([]);
+    expect(result.report.find((item) => item.event === "entry")).toMatchObject({
+      outcome: "ready",
+      tracked: false,
+      backfill: {
+        registryChapter: 3,
+        anilistId: "123",
+        read: {
+          eventId: "pas5:library:c2",
+          provider: "mangadex",
+          sourceMangaId: "md-uuid",
+          sourceChapterId: "ch-c2",
+          chapterKey: "mangadex:ch-c2",
+          chapterNumber: 12,
+          volumeNumber: 2,
+          readAt: (31 + 978_307_200) * 1000,
+        },
+      },
+    });
+    expect(findLine(result.report, (item) => item.event === "summary").untracked).toBe(1);
+  });
+
+  it("backfills the untracked read with a deterministic event id and pushes AniList", () => {
+    const result = run(["--apply", "--anilist-token", "fake-anilist-token"], "untracked");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.registry.reads).toHaveLength(1);
+    expect(result.registry.reads[0]).toMatchObject({
+      eventId: "pas5:library:c2",
+      provider: "mangadex",
+      chapterNumber: 12,
+    });
+    expect(result.registry.aniList).toEqual([
+      {
+        authorization: "Bearer fake-anilist-token",
+        variables: { mediaId: 123, progress: 12 },
+      },
+    ]);
+    expect(result.report.find((item) => item.event === "summary")).toMatchObject({
+      untracked: 1,
+      readsBackfilled: 1,
+      aniListPushed: 1,
+    });
+    expect(JSON.stringify(result.report)).not.toContain("fake-anilist-token");
+  });
+
+  it("skips the backfill when registry progress already covers the export", () => {
+    const result = run(["--apply", "--anilist-token", "fake-anilist-token"], "untracked-ahead");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.registry.reads).toEqual([]);
+    expect(result.registry.aniList).toEqual([]);
+    expect(findLine(result.report, (item) => item.event === "entry").backfillSkipped).toContain(
+      "ch 12",
+    );
   });
 
   it.each([
@@ -228,7 +326,7 @@ describe("registry import-pas5", () => {
   it("deduplicates writes when two library entries reference the same bindings", () => {
     const result = run(["--apply"], "duplicate-library");
     expect(result.status, result.stderr).toBe(0);
-    expect(result.registry.writes).toHaveLength(4);
+    expect(result.registry.writes).toHaveLength(5);
   });
 
   it.each(["broken-reference", "missing-info", "malformed-archive"])(

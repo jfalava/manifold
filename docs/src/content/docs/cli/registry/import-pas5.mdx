@@ -1,6 +1,6 @@
 ---
 title: import-pas5
-description: Populate missing registry provider links from a Paperback library export.
+description: Populate missing registry provider links and backfill untracked reads from a Paperback library export.
 sidebar:
   order: 2
 ---
@@ -10,9 +10,11 @@ manifold registry import-pas5 --input ./Paperback-Archive.pas5
 ```
 
 Reads a Paperback `.pas5` export and proposes missing provider links on existing
-registry entries. Dry-run is the default. No provider searches, browser sessions,
-AniList login or chapter-inventory requests are needed. Manifold authentication
-is required to read the registry and, with `--apply`, write links.
+registry entries. It also flags library entries without the Manifold tracker and
+backfills their furthest completed chapter. Dry-run is the default. No provider
+searches, browser sessions or chapter-inventory requests are needed. Manifold
+authentication is required to read the registry and, with `--apply`, write links
+and reads. AniList login is needed only when `--apply` backfills a read.
 
 The importer follows `__LIBRARY_MANGA_V5.attachedSources`, not every cached
 `__SOURCE_MANGA_V5` record. Native exports can contain many historical source
@@ -20,10 +22,12 @@ records that no longer belong to a library entry.
 
 ## Identity and conflicts
 
-Supported native source IDs are `MangaDex`, `Kagane`, `MangaNato` and `XCOMIC`.
-Their `mangaId` strings become registry external IDs unchanged. Unknown and
-retired sources are ignored, not deleted. Source-origin badges are not inferred
-from titles, hostnames or upload-status strings.
+Any attached Paperback source is a provider: its source ID lowercased (for
+example `MangaDex` → `mangadex`, `Chikari` → `chikari`). Its `mangaId` string
+becomes the registry external ID unchanged. Only the retired `ManifoldSource`
+and IDs that are not valid provider names are ignored, not deleted.
+Source-origin badges are not inferred from titles, hostnames or upload-status
+strings.
 
 A `MANIFOLD` attachment identifies the target registry UUID. Its `Canonical ID`,
 stamped AniList/MAL identities and existing native-provider ownership must agree.
@@ -43,6 +47,26 @@ fetch remote tracker metadata or detect a pilot/series mismatch absent from the
 archive and registry. Review known questionable attachments before applying;
 use provider audits separately when identity or coverage needs checking.
 
+## Untracked entries
+
+A library entry without a `MANIFOLD` attachment never sent its reads to
+Manifold. Reports mark it `tracked: false`. When it resolves to a registry entry
+through an exact native link, the importer plans one read: the furthest
+completed chapter across its attached native sources, from the archive's
+`__CHAPTER_V5-N` and `__CHAPTER_PROGRESS_MARKER_V5-N` records. Progress keeps
+the furthest chapter, so earlier chapters would change nothing.
+
+The read is skipped and the reason reported when the registry is already at or
+past that chapter, or when the export has no readable completed chapters.
+`--apply` records it with `POST /v1/entries/:id/read` under the deterministic
+event ID `pas5:<library-id>:<chapter-id>`, so reruns are deduplicated. When the
+registry advances to that chapter and the entry has an AniList ID, it also sets
+AniList progress. Without an AniList token (`login anilist`,
+`--anilist-token` or `MANIFOLD_ANILIST_TOKEN`) the run fails before any write.
+
+Untracked entries with no registry identity stay `unresolved`; the importer
+never creates them.
+
 ## Apply and reporting
 
 ```sh
@@ -56,8 +80,8 @@ manifold registry import-pas5 --input ./Paperback-Archive.pas5 --apply \
 ```
 
 `--apply` adds only missing, nonconflicting links with `onConflict: reject`.
-It does not change list status, scores, progress, tabs or history, and never
-rewrites the original archive. Entries without an existing identity remain
+Apart from untracked backfills it does not change list status, scores, progress,
+tabs or history, and it never rewrites the original archive. Entries without an existing identity remain
 `unresolved`; use [registry import](/cli/registry/import/) first to populate the
 registry from AniList when needed.
 
