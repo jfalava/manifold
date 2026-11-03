@@ -83,7 +83,7 @@
     },
     "cli": {
       "name": "@manifold/cli",
-      "version": "0.4.4",
+      "version": "0.4.5",
       "bin": {
         "manifold": "./index.ts",
       },
@@ -266,7 +266,7 @@
     },
     "tracker": {
       "name": "@manifold/tracker",
-      "version": "0.1.0-r66",
+      "version": "0.1.0-r67",
       "dependencies": {
         "@manifold/canonical": "workspace:*",
         "@manifold/json": "workspace:*",
