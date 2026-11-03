@@ -6,7 +6,7 @@ import { cliError, newId, validateNonNegativeLimit } from "@/effect-kit";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 import { errorMessage, isFiniteNumber, type JsonObject } from "@manifold/json";
-import { UPSTREAM_SOURCES } from "@manifold/paperback-runtime";
+import { UPSTREAM_SOURCES } from "@manifold/paperback-runtime/upstream-sources";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 

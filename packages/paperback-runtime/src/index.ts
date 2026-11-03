@@ -74,12 +74,13 @@ export {
   parseProviderCandidateId,
   providerCandidateId,
   toProviderCandidateSearchResult,
-  UPSTREAM_SOURCES,
   type ProviderCandidate,
   type MangaDexCandidateInput,
   type ProviderSearchInput,
   type ProviderSearchScope,
 } from "./provider-candidate.js";
+
+export { UPSTREAM_SOURCES } from "./upstream-sources.js";
 
 export {
   MANIFOLD_ADMIN_ORIGIN,
