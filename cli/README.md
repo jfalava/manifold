@@ -52,7 +52,7 @@ bun index.ts login anilist
 ```
 
 Login prints a browser authorization URL and races the loopback callback against
-paste on a TTY (`c` copy URL, Enter paste code/URL, Ctrl+C cancel). On headless
+paste on a TTY (Enter paste code/URL, `o` open browser, `c` copy URL, Esc cancel). On headless
 hosts use `--paste-only`, authorize in another browser, Enter, then paste the
 callback URL or code. The access token lives in the OS keychain under `manifold`
 / `anilist-session`. AniList does not issue refresh tokens, so re-run login when
@@ -75,7 +75,7 @@ bun index.ts mal wipe manga
 ```
 
 Login prints a browser authorization URL and races the loopback callback against
-paste on a TTY (`c` copy URL, Enter paste code/URL, Ctrl+C cancel). On headless
+paste on a TTY (Enter paste code/URL, `o` open browser, `c` copy URL, Esc cancel). On headless
 hosts use `--paste-only`, authorize in another browser, Enter, then paste the
 callback URL or code (PKCE stays on the CLI). Access and refresh tokens live in
 the OS keychain under `manifold` / `mal-session`; refresh-token rotations are

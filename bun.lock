@@ -83,7 +83,7 @@
     },
     "cli": {
       "name": "@manifold/cli",
-      "version": "0.4.1",
+      "version": "0.4.3",
       "bin": {
         "manifold": "./index.ts",
       },

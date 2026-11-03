@@ -8,14 +8,11 @@ import {
   exchangeAniListCode,
   validateAniListSession,
 } from "@/login/anilist";
-import {
-  isBareLoginInvocation,
-  resolveOAuthClient,
-  resolvePasteOnlyWizard,
-} from "@/login/oauth-clients";
+import { resolveOAuthClient } from "@/login/oauth-clients";
 import { awaitOAuthAuthorizationCode } from "@/login/oauth-loopback";
-import { abortFrame, closeFrame, frameDetail, openFrame } from "@/ui";
-import { cliError, envString } from "@/effect-kit";
+import { warnIfEnvOverridesLogin } from "@/login/status";
+import { abortFrame, closeFrame, openFrame } from "@/ui";
+import { cliError } from "@/effect-kit";
 
 /** OAuth server and callback are Promise-based host APIs. */
 /** @effect-diagnostics asyncFunction:off */
@@ -25,7 +22,7 @@ export const anilistLoginCommand = Command.make("anilist", {
   clientId: Flag.String("client-id").pipe(
     Flag.optional,
     Flag.withDescription(
-      "AniList CLI client ID. Falls back to MANIFOLD_ANILIST_CLIENT_ID, then OS keychain, then interactive prompt.",
+      `AniList OAuth app client ID; the app's redirect URI must be ${ANILIST_REDIRECT_URI}. Falls back to MANIFOLD_ANILIST_CLIENT_ID, then OS keychain, then interactive prompt.`,
     ),
   ),
   clientSecret: Flag.String("client-secret").pipe(
@@ -34,6 +31,10 @@ export const anilistLoginCommand = Command.make("anilist", {
       "AniList CLI client secret. Falls back to MANIFOLD_ANILIST_CLIENT_SECRET, then OS keychain, then interactive prompt.",
     ),
   ),
+  reconfigure: Flag.Boolean("reconfigure").pipe(
+    Flag.withDefault(false),
+    Flag.withDescription("Re-enter the OAuth app client id and secret even when they are saved."),
+  ),
   pasteOnly: Flag.Boolean("paste-only").pipe(
     Flag.withDefault(false),
     Flag.withDescription(
@@ -41,28 +42,24 @@ export const anilistLoginCommand = Command.make("anilist", {
     ),
   ),
 }).pipe(
-  Command.withDescription(
-    `Authorize AniList locally. Register ${ANILIST_REDIRECT_URI} on a separate authorization-code client. Bare invocation on a TTY runs a setup wizard; --wizard walks Effect CLI flags. OAuth client id/secret: env, keychain, or prompts.`,
-  ),
-  Command.withHandler(({ clientId, clientSecret, pasteOnly }) =>
+  Command.withDescription("Sign in to AniList with your own OAuth app."),
+  Command.withHandler(({ clientId, clientSecret, reconfigure, pasteOnly }) =>
     Effect.tryPromise({
       try: async () => {
         openFrame("login anilist");
-        const wizard = isBareLoginInvocation(clientId, clientSecret, pasteOnly);
 
         const oauth = await resolveOAuthClient({
           kind: "anilist",
           clientIdFlag: clientId,
           clientSecretFlag: clientSecret,
           requireSecret: true,
-          wizard,
+          wizard: reconfigure,
         });
 
         if (!oauth.clientSecret) {
           throw cliError("AniList client secret is required.");
         }
 
-        const usePasteOnly = await resolvePasteOnlyWizard(pasteOnly, wizard);
         const auth = createAniListAuthorization(oauth.clientId);
 
         const code = await awaitOAuthAuthorizationCode({
@@ -70,19 +67,14 @@ export const anilistLoginCommand = Command.make("anilist", {
           authorizeUrl: auth.url,
           redirectUri: ANILIST_REDIRECT_URI,
           expectedState: auth.state,
-          pasteOnly: usePasteOnly,
+          pasteOnly,
         });
 
         const session = await exchangeAniListCode(oauth.clientId, oauth.clientSecret, code);
         const viewer = await validateAniListSession(session.accessToken);
         await Bun.secrets.set({ ...ANILIST_SECRET, value: JSON.stringify(session) });
         closeFrame(`Signed in as ${viewer.name} (${viewer.id}). Token saved in the OS keychain.`);
-
-        if (envString("MANIFOLD_ANILIST_TOKEN")) {
-          frameDetail(
-            "MANIFOLD_ANILIST_TOKEN is set and overrides this login. Unset it to use the keychain token.",
-          );
-        }
+        warnIfEnvOverridesLogin("anilist");
       },
       catch: (cause) => cliError(errorMessage(cause)),
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),

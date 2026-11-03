@@ -50,6 +50,15 @@ MAL OAuth client secret when the app requires it. Falls back to
 `MANIFOLD_MAL_CLIENT_SECRET`, then the OS keychain, then an interactive
 prompt on a TTY.
 
+### `--reconfigure`
+
+Ask for the client id and secret again even when they are saved, for example
+after rotating the MAL app secret.
+
+```sh
+manifold login mal --reconfigure
+```
+
 ### `--paste-only`
 
 Skip binding the local callback server. Use on headless hosts when the browser
@@ -71,19 +80,16 @@ manifold login mal --paste-only
 manifold login mal
 ```
 
-**Bare command on a TTY** (no flags): runs a setup wizard first — prints redirect
-URI / API-console notes, then asks for client id, optional client secret, and
-whether to use `--paste-only`. Enter keeps defaults from env or the OS keychain.
-Client credentials are saved under `manifold` / `mal-oauth-client`.
+If no client id (or, for AniList, no client secret) comes from a flag, env or
+the OS keychain, the command first prints the three setup steps and asks for
+the client id and optional client secret. They are saved under `manifold` / `mal-oauth-client`, so
+later logins go straight to the authorization URL. Pass `--reconfigure` to
+re-enter saved values; Enter keeps the value shown.
 
-You can also use Effect CLI’s global walkthrough:
-
-```sh
-manifold --wizard login mal
-```
-
-The command then prints a browser authorization URL. On a TTY: press **`c`** to
-copy the URL, **Enter** to paste a code or callback URL, **Ctrl+C** to cancel. By
+The command then shows the browser authorization URL under a waiting spinner. On a
+TTY: **Enter** pastes a code or callback URL, **`o`** opens the browser (not
+offered over SSH), **`c`** copies the URL (the key bar shows ✓ copied), **Esc**
+or **Ctrl+C** cancels. By
 default it also serves `http://127.0.0.1:8766/callback` for up to five minutes
 and races that loopback against paste. If the port is busy, it falls back to
 paste-only automatically.

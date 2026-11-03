@@ -5,8 +5,8 @@
  * prompt (TTY only). After a successful interactive capture, credentials are
  * stored in Bun.secrets so compiled binaries work without a .env file.
  *
- * Wizard mode (`wizard: true`) is used for bare `login anilist|mal` on a TTY:
- * prints setup/usage, then walks each value with Enter-to-keep defaults.
+ * Wizard mode (`wizard: true`, from `--reconfigure`) re-prompts every value
+ * with Enter-to-keep defaults even when they are already resolved.
  */
 /** @effect-diagnostics asyncFunction:off */
 import { Effect, Option, Schema } from "effect";
@@ -20,7 +20,7 @@ import {
   type CliEffectError,
 } from "@/effect-kit";
 import { resolveValue } from "@/env-resolve";
-import { confirmInFrame, frameDetail, promptInFrameWithDefault, promptSecretInFrame } from "@/ui";
+import { frameDetail, promptInFrameWithDefault, promptSecretInFrame } from "@/ui";
 
 export const OAUTH_CLIENT_SERVICE = "manifold";
 
@@ -110,26 +110,15 @@ export const saveStoredOAuthClient = async (
   await store.set({ ...secretRef(kind), value: JSON.stringify(value) });
 };
 
-/** Setup + usage lines shown at the start of wizard / salvage flows. */
+/** Setup steps shown before prompting for the OAuth app credentials. */
 export const printOAuthClientWizardIntro = (kind: OAuthClientKind): void => {
   const names = envNames(kind);
   const provider = label(kind);
-  frameDetail(`${provider} login wizard`);
-  frameDetail(`1. Create a separate ${provider} OAuth app at ${developerUrl(kind)}`);
-  frameDetail(`2. Set redirect URI exactly: ${redirectUri(kind)}`);
+  frameDetail(`1. Create a ${provider} OAuth app at ${developerUrl(kind)}`);
+  frameDetail(`2. Set its redirect URI to exactly ${redirectUri(kind)}`);
   frameDetail(
-    `3. Client id/secret: flags, ${names.clientId}/${names.clientSecret}, keychain, or prompts below`,
+    `3. Enter its client id and secret below, or pass --client-id/--client-secret or set ${names.clientId}/${names.clientSecret}.`,
   );
-
-  if (kind === "anilist") {
-    frameDetail("Do not reuse app 49218 or Worker 49060 — need authorization-code + loopback.");
-  } else {
-    frameDetail("Do not reuse the deployed API MAL client — CLI needs its own redirect URI.");
-  }
-
-  frameDetail(`Usage: manifold login ${kind} [--client-id …] [--client-secret …] [--paste-only]`);
-  frameDetail(`Also: manifold --wizard login ${kind}  (the CLI will walk every flag)`);
-  frameDetail("Enter keeps a shown default. Ctrl+C cancels.");
 };
 
 export type ResolveOAuthClientInput = {
@@ -139,8 +128,8 @@ export type ResolveOAuthClientInput = {
   /** When true, clientSecret must be non-empty after resolution. */
   readonly requireSecret: boolean;
   /**
-   * Guided mode: print usage and prompt every field (Enter keeps defaults from
-   * flag/env/keychain). Used for bare `login anilist|mal` on a TTY.
+   * Prompt every field even when resolved (Enter keeps defaults from
+   * flag/env/keychain). Set by `login anilist|mal --reconfigure`.
    */
   readonly wizard?: boolean;
   readonly store?: OAuthClientSecretStore;
@@ -155,14 +144,6 @@ export type ResolvedOAuthClient = {
   readonly clientSecret: string | undefined;
   /** True when credentials were typed or confirmed interactively this run. */
   readonly prompted: boolean;
-};
-
-const maskSecret = (value: string): string => {
-  if (value.length <= 4) {
-    return "****";
-  }
-
-  return `${value.slice(0, 2)}…${value.slice(-2)} (${value.length} chars)`;
 };
 
 const persistClient = (
@@ -191,7 +172,6 @@ const resolveOAuthClientEffect = (
 
     let clientId = resolveValue(input.clientIdFlag, names.clientId);
     let clientSecret = resolveValue(input.clientSecretFlag, names.clientSecret);
-    let fromKeychain = false;
 
     {
       const stored = yield* fromPromise(() => loadStoredOAuthClient(input.kind, store));
@@ -199,11 +179,6 @@ const resolveOAuthClientEffect = (
       if (stored) {
         clientId = clientId ?? stored.clientId;
         clientSecret = clientSecret ?? stored.clientSecret;
-        fromKeychain = true;
-
-        if (!wizard) {
-          frameDetail(`${label(input.kind)} OAuth client loaded from the OS keychain.`);
-        }
       }
     }
 
@@ -227,15 +202,15 @@ const resolveOAuthClientEffect = (
             (input.requireSecret ? ` and ${names.clientSecret}` : "") +
             `, pass --client-id` +
             (input.requireSecret ? " / --client-secret" : "") +
-            `, or run login ${input.kind} on a TTY to walk the wizard and save them in the OS keychain.`,
+            `, or run login ${input.kind} on a TTY to enter them and save them in the OS keychain.`,
         ].join(" "),
       );
     }
 
     printOAuthClientWizardIntro(input.kind);
 
-    if (fromKeychain || clientId || clientSecret) {
-      frameDetail("Defaults from flag/env/keychain are shown — press Enter to keep.");
+    if (clientId || clientSecret) {
+      frameDetail("Enter keeps the value shown.");
     }
 
     // --- client id ---
@@ -254,7 +229,7 @@ const resolveOAuthClientEffect = (
     // --- client secret ---
     if (clientSecret && clientSecret.length > 0) {
       frameDetail(
-        `${label(input.kind)} client secret on file: ${maskSecret(clientSecret)}. Blank keeps it.`,
+        `${label(input.kind)} client secret saved (${clientSecret.length} chars). Blank keeps it.`,
       );
 
       const replacement = (yield* fromPromise(() =>
@@ -294,39 +269,3 @@ const resolveOAuthClientEffect = (
 
 export const resolveOAuthClient = (input: ResolveOAuthClientInput): Promise<ResolvedOAuthClient> =>
   runHost(resolveOAuthClientEffect(input));
-
-/**
- * Ask paste-only in wizard mode. Returns existing value when not wizard.
- */
-export const resolvePasteOnlyWizard = async (
-  current: boolean,
-  wizard: boolean,
-  options?: {
-    readonly isTty?: boolean;
-    readonly confirm?: (message: string) => Promise<boolean>;
-  },
-): Promise<boolean> => {
-  if (!wizard) {
-    return current;
-  }
-
-  const isTty = options?.isTty ?? Boolean(process.stdin.isTTY && process.stderr.isTTY);
-
-  if (!isTty) {
-    return current;
-  }
-
-  frameDetail(
-    "paste-only: skip local callback server (SSH/headless). Open the authorize URL elsewhere, then paste code/URL.",
-  );
-  const confirm = options?.confirm ?? confirmInFrame;
-
-  return confirm("Use --paste-only mode?");
-};
-
-/** True when the user invoked login without any credential/paste flags (bare command). */
-export const isBareLoginInvocation = (
-  clientId: Option.Option<string>,
-  clientSecret: Option.Option<string>,
-  pasteOnly: boolean,
-): boolean => Option.isNone(clientId) && Option.isNone(clientSecret) && pasteOnly === false;

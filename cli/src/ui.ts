@@ -44,7 +44,8 @@ export const terminalHyperlink = (href: string, label: string): string =>
 export const frameDetail = (text: string): void => writeOutput(`${ui.info(text)}\n`);
 
 export const frameUrl = (url: string): void => {
-  for (const chunk of wrapFrameText(url, (process.stdout.columns ?? 80) - 4)) {
+  // A width of 0 (some ptys) means unknown, not an 8-column terminal.
+  for (const chunk of wrapFrameText(url, (process.stdout.columns || 80) - 4)) {
     writeOutput(`    ${terminalHyperlink(url, ui.key(chunk))}\n`);
   }
 };
@@ -108,7 +109,12 @@ export const promptInFrame = (message: string): Promise<string> =>
   runPrompt(Prompt.String({ message }), message, "question");
 
 export const promptInFrameWithDefault = (message: string, defaultValue?: string): Promise<string> =>
-  runPrompt(Prompt.String({ message, default: defaultValue }), message, "question");
+  runPrompt(
+    // effect 4.0.6 spreads options over `{ default: "" }`, so an explicit undefined crashes the prompt.
+    Prompt.String(defaultValue === undefined ? { message } : { message, default: defaultValue }),
+    message,
+    "question",
+  );
 
 export const promptSecretInFrame = (message: string): Promise<string> =>
   runPrompt(Prompt.Password({ message }), message, "auth").then(Redacted.value);

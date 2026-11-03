@@ -10,6 +10,7 @@ import {
   saveManifoldSession,
 } from "@/login/manifold";
 import { awaitOAuthAuthorizationCode } from "@/login/oauth-loopback";
+import { warnIfEnvOverridesLogin } from "@/login/status";
 import { resolveValue } from "@/env-resolve";
 import { abortFrame, closeFrame, openFrame } from "@/ui";
 import { cliError } from "@/effect-kit";
@@ -28,9 +29,7 @@ export const manifoldLoginCommand = Command.make("manifold", {
     ),
   ),
 }).pipe(
-  Command.withDescription(
-    `Authorize Manifold with GitHub; callback ${MANIFOLD_CLI_OAUTH_REDIRECT_URI}. Supports loopback or pasted code/URL.`,
-  ),
+  Command.withDescription("Sign in to Manifold with GitHub."),
   Command.withHandler(({ apiOrigin, pasteOnly }) =>
     Effect.tryPromise({
       try: async () => {
@@ -49,6 +48,7 @@ export const manifoldLoginCommand = Command.make("manifold", {
         const session = await exchangeManifoldCode(origin, code, auth.verifier);
         await saveManifoldSession(session);
         closeFrame("Signed in with GitHub. Manifold session saved in the OS keychain.");
+        warnIfEnvOverridesLogin("manifold");
       },
       catch: (cause) => cliError(errorMessage(cause)),
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),
