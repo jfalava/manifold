@@ -80,6 +80,8 @@ export {
   type ProviderSearchScope,
 } from "./provider-candidate.js";
 
+export { UPSTREAM_SOURCES } from "./upstream-sources.js";
+
 export {
   MANIFOLD_ADMIN_ORIGIN,
   MANIFOLD_ADMIN_URL,

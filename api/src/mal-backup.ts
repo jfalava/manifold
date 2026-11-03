@@ -85,6 +85,9 @@ export const chooseMalMatch = (
   };
 };
 
+const quotedTitles = (titles: readonly string[]): string =>
+  titles.map((title) => `"${title}"`).join(", ");
+
 const embeddingText = (titles: readonly string[]): string =>
   ["manga title", ...uniqueTitles(titles)].join("\n");
 
@@ -119,7 +122,9 @@ export const resolveMalBackup = (
 
       if (observed?.malId) {
         if (!/^[1-9]\d*$/.test(observed.malId)) {
-          return yield* apiError("Invalid AniList MAL cross-link");
+          return yield* apiError(
+            `Invalid AniList MAL cross-link: "${observed.malId}" is not a MAL manga id`,
+          );
         }
 
         return { externalId: observed.malId, method: "anilist-id" as const };
@@ -155,7 +160,9 @@ export const resolveMalBackup = (
       }
 
       if (entries.length === 0) {
-        return yield* apiError("MAL backup unmatched: no candidates");
+        return yield* apiError(
+          `MAL backup unmatched: MyAnimeList search returned no candidates for ${quotedTitles(titles)}. Bind the MAL entry manually in the registry, then retry.`,
+        );
       }
 
       const vectors = yield* fromPromise(() =>
@@ -176,7 +183,14 @@ export const resolveMalBackup = (
       );
 
       if (!match) {
-        return yield* apiError("MAL backup ambiguous: no unique confident match");
+        return yield* apiError(
+          `MAL backup ambiguous: no unique confident match for ${quotedTitles(titles)} among ${entries.length} MyAnimeList candidates (${entries
+            .slice(0, 5)
+            .map((candidate) => `${candidate.providerId} "${candidate.title}"`)
+            .join(
+              ", ",
+            )}${entries.length > 5 ? ", …" : ""}). Bind the MAL entry manually in the registry, then retry.`,
+        );
       }
 
       return match;
@@ -192,7 +206,7 @@ export const writeMalBackupStatus = (
   Effect.runPromise(
     Effect.gen(function* () {
       if (!/^[1-9]\d*$/.test(externalId)) {
-        return yield* apiError("Invalid MAL manga id");
+        return yield* apiError(`Invalid MAL manga id: "${externalId}"`);
       }
 
       const response = yield* fromPromise(() =>
@@ -212,7 +226,11 @@ export const writeMalBackupStatus = (
       );
 
       if (!response.ok) {
-        return yield* apiError(`MAL backup status failed: HTTP ${response.status}`);
+        const body = (yield* fromPromise(() => response.text())).trim().slice(0, 300);
+
+        return yield* apiError(
+          `MAL backup status "${status}" for MAL ${externalId} failed: HTTP ${response.status}${body ? ` ${body}` : ""}`,
+        );
       }
     }),
   );

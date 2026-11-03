@@ -3,7 +3,7 @@ import { scheduleSync } from "./schedule";
 import { fromPromise } from "./from-promise";
 import { readOps } from "./sql-helpers";
 import type { SyncHost } from "./host";
-import { now, SYNC_MAX_ATTEMPTS } from "./constants";
+import { MAX_ERROR_LENGTH, now, SYNC_MAX_ATTEMPTS } from "./constants";
 import { isJsonObject, stringField } from "@manifold/json";
 import type { CompleteOpsInput, OpState, SyncOp, OpsSummary } from "../domain";
 import { type OpRow, toOp } from "../sync-rows";
@@ -97,7 +97,9 @@ export function completeOps(host: SyncHost, input: CompleteOpsInput) {
          WHERE id = ?`,
         state,
         attempts,
-        (result.error ?? "unknown drain failure").slice(0, 500),
+        (
+          result.error ?? `${row.kind} failed on the device drain, which reported no error message`
+        ).slice(0, MAX_ERROR_LENGTH),
         timestamp,
         row.id,
       );
@@ -146,13 +148,17 @@ export function listOps(
   const clauses: string[] = [];
   const params: (string | number)[] = [];
 
-  if (state && ["pending", "completed", "failed", "blocked"].includes(state)) {
-    clauses.push("state = ?");
+  if (state === "error") {
+    // Every op that has failed at least once: retrying (pending with an
+    // error), failed, or blocked.
+    clauses.push("(o.last_error IS NOT NULL OR o.state IN ('failed', 'blocked'))");
+  } else if (state && ["pending", "completed", "failed", "blocked"].includes(state)) {
+    clauses.push("o.state = ?");
     params.push(state);
   }
 
   if (target && ["mangadex", "anilist", "mal"].includes(target)) {
-    clauses.push("target = ?");
+    clauses.push("o.target = ?");
     params.push(target);
   }
 
@@ -160,10 +166,21 @@ export function listOps(
   params.push(Math.min(500, Math.max(1, limit)));
 
   const rows = host.ctx.storage.sql
-    .exec<OpRow>(`SELECT * FROM sync_ops ${where} ORDER BY id DESC LIMIT ?`, ...params)
+    .exec<OpRow & { entry_title: string | null }>(
+      `SELECT o.*, ce.title AS entry_title
+       FROM sync_ops o
+       LEFT JOIN canonical_entries ce
+         ON ce.id = CASE WHEN json_valid(o.payload) THEN json_extract(o.payload, '$.entryId') END
+       ${where}
+       ORDER BY o.id DESC LIMIT ?`,
+      ...params,
+    )
     .toArray();
 
-  return rows.map((row) => toOp(row));
+  return rows.map((row) => ({
+    ...toOp(row),
+    ...(row.entry_title !== null && { entryTitle: row.entry_title }),
+  }));
 }
 
 export function opsSummary(host: SyncHost, limit = 200): OpsSummary {

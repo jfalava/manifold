@@ -8,6 +8,7 @@ import { groupOutboxForDrain } from "../outbox-drain";
 import { type OpRow } from "../sync-rows";
 import { getAuthAccessToken } from "./auth";
 import {
+  MAX_ERROR_LENGTH,
   MD_STATUS_DRAIN_LIMIT,
   now,
   SYNC_DRAIN_LIMIT,
@@ -28,7 +29,7 @@ export const failShelfEntry = (
   attempts: number,
   cause: unknown,
 ): void => {
-  const message = errorMessage(cause).slice(0, 500);
+  const message = errorMessage(cause).slice(0, MAX_ERROR_LENGTH);
   host.ctx.storage.sql.exec(
     "UPDATE md_status_queue SET attempts = ?, last_error = ? WHERE entry_id = ?",
     attempts,
@@ -55,7 +56,7 @@ export const failOps = (
        WHERE id = ? AND state = 'pending'`,
       state,
       attempt,
-      errorMessage(cause).slice(0, 500),
+      errorMessage(cause).slice(0, MAX_ERROR_LENGTH),
       now(),
       row.id,
     );
@@ -90,7 +91,9 @@ const drainMalBackupsEffect = (host: SyncHost): Effect.Effect<void> =>
         const decodedPayload = Schema.decodeUnknownOption(MalBackupPayload)(parsed);
 
         if (Option.isNone(decodedPayload)) {
-          return yield* apiError("Invalid mal backup payload");
+          return yield* apiError(
+            `Invalid mal.status payload (expected entryId and backupIdentity): ${row.payload.slice(0, 300)}`,
+          );
         }
 
         const payload = decodedPayload.value;
@@ -197,7 +200,13 @@ const drainMangaDexOutboxEffect = (host: SyncHost, rows: readonly OpRow[]) =>
     );
 
     for (const row of invalid) {
-      failOps(host, [row], new Error(`Undecodable outbox payload`));
+      failOps(
+        host,
+        [row],
+        new Error(
+          `Undecodable mangadex.read payload (expected entryId and sourceChapterId): ${row.payload.slice(0, 300)}`,
+        ),
+      );
     }
 
     for (const group of groups) {
@@ -209,10 +218,22 @@ const drainMangaDexOutboxEffect = (host: SyncHost, rows: readonly OpRow[]) =>
         )?.externalId;
 
         if (!mangaDexId) {
-          return yield* apiError(`No MangaDex provider link for entry ${group.entryId}`);
+          return yield* apiError(
+            entry
+              ? `"${entry.title}" (${group.entryId}) has no MangaDex provider link, so its ${group.chapters.length} chapter read(s) cannot be marked on MangaDex. Link it in the registry, then retry.`
+              : `Registry entry ${group.entryId} no longer exists; its ${group.chapters.length} MangaDex chapter read(s) cannot be marked.`,
+          );
         }
 
-        yield* client.markChaptersRead(mangaDexId, [...group.chapters]);
+        yield* client
+          .markChaptersRead(mangaDexId, [...group.chapters])
+          .pipe(
+            Effect.mapError((error) =>
+              apiError(
+                `MangaDex markChaptersRead for "${entry?.title ?? group.entryId}" (MangaDex ${mangaDexId}, ${group.chapters.length} chapter(s)) failed: ${errorMessage(error)}`,
+              ),
+            ),
+          );
 
         for (const row of group.rows) {
           host.ctx.storage.sql.exec(

@@ -7,7 +7,7 @@ import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 import { RegistryEntry, type LinkProviderInput, type RegistryProvider } from "@manifold/contract";
 import { errorMessage, isString, stringField, type JsonValue } from "@manifold/json";
-import { UPSTREAM_SOURCES } from "@/commands/pas5";
+import { UPSTREAM_SOURCES } from "@manifold/paperback-runtime/upstream-sources";
 import { apiCall, apiConfig, listRegistryRows, type RegistryRow } from "@/commands/toolbox";
 import { cliError, epochMillisNow, jsonBodyString, newId } from "@/effect-kit";
 import { parsePas5, type Pas5Entities } from "@/pas5";

@@ -211,7 +211,7 @@ const loadOperationsProgram = Effect.fnUntraced(
   function* (): Effect.fn.Return<LoadOperationsResult> {
     const [ops, events] = yield* Effect.all(
       [
-        capture("ops", call("/v1/ops?limit=200", OpsListResponse)),
+        capture("ops", call("/v1/ops?state=error&limit=500", OpsListResponse)),
         capture("events", call("/v1/events?limit=100", EventsListResponse)),
       ],
       { concurrency: "unbounded" },
