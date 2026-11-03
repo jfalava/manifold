@@ -4,7 +4,8 @@ export const CanonicalProvider = Schema.Literals(["anilist", "mal", "local"]);
 
 export type CanonicalProvider = Schema.Schema.Type<typeof CanonicalProvider>;
 
-export const ContentProvider = Schema.Literals(["mangadex"]);
+/** Providers whose chapters Paperback reads and the registry records. */
+export const ContentProvider = Schema.Literals(["mangadex", "kagane", "manganato", "xcomic"]);
 
 export type ContentProvider = Schema.Schema.Type<typeof ContentProvider>;
 

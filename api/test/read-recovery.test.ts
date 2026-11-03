@@ -162,7 +162,7 @@ describe("queued reads with stale registry IDs", () => {
     await worker?.dispose();
   });
 
-  it.each(["mangadex"])(
+  it.each(["mangadex", "kagane", "manganato", "xcomic"])(
     "recovers missing UUIDs using exact %s links and keeps retries idempotent",
     async (provider) => {
       const current = await entry(provider, `native-${provider}`);
@@ -186,7 +186,44 @@ describe("queued reads with stale registry IDs", () => {
         const matchingOps = ops.filter((op) => op.opId === input.read.eventId);
         expect(matchingOps).toHaveLength(1);
         expect(matchingOps[0]?.payload.entryId).toBe(current.id);
+      } else {
+        // Only MangaDex chapters can be marked read upstream.
+        const ops = Schema.decodeUnknownSync(Schema.Array(SyncOp))(
+          await request({ action: "ops" }),
+        );
+
+        expect(ops.filter((op) => op.opId === input.read.eventId)).toEqual([]);
       }
+    },
+  );
+
+  it.each(["kagane", "manganato", "xcomic"])(
+    "accepts %s reads over HTTP and records them as progress",
+    async (provider) => {
+      const target = await entry("anilist", `http-${provider}`);
+
+      const response = await worker.dispatchFetch(
+        `https://manifold.jfa.dev/v1/entries/${target.id}/read`,
+        {
+          method: "POST",
+          headers: { authorization: "Bearer fixture-token", "content-type": "application/json" },
+          body: JSON.stringify(read(provider, `http-native-${provider}`, `http-event-${provider}`)),
+        },
+      );
+
+      expect(response.status).toBe(200);
+      expect(Schema.decodeUnknownSync(ReadingProgress)(await response.json())).toMatchObject({
+        entryId: target.id,
+        provider,
+        chapterKey: `${provider}:chapter-12`,
+        chapterNumber: 12,
+      });
+      expect(
+        Schema.decodeUnknownSync(RegistryEntry)(await request({ action: "get", id: target.id }))
+          .providers,
+      ).toContainEqual(
+        expect.objectContaining({ provider, externalId: `http-native-${provider}` }),
+      );
     },
   );
 

@@ -310,7 +310,9 @@ const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
     const row = readAuthToken(host, provider);
 
     if (!row) {
-      return yield* apiError(`Auth provider is not connected: ${provider}`);
+      return yield* apiError(
+        `Auth provider is not connected: ${provider}. Connect it in admin Credentials, then retry.`,
+      );
     }
 
     if (row.expires_at === null || row.expires_at > now() + 30_000) {
@@ -320,7 +322,9 @@ const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
     const storedRefreshToken = row.refresh_token;
 
     if (!storedRefreshToken) {
-      return yield* apiError(`Auth provider requires reauthorization: ${provider}`);
+      return yield* apiError(
+        `Auth provider requires reauthorization: ${provider}. Reconnect it in admin Credentials, then retry.`,
+      );
     }
 
     const refreshToken = yield* fromPromise(() => decryptToken(host.env, storedRefreshToken));
