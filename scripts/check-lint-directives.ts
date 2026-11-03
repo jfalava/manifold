@@ -4,8 +4,8 @@
  * Lint plugins can be switched off by the very comments they police, so this
  * runs as a plain text check over tracked files. It rejects disable comments
  * that name a strict rule (see `strictRules` in oxlint.config.ts) or name no
- * rule at all, and TypeScript's `@ts-ignore`, `@ts-nocheck` and
- * `@ts-expect-error`.
+ * rule at all, and TypeScript's ts-ignore, ts-nocheck and ts-expect-error
+ * comments (written without their `@` here so this file passes its own check).
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
