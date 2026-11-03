@@ -1,0 +1,48 @@
+name: Check
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # license:check runs REUSE through uvx.
+      - uses: astral-sh/setup-uv@v10
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Composite packages resolve each other through emitted declarations, so
+      # per-package typechecks fail with TS6305 on a fresh checkout until the
+      # project references are built.
+      - name: Build TypeScript project references
+        run: bunx tsrs -b tsconfig.json
+
+      - name: Typecheck
+        run: bun run typecheck:global
+
+      - name: Lint and REUSE license check
+        run: bun run lint:global
+
+      # Same check the CLI release runs: fails when the binary bundles a
+      # package that ships no license file.
+      - name: Bundled third-party license notices
+        working-directory: cli
+        run: |
+          bun scripts/third-party-notices.ts "${RUNNER_TEMP}/THIRD-PARTY-NOTICES.md" \
+            "https://github.com/${GITHUB_REPOSITORY}/tree/${GITHUB_SHA}"
