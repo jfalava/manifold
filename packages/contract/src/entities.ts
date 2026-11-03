@@ -101,6 +101,8 @@ export const SyncOp = Schema.Struct({
   state: OpState,
   attempts: Schema.Finite,
   lastError: Schema.optional(Schema.String),
+  /** Registry title of the op's payload entryId, when listed. */
+  entryTitle: Schema.optional(Schema.String),
   createdAt: Schema.Finite,
   updatedAt: Schema.Finite,
 });

@@ -4,6 +4,7 @@ import { Badge, Banner, Button, Input, Tabs, Text } from "@cloudflare/kumo";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import type { ColumnDef, SortingState } from "@tanstack/react-table";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { stringField } from "@manifold/json";
 
 import {
   adminTableFeatures,
@@ -51,21 +52,33 @@ export const Route = createFileRoute("/operations")({
 });
 
 const OPERATIONS_TABS = [
-  { value: "operations", label: "Operations" },
+  { value: "operations", label: "Errors" },
   { value: "logs", label: "Logs" },
 ] as const;
 
 type OperationsTab = (typeof OPERATIONS_TABS)[number]["value"];
 
+/** Pending ops with an error are mid-retry; label them so they read as errors. */
+type OpErrorState = "retrying" | "failed" | "blocked";
+
+const OP_ERROR_STATES = [
+  "retrying",
+  "failed",
+  "blocked",
+] as const satisfies readonly OpErrorState[];
+
 const OP_STATE_BADGES = {
-  completed: "success",
-  pending: "warning",
+  retrying: "warning",
   blocked: "error",
   failed: "error",
-} satisfies Record<string, FilterToggleVariant>;
+} satisfies Record<OpErrorState, FilterToggleVariant>;
 
-function variantForOpState(state: string): FilterToggleVariant {
-  return Object.entries(OP_STATE_BADGES).find(([key]) => key === state)?.[1] ?? "neutral";
+function errorStateForOp(op: SyncOpItem): OpErrorState {
+  return op.state === "failed" || op.state === "blocked" ? op.state : "retrying";
+}
+
+function payloadEntryId(op: SyncOpItem): string | undefined {
+  return stringField(op.payload, "entryId");
 }
 
 function OperationsPage() {
@@ -100,7 +113,7 @@ function OperationsPage() {
           <Text as="h1" variant="heading">
             Sync operations
           </Text>
-          <Text>Queued provider operations and the registry mutation log.</Text>
+          <Text>Failed provider operations and the registry mutation log.</Text>
         </div>
         <Button onClick={() => void refresh()} disabled={busy}>
           {busy ? "Working…" : "Refresh"}
@@ -148,8 +161,8 @@ function OpsTable({
 }): ReactNode {
   const search = useSearch({ from: "/operations" });
   const navigate = useNavigate({ from: "/operations" });
-  const [stateFilters, setStateFilters] = useState<ReadonlySet<string>>(() => new Set());
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [stateFilters, setStateFilters] = useState<ReadonlySet<OpErrorState>>(() => new Set());
+  const [sorting, setSorting] = useState<SortingState>([{ id: "updatedAt", desc: true }]);
 
   const writePagination = useCallback(
     (next: TablePaginationSearch) => {
@@ -169,32 +182,25 @@ function OpsTable({
   const ops = useMemo(() => [...(data?.ops ?? [])], [data]);
 
   const byState = useMemo(() => {
-    const counts = new Map<string, number>();
+    const counts = new Map<OpErrorState, number>();
 
     for (const op of ops) {
-      counts.set(op.state, (counts.get(op.state) ?? 0) + 1);
+      const state = errorStateForOp(op);
+      counts.set(state, (counts.get(state) ?? 0) + 1);
     }
 
     return counts;
   }, [ops]);
-
-  const stateChips = useMemo(() => {
-    const preferred = ["pending", "blocked", "failed", "completed"] as const;
-    const known = new Set<string>(preferred);
-    const present = [...byState.keys()].filter((value) => !known.has(value));
-
-    return [...preferred.filter((value) => byState.has(value)), ...present];
-  }, [byState]);
 
   const filtered = useMemo(() => {
     if (stateFilters.size === 0) {
       return ops;
     }
 
-    return ops.filter((op) => stateFilters.has(op.state));
+    return ops.filter((op) => stateFilters.has(errorStateForOp(op)));
   }, [ops, stateFilters]);
 
-  const toggleStateFilter = useCallback((value: string) => {
+  const toggleStateFilter = useCallback((value: OpErrorState) => {
     setStateFilters((current) => {
       const next = new Set(current);
 
@@ -208,45 +214,96 @@ function OpsTable({
 
   const columns = useMemo<ColumnDef<typeof adminTableFeatures, SyncOpItem>[]>(
     () => [
-      { accessorKey: "id", header: "#" },
       {
-        accessorKey: "kind",
-        header: "Kind",
-        cell: ({ row }) => <code className="text-[0.9em]">{row.original.kind}</code>,
-      },
-      { accessorKey: "origin", header: "Origin" },
-      {
-        accessorKey: "state",
-        header: "State",
+        accessorKey: "updatedAt",
+        header: "Last attempt",
         cell: ({ row }) => (
-          <Badge variant={variantForOpState(row.original.state)}>{row.original.state}</Badge>
+          <span className="grid gap-0.5 text-sm whitespace-nowrap tabular-nums">
+            <span>{new Date(row.original.updatedAt).toLocaleString()}</span>
+            <span className="text-xs opacity-60">
+              queued {new Date(row.original.createdAt).toLocaleString()}
+            </span>
+          </span>
         ),
       },
-      { accessorKey: "attempts", header: "Attempts" },
+      {
+        accessorKey: "kind",
+        header: "Op",
+        cell: ({ row }) => (
+          <span className="grid gap-0.5">
+            <code className="text-[0.9em]">{row.original.kind}</code>
+            <span className="text-xs opacity-60">
+              {row.original.target} · from {row.original.origin}
+            </span>
+          </span>
+        ),
+      },
+      {
+        id: "entry",
+        header: "Entry",
+        accessorFn: (op) => op.entryTitle ?? payloadEntryId(op) ?? "",
+        cell: ({ row }) => {
+          const entryId = payloadEntryId(row.original);
+
+          return (
+            <span className="grid gap-0.5">
+              <span className="text-sm">{row.original.entryTitle ?? "—"}</span>
+              {entryId !== undefined && <code className="text-xs opacity-60">{entryId}</code>}
+            </span>
+          );
+        },
+      },
+      {
+        id: "state",
+        header: "State",
+        accessorFn: errorStateForOp,
+        cell: ({ row }) => {
+          const state = errorStateForOp(row.original);
+
+          return (
+            <span className="grid justify-items-start gap-0.5">
+              <Badge variant={OP_STATE_BADGES[state]}>{state}</Badge>
+              <span className="text-xs whitespace-nowrap opacity-60">
+                {row.original.attempts} attempt{row.original.attempts === 1 ? "" : "s"}
+              </span>
+            </span>
+          );
+        },
+      },
       {
         accessorKey: "lastError",
         header: "Error",
+        enableSorting: false,
         cell: ({ row }) => (
-          <span className="text-sm opacity-60">{row.original.lastError ?? "—"}</span>
+          <div className="grid max-w-xl gap-1">
+            <span className="text-sm break-words whitespace-pre-wrap">
+              {row.original.lastError ?? "Marked failed without an error message."}
+            </span>
+            <details className="text-xs opacity-60">
+              <summary className="cursor-pointer">Op {row.original.opId} payload</summary>
+              <pre className="mt-1 break-all whitespace-pre-wrap">
+                {JSON.stringify(row.original.payload, null, 2)}
+              </pre>
+            </details>
+          </div>
         ),
       },
       {
         id: "actions",
         header: "",
         enableSorting: false,
-        cell: ({ row }) =>
-          row.original.state === "failed" || row.original.state === "blocked" ? (
-            <Button
-              size="sm"
-              onClick={() =>
-                void onAct(async () => {
-                  await retryOp({ data: { opId: row.original.opId } });
-                })
-              }
-            >
-              Retry
-            </Button>
-          ) : undefined,
+        cell: ({ row }) => (
+          <Button
+            size="sm"
+            onClick={() =>
+              void onAct(async () => {
+                await retryOp({ data: { opId: row.original.opId } });
+              })
+            }
+          >
+            Retry
+          </Button>
+        ),
       },
     ],
     [onAct],
@@ -265,10 +322,12 @@ function OpsTable({
     <div className="grid gap-4">
       <div className="grid gap-1">
         <Text as="h2" variant="heading3">
-          Operations
+          Operation errors
         </Text>
         <span className="text-sm opacity-60">
-          anilist:* ops wait for your device; mangadex:* drain on the Worker.
+          Ops that failed at least once. Successful ops are removed and pending ops without an error
+          are hidden. anilist:* ops retry from your device; mangadex:* and mal:* retry on the
+          Worker.
         </span>
       </div>
 
@@ -281,19 +340,21 @@ function OpsTable({
           >
             All ({ops.length})
           </FilterToggle>
-          {stateChips.map((value) => {
-            const active = stateFilters.has(value);
+          {OP_ERROR_STATES.flatMap((value) => {
+            const count = byState.get(value);
 
-            return (
-              <FilterToggle
-                key={value}
-                active={active}
-                variant={variantForOpState(value)}
-                onClick={() => toggleStateFilter(value)}
-              >
-                {value} ({byState.get(value) ?? 0})
-              </FilterToggle>
-            );
+            return count === undefined
+              ? []
+              : [
+                  <FilterToggle
+                    key={value}
+                    active={stateFilters.has(value)}
+                    variant={OP_STATE_BADGES[value]}
+                    onClick={() => toggleStateFilter(value)}
+                  >
+                    {value} ({count})
+                  </FilterToggle>,
+                ];
           })}
         </div>
         <span className="text-sm opacity-60">
@@ -304,9 +365,11 @@ function OpsTable({
       {pager}
       <DataTable
         table={table}
-        emptyText={data?.errors.ops === undefined ? "No ops recorded." : "Ops could not be loaded."}
+        emptyText={
+          data?.errors.ops === undefined ? "No operation errors." : "Ops could not be loaded."
+        }
         loading={loading}
-        skeletonColumns={7}
+        skeletonColumns={6}
       />
       {pager}
     </div>

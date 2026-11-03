@@ -29,8 +29,24 @@ export class TestSync extends ManifoldSync {
       entryId, attempts, lastError,
     );
   }
+  async seedErrorFixture() {
+    this.ctx.storage.sql.exec(
+      "INSERT INTO canonical_entries (id, provider, provider_id, title, created_at, updated_at) VALUES ('entry-titled', 'local', 'entry-titled', 'Owari no Seraph', 1, 1)",
+    );
+    const insert = (opId, state, attempts, lastError, payload) => this.ctx.storage.sql.exec(
+      "INSERT INTO sync_ops (op_id, target, kind, origin, payload, state, attempts, last_error, created_at, updated_at) VALUES (?, 'mal', 'mal.status', 'device', ?, ?, ?, ?, 1, 1)",
+      opId, payload, state, attempts, lastError,
+    );
+    insert('queued', 'pending', 0, null, '{"entryId":"entry-titled"}');
+    insert('retrying', 'pending', 2, 'MAL 503', '{"entryId":"entry-titled"}');
+    insert('blocked', 'blocked', 5, 'Auth provider is not connected: mal', '{"entryId":"missing-entry"}');
+    insert('garbled', 'blocked', 5, 'Invalid payload', 'not json');
+  }
   async readAllOps() {
     return this.listOps();
+  }
+  async readErrorOps() {
+    return this.listOps('error');
   }
   async complete(results) {
     return this.completeOps({ results });
@@ -45,6 +61,8 @@ export default { async fetch(request, env) {
   if (input.op === 'seed-op') { await sync.seedOp(input.opId, input.target, input.kind); return Response.json({ ok: true }); }
   if (input.op === 'seed-shelf') { await sync.seedShelf(input.entryId, input.attempts, input.lastError); return Response.json({ ok: true }); }
   if (input.op === 'read') { return Response.json({ ops: await sync.readAllOps() }); }
+  if (input.op === 'seed-errors') { await sync.seedErrorFixture(); return Response.json({ ok: true }); }
+  if (input.op === 'read-errors') { return Response.json({ ops: await sync.readErrorOps() }); }
   if (input.op === 'complete') { return Response.json(await sync.complete(input.results)); }
   if (input.op === 'summary') { return Response.json(await sync.summary()); }
   return Response.json({ ok: false }, { status: 400 });
@@ -167,6 +185,21 @@ describe("sync outbox retention and summary", () => {
     expect(ops).toHaveLength(1);
     expect(ops[0]).toMatchObject({ opId: "op-fail", state: "pending", attempts: 1 });
     expect(ops[0]?.lastError).toContain("device 500");
+  });
+
+  it("lists only ops that have errored, with the registry title of their entry", async () => {
+    const nonce = "retention-errors";
+    expect((await dispatch({ op: "seed-errors", nonce })).status).toBe(200);
+    const response = await dispatch({ op: "read-errors", nonce });
+    expect(response.status).toBe(200);
+    const ops = Schema.decodeUnknownSync(ReadResponse)(await response.json()).ops;
+
+    // A queued op that never failed is hidden; a pending op with an error is a retry.
+    expect(ops.map((op) => [op.opId, op.state, op.entryTitle])).toEqual([
+      ["garbled", "blocked", undefined],
+      ["blocked", "blocked", undefined],
+      ["retrying", "pending", "Owari no Seraph"],
+    ]);
   });
 
   it("reports shelf DLQ counts alongside op states", async () => {
