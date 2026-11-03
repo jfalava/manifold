@@ -3,12 +3,9 @@ import { Command, Flag } from "effect/cli";
 import { errorMessage } from "@manifold/json";
 
 import { saveMalSession } from "@/login/mal-session";
-import {
-  isBareLoginInvocation,
-  resolveOAuthClient,
-  resolvePasteOnlyWizard,
-} from "@/login/oauth-clients";
+import { resolveOAuthClient } from "@/login/oauth-clients";
 import { awaitOAuthAuthorizationCode } from "@/login/oauth-loopback";
+import { warnIfEnvOverridesLogin } from "@/login/status";
 import { createMalAuthorization, createMalClient, MAL_REDIRECT_URI, requestMalTokens } from "@/mal";
 import { abortFrame, closeFrame, openFrame } from "@/ui";
 import { cliError } from "@/effect-kit";
@@ -20,7 +17,7 @@ export const malLoginCommand = Command.make("mal", {
   clientId: Flag.String("client-id").pipe(
     Flag.optional,
     Flag.withDescription(
-      "MAL OAuth client ID. Falls back to MANIFOLD_MAL_CLIENT_ID, then OS keychain, then interactive prompt.",
+      `MAL OAuth app client ID; the app's redirect URI must be ${MAL_REDIRECT_URI}. Falls back to MANIFOLD_MAL_CLIENT_ID, then OS keychain, then interactive prompt.`,
     ),
   ),
   clientSecret: Flag.String("client-secret").pipe(
@@ -29,6 +26,10 @@ export const malLoginCommand = Command.make("mal", {
       "MAL OAuth client secret when required. Falls back to MANIFOLD_MAL_CLIENT_SECRET, then OS keychain, then interactive prompt.",
     ),
   ),
+  reconfigure: Flag.Boolean("reconfigure").pipe(
+    Flag.withDefault(false),
+    Flag.withDescription("Re-enter the OAuth app client id and secret even when they are saved."),
+  ),
   pasteOnly: Flag.Boolean("paste-only").pipe(
     Flag.withDefault(false),
     Flag.withDescription(
@@ -36,24 +37,20 @@ export const malLoginCommand = Command.make("mal", {
     ),
   ),
 }).pipe(
-  Command.withDescription(
-    `Authorize MAL locally; register ${MAL_REDIRECT_URI} as the OAuth redirect URI. Bare invocation on a TTY runs a setup wizard; --wizard walks Effect CLI flags. OAuth client id/secret: env, keychain, or prompts.`,
-  ),
-  Command.withHandler(({ clientId, clientSecret, pasteOnly }) =>
+  Command.withDescription("Sign in to MyAnimeList with your own OAuth app."),
+  Command.withHandler(({ clientId, clientSecret, reconfigure, pasteOnly }) =>
     Effect.tryPromise({
       try: async () => {
         openFrame("login mal");
-        const wizard = isBareLoginInvocation(clientId, clientSecret, pasteOnly);
 
         const oauth = await resolveOAuthClient({
           kind: "mal",
           clientIdFlag: clientId,
           clientSecretFlag: clientSecret,
           requireSecret: false,
-          wizard,
+          wizard: reconfigure,
         });
 
-        const usePasteOnly = await resolvePasteOnlyWizard(pasteOnly, wizard);
         const auth = createMalAuthorization(oauth.clientId);
 
         const code = await awaitOAuthAuthorizationCode({
@@ -61,7 +58,7 @@ export const malLoginCommand = Command.make("mal", {
           authorizeUrl: auth.url,
           redirectUri: MAL_REDIRECT_URI,
           expectedState: auth.state,
-          pasteOnly: usePasteOnly,
+          pasteOnly,
         });
 
         const session = await requestMalTokens(
@@ -80,6 +77,7 @@ export const malLoginCommand = Command.make("mal", {
         closeFrame(
           `Signed in as ${profile.name} (${profile.id}). Tokens saved in the OS keychain.`,
         );
+        warnIfEnvOverridesLogin("mal");
       },
       catch: (cause) => cliError(errorMessage(cause)),
     }).pipe(Effect.onError(() => Effect.sync(abortFrame))),

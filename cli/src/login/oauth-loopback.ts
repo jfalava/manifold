@@ -15,9 +15,11 @@ import { stdin, stderr } from "node:process";
 import { createInterface } from "node:readline/promises";
 
 import { errorMessage } from "@manifold/json";
+import pc from "picocolors";
 
 import { cliError, envString } from "@/effect-kit";
 import { frameDetail, frameUrl } from "@/ui";
+import { createWaitView, type WaitKey } from "@/login/oauth-wait-view";
 import { terminalSession } from "@/terminal-alert";
 import { renderCallbackPage, type CallbackPageState } from "@/login/oauth-pages";
 
@@ -160,6 +162,40 @@ export const tryCopyToClipboard = async (text: string): Promise<boolean> => {
   return osc || tool;
 };
 
+/** SSH sessions run the browser on another machine. */
+const isRemoteSession = (): boolean =>
+  envString("SSH_CONNECTION") !== undefined || envString("SSH_TTY") !== undefined;
+
+/** `o` is offered only where a local browser can plausibly open. */
+const canOpenBrowser = (): boolean => {
+  if (isRemoteSession()) {
+    return false;
+  }
+
+  if (process.platform === "darwin" || process.platform === "win32") {
+    return true;
+  }
+
+  return envString("DISPLAY") !== undefined || envString("WAYLAND_DISPLAY") !== undefined;
+};
+
+const OPEN_COMMANDS: Partial<Record<NodeJS.Platform, readonly string[]>> = {
+  darwin: ["open"],
+  win32: ["cmd", "/c", "start", ""],
+};
+
+const openInBrowser = async (url: string): Promise<boolean> => {
+  const command = [...(OPEN_COMMANDS[process.platform] ?? ["xdg-open"]), url];
+
+  try {
+    const proc = Bun.spawn(command, { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+
+    return (await proc.exited) === 0;
+  } catch {
+    return false;
+  }
+};
+
 type LoopbackServer = {
   readonly stop: (closeActiveConnections?: boolean) => Promise<void>;
 };
@@ -242,7 +278,6 @@ const readPasteLine = async (signal: AbortSignal): Promise<string> => {
     throw cliError("Login cancelled.");
   }
 
-  stderr.write("  󰌗 Paste authorization code or callback URL: ");
   const reader = createInterface({ input: stdin, output: stderr });
 
   const onAbort = (): void => {
@@ -252,7 +287,8 @@ const readPasteLine = async (signal: AbortSignal): Promise<string> => {
   signal.addEventListener("abort", onAbort, { once: true });
 
   try {
-    const line = await reader.question("");
+    // readline redraws its own prompt line, so a separately written prompt is wiped.
+    const line = await reader.question("  󰌗 Paste authorization code or callback URL: ");
 
     return line;
   } finally {
@@ -297,20 +333,39 @@ export const isBulkPasteChunk = (text: string): boolean => {
  * Multi-byte pastes must not be interpreted key-by-key (every `c` in an OAuth
  * code used to fire the copy bind).
  */
-const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Promise<string> => {
-  const rawStdin = asRawStdin(stdin);
+type WaitOptions = {
+  readonly authorizeUrl: string;
+  readonly label: string;
+  readonly hint: string | undefined;
+};
 
-  if (!rawStdin) {
-    return readPasteLine(signal);
-  }
-
-  frameDetail("Keys: c copy authorize URL · Enter paste code/URL · Ctrl+C cancel");
-
-  return await new Promise<string>((resolve, reject) => {
+const waitForPasteOrKey = async (
+  rawStdin: RawStdin,
+  options: WaitOptions,
+  signal: AbortSignal,
+): Promise<string> =>
+  await new Promise<string>((resolve, reject) => {
     let cleaned = false;
     let buffer = "";
     let inBracketedPaste = false;
     let copyBusy = false;
+    let copyTimer: ReturnType<typeof setTimeout> | undefined;
+    const canOpen = canOpenBrowser();
+    let copyLabel = "copy URL";
+
+    const keys = (): WaitKey[] => [
+      { key: "enter", label: "paste code" },
+      ...(canOpen ? [{ key: "o", label: "open browser" }] : []),
+      { key: "c", label: copyLabel },
+      { key: "esc", label: "cancel" },
+    ];
+
+    const view = createWaitView({
+      label: options.label,
+      url: options.authorizeUrl,
+      hint: options.hint,
+      keys: keys(),
+    });
 
     const cleanup = (): void => {
       if (cleaned) {
@@ -318,6 +373,8 @@ const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Pro
       }
 
       cleaned = true;
+      clearTimeout(copyTimer);
+      view.clear();
       rawStdin.removeListener("data", onData);
       signal.removeEventListener("abort", onAbort);
 
@@ -356,18 +413,35 @@ const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Pro
       }
 
       copyBusy = true;
-      void tryCopyToClipboard(authorizeUrl).then((ok) => {
+      void tryCopyToClipboard(options.authorizeUrl).then((ok) => {
         copyBusy = false;
 
-        if (signal.aborted) {
+        if (cleaned) {
           return;
         }
 
-        frameDetail(
-          ok
-            ? "Authorize URL copied to the clipboard."
-            : "Could not copy to clipboard. Select the printed URL above, or install wl-copy/xclip.",
-        );
+        copyLabel = ok ? `${pc.green("✓")} copied` : `${pc.yellow("!")} copy failed`;
+        view.update({
+          keys: keys(),
+          warning: ok
+            ? undefined
+            : "Could not copy. Select the URL above, or install wl-copy/xclip.",
+        });
+        clearTimeout(copyTimer);
+        copyTimer = setTimeout(() => {
+          copyLabel = "copy URL";
+          view.update({ keys: keys() });
+        }, 2000);
+      });
+    };
+
+    const openAuthorizeUrl = (): void => {
+      void openInBrowser(options.authorizeUrl).then((ok) => {
+        if (!cleaned) {
+          view.update({
+            warning: ok ? undefined : "Could not open the browser. Copy and open the URL manually.",
+          });
+        }
       });
     };
 
@@ -428,6 +502,8 @@ const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Pro
 
         if (ch === "c" || ch === "C") {
           copyAuthorizeUrl();
+        } else if (canOpen && (ch === "o" || ch === "O")) {
+          openAuthorizeUrl();
         }
         // Ignore other single keys.
       }
@@ -439,6 +515,14 @@ const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Pro
       }
 
       const text = chunk.toString("utf8");
+
+      // A lone ESC chunk is the Esc key; escape sequences arrive with their tail.
+      if (text === "\u001b" && buffer.length === 0 && !inBracketedPaste) {
+        terminalSession()?.cancel();
+        fail(cliError("Login cancelled."));
+
+        return;
+      }
 
       // Terminals without bracketed paste often deliver the whole paste in one
       // multi-byte chunk. Treat that as the callback payload, not keybinds.
@@ -468,7 +552,6 @@ const waitForPasteOrKey = async (authorizeUrl: string, signal: AbortSignal): Pro
       onAbort();
     }
   });
-};
 
 /**
  * Race loopback callback against an optional paste prompt.
@@ -539,27 +622,11 @@ export const awaitOAuthAuthorizationCode = async (
     }
   }
 
-  frameDetail(`Callback URL: ${options.redirectUri}`);
-  frameDetail("Open this URL in your browser (click if your terminal supports links):");
-  frameUrl(options.authorizeUrl);
-
   if (pasteOnly && !stdin.isTTY) {
     await server?.stop(true);
     throw cliError(
       `${options.providerLabel} login needs a TTY to paste the callback when loopback is disabled.`,
     );
-  }
-
-  if (pasteOnly) {
-    frameDetail(
-      "Paste-only mode: authorize in another browser, then press Enter and paste the callback URL or code.",
-    );
-  } else if (!stdin.isTTY) {
-    frameDetail(
-      "No TTY for paste; waiting on the local callback. Use --paste-only on a headless host.",
-    );
-  } else {
-    frameDetail("Waiting for browser callback, or press Enter to paste a code/URL.");
   }
 
   const minutes = Math.round(timeoutMs / 60_000);
@@ -571,8 +638,43 @@ export const awaitOAuthAuthorizationCode = async (
   // Do not keep the process alive solely for the timer once login finishes.
   timeoutId.unref?.();
 
-  if (stdin.isTTY) {
-    void waitForPasteOrKey(options.authorizeUrl, signal)
+  const pasteHint = `Authorize in any browser, then press enter and paste the ${options.redirectUri}?… URL or the code.`;
+  const rawStdin = asRawStdin(stdin);
+
+  if (!rawStdin) {
+    frameDetail("Open in your browser:");
+    frameUrl(options.authorizeUrl);
+
+    if (pasteOnly) {
+      frameDetail(`Paste-only: ${pasteHint}`);
+    } else if (!stdin.isTTY) {
+      frameDetail(
+        "No TTY for paste; waiting on the local callback. Use --paste-only on a headless host.",
+      );
+    } else {
+      frameDetail("Waiting for the browser. Press Enter to paste a code or callback URL.");
+    }
+  }
+
+  const waiting = rawStdin
+    ? waitForPasteOrKey(
+        rawStdin,
+        {
+          authorizeUrl: options.authorizeUrl,
+          label: pasteOnly
+            ? "Waiting for a pasted callback URL or code…"
+            : `Waiting for ${options.providerLabel} authorization (up to ${minutes} minutes)…`,
+          // Over SSH the browser runs elsewhere, so the loopback cannot see its redirect.
+          hint: pasteOnly || isRemoteSession() ? pasteHint : undefined,
+        },
+        signal,
+      )
+    : stdin.isTTY
+      ? readPasteLine(signal)
+      : undefined;
+
+  if (waiting) {
+    void waiting
       .then((raw) => {
         if (settled) {
           return;

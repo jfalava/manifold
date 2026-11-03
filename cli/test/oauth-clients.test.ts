@@ -2,10 +2,8 @@ import { Option } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
-  isBareLoginInvocation,
   loadStoredOAuthClient,
   resolveOAuthClient,
-  resolvePasteOnlyWizard,
   saveStoredOAuthClient,
   type OAuthClientSecretStore,
 } from "../src/login/oauth-clients";
@@ -232,21 +230,5 @@ describe("oauth client credentials", () => {
         process.env.MANIFOLD_MAL_CLIENT_SECRET = previousSecret;
       }
     }
-  });
-
-  it("detects bare login invocations", () => {
-    expect(isBareLoginInvocation(Option.none(), Option.none(), false)).toBe(true);
-    expect(isBareLoginInvocation(Option.some("x"), Option.none(), false)).toBe(false);
-    expect(isBareLoginInvocation(Option.none(), Option.none(), true)).toBe(false);
-  });
-
-  it("asks paste-only only in wizard mode", async () => {
-    await expect(resolvePasteOnlyWizard(false, false)).resolves.toBe(false);
-    await expect(
-      resolvePasteOnlyWizard(false, true, {
-        isTty: true,
-        confirm: async () => true,
-      }),
-    ).resolves.toBe(true);
   });
 });
