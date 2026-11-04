@@ -12,6 +12,7 @@ import {
   OpsListResponse,
 } from "@manifold/contract";
 import { isJsonValue, type JsonValue } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 
 const fixture = `
 import { Effect } from 'effect';
@@ -96,7 +97,7 @@ describe("canonical fallback with the real registry", () => {
     const response = await worker.dispatchFetch(`https://fixture.test${path}`, {
       method: body === undefined ? "GET" : "POST",
       ...(body !== undefined && {
-        body: JSON.stringify(body),
+        body: toJsonText(body),
         headers: { "content-type": "application/json" },
       }),
     });
@@ -206,7 +207,7 @@ describe("canonical fallback with the real registry", () => {
 
     const response = await worker.dispatchFetch("https://fixture.test/v1/registry/ingest", {
       method: "POST",
-      body: JSON.stringify({
+      body: toJsonText({
         provider: "anilist",
         providerId: "43",
         title: "Conflicting title",

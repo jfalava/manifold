@@ -1,10 +1,13 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalDate:off */
+// Browser route: JSON.stringify only renders JsonObject values for display, and
+// @manifold/json/text would bundle Effect Schema into the client for that.
+/** @effect-diagnostics globalJson:off */
 import { Badge, Banner, Button, Input, Tabs, Text } from "@cloudflare/kumo";
+import { stringField } from "@manifold/json";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import type { ColumnDef, SortingState } from "@tanstack/react-table";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { stringField } from "@manifold/json";
 
 import {
   adminTableFeatures,

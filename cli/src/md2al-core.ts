@@ -1,5 +1,5 @@
 /** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
+/** @effect-diagnostics globalJsonInEffect:off */
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 
 import {
@@ -13,6 +13,7 @@ import {
   stringField,
   type JsonObject,
 } from "@manifold/json";
+import { toPrettyJsonText } from "@manifold/json/text";
 import { ListStatus } from "@manifold/contract";
 import { Effect, Option, Schema } from "effect";
 
@@ -286,7 +287,7 @@ const phaseExportEffect = (
     }
 
     mkdirSync(tmpDir, { recursive: true });
-    writeFileSync(paths(tmpDir).snapshot, JSON.stringify(entries, null, 2));
+    writeFileSync(paths(tmpDir).snapshot, toPrettyJsonText(entries));
     report?.note(`Snapshot saved: ${entries.length} entries → ${paths(tmpDir).snapshot}`);
 
     return entries;
@@ -309,7 +310,7 @@ export const loadProgress = (tmpDir: string): Map<string, number> | undefined =>
 
 const saveProgress = (tmpDir: string, progress: Map<string, number>): void => {
   mkdirSync(tmpDir, { recursive: true });
-  writeFileSync(paths(tmpDir).progress, JSON.stringify(Object.fromEntries(progress), null, 2));
+  writeFileSync(paths(tmpDir).progress, toPrettyJsonText(Object.fromEntries(progress)));
 };
 
 // ---------- Phase B: match ----------
@@ -505,12 +506,12 @@ const phaseMatchEffect = (
 
       if (done % 25 === 0) {
         mkdirSync(tmpDir, { recursive: true });
-        writeFileSync(paths(tmpDir).matches, JSON.stringify(results, null, 2));
+        writeFileSync(paths(tmpDir).matches, toPrettyJsonText(results));
       }
     }
 
     mkdirSync(tmpDir, { recursive: true });
-    writeFileSync(paths(tmpDir).matches, JSON.stringify(results, null, 2));
+    writeFileSync(paths(tmpDir).matches, toPrettyJsonText(results));
 
     const unmatchedRows = results.filter((r) => !r.anilistId);
     report?.note(

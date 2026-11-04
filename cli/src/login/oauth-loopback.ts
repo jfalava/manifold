@@ -163,11 +163,11 @@ export const tryCopyToClipboard = async (text: string): Promise<boolean> => {
 };
 
 /** SSH sessions run the browser on another machine. */
-const isRemoteSession = (): boolean =>
+export const isRemoteSession = (): boolean =>
   envString("SSH_CONNECTION") !== undefined || envString("SSH_TTY") !== undefined;
 
 /** `o` is offered only where a local browser can plausibly open. */
-const canOpenBrowser = (): boolean => {
+export const canOpenBrowser = (): boolean => {
   if (isRemoteSession()) {
     return false;
   }
@@ -184,7 +184,7 @@ const OPEN_COMMANDS: Partial<Record<NodeJS.Platform, readonly string[]>> = {
   win32: ["cmd", "/c", "start", ""],
 };
 
-const openInBrowser = async (url: string): Promise<boolean> => {
+export const openInBrowser = async (url: string): Promise<boolean> => {
   const command = [...(OPEN_COMMANDS[process.platform] ?? ["xdg-open"]), url];
 
   try {

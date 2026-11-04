@@ -18,7 +18,6 @@ import type { SqlHost } from "./host";
 export const MANIFOLD_OAUTH_CLIENT_ID = "paperback";
 export const MANIFOLD_OAUTH_REDIRECT_URI = "paperback://manifold-login";
 export const MANIFOLD_CLI_OAUTH_CLIENT_ID = "manifold-cli";
-export const MANIFOLD_CLI_OAUTH_REDIRECT_URI = "http://127.0.0.1:8768/callback";
 export const MANIFOLD_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 export const MANIFOLD_REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 
@@ -28,9 +27,10 @@ const GITHUB_AUTHORIZE_ENDPOINT = "https://github.com/login/oauth/authorize";
 const GITHUB_TOKEN_ENDPOINT = "https://github.com/login/oauth/access_token";
 const GITHUB_USER_ENDPOINT = "https://api.github.com/user";
 
+// The authorization-code grant serves Paperback only; the CLI signs in with the
+// device grant in device-grant.ts and shares the refresh grant below.
 const isSupportedClient = (clientId: string, redirectUri: string): boolean =>
-  (clientId === MANIFOLD_OAUTH_CLIENT_ID && redirectUri === MANIFOLD_OAUTH_REDIRECT_URI) ||
-  (clientId === MANIFOLD_CLI_OAUTH_CLIENT_ID && redirectUri === MANIFOLD_CLI_OAUTH_REDIRECT_URI);
+  clientId === MANIFOLD_OAUTH_CLIENT_ID && redirectUri === MANIFOLD_OAUTH_REDIRECT_URI;
 
 export interface ManifoldOAuthAuthorizationInput {
   readonly clientId: string;
@@ -74,7 +74,7 @@ const GithubUserResponse = Schema.Struct({
   id: Schema.Finite,
 });
 
-const hashOpaque = (value: string): Promise<string> =>
+export const hashOpaque = (value: string): Promise<string> =>
   crypto.subtle
     .digest("SHA-256", new TextEncoder().encode(value))
     .then((digest) => toBase64Url(new Uint8Array(digest)));
@@ -138,6 +138,22 @@ const startManifoldOAuthEffect = (host: SqlHost, input: ManifoldOAuthAuthorizati
       createdAt,
     );
 
+    return {
+      authorizationUrl: yield* githubAuthorizationUrlEffect(
+        host,
+        providerState,
+        providerCodeChallenge,
+      ),
+    };
+  });
+
+/** GitHub authorize URL for one upstream state; fails early when the GitHub secrets are missing. */
+export const githubAuthorizationUrlEffect = (
+  host: SqlHost,
+  providerState: string,
+  providerCodeChallenge: string,
+) =>
+  Effect.gen(function* () {
     yield* fromPromise(() =>
       readSecret(host.env.MANIFOLD_GITHUB_CLIENT_SECRET, "MANIFOLD_GITHUB_CLIENT_SECRET"),
     );
@@ -150,7 +166,7 @@ const startManifoldOAuthEffect = (host: SqlHost, input: ManifoldOAuthAuthorizati
       yield* fromPromise(() => resolveRedirectBase(host.env)),
     );
 
-    const authorizationUrl = withQuery(GITHUB_AUTHORIZE_ENDPOINT, {
+    return withQuery(GITHUB_AUTHORIZE_ENDPOINT, {
       client_id: clientId,
       redirect_uri: callback,
       response_type: "code",
@@ -159,8 +175,82 @@ const startManifoldOAuthEffect = (host: SqlHost, input: ManifoldOAuthAuthorizati
       code_challenge: providerCodeChallenge,
       code_challenge_method: "S256",
     });
+  });
 
-    return { authorizationUrl };
+export type GithubSubjectResult =
+  | { readonly kind: "ok"; readonly subject: string }
+  | { readonly kind: "mismatch" }
+  | { readonly kind: "error" };
+
+/** Exchange a GitHub callback code and check the account against the personal allowlist. */
+export const githubSubjectEffect = (host: SqlHost, code: string, codeVerifier: string) =>
+  Effect.gen(function* () {
+    const clientSecret = yield* fromPromise(() =>
+      readSecret(host.env.MANIFOLD_GITHUB_CLIENT_SECRET, "MANIFOLD_GITHUB_CLIENT_SECRET"),
+    );
+
+    const clientId = yield* fromPromise(() =>
+      readSecret(host.env.MANIFOLD_GITHUB_CLIENT_ID, "MANIFOLD_GITHUB_CLIENT_ID"),
+    );
+
+    const allowedUserId = yield* fromPromise(() =>
+      readSecret(host.env.MANIFOLD_GITHUB_ALLOWED_USER_ID, "MANIFOLD_GITHUB_ALLOWED_USER_ID"),
+    );
+
+    const callback = manifoldOAuthCallbackUri(
+      yield* fromPromise(() => resolveRedirectBase(host.env)),
+    );
+
+    const tokenResponse = yield* fromPromise(() =>
+      platformFetch(GITHUB_TOKEN_ENDPOINT, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/x-www-form-urlencoded",
+          "user-agent": manifoldUserAgent("api"),
+        },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          code,
+          redirect_uri: callback,
+          code_verifier: codeVerifier,
+        }),
+      }),
+    );
+
+    if (!tokenResponse.ok) {
+      return { kind: "error" } as const satisfies GithubSubjectResult;
+    }
+
+    const tokenBody = yield* fromPromise(() => tokenResponse.json());
+    const githubToken = yield* Schema.decodeUnknownEffect(GithubTokenResponse)(tokenBody);
+
+    const userResponse = yield* fromPromise(() =>
+      platformFetch(GITHUB_USER_ENDPOINT, {
+        headers: {
+          accept: "application/vnd.github+json",
+          authorization: `Bearer ${githubToken.access_token}`,
+          "user-agent": manifoldUserAgent("api"),
+        },
+      }),
+    );
+
+    if (!userResponse.ok) {
+      return { kind: "error" } as const satisfies GithubSubjectResult;
+    }
+
+    const userBody = yield* fromPromise(() => userResponse.json());
+    const githubUser = yield* Schema.decodeUnknownEffect(GithubUserResponse)(userBody);
+
+    if (String(githubUser.id) !== allowedUserId) {
+      return { kind: "mismatch" } as const satisfies GithubSubjectResult;
+    }
+
+    return {
+      kind: "ok",
+      subject: `github:${String(githubUser.id)}`,
+    } as const satisfies GithubSubjectResult;
   });
 
 export const createManifoldOAuthAuthorization = (
@@ -194,77 +284,20 @@ const completeGithubOAuthEffect = (host: SqlHost, state: string, code?: string, 
       return redirectWithError(request.redirect_uri, request.outer_state, error ?? "access_denied");
     }
 
-    const clientSecret = yield* fromPromise(() =>
-      readSecret(host.env.MANIFOLD_GITHUB_CLIENT_SECRET, "MANIFOLD_GITHUB_CLIENT_SECRET"),
-    );
+    const github = yield* githubSubjectEffect(host, code, request.provider_code_verifier);
 
-    const clientId = yield* fromPromise(() =>
-      readSecret(host.env.MANIFOLD_GITHUB_CLIENT_ID, "MANIFOLD_GITHUB_CLIENT_ID"),
-    );
-
-    const allowedUserId = yield* fromPromise(() =>
-      readSecret(host.env.MANIFOLD_GITHUB_ALLOWED_USER_ID, "MANIFOLD_GITHUB_ALLOWED_USER_ID"),
-    );
-
-    const callback = manifoldOAuthCallbackUri(
-      yield* fromPromise(() => resolveRedirectBase(host.env)),
-    );
-
-    const tokenResponse = yield* fromPromise(() =>
-      platformFetch(GITHUB_TOKEN_ENDPOINT, {
-        method: "POST",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/x-www-form-urlencoded",
-          "user-agent": manifoldUserAgent("api"),
-        },
-        body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
-          code,
-          redirect_uri: callback,
-          code_verifier: request.provider_code_verifier,
-        }),
-      }),
-    );
-
-    if (!tokenResponse.ok) {
+    if (github.kind === "error") {
       return redirectWithError(request.redirect_uri, request.outer_state, "server_error");
     }
 
-    const tokenBody = yield* fromPromise(() => tokenResponse.json());
-    const githubToken = yield* Schema.decodeUnknownEffect(GithubTokenResponse)(tokenBody);
-
-    const userResponse = yield* fromPromise(() =>
-      platformFetch(GITHUB_USER_ENDPOINT, {
-        headers: {
-          accept: "application/vnd.github+json",
-          authorization: `Bearer ${githubToken.access_token}`,
-          "user-agent": manifoldUserAgent("api"),
-        },
-      }),
-    );
-
-    if (!userResponse.ok) {
-      return redirectWithError(request.redirect_uri, request.outer_state, "server_error");
+    if (github.kind === "mismatch") {
+      return {
+        ...redirectWithError(request.redirect_uri, request.outer_state, "access_denied"),
+        accountMismatch: true,
+      };
     }
 
-    const userBody = yield* fromPromise(() => userResponse.json());
-    const githubUser = yield* Schema.decodeUnknownEffect(GithubUserResponse)(userBody);
-
-    if (String(githubUser.id) !== allowedUserId) {
-      const rejected = redirectWithError(
-        request.redirect_uri,
-        request.outer_state,
-        "access_denied",
-      );
-
-      return request.client_id === MANIFOLD_OAUTH_CLIENT_ID
-        ? { ...rejected, accountMismatch: true }
-        : rejected;
-    }
-
-    const subject = `github:${String(githubUser.id)}`;
+    const subject = github.subject;
     const authorizationCode = yield* issueAuthorizationCodeEffect(host, request, subject);
 
     return {
@@ -310,7 +343,7 @@ const issueAuthorizationCodeEffect = (
     return code;
   });
 
-const createSessionEffect = (
+export const createSessionEffect = (
   host: SqlHost,
   subject: string,
 ): Effect.Effect<ManifoldOAuthTokenResponse, never> =>

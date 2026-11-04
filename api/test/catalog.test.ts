@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
 import { requestHref } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 import { catalogApp } from "../src/catalog";
 import type { Env } from "../src/types";
 import { testEnv } from "./env-fixture";
@@ -13,7 +14,7 @@ const assets = new Map<string, string>([
   ["/ATTRIBUTIONS.md", "attributions"],
   [
     "/stable/MANIFOLD/info.json",
-    JSON.stringify({
+    toJsonText({
       id: "MANIFOLD",
       name: "MANIFOLD",
       version: "0.1.0-r60",
@@ -24,7 +25,7 @@ const assets = new Map<string, string>([
   ["/stable/MANIFOLD/icon.png", "png"],
   [
     "/beta/MANIFOLD-beta/info.json",
-    JSON.stringify({
+    toJsonText({
       id: "MANIFOLD-beta",
       name: "MANIFOLD beta",
       version: "0.1.0-r60-beta",

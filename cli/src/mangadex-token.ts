@@ -10,6 +10,7 @@ import {
   manifoldUserAgent,
   type JsonValue,
 } from "@manifold/json";
+import { toJsonText, parseJsonText } from "@manifold/json/text";
 import {
   createMangaDexPasswordGrant,
   createMangaDexRefreshGrant,
@@ -81,7 +82,7 @@ const loadPersistedTokensEffect = (cachePath: string | undefined): Effect.Effect
     }
 
     const outcome = yield* fromPromise(async () => {
-      const raw: unknown = JSON.parse(await readFile(cachePath, "utf8"));
+      const raw = parseJsonText(await readFile(cachePath, "utf8"));
 
       if (!isJsonObject(raw)) {
         return {};
@@ -123,7 +124,7 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
       const payload: PersistedTokens = { accessToken, refreshToken, expiresAt };
       yield* fromPromise(async () => {
         await mkdir(dirname(cachePath), { recursive: true });
-        await writeFile(cachePath, JSON.stringify(payload), { mode: 0o600 });
+        await writeFile(cachePath, toJsonText(payload), { mode: 0o600 });
       }).pipe(
         Effect.mapError((cause) => cliError(`MangaDex token cache write failed: ${cause.message}`)),
       );

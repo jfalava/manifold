@@ -1,4 +1,7 @@
 /** @effect-diagnostics globalDate:off */
+// Bundled into the Paperback tracker, which stays as small as possible: the
+// global JSON costs nothing, while @manifold/json/text adds Schema codecs.
+/** @effect-diagnostics globalJson:off */
 import { isFiniteNumber, isJsonObject, isString, type JsonObject } from "@manifold/json";
 import type { Cookie, Request } from "@paperback/types";
 

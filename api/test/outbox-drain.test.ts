@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { isString, type JsonObject } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 
 import { groupOutboxForDrain } from "../src/outbox-drain";
 
 const row = (id: number, payload: string | JsonObject) => ({
   id,
-  payload: isString(payload) ? payload : JSON.stringify(payload),
+  payload: isString(payload) ? payload : toJsonText(payload),
   attempts: 0,
 });
 

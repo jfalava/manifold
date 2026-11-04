@@ -5,6 +5,7 @@ import { readOps } from "./sql-helpers";
 import type { SyncHost } from "./host";
 import { MAX_ERROR_LENGTH, now, SYNC_MAX_ATTEMPTS } from "./constants";
 import { isJsonObject, stringField } from "@manifold/json";
+import { parseJsonText } from "@manifold/json/text";
 import type { CompleteOpsInput, OpState, SyncOp, OpsSummary } from "../domain";
 import { type OpRow, toOp } from "../sync-rows";
 
@@ -67,14 +68,7 @@ export function completeOps(host: SyncHost, input: CompleteOpsInput) {
 
     if (result.ok) {
       if (result.mediaListEntryId !== undefined && row.target === "anilist") {
-        let parsed: unknown;
-
-        try {
-          parsed = JSON.parse(row.payload);
-        } catch {
-          parsed = undefined;
-        }
-
+        const parsed = parseJsonText(row.payload);
         const entryId = isJsonObject(parsed) ? stringField(parsed, "entryId") : undefined;
 
         if (entryId) {

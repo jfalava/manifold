@@ -38,6 +38,19 @@ import {
   type ManifoldOAuthTokenInput,
   type ManifoldOAuthTokenResponse,
 } from "./manifold-oauth";
+import {
+  beginDeviceApproval,
+  completeDeviceGithub,
+  denyDeviceGrant,
+  lookupDeviceGrant,
+  pollDeviceToken,
+  startDeviceAuthorization,
+  type DeviceApprovalResult,
+  type DeviceApprovalStart,
+  type DeviceAuthorizationResponse,
+  type DeviceGrantStatus,
+  type DevicePollResult,
+} from "./device-grant";
 import type { MangaDexChapter, MangaDexPaged } from "@manifold/mangadex";
 import type { MangaDexEntryStat } from "../mangadex-stats";
 import type { Env } from "../types";
@@ -149,6 +162,37 @@ export class ManifoldSync extends DurableObject<Env> {
     input: ManifoldOAuthTokenInput,
   ): Promise<ManifoldOAuthTokenResponse> {
     return exchangeManifoldOAuthToken(this.host(), input);
+  }
+
+  async startDeviceAuthorization(
+    clientId: string,
+  ): Promise<DeviceAuthorizationResponse | undefined> {
+    return startDeviceAuthorization(this.host(), clientId);
+  }
+
+  async lookupDeviceGrant(userCode: string): Promise<DeviceGrantStatus> {
+    return lookupDeviceGrant(this.host(), userCode);
+  }
+
+  async beginDeviceApproval(userCode: string): Promise<DeviceApprovalStart> {
+    return beginDeviceApproval(this.host(), userCode);
+  }
+
+  async denyDeviceGrant(userCode: string): Promise<DeviceGrantStatus> {
+    return denyDeviceGrant(this.host(), userCode);
+  }
+
+  async completeDeviceGithub(
+    providerState: string,
+    browserBinding?: string,
+    code?: string,
+    error?: string,
+  ): Promise<DeviceApprovalResult> {
+    return completeDeviceGithub(this.host(), providerState, browserBinding, code, error);
+  }
+
+  async pollDeviceToken(clientId: string, deviceCode: string): Promise<DevicePollResult> {
+    return pollDeviceToken(this.host(), clientId, deviceCode);
   }
 
   async authorizeManifoldAccessToken(accessToken: string): Promise<boolean> {

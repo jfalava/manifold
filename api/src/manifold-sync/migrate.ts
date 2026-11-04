@@ -116,6 +116,21 @@ export function migrate(host: SqlHost): void {
       expires_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS manifold_device_grants (
+      device_code_hash TEXT PRIMARY KEY,
+      user_code TEXT NOT NULL UNIQUE,
+      client_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      subject TEXT,
+      provider_state TEXT UNIQUE,
+      provider_code_verifier TEXT,
+      browser_binding_hash TEXT,
+      interval_seconds INTEGER NOT NULL,
+      last_polled_at INTEGER,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS manifold_sessions (
       access_token_hash TEXT PRIMARY KEY,
       refresh_token_hash TEXT NOT NULL UNIQUE,

@@ -148,3 +148,18 @@ test("/admin paths forward with prefix intact", async () => {
   await response;
   expect(calls.ADMIN.map((call) => call.pathname)).toEqual(["/admin/durable-objects"]);
 });
+
+test("/device approval page forwards GET and POST to the API device route", async () => {
+  const { calls, env } = makeEnv();
+  await router.request("https://df.example/device?code=BCDF-GHJK", {}, env);
+  await router.request(
+    "https://df.example/device",
+    { method: "POST", body: "code=BCDFGHJK&action=deny" },
+    env,
+  );
+  expect(calls.SYNC_API).toEqual([
+    { pathname: "/v1/oauth/device", search: "?code=BCDF-GHJK", method: "GET" },
+    { pathname: "/v1/oauth/device", search: "", method: "POST" },
+  ]);
+  expect(calls.DOCS_WORKER).toEqual([]);
+});

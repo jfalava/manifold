@@ -2,6 +2,8 @@ import { Effect, Result } from "effect";
 
 import { errorMessage } from "@manifold/json";
 import { json, tryPromise, type RouteContext, type RouteEffect } from "../http";
+import { DEVICE_CODE_GRANT_TYPE, isDeviceGithubState } from "../manifold-sync/device-grant";
+import { clearBindingCookie, deviceApprovalResultPage, readBindingCookie } from "./device";
 
 const oauthError = (error: string, description: string, status = 400): Response =>
   json({ error, error_description: description }, status);
@@ -83,6 +85,19 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
         return oauthError("invalid_request", "OAuth callback is missing state");
       }
 
+      if (isDeviceGithubState(state)) {
+        const result = yield* tryPromise(() =>
+          sync.completeDeviceGithub(
+            state,
+            readBindingCookie(request),
+            url.searchParams.get("code") ?? undefined,
+            url.searchParams.get("error") ?? undefined,
+          ),
+        );
+
+        return clearBindingCookie(deviceApprovalResultPage(result));
+      }
+
       const complete = yield* Effect.result(
         tryPromise(() =>
           sync.completeGithubOAuth(
@@ -113,6 +128,18 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
     ) {
       const body = yield* tryPromise(() => request.text());
       const form = new URLSearchParams(body);
+
+      if (form.get("grant_type") === DEVICE_CODE_GRANT_TYPE) {
+        const poll = yield* tryPromise(() =>
+          sync.pollDeviceToken(form.get("client_id") ?? "", form.get("device_code") ?? ""),
+        );
+
+        if (poll.kind === "token") {
+          return json(poll.token);
+        }
+
+        return json({ error: poll.error }, poll.error === "invalid_client" ? 401 : 400);
+      }
 
       const token = yield* Effect.result(
         tryPromise(() =>

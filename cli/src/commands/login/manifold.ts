@@ -4,12 +4,11 @@ import { Command, Flag } from "effect/cli";
 import { errorMessage } from "@manifold/json";
 
 import {
-  createManifoldAuthorization,
-  exchangeManifoldCode,
-  MANIFOLD_CLI_OAUTH_REDIRECT_URI,
+  pollManifoldDeviceSession,
   saveManifoldSession,
+  startManifoldDeviceLogin,
 } from "@/login/manifold";
-import { awaitOAuthAuthorizationCode } from "@/login/oauth-loopback";
+import { waitForDeviceApproval } from "@/login/device-wait";
 import { warnIfEnvOverridesLogin } from "@/login/status";
 import { resolveValue } from "@/env-resolve";
 import { abortFrame, closeFrame, openFrame } from "@/ui";
@@ -22,30 +21,24 @@ export const manifoldLoginCommand = Command.make("manifold", {
     Flag.optional,
     Flag.withDescription(`Manifold API origin (default ${DEFAULT_API_ORIGIN}).`),
   ),
-  pasteOnly: Flag.Boolean("paste-only").pipe(
-    Flag.withDefault(false),
-    Flag.withDescription(
-      "Skip the local callback server; paste the authorization code or callback URL (headless).",
-    ),
-  ),
 }).pipe(
-  Command.withDescription("Sign in to Manifold with GitHub."),
-  Command.withHandler(({ apiOrigin, pasteOnly }) =>
+  Command.withDescription(
+    "Sign in to Manifold: approve the shown code in any browser with GitHub. Works on headless hosts.",
+  ),
+  Command.withHandler(({ apiOrigin }) =>
     Effect.tryPromise({
       try: async () => {
         const origin = resolveValue(apiOrigin, "MANIFOLD_API_ORIGIN") ?? DEFAULT_API_ORIGIN;
         openFrame("login manifold");
-        const auth = await createManifoldAuthorization(origin);
+        const grant = await startManifoldDeviceLogin(origin);
 
-        const code = await awaitOAuthAuthorizationCode({
+        const session = await waitForDeviceApproval({
           providerLabel: "Manifold",
-          authorizeUrl: auth.url,
-          redirectUri: MANIFOLD_CLI_OAUTH_REDIRECT_URI,
-          expectedState: auth.state,
-          pasteOnly,
+          userCode: grant.userCode,
+          url: grant.verificationUriComplete,
+          poll: (signal) => pollManifoldDeviceSession(origin, grant, signal),
         });
 
-        const session = await exchangeManifoldCode(origin, code, auth.verifier);
         await saveManifoldSession(session);
         closeFrame("Signed in with GitHub. Manifold session saved in the OS keychain.");
         warnIfEnvOverridesLogin("manifold");

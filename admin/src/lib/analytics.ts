@@ -8,6 +8,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 import { createServerFn } from "@tanstack/react-start";
 import { DateTime, Effect } from "effect";
 
@@ -396,7 +397,7 @@ const runGraphQL = Effect.fnUntraced(function* <T>(
         authorization: `Bearer ${apiToken}`,
         "user-agent": manifoldUserAgent("admin"),
       },
-      body: JSON.stringify({ query, variables }),
+      body: toJsonText({ query, variables }),
     }),
   );
 

@@ -11,11 +11,20 @@ import {
   createManifoldOAuthAuthorization,
   exchangeManifoldOAuthToken,
   MANIFOLD_CLI_OAUTH_CLIENT_ID,
-  MANIFOLD_CLI_OAUTH_REDIRECT_URI,
   MANIFOLD_OAUTH_CLIENT_ID,
   MANIFOLD_OAUTH_REDIRECT_URI,
   revokeManifoldSession,
 } from "../src/manifold-sync/manifold-oauth";
+import {
+  beginDeviceApproval,
+  completeDeviceGithub,
+  denyDeviceGrant,
+  DEVICE_GRANT_TTL_SECONDS,
+  DEVICE_POLL_INTERVAL_SECONDS,
+  lookupDeviceGrant,
+  pollDeviceToken,
+  startDeviceAuthorization,
+} from "../src/manifold-sync/device-grant";
 import type { SqlHost } from "../src/manifold-sync/host";
 import type { Env } from "../src/types";
 import { testEnv } from "./env-fixture";
@@ -266,34 +275,215 @@ describe("Manifold GitHub OAuth", () => {
     }
   });
 
-  it("keeps CLI account-mismatch failures on the loopback OAuth redirect", async () => {
+  it("no longer issues authorization codes to the CLI loopback redirect", async () => {
     const { host, close } = makeHost();
 
     try {
-      const challenge = await createPkceChallenge("cli-blocked-verifier");
+      await expect(
+        createManifoldOAuthAuthorization(host, {
+          clientId: MANIFOLD_CLI_OAUTH_CLIENT_ID,
+          redirectUri: "http://127.0.0.1:8768/callback",
+          responseType: "code",
+          state: "cli-state",
+          codeChallenge: await createPkceChallenge("cli-verifier"),
+          codeChallengeMethod: "S256",
+        }),
+      ).rejects.toThrow("Invalid Manifold OAuth authorization request");
+    } finally {
+      close();
+    }
+  });
+});
 
-      const start = await createManifoldOAuthAuthorization(host, {
-        clientId: MANIFOLD_CLI_OAUTH_CLIENT_ID,
-        redirectUri: MANIFOLD_CLI_OAUTH_REDIRECT_URI,
-        responseType: "code",
-        state: "cli-blocked-state",
-        codeChallenge: challenge,
-        codeChallengeMethod: "S256",
-      });
+const stubGithub = (userId: number) => {
+  const githubFetch = vi.fn(async (input: RequestInfo | URL) =>
+    requestHref(input).includes("access_token")
+      ? Response.json({ access_token: "github-access-token" })
+      : Response.json({ id: userId }),
+  );
+
+  vi.stubGlobal("fetch", githubFetch);
+
+  return githubFetch;
+};
+
+describe("Manifold CLI device grant", () => {
+  const T0 = Date.UTC(2026, 10, 4, 12, 0, 0);
+
+  const at = (offsetMs: number): void => {
+    vi.setSystemTime(T0 + offsetMs);
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("issues tokens once after the owner approves in the browser that started it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    at(0);
+    const { host, close } = makeHost();
+
+    try {
+      const grant = await startDeviceAuthorization(host, MANIFOLD_CLI_OAUTH_CLIENT_ID);
+
+      if (!grant) {
+        throw new Error("device authorization rejected the CLI client");
+      }
+
+      expect(grant.user_code).toMatch(/^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$/);
+      expect(grant.verification_uri).toBe("https://manifold.example/device");
+      expect(grant.verification_uri_complete).toBe(
+        `https://manifold.example/device?code=${grant.user_code}`,
+      );
+      expect(grant.interval).toBe(DEVICE_POLL_INTERVAL_SECONDS);
+
+      const poll = () => pollDeviceToken(host, MANIFOLD_CLI_OAUTH_CLIENT_ID, grant.device_code);
+
+      expect(await poll()).toEqual({ kind: "error", error: "authorization_pending" });
+
+      // Typed in lower case without the dash, as a user might.
+      const lowered = grant.user_code.replace("-", "").toLowerCase();
+      expect(await lookupDeviceGrant(host, lowered)).toBe("pending");
+
+      const start = await beginDeviceApproval(host, lowered);
+
+      if (start.kind !== "redirect") {
+        throw new Error(`expected a GitHub redirect, got ${start.status}`);
+      }
 
       const providerState = requiredSearchParam(start.authorizationUrl, "state");
-      vi.stubGlobal("fetch", async (input: RequestInfo | URL) =>
-        requestHref(input).includes("access_token")
-          ? Response.json({ access_token: "github-access-token" })
-          : Response.json({ id: 99999 }),
+      expect(new URL(start.authorizationUrl).searchParams.get("redirect_uri")).toBe(
+        "https://manifold.example/api/v1/oauth/github/callback",
       );
 
-      const callback = await completeGithubOAuth(host, providerState, "github-code");
-      const callbackUrl = new URL(callback.redirectUri);
-      expect(callbackUrl.origin + callbackUrl.pathname).toBe(MANIFOLD_CLI_OAUTH_REDIRECT_URI);
-      expect(callbackUrl.searchParams.get("error")).toBe("access_denied");
-      expect(callbackUrl.searchParams.get("state")).toBe("cli-blocked-state");
-      expect(callback.accountMismatch).toBeUndefined();
+      const githubFetch = stubGithub(12345);
+
+      // A callback without the binding cookie (another browser) leaves the grant pending.
+      expect(await completeDeviceGithub(host, providerState, undefined, "github-code")).toBe(
+        "wrong-browser",
+      );
+      expect(githubFetch).not.toHaveBeenCalled();
+
+      expect(
+        await completeDeviceGithub(host, providerState, start.browserBinding, "github-code"),
+      ).toBe("approved");
+
+      // The upstream state is single-use.
+      expect(
+        await completeDeviceGithub(host, providerState, start.browserBinding, "github-code"),
+      ).toBe("expired");
+
+      at(DEVICE_POLL_INTERVAL_SECONDS * 1000);
+      const result = await poll();
+
+      if (result.kind !== "token") {
+        throw new Error(`expected tokens, got ${result.error}`);
+      }
+
+      expect(result.token.access_token).toMatch(/^mf_access_/);
+      expect(await authorizeManifoldAccessToken(host, result.token.access_token)).toBe(true);
+
+      // The CLI refreshes the device-issued session with the ordinary refresh grant.
+      const refreshed = await exchangeManifoldOAuthToken(host, {
+        grantType: "refresh_token",
+        clientId: MANIFOLD_CLI_OAUTH_CLIENT_ID,
+        refreshToken: result.token.refresh_token,
+      });
+
+      expect(refreshed.access_token).toMatch(/^mf_access_/);
+
+      expect(await poll()).toEqual({ kind: "error", error: "invalid_grant" });
+    } finally {
+      close();
+    }
+  });
+
+  it("answers slow_down and widens the interval when the CLI polls too fast", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    at(0);
+    const { host, close } = makeHost();
+
+    try {
+      const grant = await startDeviceAuthorization(host, MANIFOLD_CLI_OAUTH_CLIENT_ID);
+
+      if (!grant) {
+        throw new Error("device authorization rejected the CLI client");
+      }
+
+      const poll = () => pollDeviceToken(host, MANIFOLD_CLI_OAUTH_CLIENT_ID, grant.device_code);
+
+      expect(await poll()).toEqual({ kind: "error", error: "authorization_pending" });
+      at(2000);
+      expect(await poll()).toEqual({ kind: "error", error: "slow_down" });
+      // 7 s after the last poll is past the original 5 s interval but inside the widened 10 s one.
+      at(9000);
+      expect(await poll()).toEqual({ kind: "error", error: "slow_down" });
+      at(9000 + 15_000);
+      expect(await poll()).toEqual({ kind: "error", error: "authorization_pending" });
+    } finally {
+      close();
+    }
+  });
+
+  it("stops the CLI on deny, on a foreign GitHub account keeps waiting, and expires", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    at(0);
+    const { host, close } = makeHost();
+
+    try {
+      const denied = await startDeviceAuthorization(host, MANIFOLD_CLI_OAUTH_CLIENT_ID);
+      const foreign = await startDeviceAuthorization(host, MANIFOLD_CLI_OAUTH_CLIENT_ID);
+      const expiring = await startDeviceAuthorization(host, MANIFOLD_CLI_OAUTH_CLIENT_ID);
+
+      if (!denied || !foreign || !expiring) {
+        throw new Error("device authorization rejected the CLI client");
+      }
+
+      expect(await denyDeviceGrant(host, denied.user_code)).toBe("denied");
+      expect(await beginDeviceApproval(host, denied.user_code)).toEqual({
+        kind: "status",
+        status: "denied",
+      });
+      expect(await pollDeviceToken(host, MANIFOLD_CLI_OAUTH_CLIENT_ID, denied.device_code)).toEqual(
+        { kind: "error", error: "access_denied" },
+      );
+
+      const start = await beginDeviceApproval(host, foreign.user_code);
+
+      if (start.kind !== "redirect") {
+        throw new Error("expected a GitHub redirect");
+      }
+
+      stubGithub(99999);
+      expect(
+        await completeDeviceGithub(
+          host,
+          requiredSearchParam(start.authorizationUrl, "state"),
+          start.browserBinding,
+          "github-code",
+        ),
+      ).toBe("mismatch");
+      expect(await lookupDeviceGrant(host, foreign.user_code)).toBe("pending");
+
+      at(DEVICE_GRANT_TTL_SECONDS * 1000 + 1);
+      expect(await lookupDeviceGrant(host, expiring.user_code)).toBe("unknown");
+      expect(
+        await pollDeviceToken(host, MANIFOLD_CLI_OAUTH_CLIENT_ID, expiring.device_code),
+      ).toEqual({ kind: "error", error: "expired_token" });
+    } finally {
+      close();
+    }
+  });
+
+  it("rejects other clients", async () => {
+    const { host, close } = makeHost();
+
+    try {
+      expect(await startDeviceAuthorization(host, MANIFOLD_OAUTH_CLIENT_ID)).toBeUndefined();
+      expect(await pollDeviceToken(host, MANIFOLD_OAUTH_CLIENT_ID, "mf_device_x")).toEqual({
+        kind: "error",
+        error: "invalid_client",
+      });
     } finally {
       close();
     }

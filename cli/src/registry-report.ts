@@ -3,6 +3,7 @@ import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { errorMessage, isJsonObject, isString, type JsonObject } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 import type { RegistryRow } from "@/commands/toolbox";
 import { cliError, epochMillisNow, jsonBodyString, newId, parseJsonValue } from "@/effect-kit";
 
@@ -25,7 +26,7 @@ const fingerprint = (row: RegistryRow): string =>
     status: row.state?.status ?? null,
     providers: row.providers
       .map((link) => [link.provider, link.externalId])
-      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+      .sort((a, b) => toJsonText(a).localeCompare(toJsonText(b))),
   });
 
 /** Reports are append-only checkpoints, not instructions or cached writes. */

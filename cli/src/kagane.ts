@@ -4,6 +4,7 @@ import { Data, Effect, Schema } from "effect";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { manifoldUserAgent, type JsonObject, type JsonValue } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 import { cliError, epochMillisNow, platformFetch, runHost, sleepPromise } from "@/effect-kit";
 import type { BrowserView } from "@/browser-view";
 import { chapterCoverage, mostCovered, type ChapterCoverage } from "@/chapter-coverage";
@@ -127,10 +128,10 @@ export const createKaganeClient = (options: {
     if (options.view) {
       // Execute in Chrome itself; replaying cf_clearance through fetch is unreliable.
       const wire = await options.view.evaluate<JsonValue>(`(async () => {
-        if (location.origin !== ${JSON.stringify(KAGANE_ORIGIN)}) throw new Error('Open kagane.org in this tab first');
-        const response = await fetch(${JSON.stringify(path)}, {
-          method: ${JSON.stringify(method)}, headers: {'content-type':'application/json'},
-          body: ${body === undefined ? "undefined" : JSON.stringify(JSON.stringify(body))},
+        if (location.origin !== ${toJsonText(KAGANE_ORIGIN)}) throw new Error('Open kagane.org in this tab first');
+        const response = await fetch(${toJsonText(path)}, {
+          method: ${toJsonText(method)}, headers: {'content-type':'application/json'},
+          body: ${body === undefined ? "undefined" : toJsonText(toJsonText(body))},
           credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(20000)
         });
         return {status:response.status, challenged:response.headers.get('cf-mitigated') === 'challenge', retryAfter:response.headers.get('retry-after'), text:await response.text()};
@@ -156,7 +157,7 @@ export const createKaganeClient = (options: {
         referer: `${KAGANE_ORIGIN}/`,
         "user-agent": manifoldUserAgent("cli"),
       },
-      ...(body !== undefined && { body: JSON.stringify(body) }),
+      ...(body !== undefined && { body: toJsonText(body) }),
       redirect: "error",
       signal: AbortSignal.timeout(20_000),
     });
@@ -176,7 +177,7 @@ export const createKaganeClient = (options: {
     description = path,
     validate?: (result: A) => void,
   ): Promise<A> => {
-    const key = JSON.stringify([path, body ?? null]);
+    const key = toJsonText([path, body ?? null]);
 
     const decode = (text: string) =>
       runHost(
@@ -342,7 +343,7 @@ export const createKaganeClient = (options: {
                 !expected.has(book.book_id) ||
                 (book.series_id && book.series_id !== id)
               ) {
-                catalog.forget(JSON.stringify([`${base}/index`, null]));
+                catalog.forget(toJsonText([`${base}/index`, null]));
                 throw cliError(`Kagane ${id}: chapter inventory disagrees with its index`);
               }
 
@@ -405,7 +406,7 @@ export const createKaganeClient = (options: {
       sourceIds: readonly string[] = [],
       onCandidate?: (book: KaganeBook) => void,
     ) => {
-      const key = JSON.stringify([title, language, sourceIds]);
+      const key = toJsonText([title, language, sourceIds]);
       const cached = searchCache.get(key);
 
       if (cached) {
@@ -432,7 +433,7 @@ export const createKaganeClient = (options: {
           `Search "${title}" page ${page + 1}/${totalPages ?? "?"} (cap ${maxPages})`,
           (result) => {
             if (
-              pages.has(JSON.stringify(result.content.map((book) => book.series_id))) &&
+              pages.has(toJsonText(result.content.map((book) => book.series_id))) &&
               result.content.length > 0
             ) {
               throw cliError("Kagane search pagination did not advance");
@@ -441,7 +442,7 @@ export const createKaganeClient = (options: {
         );
 
         totalPages = pageResult.total_pages;
-        const fingerprint = JSON.stringify(pageResult.content.map((book) => book.series_id));
+        const fingerprint = toJsonText(pageResult.content.map((book) => book.series_id));
         pages.add(fingerprint);
 
         for (const book of pageResult.content) {

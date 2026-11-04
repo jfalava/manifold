@@ -2,7 +2,9 @@ import * as Effect from "effect/Effect";
 import * as HttpClient from "effect/http/HttpClient";
 import type * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
 
 /** Secrets Store secret records are created and rotated only from the
  * Cloudflare dashboard. Deployments bind existing records exclusively, so any
@@ -62,6 +64,8 @@ type JsonValue = string | number | boolean | null | readonly JsonValue[] | JsonO
 
 type JsonObject = { readonly [key: string]: JsonValue };
 
+const decodeJsonText = Schema.decodeOption(Schema.fromJsonString(Schema.Unknown));
+
 function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -104,12 +108,9 @@ export const validateManifoldWorkerUpload = (
     return rejectMalformedUpload("metadata is missing or not JSON text");
   }
 
-  let metadata: unknown;
+  const metadata = Option.getOrUndefined(decodeJsonText(metadataPart));
 
-  try {
-    // SAFETY: JSON.parse is immediately narrowed with the JSON object predicate below.
-    metadata = JSON.parse(metadataPart);
-  } catch {
+  if (metadata === undefined) {
     return rejectMalformedUpload("metadata is not valid JSON");
   }
 

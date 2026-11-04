@@ -1,7 +1,7 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalDateInEffect:off */
 /** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
+/** @effect-diagnostics globalJsonInEffect:off */
 import { cliError, newId, validateNonNegativeLimit } from "@/effect-kit";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
