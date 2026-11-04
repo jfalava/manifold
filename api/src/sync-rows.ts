@@ -120,6 +120,21 @@ export interface ManifoldOAuthCodeRow extends Record<string, SqlStorageValue> {
   expires_at: number;
 }
 
+export interface ManifoldDeviceGrantRow extends Record<string, SqlStorageValue> {
+  device_code_hash: string;
+  user_code: string;
+  client_id: string;
+  status: string;
+  subject: string | null;
+  provider_state: string | null;
+  provider_code_verifier: string | null;
+  browser_binding_hash: string | null;
+  interval_seconds: number;
+  last_polled_at: number | null;
+  created_at: number;
+  expires_at: number;
+}
+
 export interface ManifoldSessionRow extends Record<string, SqlStorageValue> {
   access_token_hash: string;
   refresh_token_hash: string;

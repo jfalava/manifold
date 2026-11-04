@@ -24,6 +24,7 @@ import {
 } from "@manifold/contract";
 import { errorMessage, isJsonObject, isJsonValue, isString, type JsonValue } from "@manifold/json";
 import type { AuthProvider, OAuthProvider } from "./domain";
+import type { DeviceAuthorizationResponse } from "./manifold-sync/device-grant";
 import type { ManifoldOAuthTokenResponse } from "./manifold-sync/manifold-oauth";
 import { readSecret, readSecretOptional } from "./read-secret";
 import type { Env } from "./types";
@@ -40,6 +41,7 @@ export type JsonResponseBody =
   | MangaDexFeedPage
   | OAuthStart
   | ManifoldOAuthTokenResponse
+  | DeviceAuthorizationResponse
   | ReadingProgress
   | RegistryEntry
   | RegistryBackupMetadata
@@ -310,7 +312,9 @@ export const isPublicOAuthRoute = (method: string, path: readonly string[]): boo
     return (
       (method === "GET" && path.length === 3 && path[2] === "authorize") ||
       (method === "GET" && path.length === 4 && path[2] === "github" && path[3] === "callback") ||
-      (method === "POST" && path.length === 3 && path[2] === "token")
+      (method === "POST" && path.length === 3 && path[2] === "token") ||
+      (method === "POST" && path.length === 3 && path[2] === "device_authorization") ||
+      ((method === "GET" || method === "POST") && path.length === 3 && path[2] === "device")
     );
   }
 

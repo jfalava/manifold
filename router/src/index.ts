@@ -52,6 +52,14 @@ const mangadexCover: Handler<App> = async (c) => {
   return new Response(upstream.body, { status: upstream.status, headers });
 };
 
+/** CLI device-grant approval page (RFC 8628 verification_uri) lives in the API. */
+const forwardDevice: Handler<App> = async (c) => {
+  const url = new URL(c.req.raw.url);
+  url.pathname = "/v1/oauth/device";
+
+  return c.env.SYNC_API.fetch(new Request(url, c.req.raw));
+};
+
 const forwardBinding =
   (binding: keyof Env): Handler<App> =>
   async (c) =>
@@ -124,6 +132,7 @@ export default new Hono<App>()
   .all("/api", forwardStripped("/api", "SYNC_API"))
   .all("/api/*", forwardStripped("/api", "SYNC_API"))
   .get("/mangadex-cover/:mangaId/:filename", mangadexCover)
+  .on(["GET", "POST"], "/device", forwardDevice)
   .all("/paperback", forwardStripped("/paperback", "SYNC_API"))
   .all("/paperback/*", forwardStripped("/paperback", "SYNC_API"))
   .all("/admin", forwardBinding("ADMIN"))

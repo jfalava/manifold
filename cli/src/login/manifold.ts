@@ -6,14 +6,13 @@ import {
   epochMillisNow,
   fromPromise,
   jsonFromResponseEffect,
-  newId,
   platformFetch,
   runHost,
+  sleep,
   type CliEffectError,
 } from "@/effect-kit";
 
 export const MANIFOLD_CLI_OAUTH_CLIENT_ID = "manifold-cli";
-export const MANIFOLD_CLI_OAUTH_REDIRECT_URI = "http://127.0.0.1:8768/callback";
 export const MANIFOLD_SESSION_SECRET = { service: "manifold", name: "manifold-session" };
 
 export interface ManifoldSession {
@@ -46,53 +45,82 @@ const TokenResponse = Schema.Struct({
   expires_in: Schema.Finite,
 });
 
-const base64Url = (bytes: Uint8Array): string => {
-  let binary = "";
+const DeviceAuthorizationResponse = Schema.Struct({
+  device_code: Schema.NonEmptyString,
+  user_code: Schema.NonEmptyString,
+  verification_uri: Schema.NonEmptyString,
+  verification_uri_complete: Schema.NonEmptyString,
+  expires_in: Schema.Finite,
+  interval: Schema.Finite,
+});
 
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
+const DeviceTokenError = Schema.Struct({ error: Schema.String });
 
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
-};
-
-const createVerifier = (): string => base64Url(crypto.getRandomValues(new Uint8Array(48)));
-
-const createChallenge = (verifier: string): Promise<string> =>
-  crypto.subtle
-    .digest("SHA-256", new TextEncoder().encode(verifier))
-    .then((digest) => base64Url(new Uint8Array(digest)));
+export const DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 
 const normalizeOrigin = (origin: string): string => origin.replace(/\/+$/, "");
 
-export interface ManifoldAuthorization {
-  readonly url: string;
-  readonly state: string;
-  readonly verifier: string;
+export interface ManifoldDeviceAuthorization {
+  readonly deviceCode: string;
+  readonly userCode: string;
+  readonly verificationUri: string;
+  /** Opens the approval page with the code filled in. */
+  readonly verificationUriComplete: string;
+  readonly expiresInSeconds: number;
+  readonly intervalSeconds: number;
 }
 
-const createManifoldAuthorizationEffect = (
-  origin: string,
-): Effect.Effect<ManifoldAuthorization, never> =>
-  Effect.gen(function* () {
-    const state = newId();
-    const verifier = createVerifier();
-    const challenge = yield* Effect.promise(() => createChallenge(verifier));
-    const url = new URL(`${normalizeOrigin(origin)}/v1/oauth/authorize`);
-    url.search = new URLSearchParams({
-      client_id: MANIFOLD_CLI_OAUTH_CLIENT_ID,
-      redirect_uri: MANIFOLD_CLI_OAUTH_REDIRECT_URI,
-      response_type: "code",
-      state,
-      code_challenge: challenge,
-      code_challenge_method: "S256",
-    }).toString();
+const postForm = (origin: string, path: string, params: Record<string, string>) =>
+  fromPromise(() =>
+    platformFetch(`${normalizeOrigin(origin)}${path}`, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(30_000),
+      headers: {
+        accept: "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "user-agent": manifoldUserAgent("cli"),
+      },
+      body: new URLSearchParams({ client_id: MANIFOLD_CLI_OAUTH_CLIENT_ID, ...params }),
+    }),
+  );
 
-    return { url: url.href, state, verifier };
+const startManifoldDeviceLoginEffect = (
+  origin: string,
+): Effect.Effect<ManifoldDeviceAuthorization, CliEffectError> =>
+  Effect.gen(function* () {
+    const response = yield* postForm(origin, "/v1/oauth/device_authorization", {});
+
+    if (!response.ok) {
+      return yield* cliError(
+        `Manifold device login failed to start: HTTP ${response.status}. Check --api-origin.`,
+      );
+    }
+
+    const body = yield* jsonFromResponseEffect(response, "manifold.device_authorization").pipe(
+      Effect.orElseSucceed(() => undefined),
+    );
+
+    const grant = Option.getOrUndefined(
+      Schema.decodeUnknownOption(DeviceAuthorizationResponse)(body),
+    );
+
+    if (!grant) {
+      return yield* cliError("Manifold returned an invalid device authorization response.");
+    }
+
+    return {
+      deviceCode: grant.device_code,
+      userCode: grant.user_code,
+      verificationUri: grant.verification_uri,
+      verificationUriComplete: grant.verification_uri_complete,
+      expiresInSeconds: grant.expires_in,
+      intervalSeconds: Math.max(1, grant.interval),
+    };
   });
 
-export const createManifoldAuthorization = (origin: string): Promise<ManifoldAuthorization> =>
-  runHost(createManifoldAuthorizationEffect(origin));
+export const startManifoldDeviceLogin = (origin: string): Promise<ManifoldDeviceAuthorization> =>
+  runHost(startManifoldDeviceLoginEffect(origin));
 
 const decodeTokenResponse = (body: JsonValue | undefined): ManifoldSession | undefined => {
   const tokens = Option.getOrUndefined(Schema.decodeUnknownOption(TokenResponse)(body));
@@ -108,27 +136,12 @@ const decodeTokenResponse = (body: JsonValue | undefined): ManifoldSession | und
   };
 };
 
-/** POSTs one OAuth grant to the Manifold token endpoint and decodes the returned session. */
-const requestManifoldSessionEffect = (
-  origin: string,
-  grant: "exchange" | "refresh",
-  params: Record<string, string>,
+/** Decodes a Manifold token-endpoint response into a session, or fails with a re-login hint. */
+const decodeSessionResponseEffect = (
+  response: Response,
+  grant: "device" | "refresh",
 ): Effect.Effect<ManifoldSession, CliEffectError> =>
   Effect.gen(function* () {
-    const response = yield* fromPromise(() =>
-      platformFetch(`${normalizeOrigin(origin)}/v1/oauth/token`, {
-        method: "POST",
-        redirect: "error",
-        signal: AbortSignal.timeout(30_000),
-        headers: {
-          accept: "application/json",
-          "content-type": "application/x-www-form-urlencoded",
-          "user-agent": manifoldUserAgent("cli"),
-        },
-        body: new URLSearchParams({ client_id: MANIFOLD_CLI_OAUTH_CLIENT_ID, ...params }),
-      }),
-    );
-
     if (!response.ok) {
       return yield* cliError(
         `Manifold OAuth ${grant} failed: HTTP ${response.status}. Run login manifold again.`,
@@ -150,23 +163,79 @@ const requestManifoldSessionEffect = (
     return session;
   });
 
-const exchangeManifoldCodeEffect = (
+/** POSTs a refresh grant to the Manifold token endpoint and decodes the returned session. */
+const requestManifoldSessionEffect = (
   origin: string,
-  code: string,
-  verifier: string,
+  params: Record<string, string>,
 ): Effect.Effect<ManifoldSession, CliEffectError> =>
-  requestManifoldSessionEffect(origin, "exchange", {
-    grant_type: "authorization_code",
-    redirect_uri: MANIFOLD_CLI_OAUTH_REDIRECT_URI,
-    code,
-    code_verifier: verifier,
+  postForm(origin, "/v1/oauth/token", params).pipe(
+    Effect.flatMap((response) => decodeSessionResponseEffect(response, "refresh")),
+  );
+
+/**
+ * RFC 8628 §3.5 polling: wait `interval` between polls, add 5 s on
+ * `slow_down`, keep going on `authorization_pending`, stop on anything else.
+ */
+const pollManifoldDeviceSessionEffect = (
+  origin: string,
+  grant: ManifoldDeviceAuthorization,
+): Effect.Effect<ManifoldSession, CliEffectError> =>
+  Effect.gen(function* () {
+    let intervalMs = grant.intervalSeconds * 1000;
+    const deadline = epochMillisNow() + grant.expiresInSeconds * 1000;
+
+    while (epochMillisNow() < deadline) {
+      yield* sleep(intervalMs);
+
+      const response = yield* postForm(origin, "/v1/oauth/token", {
+        grant_type: DEVICE_CODE_GRANT_TYPE,
+        device_code: grant.deviceCode,
+      });
+
+      if (response.ok) {
+        return yield* decodeSessionResponseEffect(response, "device");
+      }
+
+      const body = yield* jsonFromResponseEffect(response, "manifold.device").pipe(
+        Effect.orElseSucceed(() => undefined),
+      );
+
+      const error = Option.getOrUndefined(
+        Schema.decodeUnknownOption(DeviceTokenError)(body),
+      )?.error;
+
+      if (error === "authorization_pending") {
+        continue;
+      }
+
+      if (error === "slow_down") {
+        intervalMs += 5000;
+        continue;
+      }
+
+      if (error === "access_denied") {
+        return yield* cliError("Manifold sign-in was denied in the browser.");
+      }
+
+      if (error === "expired_token") {
+        break;
+      }
+
+      return yield* cliError(
+        `Manifold device login failed: ${error ?? `HTTP ${response.status}`}. Run login manifold again.`,
+      );
+    }
+
+    return yield* cliError("Manifold sign-in code expired. Run login manifold again.");
   });
 
-export const exchangeManifoldCode = (
+/** Polls until the browser approves; abort the signal to cancel (Esc / Ctrl+C). */
+export const pollManifoldDeviceSession = (
   origin: string,
-  code: string,
-  verifier: string,
-): Promise<ManifoldSession> => runHost(exchangeManifoldCodeEffect(origin, code, verifier));
+  grant: ManifoldDeviceAuthorization,
+  signal?: AbortSignal,
+): Promise<ManifoldSession> =>
+  Effect.runPromise(pollManifoldDeviceSessionEffect(origin, grant), signal ? { signal } : {});
 
 export const saveManifoldSession = (session: ManifoldSession): Promise<void> =>
   Bun.secrets.set({ ...MANIFOLD_SESSION_SECRET, value: JSON.stringify(session) });
@@ -190,7 +259,7 @@ const refreshManifoldSessionEffect = (
   session: ManifoldSession,
 ): Effect.Effect<ManifoldSession, CliEffectError> =>
   Effect.gen(function* () {
-    const refreshed = yield* requestManifoldSessionEffect(origin, "refresh", {
+    const refreshed = yield* requestManifoldSessionEffect(origin, {
       grant_type: "refresh_token",
       refresh_token: session.refreshToken,
     });

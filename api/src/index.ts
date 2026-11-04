@@ -22,6 +22,7 @@ import { handleBackups } from "./routes/backups";
 import { handleCanonical } from "./routes/canonical";
 import { handleMangaDex } from "./routes/mangadex";
 import { handleOps } from "./routes/ops";
+import { handleDevice } from "./routes/device";
 import { handleOAuth } from "./routes/oauth";
 import { handleRegistry } from "./routes/registry";
 import type { Env } from "./types";
@@ -55,6 +56,12 @@ const handle = (request: Request, env: Env): Effect.Effect<Response, RouteError>
 
     if (oauth) {
       return oauth;
+    }
+
+    const device = yield* handleDevice(ctx);
+
+    if (device) {
+      return device;
     }
 
     const canonical = yield* handleCanonical(ctx);

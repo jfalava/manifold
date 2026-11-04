@@ -1,6 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
 import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createMangaDexPasswordGrant,
   createMangaDexRefreshGrant,
@@ -14,6 +14,7 @@ import {
   publicSiteOrigin,
 } from "../src/http";
 import { createAuthorizationUrl, getOAuthClientConfig } from "../src/oauth";
+import { handleDevice } from "../src/routes/device";
 import { handleOAuth } from "../src/routes/oauth";
 import type { Env, ManifoldSyncStub } from "../src/types";
 import { testEnv, unusedSyncStub } from "./env-fixture";
@@ -48,6 +49,10 @@ describe("OAuth provider configuration", () => {
     expect(isPublicOAuthRoute("GET", ["v1", "oauth", "authorize"])).toBe(true);
     expect(isPublicOAuthRoute("GET", ["v1", "oauth", "github", "callback"])).toBe(true);
     expect(isPublicOAuthRoute("POST", ["v1", "oauth", "token"])).toBe(true);
+    expect(isPublicOAuthRoute("POST", ["v1", "oauth", "device_authorization"])).toBe(true);
+    expect(isPublicOAuthRoute("GET", ["v1", "oauth", "device"])).toBe(true);
+    expect(isPublicOAuthRoute("POST", ["v1", "oauth", "device"])).toBe(true);
+    expect(isPublicOAuthRoute("GET", ["v1", "oauth", "device_authorization"])).toBe(false);
     expect(isPublicOAuthRoute("POST", ["v1", "auth", "anilist", "callback"])).toBe(false);
     expect(isPublicOAuthRoute("GET", ["v1", "oauth", "token"])).toBe(false);
     expect(isPublicOAuthRoute("POST", ["v1", "oauth", "authorize"])).toBe(false);
@@ -192,5 +197,142 @@ describe("Manifold GitHub OAuth callback", () => {
     expect(response.headers.get("location")).toBe(
       "paperback://manifold-login?error=access_denied&state=callback-state",
     );
+  });
+});
+
+describe("CLI device approval routes", () => {
+  const route = async (
+    request: Request,
+    sync: Partial<ManifoldSyncStub>,
+    path: readonly string[],
+  ): Promise<Response> => {
+    const env: Env = {
+      ...testEnv(),
+      MANIFOLD_OAUTH_REDIRECT_BASE_URL: "https://manifold.example",
+      MANIFOLD_SYNC: { getByName: () => ({ ...unusedSyncStub(), ...sync }) },
+    };
+
+    const ctx = { request, env, url: new URL(request.url), path };
+
+    const response =
+      (await Effect.runPromise(handleOAuth(ctx))) ?? (await Effect.runPromise(handleDevice(ctx)));
+
+    if (!response) {
+      throw new Error("route returned no response");
+    }
+
+    return response;
+  };
+
+  const approvePost = (headers: Record<string, string>) =>
+    new Request("https://manifold.example/v1/oauth/device", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
+      body: "code=BCDFGHJK&action=approve",
+    });
+
+  const devicePath = ["v1", "oauth", "device"];
+
+  it("shows the code and both choices without a script", async () => {
+    const response = await route(
+      new Request("https://manifold.example/v1/oauth/device?code=bcdf-ghjk"),
+      { lookupDeviceGrant: async () => "pending" },
+      devicePath,
+    );
+
+    const body = await response.text();
+    expect(response.status).toBe(200);
+    expect(body).toContain("BCDF-GHJK");
+    expect(body).toContain('value="approve"');
+    expect(body).toContain('value="deny"');
+    expect(body).not.toContain("<script");
+    expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    // no-referrer would make Chrome send `Origin: null` on the approval post.
+    expect(response.headers.get("referrer-policy")).toBe("same-origin");
+  });
+
+  it("blocks cross-site approval posts before touching the grant", async () => {
+    const beginDeviceApproval = vi.fn();
+
+    const attempts: Record<string, string>[] = [
+      { origin: "https://evil.example" },
+      { origin: "https://manifold.example", "sec-fetch-site": "cross-site" },
+      {},
+    ];
+
+    for (const headers of attempts) {
+      const response = await route(approvePost(headers), { beginDeviceApproval }, devicePath);
+      expect(response.status).toBe(403);
+    }
+
+    expect(beginDeviceApproval).not.toHaveBeenCalled();
+  });
+
+  it("sends a same-origin approval to GitHub with a browser-binding cookie", async () => {
+    const response = await route(
+      approvePost({ origin: "https://manifold.example", "sec-fetch-site": "same-origin" }),
+      {
+        beginDeviceApproval: async () => ({
+          kind: "redirect",
+          authorizationUrl: "https://github.com/login/oauth/authorize?state=device.x",
+          browserBinding: "binding-value",
+        }),
+      },
+      devicePath,
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(
+      "https://github.com/login/oauth/authorize?state=device.x",
+    );
+    const cookie = response.headers.get("set-cookie") ?? "";
+    expect(cookie).toContain("manifold_device_binding=binding-value");
+    expect(cookie).toContain("HttpOnly");
+    expect(cookie).toContain("Secure");
+    expect(cookie).toContain("SameSite=Lax");
+  });
+
+  it("routes device GitHub callbacks to the grant with the binding cookie", async () => {
+    const completeDeviceGithub = vi.fn(async () => "approved" as const);
+    const completeGithubOAuth = vi.fn();
+
+    const response = await route(
+      new Request(
+        "https://manifold.example/v1/oauth/github/callback?state=device.abc&code=github-code",
+        { headers: { cookie: "other=1; manifold_device_binding=binding-value" } },
+      ),
+      { completeDeviceGithub, completeGithubOAuth },
+      ["v1", "oauth", "github", "callback"],
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("CLI signed in");
+    expect(completeDeviceGithub).toHaveBeenCalledWith(
+      "device.abc",
+      "binding-value",
+      "github-code",
+      undefined,
+    );
+    expect(completeGithubOAuth).not.toHaveBeenCalled();
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+
+  it("answers device-code polls with RFC 8628 error bodies", async () => {
+    const response = await route(
+      new Request("https://manifold.example/v1/oauth/token", {
+        method: "POST",
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+          client_id: "manifold-cli",
+          device_code: "mf_device_x",
+        }),
+      }),
+      { pollDeviceToken: async () => ({ kind: "error", error: "authorization_pending" }) },
+      ["v1", "oauth", "token"],
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "authorization_pending" });
   });
 });

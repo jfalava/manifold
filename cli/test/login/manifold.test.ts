@@ -4,10 +4,10 @@ import { Option, Schema } from "effect";
 
 import { apiCall, apiConfig } from "../../src/commands/toolbox";
 import {
-  createManifoldAuthorization,
-  exchangeManifoldCode,
+  DEVICE_CODE_GRANT_TYPE,
   MANIFOLD_CLI_OAUTH_CLIENT_ID,
-  MANIFOLD_CLI_OAUTH_REDIRECT_URI,
+  pollManifoldDeviceSession,
+  startManifoldDeviceLogin,
 } from "../../src/login/manifold";
 import { numberAt, parseJsonObject, stringAt } from "../support/report";
 
@@ -17,67 +17,103 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("Manifold CLI OAuth", () => {
-  it("creates a loopback PKCE authorization request", async () => {
-    const auth = await createManifoldAuthorization("https://manifold.example/api/");
-    const url = new URL(auth.url);
+describe("Manifold CLI device login", () => {
+  const origin = "https://manifold.example/api/";
 
-    const challenge = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(auth.verifier),
+  const grant = {
+    deviceCode: "mf_device_cli",
+    userCode: "BCDF-GHJK",
+    verificationUri: "https://manifold.example/device",
+    verificationUriComplete: "https://manifold.example/device?code=BCDF-GHJK",
+    expiresInSeconds: 600,
+    intervalSeconds: 5,
+  };
+
+  const formOf = (init?: RequestInit) =>
+    new URLSearchParams(
+      init?.body instanceof URLSearchParams ? init.body.toString() : (requestInitText(init) ?? ""),
     );
 
-    let binary = "";
-
-    for (const byte of new Uint8Array(challenge)) {
-      binary += String.fromCharCode(byte);
-    }
-
-    const expectedChallenge = btoa(binary)
-      .replaceAll("+", "-")
-      .replaceAll("/", "_")
-      .replaceAll("=", "");
-
-    expect(url.pathname).toBe("/api/v1/oauth/authorize");
-    expect(url.searchParams.get("client_id")).toBe(MANIFOLD_CLI_OAUTH_CLIENT_ID);
-    expect(url.searchParams.get("redirect_uri")).toBe(MANIFOLD_CLI_OAUTH_REDIRECT_URI);
-    expect(url.searchParams.get("state")).toBe(auth.state);
-    expect(url.searchParams.get("code_challenge")).toBe(expectedChallenge);
-    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-  });
-
-  it("exchanges a callback code without exposing provider credentials", async () => {
+  it("starts a device authorization for the CLI client", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(requestHref(input)).toBe("https://manifold.example/api/v1/oauth/token");
-
-      const body =
-        init?.body instanceof URLSearchParams
-          ? init.body.toString()
-          : (requestInitText(init) ?? "");
-
-      expect(body).not.toContain("github");
+      expect(requestHref(input)).toBe("https://manifold.example/api/v1/oauth/device_authorization");
+      expect(formOf(init).get("client_id")).toBe(MANIFOLD_CLI_OAUTH_CLIENT_ID);
 
       return Response.json({
-        access_token: "mf_access_cli",
-        refresh_token: "mf_refresh_cli",
-        expires_in: 900,
+        device_code: "mf_device_cli",
+        user_code: "BCDF-GHJK",
+        verification_uri: "https://manifold.example/device",
+        verification_uri_complete: "https://manifold.example/device?code=BCDF-GHJK",
+        expires_in: 600,
+        interval: 5,
       });
     });
 
     vi.stubGlobal("fetch", fetcher);
 
-    await expect(
-      exchangeManifoldCode("https://manifold.example/api", "mf_code", "verifier"),
-    ).resolves.toMatchObject({
-      accessToken: "mf_access_cli",
-      refreshToken: "mf_refresh_cli",
+    await expect(startManifoldDeviceLogin(origin)).resolves.toEqual(grant);
+  });
+
+  /** Runs the poller under fake timers, recording the fake clock at each token request. */
+  const pollWith = async (answers: readonly Response[]) => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    const pollTimes: number[] = [];
+    let index = 0;
+
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(requestHref(input)).toBe("https://manifold.example/api/v1/oauth/token");
+      const form = formOf(init);
+      expect(form.get("grant_type")).toBe(DEVICE_CODE_GRANT_TYPE);
+      expect(form.get("device_code")).toBe("mf_device_cli");
+      expect(form.get("client_id")).toBe(MANIFOLD_CLI_OAUTH_CLIENT_ID);
+      pollTimes.push(Date.now() - start);
+
+      return answers[index++] ?? Response.json({ error: "authorization_pending" }, { status: 400 });
     });
-    const body = fetcher.mock.calls[0]?.[1]?.body;
-    expect(
-      body instanceof URLSearchParams
-        ? body.toString()
-        : requestInitText(fetcher.mock.calls[0]?.[1]),
-    ).toContain("client_id=manifold-cli");
+
+    const result = pollManifoldDeviceSession(origin, grant).then(
+      (session) => ({ ok: true as const, session }),
+      (error: Error) => ({ ok: false as const, error: error.message }),
+    );
+
+    for (let step = 0; step < 40 && index < answers.length; step++) {
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+
+    vi.useRealTimers();
+
+    return { outcome: await result, pollTimes };
+  };
+
+  it("keeps polling on pending, widens the interval on slow_down, and returns the session", async () => {
+    const { outcome, pollTimes } = await pollWith([
+      Response.json({ error: "authorization_pending" }, { status: 400 }),
+      Response.json({ error: "slow_down" }, { status: 400 }),
+      Response.json({ error: "authorization_pending" }, { status: 400 }),
+      Response.json({
+        access_token: "mf_access_cli",
+        refresh_token: "mf_refresh_cli",
+        expires_in: 900,
+      }),
+    ]);
+
+    expect(outcome).toMatchObject({
+      ok: true,
+      session: { accessToken: "mf_access_cli", refreshToken: "mf_refresh_cli" },
+    });
+    // 5 s, 5 s, then 10 s after slow_down for the rest.
+    expect(pollTimes).toEqual([5000, 10_000, 20_000, 30_000]);
+  });
+
+  it("stops when the browser denies the sign-in", async () => {
+    const { outcome, pollTimes } = await pollWith([
+      Response.json({ error: "access_denied" }, { status: 400 }),
+    ]);
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok ? "" : outcome.error).toContain("denied in the browser");
+    expect(pollTimes).toEqual([5000]);
   });
 });
 

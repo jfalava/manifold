@@ -34,6 +34,13 @@ import type {
   ManifoldOAuthTokenInput,
   ManifoldOAuthTokenResponse,
 } from "./manifold-sync/manifold-oauth";
+import type {
+  DeviceApprovalResult,
+  DeviceApprovalStart,
+  DeviceAuthorizationResponse,
+  DeviceGrantStatus,
+  DevicePollResult,
+} from "./manifold-sync/device-grant";
 
 export type { RegistryListEntry };
 
@@ -43,6 +50,17 @@ export interface ManifoldSyncStub {
   ): Promise<{ readonly authorizationUrl: string }>;
   completeGithubOAuth(state: string, code?: string, error?: string): Promise<ManifoldOAuthRedirect>;
   exchangeManifoldOAuthToken(input: ManifoldOAuthTokenInput): Promise<ManifoldOAuthTokenResponse>;
+  startDeviceAuthorization(clientId: string): Promise<DeviceAuthorizationResponse | undefined>;
+  lookupDeviceGrant(userCode: string): Promise<DeviceGrantStatus>;
+  beginDeviceApproval(userCode: string): Promise<DeviceApprovalStart>;
+  denyDeviceGrant(userCode: string): Promise<DeviceGrantStatus>;
+  completeDeviceGithub(
+    providerState: string,
+    browserBinding?: string,
+    code?: string,
+    error?: string,
+  ): Promise<DeviceApprovalResult>;
+  pollDeviceToken(clientId: string, deviceCode: string): Promise<DevicePollResult>;
   authorizeManifoldAccessToken(accessToken: string): Promise<boolean>;
   revokeManifoldSession(token: string): Promise<void>;
   createOAuthSession(
