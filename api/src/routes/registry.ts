@@ -14,6 +14,7 @@ import {
   RegistryEntriesResponse,
   RegistryEntry,
   RegistryListResponse,
+  RegistryProvider,
   RegistrySummaryResponse,
   EventsListResponse,
   SetListStateInput,
@@ -162,10 +163,7 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
     if (path[3] === "unlink" && path.length === 5 && request.method === "POST") {
       const provider = path[4];
 
-      if (
-        provider === undefined ||
-        !["anilist", "mal", "mangadex", "kagane", "manganato", "xcomic"].includes(provider)
-      ) {
+      if (provider === undefined || !Schema.is(RegistryProvider)(provider)) {
         return jsonEncoded(ErrorBody, { error: "Unknown provider" }, 400);
       }
 

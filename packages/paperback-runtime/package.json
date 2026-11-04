@@ -4,8 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./anilist": "./src/anilist-graphql.ts",
-    "./upstream-sources": "./src/upstream-sources.ts"
+    "./anilist": "./src/anilist-graphql.ts"
   },
   "scripts": {
     "check": "oxlint --fix",

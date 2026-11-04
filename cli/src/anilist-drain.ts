@@ -65,7 +65,7 @@ const errorText = (cause: unknown): string => {
   return "unknown error";
 };
 
-const fetchTransport: AniListTransport = {
+export const aniListFetchTransport: AniListTransport = {
   post: async ({ url, headers, body }) => {
     const response = await platformFetch(url, { method: "POST", headers, body });
 
@@ -79,7 +79,7 @@ const fetchTransport: AniListTransport = {
   userAgent: manifoldUserAgent("cli-drain"),
 };
 
-let aniList = createAniListClient(fetchTransport);
+let aniList = createAniListClient(aniListFetchTransport);
 
 const fetchViewerIdEffect = (token: string): Effect.Effect<number, CliEffectError> =>
   fromPromise(() => aniList.aniListRequest(token, viewerQuery, {}, decodeAniListViewer)).pipe(
@@ -227,9 +227,9 @@ export const drainAniListOpsPass = (
 /** @internal Tests drop request spacing and restore it afterwards. */
 export const __drainTest = {
   resetThrottle: (): void => {
-    aniList = createAniListClient({ ...fetchTransport, minRequestSpacingMs: 0 });
+    aniList = createAniListClient({ ...aniListFetchTransport, minRequestSpacingMs: 0 });
   },
   restoreThrottle: (): void => {
-    aniList = createAniListClient(fetchTransport);
+    aniList = createAniListClient(aniListFetchTransport);
   },
 };

@@ -1,6 +1,7 @@
 import { ContentRating, type SearchResultItem } from "@paperback/types";
-import type { IngestCandidateInput, RegistryProvider } from "@manifold/contract";
+import { type IngestCandidateInput, RegistryProvider } from "@manifold/contract";
 import type { CanonicalEntry } from "@manifold/canonical";
+import { Schema } from "effect";
 import { safeImageUrl } from "./image-url.js";
 
 const CANDIDATE_PREFIX = "provider-candidate:";
@@ -37,22 +38,17 @@ export const parseProviderSearchInput = (value: string): ProviderSearchInput => 
   return scope && query ? { query, scope } : { query: trimmed, scope: "all" };
 };
 
-const isRegistryProvider = (value: string): value is RegistryProvider =>
-  value === "anilist" ||
-  value === "mal" ||
-  value === "mangadex" ||
-  value === "kagane" ||
-  value === "manganato" ||
-  value === "xcomic";
+const isRegistryProvider = Schema.is(RegistryProvider);
 
-const PROVIDER_LABELS = {
-  anilist: "AniList",
-  mal: "MyAnimeList",
-  mangadex: "MangaDex",
-  kagane: "Kagane",
-  manganato: "MangaNato",
-  xcomic: "XComic",
-} as const satisfies Record<RegistryProvider, string>;
+// Providers are open; unknown ones show their registry name.
+const PROVIDER_LABELS: ReadonlyMap<string, string> = new Map([
+  ["anilist", "AniList"],
+  ["mal", "MyAnimeList"],
+  ["mangadex", "MangaDex"],
+  ["kagane", "Kagane"],
+  ["manganato", "MangaNato"],
+  ["xcomic", "XComic"],
+]);
 
 export interface ProviderCandidate {
   readonly provider: RegistryProvider;
@@ -210,7 +206,9 @@ export const toProviderCandidateSearchResult = (
 ): SearchResultItem => ({
   mangaId: providerCandidateId(candidate.provider, candidate.providerId),
   title: candidate.title,
-  subtitle: [PROVIDER_LABELS[candidate.provider], ...candidate.aliases].filter(Boolean).join(" · "),
+  subtitle: [PROVIDER_LABELS.get(candidate.provider) ?? candidate.provider, ...candidate.aliases]
+    .filter(Boolean)
+    .join(" · "),
   imageUrl: safeImageUrl(candidate.imageUrl),
   contentRating: ContentRating.MATURE,
   metadata: candidate,

@@ -13,9 +13,9 @@ import {
   errorMessage,
   type PersonalReadInput,
   type PersonalReadingProgress,
-  UPSTREAM_SOURCES,
+  ContentProvider,
 } from "@manifold/paperback-runtime";
-import { Clock, Effect, Result } from "effect";
+import { Clock, Effect, Result, Schema } from "effect";
 import { fromPromise, trackerError } from "./effect-error.js";
 
 export interface ReadQueueDeps {
@@ -260,16 +260,21 @@ const flushPendingProgressEffect = (
     return pushed;
   });
 
-const chapterProvenance = (chapterSourceId: string, sourceChapterId: string): ChapterProvenance => {
-  const upstream = UPSTREAM_SOURCES.find((source) => source.sourceId === chapterSourceId);
+const isContentProvider = Schema.is(ContentProvider);
 
-  if (!upstream) {
+// Any installed Paperback source records reads under its source ID lowercased
+// (MangaDex → mangadex, XCOMIC → xcomic); registry identity comes from the
+// entry's AniList/MAL canonical, never from the chapter source.
+const chapterProvenance = (chapterSourceId: string, sourceChapterId: string): ChapterProvenance => {
+  const provider = chapterSourceId.toLowerCase();
+
+  if (!isContentProvider(provider)) {
     throw trackerError(
-      `Unsupported chapter source: ${chapterSourceId} (supported: ${UPSTREAM_SOURCES.map((source) => source.sourceId).join(", ")})`,
+      `Chapter source ID "${chapterSourceId}" is not a valid provider name (expected letters, digits, ".", "_" or "-", up to 64 characters)`,
     );
   }
 
-  return { provider: upstream.provider, chapterKey: `${upstream.provider}:${sourceChapterId}` };
+  return { provider, chapterKey: `${provider}:${sourceChapterId}` };
 };
 
 const processReadActionsEffect = (
