@@ -131,6 +131,23 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
       status,
     );
 
+  it("searches titles longer than SQLite's LIKE pattern limit and matches % and _ literally", async () => {
+    const title = "I Got Caught Up In a Hero Summons, but the Other World was at Peace! 100%_done";
+    const id = newId();
+    await request("/v1/entries", { id, provider: "local", providerId: id, title }, 201);
+
+    const search = async (q: string) =>
+      Schema.decodeUnknownSync(Schema.Struct({ entries: Schema.Array(RegistryEntry) }))(
+        await request(`/v1/registry/search?q=${encodeURIComponent(q)}&limit=25`),
+      ).entries.map((row) => row.id);
+
+    expect(await search(title)).toContain(id);
+    expect(await search("other world WAS at peace")).toContain(id);
+    expect(await search("100%_done")).toContain(id);
+    expect(await search("100x_done")).not.toContain(id);
+    expect(await search("Peace!%")).not.toContain(id);
+  });
+
   it("anchors a linkless local UUID, retains/reads Kagane and replays without writes", async () => {
     const target = await create();
     expect(target.providers).toEqual([]);

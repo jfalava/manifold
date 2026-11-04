@@ -80,20 +80,18 @@ export function searchRegistry(
   }
 
   const safeLimit = Math.min(50, Math.max(1, Math.trunc(limit)));
-  const escaped = normalized.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
-  const pattern = `%${escaped}%`;
 
+  // instr, not LIKE: Durable Object SQLite rejects LIKE patterns far shorter
+  // than long light-novel titles ("pattern too complex"). lower() folds ASCII like LIKE did.
   const rows = host.ctx.storage.sql
     .exec<EntryRow>(
       `SELECT DISTINCT ce.* FROM canonical_entries ce
        LEFT JOIN provider_links pl ON pl.entry_id = ce.id
        WHERE ce.tombstoned_at IS NULL
-         AND (ce.title LIKE ? ESCAPE '\\' OR pl.title LIKE ? ESCAPE '\\')
-       ORDER BY CASE WHEN lower(ce.title) = lower(?) THEN 0 ELSE 1 END,
+         AND (instr(lower(ce.title), lower(?1)) > 0 OR instr(lower(pl.title), lower(?1)) > 0)
+       ORDER BY CASE WHEN lower(ce.title) = lower(?1) THEN 0 ELSE 1 END,
                 ce.updated_at DESC
-       LIMIT ?`,
-      pattern,
-      pattern,
+       LIMIT ?2`,
       normalized,
       safeLimit,
     )

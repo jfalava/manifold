@@ -184,6 +184,29 @@ describe("MyAnimeList canonical source", () => {
     expect(new URL(href).searchParams.get("q")).toBe("漫画家");
   });
 
+  it.each([
+    [
+      "I Got Caught Up In a Hero Summons, but the Other World was at Peace!",
+      "I Got Caught Up In a Hero Summons, but the Other World was at Pe",
+    ],
+    ["𠮷".repeat(70), "𠮷".repeat(64)],
+    [`${"a".repeat(63)} tail`, "a".repeat(63)],
+  ])("caps the MAL query at 64 characters: %s", async (query, expected) => {
+    let href = "";
+
+    const source = createMyAnimeListSource({
+      clientId: "client",
+      fetcher: async (input) => {
+        href = requestHref(input);
+
+        return jsonResponse({ data: [] });
+      },
+    });
+
+    await Effect.runPromise(source.search(query));
+    expect(new URL(href).searchParams.get("q")).toBe(expected);
+  });
+
   it("uses the client id header and normalizes REST search results", async () => {
     let requestUrl: URL | undefined;
     let requestHeaders: Headers | undefined;
