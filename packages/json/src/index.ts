@@ -2,7 +2,6 @@
  * Boundary parsers for JSON-shaped values.
  * `typeof` and `unknown` parameters live only in the type predicates here.
  */
-
 export type JsonValue = string | number | boolean | null | readonly JsonValue[] | JsonObject;
 
 export type JsonObject = { readonly [key: string]: JsonValue };
@@ -93,6 +92,7 @@ export function errorMessage(cause: unknown): string {
   }
 
   try {
+    // @effect-diagnostics-next-line globalJson:off -- keeps this entry Effect-free for browser bundles; @manifold/json/text has the Schema codec.
     const serialized = JSON.stringify(cause);
 
     return serialized === undefined ? "unknown error" : serialized;

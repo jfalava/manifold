@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Effect from "effect/Effect";
 import { requestHref, requestInitText } from "@manifold/json";
+import { toJsonText, parseJsonText } from "@manifold/json/text";
 import type { RegistryEntry } from "@manifold/contract";
 import { getRegistryCanonical, searchCanonical } from "../src/canonical";
 import { handleCanonical } from "../src/routes/canonical";
@@ -43,7 +44,7 @@ describe("personal canonical search", () => {
     vi.stubGlobal(
       "fetch",
       async () =>
-        new Response(JSON.stringify(anilistBody), {
+        new Response(toJsonText(anilistBody), {
           headers: { "content-type": "application/json" },
         }),
     );
@@ -237,7 +238,7 @@ describe("registry metadata fallback", () => {
 
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (requestHref(input).includes("anilist.co")) {
-        expect(JSON.parse(requestInitText(init) ?? "")).toMatchObject({ variables: { id: 42 } });
+        expect(parseJsonText(requestInitText(init) ?? "")).toMatchObject({ variables: { id: 42 } });
 
         return blocked
           ? new Response("Blocked", { status: 403 })

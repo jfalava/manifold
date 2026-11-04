@@ -1,6 +1,7 @@
 import type { SyncHost } from "./host";
 import { now, SYNC_DRAIN_LIMIT } from "./constants";
 import { type JsonObject } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 import type {
   RegistryEntry,
   ListState,
@@ -49,7 +50,7 @@ export function enqueueOp(
     op.target,
     op.kind,
     op.origin,
-    JSON.stringify(op.payload),
+    toJsonText(op.payload),
     timestamp,
     timestamp,
   );
@@ -115,7 +116,7 @@ export function appendEvent(
     entryId,
     kind,
     origin,
-    detail === undefined ? null : JSON.stringify(detail),
+    detail === undefined ? null : toJsonText(detail),
     now(),
   );
 }

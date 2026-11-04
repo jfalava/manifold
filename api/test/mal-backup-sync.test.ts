@@ -6,6 +6,7 @@ import { convertV4MiniflareOptions, Miniflare, Response as WorkerResponse } from
 import { Schema } from "effect";
 import { RegistryEntry, SyncOp, ListState } from "@manifold/contract";
 import { isJsonValue, type JsonObject, type JsonValue } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 
 // The production DO and its actual SQLite schema run in workerd. Only alarm
 // timing and external HTTP are controlled; no production modules are mocked.
@@ -46,7 +47,7 @@ describe("Worker-side MAL backup outbox", () => {
   const request = async (input: JsonObject): Promise<JsonValue> => {
     const response = await worker.dispatchFetch("https://fixture.test", {
       method: "POST",
-      body: JSON.stringify(input),
+      body: toJsonText(input),
     });
 
     expect(response.status).toBe(200);

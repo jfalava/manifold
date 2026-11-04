@@ -1,5 +1,6 @@
 import { Effect, Option, Schema } from "effect";
 import { manifoldUserAgent, type JsonValue } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 
 import {
   cliError,
@@ -27,17 +28,8 @@ const Session = Schema.Struct({
   expiresAt: Schema.Finite,
 });
 
-const parseStoredSession = (stored: string): ManifoldSession | undefined => {
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(stored);
-  } catch {
-    return undefined;
-  }
-
-  return Option.getOrUndefined(Schema.decodeUnknownOption(Session)(parsed));
-};
+const parseStoredSession = (stored: string): ManifoldSession | undefined =>
+  Option.getOrUndefined(Schema.decodeOption(Schema.fromJsonString(Session))(stored));
 
 const TokenResponse = Schema.Struct({
   access_token: Schema.NonEmptyString,
@@ -238,7 +230,7 @@ export const pollManifoldDeviceSession = (
   Effect.runPromise(pollManifoldDeviceSessionEffect(origin, grant), signal ? { signal } : {});
 
 export const saveManifoldSession = (session: ManifoldSession): Promise<void> =>
-  Bun.secrets.set({ ...MANIFOLD_SESSION_SECRET, value: JSON.stringify(session) });
+  Bun.secrets.set({ ...MANIFOLD_SESSION_SECRET, value: toJsonText(session) });
 
 const loadManifoldSessionEffect = (): Effect.Effect<ManifoldSession | undefined, CliEffectError> =>
   Effect.gen(function* () {

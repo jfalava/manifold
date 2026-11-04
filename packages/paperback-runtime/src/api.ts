@@ -1,3 +1,6 @@
+// Bundled into the Paperback tracker, which stays as small as possible: the
+// global JSON costs nothing, while @manifold/json/text adds Schema codecs.
+/** @effect-diagnostics globalJson:off */
 import type {
   CanonicalEntry,
   CanonicalListState,

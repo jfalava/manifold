@@ -4,7 +4,8 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./text": "./src/text.ts"
   },
   "scripts": {
     "check": "oxlint --fix",
@@ -12,6 +13,9 @@
     "lint": "oxlint --report-unused-disable-directives-severity=error",
     "test": "vitest run",
     "typecheck": "tsrs --noEmit"
+  },
+  "dependencies": {
+    "effect": "catalog:effect"
   },
   "devDependencies": {
     "oxfmt": "catalog:build",

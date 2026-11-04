@@ -18,6 +18,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 import { Effect, Option, Schema } from "effect";
 import { cliError, runHost, type CliEffectError } from "@/effect-kit";
 
@@ -305,7 +306,7 @@ export const pas5ArchiveFiles = (archive: Pas5Entities): Record<string, string> 
   };
 
   return Object.fromEntries(
-    Object.entries(files).map(([name, records]) => [name, JSON.stringify(records)]),
+    Object.entries(files).map(([name, records]) => [name, toJsonText(records)]),
   );
 };
 

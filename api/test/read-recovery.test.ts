@@ -13,6 +13,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 
 const requiredArrayField = (record: JsonObject, key: string): readonly JsonValue[] => {
   const value = arrayField(record, key);
@@ -79,7 +80,7 @@ describe("queued reads with stale registry IDs", () => {
   const request = async (input: JsonObject, status = 200): Promise<JsonValue> => {
     const response = await worker.dispatchFetch("https://fixture.test", {
       method: "POST",
-      body: JSON.stringify(input),
+      body: toJsonText(input),
     });
 
     expect(response.status).toBe(status);
@@ -207,7 +208,7 @@ describe("queued reads with stale registry IDs", () => {
         {
           method: "POST",
           headers: { authorization: "Bearer fixture-token", "content-type": "application/json" },
-          body: JSON.stringify(read(provider, `http-native-${provider}`, `http-event-${provider}`)),
+          body: toJsonText(read(provider, `http-native-${provider}`, `http-event-${provider}`)),
         },
       );
 
@@ -484,7 +485,7 @@ describe("queued reads with stale registry IDs", () => {
       const response = await worker.dispatchFetch(`https://manifold.jfa.dev${path}`, {
         method: "POST",
         headers: { authorization: "Bearer fixture-token", "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: toJsonText(body),
       });
 
       expect(response.status, path).toBe(400);

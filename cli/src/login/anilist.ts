@@ -1,5 +1,6 @@
 import { Option, Schema, Effect } from "effect";
 import { manifoldUserAgent } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 import {
   cliError,
   decodeJsonOrThrow,
@@ -67,7 +68,7 @@ const exchangeAniListCodeEffect = (
           accept: "application/json",
           "user-agent": manifoldUserAgent("cli"),
         },
-        body: JSON.stringify({
+        body: toJsonText({
           grant_type: "authorization_code",
           client_id: clientId,
           client_secret: clientSecret,
@@ -131,7 +132,7 @@ const validateAniListSessionEffect = (
           accept: "application/json",
           "user-agent": manifoldUserAgent("cli"),
         },
-        body: JSON.stringify({ query: "query { Viewer { id name } }" }),
+        body: toJsonText({ query: "query { Viewer { id name } }" }),
       }),
     ).pipe(Effect.mapError((cause) => cliError(`AniList profile lookup failed: ${cause.message}`)));
 

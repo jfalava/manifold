@@ -207,6 +207,9 @@
     },
     "packages/json": {
       "name": "@manifold/json",
+      "dependencies": {
+        "effect": "catalog:effect",
+      },
       "devDependencies": {
         "oxfmt": "catalog:build",
         "oxlint": "catalog:build",

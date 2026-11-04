@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
 /* Last modified by Manifold on 2026-11-03. See ATTRIBUTIONS.md. */
+// Bundled into the Paperback tracker, which stays as small as possible: the
+// global JSON costs nothing, while @manifold/json/text adds Schema codecs.
+/** @effect-diagnostics globalJson:off */
 
 import {
   ContentRating,

@@ -16,7 +16,7 @@ import { cliError } from "@/effect-kit";
 
 /** OAuth server and callback are Promise-based host APIs. */
 /** @effect-diagnostics asyncFunction:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
+/** @effect-diagnostics globalJsonInEffect:off */
 
 export const anilistLoginCommand = Command.make("anilist", {
   clientId: Flag.String("client-id").pipe(

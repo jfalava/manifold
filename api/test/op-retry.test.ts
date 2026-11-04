@@ -1,6 +1,7 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics schemaSync:off */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { toJsonText } from "@manifold/json/text";
 import { build } from "esbuild";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { Schema } from "effect";
@@ -82,7 +83,7 @@ describe("manual operation retry scheduling", () => {
     async ({ target, paused, scheduled }) => {
       const response = await worker.dispatchFetch("https://fixture.test", {
         method: "POST",
-        body: JSON.stringify({ target, paused }),
+        body: toJsonText({ target, paused }),
       });
 
       expect(response.status).toBe(200);

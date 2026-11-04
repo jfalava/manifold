@@ -2,7 +2,7 @@
 /** @effect-diagnostics globalDate:off */
 /** @effect-diagnostics globalDateInEffect:off */
 /** @effect-diagnostics nodeBuiltinImport:off */
-/** @effect-diagnostics preferSchemaOverJson:off */
+/** @effect-diagnostics globalJsonInEffect:off */
 /** @effect-diagnostics tryCatchInEffectGen:off */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
@@ -10,6 +10,7 @@ import { Effect, Option, Schema } from "effect";
 import { Command, Flag } from "effect/cli";
 import type { ListrTask } from "listr2";
 import { errorMessage, isJsonObject, numberField, objectField, stringField } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 
 import {
   fetchFollowedMangaIds,
@@ -122,7 +123,7 @@ const saveStaleCache = (entries: Record<string, number>): Promise<void> =>
       };
 
       yield* fromPromise(() => mkdir(".tmp", { recursive: true }));
-      yield* fromPromise(() => writeFile(STALE_CACHE_PATH, JSON.stringify(file)));
+      yield* fromPromise(() => writeFile(STALE_CACHE_PATH, toJsonText(file)));
     }),
   );
 
@@ -144,7 +145,7 @@ const saveStalePlan = (plan: StalePlanFile): Promise<void> =>
   runHost(
     Effect.gen(function* () {
       yield* fromPromise(() => mkdir(".tmp", { recursive: true }));
-      yield* fromPromise(() => writeFile(PLAN_PATH, JSON.stringify(plan)));
+      yield* fromPromise(() => writeFile(PLAN_PATH, toJsonText(plan)));
     }),
   );
 

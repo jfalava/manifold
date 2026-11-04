@@ -1,6 +1,7 @@
 /** @effect-diagnostics asyncFunction:off */
 import { Data, Schema } from "effect";
 import { manifoldUserAgent, type JsonObject } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 import { cliError, platformFetch, runHost, sleepPromise } from "@/effect-kit";
 import { chapterCoverage, mostCovered, type ChapterCoverage } from "@/chapter-coverage";
 import { hasExactKaganeTitle, identityFromUrl, type ProviderIdentity } from "@/kagane";
@@ -101,7 +102,7 @@ export const createXComicClient = (options: {
     schema: Schema.ConstraintDecoder<A>,
     validate?: (result: A) => void,
   ): Promise<A> => {
-    const key = JSON.stringify([query, variables]);
+    const key = toJsonText([query, variables]);
 
     const decode = async (text: string): Promise<A> => {
       // HTTP 200 with GraphQL errors is still incomplete evidence.
@@ -153,7 +154,7 @@ export const createXComicClient = (options: {
         referer: `${origin}/`,
         "user-agent": manifoldUserAgent("cli"),
       },
-      body: JSON.stringify({ query, variables }),
+      body: toJsonText({ query, variables }),
       redirect: "error",
       signal: AbortSignal.timeout(20_000),
     });
@@ -286,7 +287,7 @@ export const createXComicClient = (options: {
           (result) => {
             if (
               fingerprints.has(
-                JSON.stringify(result.get_title_browse_items.map((item) => item.data.id)),
+                toJsonText(result.get_title_browse_items.map((item) => item.data.id)),
               ) &&
               result.get_title_browse_items.length
             ) {
@@ -295,7 +296,7 @@ export const createXComicClient = (options: {
           },
         );
 
-        const fingerprint = JSON.stringify(
+        const fingerprint = toJsonText(
           pageResult.get_title_browse_items.map((item) => item.data.id),
         );
 

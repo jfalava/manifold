@@ -8,6 +8,7 @@ import {
   type JsonObject,
   type ManifoldUserAgentSurface,
 } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 import { Effect } from "effect";
 
 import {
@@ -58,7 +59,7 @@ export const aniListGraphqlEffect = (
           authorization: `Bearer ${token}`,
           "user-agent": manifoldUserAgent(surface),
         },
-        body: JSON.stringify({ query, variables }),
+        body: toJsonText({ query, variables }),
         ...(signal !== undefined && { signal }),
       }),
     ).pipe(Effect.mapError((cause) => cliError(`AniList fetch failed: ${cause.message}`)));

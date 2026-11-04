@@ -7,6 +7,7 @@ import {
   objectField,
   type JsonObject,
 } from "@manifold/json";
+import { parseJsonText } from "@manifold/json/text";
 
 export const MD_STATS_TTL_MS = 24 * 60 * 60 * 1000;
 export const MD_STATS_CONCURRENCY = 4;
@@ -99,13 +100,7 @@ const nullableNumber = (record: JsonObject, key: string): number | null | undefi
 };
 
 export const parseMdFeedStatsPayload = (text: string): MdFeedStatsPayload | undefined => {
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return undefined;
-  }
+  const parsed = parseJsonText(text);
 
   if (!isJsonObject(parsed)) {
     return undefined;

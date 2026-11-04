@@ -215,14 +215,11 @@ export function enqueueMalBackup(
   let prior: Schema.Schema.Type<typeof MalBackupPayload>["backupIdentity"];
 
   if (previous) {
-    try {
-      const decoded = Schema.decodeUnknownOption(MalBackupPayload)(JSON.parse(previous.payload));
+    // A corrupt prior payload decodes to None: treat it as no prior identity.
+    const decoded = Schema.decodeOption(Schema.fromJsonString(MalBackupPayload))(previous.payload);
 
-      if (Option.isSome(decoded)) {
-        prior = decoded.value.backupIdentity;
-      }
-    } catch {
-      // Corrupt prior payload: treat as no prior identity.
+    if (Option.isSome(decoded)) {
+      prior = decoded.value.backupIdentity;
     }
   }
 

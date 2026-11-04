@@ -9,11 +9,12 @@ import {
 } from "@/effect-kit";
 
 import { MalSession } from "@/mal";
+import { toJsonText } from "@manifold/json/text";
 
 export const MAL_SECRET = { service: "manifold", name: "mal-session" };
 
 export const saveMalSession = (session: MalSession): Promise<void> =>
-  Bun.secrets.set({ ...MAL_SECRET, value: JSON.stringify(session) });
+  Bun.secrets.set({ ...MAL_SECRET, value: toJsonText(session) });
 
 const loadMalSessionEffect = (): Effect.Effect<MalSession | undefined, CliEffectError> =>
   Effect.gen(function* () {

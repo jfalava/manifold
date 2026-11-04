@@ -21,6 +21,7 @@ import {
 } from "@/effect-kit";
 import { resolveValue } from "@/env-resolve";
 import { frameDetail, promptInFrameWithDefault, promptSecretInFrame } from "@/ui";
+import { toJsonText } from "@manifold/json/text";
 
 export const OAUTH_CLIENT_SERVICE = "manifold";
 
@@ -107,7 +108,7 @@ export const saveStoredOAuthClient = async (
     value = { clientId: client.clientId, clientSecret: client.clientSecret };
   }
 
-  await store.set({ ...secretRef(kind), value: JSON.stringify(value) });
+  await store.set({ ...secretRef(kind), value: toJsonText(value) });
 };
 
 /** Setup steps shown before prompting for the OAuth app credentials. */

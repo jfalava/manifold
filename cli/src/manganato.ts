@@ -2,6 +2,7 @@
 import { Data, DateTime, Effect, Option, Schema } from "effect";
 import { createAniListSource } from "@manifold/canonical/sources";
 import { errorMessage, manifoldUserAgent, type JsonObject, type JsonValue } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 import { isChallengeText, type BrowserView } from "@/browser-view";
 import type { ChapterCoverage } from "@/chapter-coverage";
 import { cliError, epochMillisNow, platformFetch, runHost, sleepPromise } from "@/effect-kit";
@@ -1254,11 +1255,11 @@ export const createManganatoClient = (options: {
 
       try {
         wire = await options.view.evaluate<JsonValue>(`(async () => {
-      if (location.origin !== ${JSON.stringify(MANGANATO_ORIGIN)}) throw new Error('Open www.manganato.gg in this tab first');
+      if (location.origin !== ${toJsonText(MANGANATO_ORIGIN)}) throw new Error('Open www.manganato.gg in this tab first');
       const signal = AbortSignal.timeout(20000);
       let response, text;
       try {
-        response = await fetch(${JSON.stringify(path)}, {credentials:'same-origin', redirect:'error', signal});
+        response = await fetch(${toJsonText(path)}, {credentials:'same-origin', redirect:'error', signal});
         const challenged = response.headers.get('cf-mitigated') === 'challenge';
         if (challenged || response.status === 403 || response.status === 429) {
           return {status:response.status, challenged, data:null};
@@ -1331,7 +1332,7 @@ export const createManganatoClient = (options: {
       `/manga/${encodeURIComponent(id)}`,
       `
       const authorRow = [...doc.querySelectorAll('.info-wrap > div')].find(e => /Author\\(s\\):/i.test(e.textContent));
-      return {id:${JSON.stringify(id)}, title:doc.querySelector('h1')?.textContent?.trim() ?? '',
+      return {id:${toJsonText(id)}, title:doc.querySelector('h1')?.textContent?.trim() ?? '',
         aliases:(doc.querySelector('.story-alternative')?.textContent ?? '').replace(/^Alternative\\s*:?/i, '').split(';').map(s => s.trim()).filter(Boolean),
         authors:(authorRow?.textContent ?? '').replace(/Author\\(s\\):/i, '').split(/[,;\\/]/).map(s => s.trim()).filter(Boolean)};
     `,
@@ -1559,8 +1560,8 @@ export const createManganatoClient = (options: {
             `
           const items = [...doc.querySelectorAll('div.story_item')].map(e => {
             const a = e.querySelector('.story_name a') ?? e.querySelector('a');
-            const url = new URL(a?.getAttribute('href') ?? '', ${JSON.stringify(MANGANATO_ORIGIN)});
-            return {id:url.origin === ${JSON.stringify(MANGANATO_ORIGIN)} && /^\\/manga\\/[^/]+\\/?$/.test(url.pathname) ? url.pathname.split('/')[2] : '', title:e.querySelector('.story_name')?.textContent?.trim() ?? ''};
+            const url = new URL(a?.getAttribute('href') ?? '', ${toJsonText(MANGANATO_ORIGIN)});
+            return {id:url.origin === ${toJsonText(MANGANATO_ORIGIN)} && /^\\/manga\\/[^/]+\\/?$/.test(url.pathname) ? url.pathname.split('/')[2] : '', title:e.querySelector('.story_name')?.textContent?.trim() ?? ''};
           });
           const next = [...doc.querySelectorAll('.panel_page_number a')].find(a => /^next\\b/i.test(a.textContent.trim()) && a.getAttribute('href'));
           return {title:doc.title, items, next:next?.getAttribute('href') ?? null};

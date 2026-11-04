@@ -1,6 +1,7 @@
 import { epochMillisNow } from "./effect-host";
 import { ListStatus, RegistryProvider } from "@manifold/contract";
 import { isFiniteNumber, isJsonObject, type JsonObject } from "@manifold/json";
+import { parseJsonText } from "@manifold/json/text";
 import { Schema } from "effect";
 import type {
   RegistryEntry,
@@ -147,13 +148,7 @@ export interface ManifoldSessionRow extends Record<string, SqlStorageValue> {
 }
 
 const parseStoredJsonObject = (text: string): JsonObject => {
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return { raw: text };
-  }
+  const parsed = parseJsonText(text);
 
   return isJsonObject(parsed) ? parsed : { raw: text };
 };

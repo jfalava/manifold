@@ -12,6 +12,7 @@ import {
   stringField,
   type JsonValue,
 } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 import { Effect } from "effect";
 
 import type { PhaseReporter } from "@/ui";
@@ -179,7 +180,7 @@ const postGraphQLEffect = (
             Accept: "application/json",
             "user-agent": USER_AGENT,
           },
-          body: JSON.stringify({ query, variables }),
+          body: toJsonText({ query, variables }),
         }),
       ).pipe(Effect.mapError((cause) => cliError(`${label} failed: ${cause.message}`)));
 

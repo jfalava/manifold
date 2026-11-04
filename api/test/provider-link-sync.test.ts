@@ -6,6 +6,7 @@ import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { Schema } from "effect";
 import { RegistryEntry, RegistryListResponse } from "@manifold/contract";
 import { isJsonValue, type JsonValue } from "@manifold/json";
+import { toJsonText } from "@manifold/json/text";
 import { newId } from "../src/effect-host";
 
 // Only fixture controls bypass HTTP routing. All writes/assertions under test use
@@ -75,11 +76,11 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     const response = await worker.dispatchFetch(`https://manifold.jfa.dev${path}`, {
       method: body === undefined ? "GET" : "POST",
       headers: { authorization: "Bearer fixture-token", "content-type": "application/json" },
-      ...(body !== undefined && { body: JSON.stringify(body) }),
+      ...(body !== undefined && { body: toJsonText(body) }),
     });
 
     const value = await response.json();
-    expect(response.status, JSON.stringify(value)).toBe(status);
+    expect(response.status, toJsonText(value)).toBe(status);
 
     if (!isJsonValue(value)) {
       throw new Error("Invalid JSON response");
@@ -245,7 +246,7 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
         worker.dispatchFetch(`https://manifold.jfa.dev/v1/entries/${target.id}/providers`, {
           method: "POST",
           headers: { authorization: "Bearer fixture-token" },
-          body: JSON.stringify({
+          body: toJsonText({
             provider: "kagane",
             externalId: "competing",
             onConflict: "reject",
@@ -284,7 +285,7 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     const target = await create();
     await link(target.id, "original");
     const before = await snapshot();
-    expect(JSON.stringify(await link(target.id, "different", "reject", 500))).toContain(
+    expect(toJsonText(await link(target.id, "different", "reject", 500))).toContain(
       "different kagane binding",
     );
     await link(target.id, "different", "overwrite", 400);
@@ -297,12 +298,12 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     await link(dead.id, "reserved");
     await request(`/v1/entries/${dead.id}/delete`, {});
     const before = await snapshot();
-    expect(JSON.stringify(await link(newId(), "missing", "reject", 500))).toContain(
+    expect(toJsonText(await link(newId(), "missing", "reject", 500))).toContain(
       "Active canonical entry not found",
     );
     await link(dead.id, "reserved", "reject", 500);
     await link(dead.id, "new", "reject", 500);
-    expect(JSON.stringify(await link(active.id, "reserved", "reject", 500))).toContain(
+    expect(toJsonText(await link(active.id, "reserved", "reject", 500))).toContain(
       "already owned by",
     );
     expect(await snapshot()).toEqual(before);
@@ -334,7 +335,7 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     await request("/fixture/fault?enabled=true");
 
     try {
-      expect(JSON.stringify(await link(fresh.id, "rollback-new", "reject", 500))).toContain(
+      expect(toJsonText(await link(fresh.id, "rollback-new", "reject", 500))).toContain(
         "fixture link event failure",
       );
       await link(b.id, "rollback-a", "replace", 500);

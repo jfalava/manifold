@@ -1,6 +1,7 @@
 /** @effect-diagnostics globalFetch:off */
 /** @effect-diagnostics processEnv:off */
 import { errorMessage, isJsonValue, type JsonValue } from "@manifold/json";
+import { parseJsonText } from "@manifold/json/text";
 import { Data, DateTime, Effect, Option, Schema } from "effect";
 
 const JsonBodyString = Schema.fromJsonString(Schema.Unknown);
@@ -90,11 +91,9 @@ export const decodeJsonOrThrow = <A>(
 
 /** Parse JSON text into JsonValue or throw. */
 export const parseJsonValue = (text: string, label = "json"): JsonValue => {
-  let raw: unknown;
+  const raw = parseJsonText(text);
 
-  try {
-    raw = JSON.parse(text);
-  } catch {
+  if (raw === undefined) {
     throw cliError(`${label}: invalid JSON`);
   }
 
