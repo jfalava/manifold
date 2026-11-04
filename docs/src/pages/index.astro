@@ -26,6 +26,21 @@ manifold pas5 create \\
   --source anilist --limit 10 \\
   --out ./Paperback-AniList-10.pas5`;
 
+const trackers = [
+  {
+    name: "AniList",
+    body: "Status, score, dates and chapter progress, pushed from your own host.",
+  },
+  {
+    name: "MyAnimeList",
+    body: "List status kept as a backup tracker, with links backfilled from AniList.",
+  },
+  {
+    name: "MangaDex",
+    body: "Chapter read markers and library status for MangaDex titles.",
+  },
+];
+
 const features = [
   {
     icon: "ph:archive",
@@ -40,7 +55,7 @@ const features = [
   {
     icon: "ph:database",
     title: "Maintain the registry",
-    body: "Import AniList list state and backfill verified MyAnimeList, MangaDex, and Kagane links on canonical entries.",
+    body: "Import AniList list state, backfill verified tracker and source links, and recover reads from Paperback backups.",
   },
   {
     icon: "ph:git-diff",
@@ -137,8 +152,8 @@ const references = [
           Your library. One registry.
         </h1>
         <p class="mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-muted-foreground">
-          Generate Paperback backups, migrate provider lists, and maintain your
-          canonical registry from the terminal.
+          Read from any Paperback source. Manifold records progress against one
+          canonical entry and keeps AniList, MyAnimeList and MangaDex in sync.
         </p>
         <div class="mt-8 flex flex-wrap gap-3">
           <LinkButton
@@ -156,6 +171,41 @@ const references = [
           >
             CLI reference
           </LinkButton>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="sources-title" class="border-b border-border">
+      <div class="mx-auto grid max-w-5xl gap-10 px-6 py-16 lg:grid-cols-2">
+        <div>
+          <h2 id="sources-title" class="section-title text-foreground">
+            Any source
+          </h2>
+          <p class="mt-4 text-pretty leading-relaxed text-muted-foreground">
+            Manifold is not tied to a content provider. Every title is anchored
+            to an AniList or MyAnimeList entry, so a chapter counts the same
+            whether you read it on MangaDex, Kagane, MangaNato or a source added
+            to Paperback yesterday. New sources need no update to Manifold.
+          </p>
+          <p class="mt-4 text-pretty leading-relaxed text-muted-foreground">
+            Switch sources mid-series and progress carries over: the registry
+            keeps the furthest chapter and never goes backwards.
+          </p>
+        </div>
+        <div>
+          <h2 class="section-title text-foreground">Every tracker</h2>
+          <ul class="mt-4 list-none space-y-4 p-0">
+            {trackers.map((tracker) => (
+              <li class="m-0 rounded-lg bg-card p-4 shadow-sm ring ring-border">
+                <h3 class="m-0 text-base font-semibold leading-snug text-foreground">
+                  {tracker.name}
+                </h3>
+                <p class="mt-1 text-sm leading-relaxed text-muted-foreground">
+                  {tracker.body}
+                </p>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </section>
