@@ -15,33 +15,33 @@
     ],
     "catalogs": {
       "effect": {
-        "effect": "4.0.6",
-        "@effect/platform-bun": "4.0.6",
-        "@effect/platform-node": "4.0.6"
+        "effect": "4.1.2",
+        "@effect/platform-bun": "4.1.2",
+        "@effect/platform-node": "4.1.2"
       },
       "cloudflare": {
-        "@cloudflare/vite-plugin": "1.65.0",
-        "@cloudflare/workers-types": "5.20261027.1",
-        "hono": "4.13.14",
-        "wrangler": "4.153.0"
+        "@cloudflare/vite-plugin": "1.67.0",
+        "@cloudflare/workers-types": "5.20261104.1",
+        "hono": "4.13.16",
+        "wrangler": "4.157.0"
       },
       "build": {
-        "oxlint": "1.89.0",
+        "oxlint": "1.91.0",
         "oxlint-tsgolint": "7.0.2005",
-        "@oxlint/plugins": "1.89.0",
-        "tsrs": "0.20.0-ts7.1.0-beta",
+        "@oxlint/plugins": "1.91.0",
+        "tsrs": "0.21.0-ts7.1.0-beta",
         "typescript": "7.0.2",
-        "oxfmt": "0.74.0",
+        "oxfmt": "0.76.0",
         "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
-        "vitest": "5.0.5"
+        "vitest": "5.1.0"
       },
       "styling": {
-        "@tailwindcss/vite": "4.3.3",
-        "tailwindcss": "4.3.3"
+        "@tailwindcss/vite": "4.3.4",
+        "tailwindcss": "4.3.4"
       },
       "types": {
         "bun-types": "1.4.4",
-        "@types/node": "26.6.5"
+        "@types/node": "26.6.6"
       },
       "paperback": {
         "@paperback/toolchain": "1.0.0-alpha.91",
@@ -85,12 +85,12 @@
     "typecheck:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac typecheck"
   },
   "devDependencies": {
-    "@effect/tsgo": "0.62.0",
+    "@effect/tsgo": "0.67.1",
     "@oxlint/plugins": "catalog:build",
     "@types/node": "catalog:types",
-    "mime": "4.1.1",
+    "mime": "4.1.2",
     "oxfmt": "catalog:build",
-    "oxlint": "1.89.0",
+    "oxlint": "1.91.0",
     "oxlint-tsgolint": "7.0.2005",
     "realm": "catalog:paperback",
     "tsrs": "catalog:build",
