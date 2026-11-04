@@ -589,7 +589,8 @@ export const createMyAnimeListSource = (
           );
         }
 
-        const q = encodeURIComponent(normalized);
+        // MAL answers HTTP 400 for q over 64 characters; the leading 64 still match.
+        const q = encodeURIComponent(Array.from(normalized).slice(0, 64).join("").trimEnd());
         const limit = encodeURIComponent(String(limitFrom(searchOptions)));
         const fields = encodeURIComponent(malFields);
         const href = `${endpoint}?q=${q}&limit=${limit}&fields=${fields}`;
