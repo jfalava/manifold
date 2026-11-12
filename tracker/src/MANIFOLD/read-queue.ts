@@ -316,7 +316,7 @@ const processReadActionsEffect = (
             catch: (cause) => trackerError(errorMessage(cause)),
           });
 
-          yield* fromPromise(() =>
+          const recorded = yield* fromPromise(() =>
             deps.recordRead(action.sourceManga.mangaId, {
               eventId: action.id,
               chapterKey: provenance.chapterKey,
@@ -328,9 +328,12 @@ const processReadActionsEffect = (
               ...(!(action.chapterVolume === undefined) && { volumeNumber: action.chapterVolume }),
             }),
           );
+
           yield* Effect.logInfo(`[manifold] read queued:${sourceChapterId}`);
 
-          const num = action.chapterNum;
+          // The registry answers with its high-water mark, which never regresses.
+          // Push that, so re-reading an old chapter cannot lower AniList progress.
+          const num = recorded.chapterNumber ?? action.chapterNum;
 
           if (isFiniteNumber(num) && num >= 0) {
             const current = maxByManga.get(action.sourceManga.mangaId);

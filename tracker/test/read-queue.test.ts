@@ -91,6 +91,17 @@ describe("processReadActions", () => {
     expect(pushProgress.mock.calls[0]?.[1]).toBe(9);
   });
 
+  it("pushes the registry high-water mark when an older chapter is re-read", async () => {
+    // The registry is at chapter 120 and refuses to regress; it answers with that mark.
+    const recordRead = vi.fn().mockResolvedValue({ chapterNumber: 120 });
+    const pushProgress = vi.fn().mockResolvedValue(true);
+
+    await processReadActions([action("reread", "c5", 5)], { recordRead, pushProgress });
+
+    expect(pushProgress).toHaveBeenCalledTimes(1);
+    expect(pushProgress.mock.calls[0]?.[1]).toBe(120);
+  });
+
   it("failed personal API reads are reported and excluded from the AniList max", async () => {
     const recordRead = vi
       .fn()
