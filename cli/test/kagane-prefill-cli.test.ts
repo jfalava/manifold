@@ -2,10 +2,11 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { arrayField } from "@manifold/json";
+import { arrayField, type JsonObject } from "@manifold/json";
 import { describe, expect, it } from "vitest";
 
 import {
+  arrayAt,
   asObject,
   findLine,
   matchGroup,
@@ -22,7 +23,14 @@ import {
 const run = (
   flags: string[] = [],
   scenario = "normal",
-  options: { checkpoint?: string; resume?: readonly unknown[] } = {},
+  options: {
+    checkpoint?: string;
+    resume?: readonly unknown[];
+    title?: string;
+    aliases?: readonly string[];
+    edition?: string;
+    source?: string;
+  } = {},
 ) => {
   const { checkpoint } = options;
   const directory = mkdtempSync(join(tmpdir(), "manifold-kagane-"));
@@ -69,6 +77,10 @@ const run = (
   process.env.MANIFOLD_TOKEN = 'fake';
   process.env.MANIFOLD_ANILIST_TOKEN = 'fake';
   const scenario = ${JSON.stringify(scenario)};
+  const targetTitle = ${JSON.stringify(options.title ?? "A Story")};
+  const aliases = ${JSON.stringify(options.aliases ?? null)};
+  const edition = ${JSON.stringify(options.edition ?? null)};
+  const source = ${JSON.stringify(options.source ?? "Kodansha Comics")};
   const browserScenario = scenario.startsWith('browser-');
   const input = new Readable({read() {}});
   input.isTTY = !scenario.endsWith('-noninteractive');
@@ -102,11 +114,12 @@ const run = (
     id, title, provider:'local', providerId:id, providers:[], createdAt:1, updatedAt:1,
     state:{entryId:id, status:'reading', updatedAt:1}, ...extra
   });
-  const book = (id, title = 'A Story') => ({
+  const book = (id, title = targetTitle) => ({
     series_id:id, title, source_id:'source-a', current_books:12, format:'MANGA', alternate_titles:[]
   });
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
+    if (url.hostname === 'graphql.anilist.co' && aliases) return Response.json({data:{Media:{title:{},synonyms:aliases}}});
     if (url.hostname === 'api.mangadex.org') return new Response('No additional aliases in this fixture', {status:404});
     if (url.pathname.endsWith('/registry')) {
       if (scenario === 'pagination' && url.searchParams.get('offset') === '0') {
@@ -116,7 +129,7 @@ const run = (
       }
       console.info('REGISTRY_PAGE', url.searchParams.get('offset'));
       return Response.json({entries:[
-        row('target', 'A Story', scenario === 'identity-mangadex' ? {providers:[
+        row('target', targetTitle, aliases ? {providers:[{provider:'anilist',externalId:'123',updatedAt:1}]} : scenario === 'identity-mangadex' ? {providers:[
           {provider:'mangadex', externalId:'461f0cfa-cd72-4d70-bf26-a0279e0aa8fc', updatedAt:1}
         ]} : identityScenario ? {providers:[
           {provider:'anilist', externalId:'123', updatedAt:1},
@@ -137,7 +150,7 @@ const run = (
       if (url.pathname.endsWith('/sources/list')) return Response.json({sources:[
         ...(scenario === 'excluded-catalog' ? [] : [
           {source_id:'source-a', source_type:'Official', title:'Example Source'},
-          {source_id:'source-b', source_type:'Official', title:'Kodansha Comics'}
+          {source_id:'source-b', source_type:'Official', title:source}
         ]),
         {source_id:'source-md', source_type:'Unofficial', title:'MangaDex'},
         ...(scenario === 'identity-default' ? ['VIZ Media','Manga Up!','Comikey','Crunchyroll','Square Enix Manga'].map((title, i) => ({source_id:'priority-'+i, title})) : [])
@@ -146,7 +159,15 @@ const run = (
         const body = JSON.parse(init.body);
         console.info('SEARCH', body.title, JSON.stringify(body.content_lang));
         console.info('SEARCH_BODY', JSON.stringify(body));
+        if (Buffer.byteLength(body.title, 'utf8') > 200 || (scenario === 'query-later-400' && body.title !== targetTitle)) return new Response('title too long or invalid query', {status:400});
+        if (scenario.startsWith('query-') && scenario !== 'query-later-400') {
+          const later = url.searchParams.get('page') !== '0';
+          return Response.json({content:[book(scenario === 'query-paged' && later ? 'series/two' : 'series/one'), book('sequel', targetTitle+' Sequel')],last:scenario !== 'query-paged' || later});
+        }
+        if (scenario === 'changed-search-title') return Response.json({content:[{...book('same',body.title === targetTitle ? 'Different Story' : targetTitle),source_id:'source-md'}],last:true});
         if (body.title !== 'A Story') return Response.json({content:[], last:true});
+        if (scenario === 'no-exact-title') return Response.json({content:[book('other', 'A Story 2')], last:true});
+        if (scenario === 'unknown-source') return Response.json({content:[{...book('unknown'),source_id:'not-in-catalog'}],last:true});
         // Deliberately ignore source_id to exercise client-side exclusion too.
         if (scenario.startsWith('excluded-source-')) return Response.json({content:[
           {...book('mangadex-series'), source_id:'source-md'},
@@ -168,6 +189,7 @@ const run = (
         if (scenario === 'ambiguous') return Response.json({content:[book(page === '0' ? 'series/one' : 'series/two')], last:page !== '0'});
         if (identityScenario) {
           const books = [book('series/one'), {...book('series/two'), source_id:'source-b', current_books:1}];
+          if (scenario.startsWith('identity-edition')) books.shift();
           if (scenario === 'identity-omit') books.pop();
           if (scenario === 'identity-same-source') books[0].source_id = 'source-b';
           return Response.json({content:books.filter(b => !body.source_id || body.source_id.includes(b.source_id)), last:true});
@@ -188,13 +210,13 @@ const run = (
         return Response.json({items:later ? (scenario === 'identity-incomplete' || scenario === 'inventory-incomplete' ? [] : items.slice(1)) : items.slice(0,1), next_cursor:later && scenario !== 'identity-loop' ? null : 'cursor'});
       }
       if (url.pathname.startsWith('/api/v2/series/')) return Response.json({
-        title:scenario === 'wrong-title' || scenario === 'identity-renamed' ? 'Different Story' : 'A Story',
-        translated_language:scenario === 'wrong-language' ? 'ja' : scenario === 'missing-language' ? undefined : 'en',
-        source_id:scenario === 'wrong-source' || (identityScenario && (url.pathname.endsWith('two') || scenario === 'identity-same-source')) ? 'source-b' : 'source-a', format:'MANGA',
-        edition_info:scenario === 'edition' ? 'Deluxe Edition' : null,
+        title:scenario === 'wrong-title' || scenario === 'identity-renamed' ? 'Different Story' : targetTitle,
+        translated_language:scenario === 'wrong-language' || scenario === 'identity-edition-language' ? 'ja' : scenario === 'missing-language' ? undefined : 'en',
+        source_id:scenario === 'identity-edition-source' ? 'source-a' : scenario === 'wrong-source' || (identityScenario && (url.pathname.endsWith('two') || scenario === 'identity-same-source')) ? 'source-b' : 'source-a', format:scenario === 'identity-edition-format' ? 'NOVEL' : 'MANGA',
+        edition_info:edition && (!identityScenario || url.pathname.endsWith('two')) ? edition : scenario === 'edition' ? 'Deluxe Edition' : null,
         ...(scenario === 'identity-mangadex' ? {series_links:[{url:'https://mangadex.org/title/'+(url.pathname.endsWith('two') ? '461f0cfa-cd72-4d70-bf26-a0279e0aa8fc' : '1fcbaeb6-add2-49a8-8504-9baf38e51ce5')+'/a-story'}]} : identityScenario && scenario !== 'identity-unproven' ? {series_links:[
-          {url:scenario === 'identity-spoof' ? 'https://anilist.co.evil.test/manga/123' : 'https://anilist.co/manga/123'},
-          ...(scenario === 'identity-spoof' ? [] : [{url:'https://myanimelist.net/manga/'+((scenario === 'identity-contradiction' || scenario === 'identity-shared-conflict') && url.pathname.endsWith('two') ? '999' : '456')+'/a-story'}])
+          {url:scenario === 'identity-spoof' || scenario === 'identity-edition-unproven' ? 'https://anilist.co.evil.test/manga/123' : 'https://anilist.co/manga/123'},
+          ...(scenario === 'identity-spoof' || scenario === 'identity-edition-unproven' ? [] : [{url:'https://myanimelist.net/manga/'+((scenario === 'identity-contradiction' || scenario === 'identity-shared-conflict' || scenario === 'identity-edition-contradiction') && url.pathname.endsWith('two') ? '999' : '456')+'/a-story'}])
         ]} : {})
       });
     }
@@ -247,6 +269,164 @@ const run = (
 };
 
 describe("registry kagane", () => {
+  it.each([
+    ["x".repeat(199), "x".repeat(199)],
+    ["x".repeat(200), "x".repeat(200)],
+    ["x".repeat(201), "x".repeat(200)],
+    ["x".repeat(200) + " suffix", "x".repeat(200)],
+    ["界".repeat(66) + "XX", "界".repeat(66) + "XX"],
+    ["界".repeat(66) + "XXX", "界".repeat(66) + "XX"],
+    ["🧡".repeat(50) + "X", "🧡".repeat(50)],
+  ])("bounds discovery queries without weakening full-title matching %#", (title, query) => {
+    const result = run(["--apply", "--limit", "1"], "query-prefix", { title });
+    expect(result.status, result.stderr + result.stdout).toBe(0);
+    const entry = findLine(result.report, (line) => line.event === "entry");
+    expect(entry).toMatchObject({
+      outcome: "matched",
+      selectedId: "series/one",
+      titles: [title],
+      queries: [{ title, query }],
+    });
+    expect(objectsAt(entry, "candidates").map((candidate) => candidate.id)).toEqual(["series/one"]);
+    expect(result.stdout).toContain(
+      `SEARCH_BODY ${JSON.stringify({ title: query, content_lang: ["en"] })}`,
+    );
+    expect(result.stdout.match(/^WRITE /gm)).toHaveLength(1);
+  });
+
+  it("deduplicates bounded alias prefixes and preserves query provenance across two resumes", () => {
+    const prefix = "Long title ".repeat(20).trimEnd();
+    const aliases = [prefix + " first ending", prefix + " second ending"];
+    const preview = run(["--limit", "1"], "query-prefix", { aliases });
+    expect(preview.status, preview.stderr).toBe(0);
+    expect(preview.stdout.match(/^SEARCH_BODY /gm)).toHaveLength(2);
+    const entry = findLine(preview.report, (line) => line.event === "entry");
+    expect(entry.discovery).toMatchObject({ complete: true, results: 2, exact: 1 });
+    expect(entry.queries).toEqual([
+      { title: "A Story", query: "A Story" },
+      ...aliases.map((title) => ({ title, query: "Long title ".repeat(18).trimEnd() })),
+    ]);
+    const deferred = run(["--limit", "0"], "query-prefix", { aliases, resume: preview.report });
+    const chained = run(["--limit", "0"], "query-prefix", { aliases, resume: deferred.report });
+    expect(chained.status, chained.stderr).toBe(0);
+    expect(chained.report.find((line) => line.event === "checkpoint")).toMatchObject({
+      queries: entry.queries,
+      titles: entry.titles,
+      discovery: entry.discovery,
+      selection: entry.selection,
+    });
+  });
+
+  it("still checks later-page competitors for a shortened query and defers a capped search", () => {
+    const title = "Long title ".repeat(22);
+    const complete = run(["--apply", "--limit", "1"], "query-paged", { title });
+    expect(complete.status, complete.stderr).toBe(0);
+    expect(complete.report.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "ambiguous",
+      candidateIds: ["series/one", "series/two"],
+      discovery: { complete: true },
+    });
+    const capped = run(["--apply", "--limit", "1", "--max-pages", "1"], "query-paged", { title });
+    expect(capped.status, capped.stderr).toBe(0);
+    expect(capped.report.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "deferred",
+      discovery: { complete: false },
+    });
+    expect(complete.stdout + capped.stdout).not.toMatch(/^WRITE /m);
+  });
+
+  it("does not hide a generic later-alias HTTP 400 behind a previously discovered candidate", () => {
+    const result = run(["--apply", "--limit", "1"], "query-later-400", {
+      aliases: ["Invalid alias"],
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.report.find((line) => line.event === "entry")).toMatchObject({
+      outcome: "errors",
+      candidateIds: ["series/one"],
+      discovery: { complete: false },
+      queries: [
+        { title: "A Story", query: "A Story" },
+        { title: "Invalid alias", query: "Invalid alias" },
+      ],
+    });
+    expect(result.stdout).not.toMatch(/^WRITE /m);
+  });
+
+  it("bounds the overlong English alias shape from the failed run while keeping the full identity title", () => {
+    const alias =
+      "As a Result of Forming a Party with a Woman Who Has Perfect Compatibility on an Adventurer Matching App but the Worst Personality, Our Ecchi Compatibility Exceeded 200%, So She Became the Best Teammate Who is Docile at Night";
+
+    const result = run(["--apply", "--limit", "1"], "query-prefix", { aliases: [alias] });
+    expect(result.status, result.stderr).toBe(0);
+    const entry = findLine(result.report, (line) => line.event === "entry");
+    expect(entry).toMatchObject({
+      outcome: "matched",
+      selectedId: "series/one",
+      titles: ["A Story", alias],
+    });
+    expect(arrayAt(entry, "queries")[1]).toEqual({
+      title: alias,
+      query:
+        "As a Result of Forming a Party with a Woman Who Has Perfect Compatibility on an Adventurer Matching App but the Worst Personality, Our Ecchi Compatibility Exceeded 200%, So She Became the Best",
+    });
+    expect(result.stdout).toContain("shortened discovery query");
+  });
+
+  it.each([
+    ["excluded-source-only", "searchPolicy", "kagane-aliases-v1"],
+    ["identity-crossing-equal", "selectionPolicy", "kagane-no-loss-v2"],
+  ])("refreshes %s legacy decision evidence on resume", (scenario, policy, oldValue) => {
+    const prior = run(["--apply", "--limit", "1"], scenario, { aliases: [] });
+    expect(prior.status, prior.stderr).toBe(0);
+
+    const resume = prior.report.map((line) =>
+      line.event === "entry" ? { ...line, [policy]: oldValue } : line,
+    );
+
+    const result = run(["--apply", "--limit", "1"], scenario, { aliases: [], resume });
+    expect(result.status, result.stderr).toBe(0);
+
+    const entry = findLine(
+      result.report,
+      (line) => line.event === "entry" && line.entryId === "target",
+    );
+
+    expect(entry[policy]).not.toBe(oldValue);
+    expect(objectAt(entry, "discovery").complete).toBe(true);
+    expect(objectAt(entry, "selection").basis).toContain(
+      scenario === "excluded-source-only" ? "excluded as MangaDex" : "crossing coverage",
+    );
+    expect(result.stdout).not.toMatch(/^WRITE /m);
+  });
+
+  it.each([
+    ["normal", "missing", "search returned no results"],
+    ["no-exact-title", "target", "no exact full-title or alias match"],
+    ["unknown-source", "target", "1 with unknown source"],
+  ])("explains %s catalog misses", (scenario, id, reason) => {
+    const result = run([], scenario);
+    expect(result.status, result.stderr).toBe(0);
+    const entry = findLine(result.report, (line) => line.event === "entry" && line.entryId === id);
+    expect(entry).toMatchObject({ outcome: "unmatched", discovery: { complete: true } });
+    expect(entry.note).toContain(reason);
+    expect(result.stdout).toContain(reason);
+  });
+
+  it("counts an exact excluded match discovered on a later alias once and records one consistent decision", () => {
+    const result = run(["--limit", "1"], "changed-search-title", { aliases: ["Other Alias"] });
+    expect(result.status, result.stderr).toBe(0);
+    const entry = findLine(result.report, (line) => line.event === "entry");
+    expect(entry).toMatchObject({
+      outcome: "unmatched",
+      discovery: { complete: true, results: 1, exact: 1, excludedMangaDex: 1 },
+    });
+    expect(entry.note).toContain("1 exact matches excluded as MangaDex");
+    expect(findLine(result.report, (line) => line.event === "selection").basis).toBe(
+      objectAt(entry, "selection").basis,
+    );
+  });
+
   it.each(["startup", "request"])(
     "pauses a browser %s challenge until Enter and resumes the same run",
     (stage) => {
@@ -460,6 +640,8 @@ describe("registry kagane", () => {
       );
 
       expect(entry).toMatchObject({ outcome: "ambiguous", selectedId: null });
+      expect(objectAt(entry, "selection").basis).toContain("crossing coverage");
+      expect(result.stdout).toContain("crossing coverage");
       expect(objectAt(entry, "selection").comparisons).toContainEqual({
         from: "series/one",
         to: "series/two",
@@ -542,7 +724,18 @@ describe("registry kagane", () => {
         expect(entry).toMatchObject({ outcome: "matched", selectedId: "series/one" });
         expect(result.stdout).toContain('"externalId":"series/one"');
       } else {
-        expect(entry).toMatchObject({ outcome: "unmatched", selectedId: null });
+        expect(entry).toMatchObject({
+          outcome: "unmatched",
+          selectedId: null,
+          discovery: {
+            results: 1,
+            exact: 1,
+            excludedMangaDex: 1,
+            unknownSource: 0,
+            exclusions: [{ id: "mangadex-series", title: "A Story", source: "MangaDex" }],
+          },
+        });
+        expect(entry.note).toContain("1 exact matches excluded as MangaDex");
         expect(result.stdout).not.toContain("WRITE");
       }
 
@@ -573,6 +766,12 @@ describe("registry kagane", () => {
     expect(result.stdout).toContain("AMBIGUOUS target");
     expect(result.stdout).toContain("series/two");
     expect(result.stdout).not.toContain("WRITE");
+    expect(
+      objectAt(
+        findLine(result.report, (entry) => entry.entryId === "target"),
+        "selection",
+      ).basis,
+    ).toContain("no matching external IDs");
   });
 
   it.each(["wrong-title", "wrong-language", "missing-language", "wrong-source", "edition"])(
@@ -584,6 +783,154 @@ describe("registry kagane", () => {
       expect(result.stdout).not.toContain("WRITE");
     },
   );
+
+  it.each([
+    ["Seven Seas", "Seven Seas Entertainment"],
+    ["Kodansha", "Kodansha Comics"],
+    ["Official English", "Seven Seas Entertainment"],
+    ["  KODANSHA COMICS  ", "Kodansha Comics"],
+    ["Small Press", "Small Press Media"],
+  ])(
+    "verifies inventories before linking the corroborated %s publisher label",
+    (edition, source) => {
+      const result = run(["--apply", "--limit", "1"], "identity-edition", { edition, source });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.report.find((item) => item.entryId === "target")).toMatchObject({
+        outcome: "matched",
+        selectedId: "series/two",
+        candidates: [
+          { editionInfo: edition, reasons: [], coverage: { unit: "chapters", numbers: [1, 2, 3] } },
+        ],
+      });
+      expect(result.stdout.match(/^WRITE /gm)).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    ["Deluxe Edition", "Kodansha Comics"],
+    ["Kodansha Deluxe", "Kodansha Comics"],
+    ["Kodansha / Official English", "Kodansha Comics"],
+    ["Remake", "Kodansha Comics"],
+    ["Adaptation", "Kodansha Comics"],
+    ["Seven Seas", "Kodansha Comics"],
+    ["Example", "Example Comics Media"],
+    ["!!!", "???"],
+  ])("keeps the unrecognized %s edition label for review", (edition, source) => {
+    const result = run(["--apply", "--limit", "1"], "identity-edition", { edition, source });
+    expect(result.status, result.stderr).toBe(0);
+    const entry = findLine(result.report, (item) => item.entryId === "target");
+    expect(entry.outcome).toBe("ambiguous");
+    expect(objectsAt(entry, "candidates")[0]?.reasons).toContain(`edition=${edition}`);
+    expect(result.stdout).not.toMatch(/^WRITE /m);
+  });
+
+  it.each([
+    ["identity-edition-unproven", "edition=Official English"],
+    ["identity-edition-contradiction", "contradictory mal ID"],
+    ["identity-edition-language", "language=ja"],
+    ["identity-edition-source", "unknown or inconsistent source"],
+    ["identity-edition-format", "format mismatch"],
+  ])("does not let publisher metadata bypass the %s guard", (scenario, reason) => {
+    const result = run(["--apply", "--limit", "1"], scenario, { edition: "Official English" });
+    expect(result.status, result.stderr).toBe(0);
+    expect(
+      objectsAt(
+        findLine(result.report, (item) => item.entryId === "target"),
+        "candidates",
+      )[0]?.reasons,
+    ).toContain(reason);
+    expect(result.stdout).not.toMatch(/^WRITE /m);
+  });
+
+  it("requires English records for the Official English label", () => {
+    const result = run(
+      ["--apply", "--language", "ja", "--limit", "1"],
+      "identity-edition-language",
+      {
+        edition: "Official English",
+      },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    const entry = findLine(result.report, (item) => item.entryId === "target");
+    expect(objectsAt(entry, "candidates")[0]?.reasons).toContain("edition=Official English");
+    expect(objectsAt(entry, "candidates")[0]?.reasons).not.toContain("language=ja");
+    expect(result.stdout).not.toMatch(/^WRITE /m);
+  });
+
+  it.each(["identity-crossing-larger", "identity-unknown", "identity-incomplete"])(
+    "does not let an accepted publisher label bypass %s inventory review",
+    (scenario) => {
+      const result = run(["--apply", "--limit", "1"], scenario, { edition: "Kodansha" });
+      expect(result.status, result.stderr).toBe(scenario === "identity-incomplete" ? 1 : 0);
+      const entry = findLine(result.report, (item) => item.entryId === "target");
+      expect(entry.selectedId).toBeNull();
+      expect(result.stdout).not.toMatch(/^WRITE /m);
+    },
+  );
+
+  it("reopens a publisher-label rejection from the previous selection policy", () => {
+    const prior = run(["--apply", "--limit", "1"], "identity-edition", {
+      edition: "Kodansha",
+      aliases: [],
+    });
+
+    expect(prior.status, prior.stderr).toBe(0);
+    expect(
+      prior.report.find((item) => item.event === "entry" && item.entryId === "target"),
+    ).toMatchObject({
+      retryable: false,
+      applied: true,
+    });
+
+    const resume = prior.report.map((line): JsonObject =>
+      line.event === "entry" && line.entryId === "target"
+        ? {
+            ...line,
+            outcome: "ambiguous",
+            selectedId: null,
+            selectionPolicy: "kagane-no-loss-explained-v3",
+            selection: {
+              selectedId: null,
+              basis: "no eligible candidates; inspect candidate rejection reasons",
+              comparisons: [],
+            },
+            candidates: objectsAt(line, "candidates").map((candidate) => ({
+              ...candidate,
+              reasons: ["edition=Kodansha"],
+            })),
+          }
+        : line,
+    );
+
+    const currentPolicy = findLine(prior.report, (line) => line.event === "entry").selectionPolicy;
+
+    const unchanged = run(["--apply", "--limit", "1"], "identity-edition", {
+      edition: "Kodansha",
+      aliases: [],
+      resume: resume.map((line) =>
+        line.event === "entry" ? { ...line, selectionPolicy: currentPolicy } : line,
+      ),
+    });
+
+    expect(unchanged.status, unchanged.stderr).toBe(0);
+    expect(
+      unchanged.report.some((item) => item.event === "entry" && item.entryId === "target"),
+    ).toBe(false);
+    expect(unchanged.stdout).not.toMatch(/^WRITE /m);
+
+    const result = run(["--apply", "--limit", "1"], "identity-edition", {
+      edition: "Kodansha",
+      aliases: [],
+      resume,
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(
+      result.report.find((item) => item.event === "entry" && item.entryId === "target"),
+    ).toMatchObject({ outcome: "matched", selectedId: "series/two" });
+    expect(result.stdout.match(/^WRITE /gm)).toHaveLength(1);
+  });
 
   it.each(["owned", "duplicate", "server-conflict"])("rejects %s claims", (scenario) => {
     const result = run(["--apply"], scenario);
@@ -625,6 +972,12 @@ describe("registry kagane", () => {
     });
     expect(result.stdout).toContain('"externalId":"series/two"');
     expect(result.stdout).not.toContain('"externalId":"series/one"');
+    expect(
+      objectAt(
+        findLine(result.report, (entry) => entry.entryId === "target"),
+        "selection",
+      ).basis,
+    ).toContain("source priority breaks identical-inventory tie");
     expect(
       objectsAt(
         findLine(result.report, (entry) => entry.entryId === "target"),
@@ -746,7 +1099,7 @@ describe("registry kagane", () => {
   });
 
   it("compares MangaDex UUIDs rather than trusting a source name or matching title", () => {
-    const result = run(["--apply"], "identity-mangadex");
+    const result = run(["--apply"], "identity-mangadex", { edition: "Kodansha" });
     expect(result.status, result.stderr).toBe(0);
     const entry = findLine(result.report, (item) => item.entryId === "target");
     expect(entry.selectedId).toBe("series/two");

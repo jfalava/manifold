@@ -14,9 +14,24 @@ The command discovers exact title/alias candidates, verifies their external IDs
 and series details, and never replaces an existing provider link. It is a dry
 run unless `--apply` is supplied. Every run saves an incremental JSONL report.
 
+Discovery queries have a conservative 200-byte UTF-8 budget. Longer aliases use
+a complete-word prefix where possible, without splitting Unicode code points.
+The full titles and aliases still determine exact-match eligibility; a matching
+prefix alone cannot link a series. Identical shortened queries are sent once.
+This budget avoids overlong requests; it is not a verified Kagane API limit.
+
 MangaDex is always excluded as a Kagane content source. Native MangaDex bindings
 remain separate for PAS5. Other Kagane sources can still use MangaDex URLs as
 identity evidence; those URLs do not make MangaDex the content source.
+
+An edition label can describe publisher metadata when external IDs corroborate
+the work and the other verification checks pass. The complete normalized label
+must equal the source name, optionally without one terminal `Comics`,
+`Entertainment`, or `Media`, or equal `Official English` for English records.
+For example, `Seven Seas` can match `Seven Seas Entertainment`; `Kodansha Deluxe`
+does not match `Kodansha Comics`. Unknown, combined, adaptation, and remake labels
+still require review. Accepted labels remain in each report candidate's
+`editionInfo`; complete inventories and no-loss selection are still required.
 
 Kagane has no personal API key. Search and details use public endpoints. Kagane
 may challenge automated requests with Cloudflare; use the Chrome option below
@@ -115,7 +130,17 @@ Reports are created with owner-only permissions and do not contain tokens.
 
 Records include run options, retries, each entry's outcome, inspected candidate
 sources and external IDs, rejection reasons, pairwise gained/lost positions, and
-the final counts. Selection evidence is saved and printed before writes. Each entry
+the final counts. Original titles and sent queries are recorded separately.
+Discovery counts distinguish empty search results, no exact full-title match,
+exact matches excluded as MangaDex, and unknown sources. Counts deduplicate series
+across queries and pages; up to ten exact excluded matches are retained as examples.
+These describe the completed queries, not absence from Kagane's entire catalog.
+
+Selection records explain the decision: rejected IDs/details, multiple title-only
+candidates, unknown inventories, incomparable volume packaging, crossing chapter
+coverage, or unresolved identical-inventory ties. A single exact-title selection
+is labeled separately from an ID-verified selection.
+Selection evidence is saved and printed before writes. Each entry
 is written before the next entry starts, so completed results survive an
 interrupted run. Reports are diagnostic records, not executable apply plans.
 
@@ -130,6 +155,10 @@ and unmatched results, are skipped before `--limit`. Errors, conflicts, challeng
 incomplete alias lookups and interrupted rows retry. Adding `--apply` rechecks all
 dry-run outcomes; no writes are replayed from the report. Discovery-policy changes
 reopen misses, and selection-policy changes reopen ambiguities.
+The bounded-query and publisher-label selection policies refresh older misses
+and ambiguities, including previous publisher-label rejections. Existing links
+are still skipped; no binding is replaced. Conflicting external IDs are never
+repaired or ignored automatically, even when another ID matches.
 
 ```sh
 manifold registry kagane --status reading,paused,planning --apply --resume ./kagane-dry-run.jsonl
