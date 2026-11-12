@@ -353,6 +353,13 @@ export const createSessionEffect = (
     const accessTokenHash = yield* Effect.promise(() => hashOpaque(accessToken));
     const refreshTokenHash = yield* Effect.promise(() => hashOpaque(refreshToken));
     const createdAt = now();
+    // Every refresh revokes one row and inserts another, so without this the
+    // table grows by a dead row per rotation. Nothing reads them again: a
+    // replayed refresh token fails the same way whether its row exists or not.
+    host.ctx.storage.sql.exec(
+      "DELETE FROM manifold_sessions WHERE revoked_at IS NOT NULL OR refresh_expires_at <= ?",
+      createdAt,
+    );
     host.ctx.storage.sql.exec(
       `INSERT INTO manifold_sessions
        (access_token_hash, refresh_token_hash, subject, access_expires_at,

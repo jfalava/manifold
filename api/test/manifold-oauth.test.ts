@@ -225,6 +225,10 @@ describe("Manifold GitHub OAuth", () => {
       });
 
       expect(replacement.refresh_token).not.toBe(original.refresh_token);
+      // Rotation drops the revoked row instead of keeping it forever.
+      expect(
+        host.ctx.storage.sql.exec("SELECT access_token_hash FROM manifold_sessions").toArray(),
+      ).toHaveLength(1);
       expect(await authorizeManifoldAccessToken(host, original.access_token)).toBe(false);
       expect(await authorizeManifoldAccessToken(host, replacement.access_token)).toBe(true);
       await expect(
