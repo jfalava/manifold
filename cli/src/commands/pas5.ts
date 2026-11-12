@@ -6,7 +6,7 @@ import { cliError, newId, validateNonNegativeLimit } from "@/effect-kit";
 import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
 import { errorMessage, isFiniteNumber, type JsonObject } from "@manifold/json";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import { fetchAniListRichEntries, type AniListRichEntry } from "@/anilist";
@@ -525,6 +525,28 @@ export const sourceFreeEntities = (
   };
 };
 
+/**
+ * Writes an archive through a temporary file, so a failed write never leaves a
+ * truncated backup at `path` or damages a file that was already there.
+ */
+const writeArchive = (path: string, bytes: Uint8Array): void => {
+  const partial = `${path}.partial`;
+
+  mkdirSync(dirname(path), { recursive: true });
+
+  try {
+    writeFileSync(partial, bytes);
+    renameSync(partial, path);
+  } catch (error) {
+    rmSync(partial, { force: true });
+    throw error;
+  }
+};
+
+/** Default `pas5 create` file name. No colons: Finder, iOS Files and Windows reject or rewrite them. */
+export const defaultPas5OutName = (date: Date): string =>
+  `Paperback-Generated.${date.toISOString().slice(0, 19).replace("T", ".").replaceAll(":", "-")}.pas5`;
+
 export const pas5FilterCommand = Command.make("filter", {
   input: Flag.String("input").pipe(
     Flag.withDescription("Existing .pas5 archive to filter offline."),
@@ -580,8 +602,7 @@ export const pas5FilterCommand = Command.make("filter", {
           return;
         }
 
-        mkdirSync(dirname(out), { recursive: true });
-        writeFileSync(out, buildPas5Zip(pas5ArchiveFiles(filtered)));
+        writeArchive(out, buildPas5Zip(pas5ArchiveFiles(filtered)));
         closeFrame(`Wrote ${out}`);
         frameDetail(
           "After restoring, run Paperback database repair and verify a title stays categorized after reopening.",
@@ -640,6 +661,17 @@ export const pas5CreateCommand = Command.make("create", {
     ({ source: sourceFlag, apply, tabs, base, out, limit, anilistToken, apiOrigin, apiToken }) =>
       Effect.gen(function* () {
         validateNonNegativeLimit(Option.getOrUndefined(limit));
+
+        const baseFile = Option.getOrUndefined(base);
+        const outFile = Option.getOrUndefined(out);
+
+        if (
+          baseFile !== undefined &&
+          outFile !== undefined &&
+          resolve(baseFile) === resolve(outFile)
+        ) {
+          return yield* cliError("--out must differ from --base; keep the original backup.");
+        }
 
         const source = yield* Effect.try({
           try: () => parseSource(sourceFlag),
@@ -972,8 +1004,7 @@ export const pas5CreateCommand = Command.make("create", {
           lines.push(`  ${tab}: ${count}`);
         }
 
-        const stamp = new Date().toISOString().replace("T", ".").slice(0, 19);
-        const outPath = Option.getOrUndefined(out) ?? `Paperback-Generated.${stamp}.pas5`;
+        const outPath = Option.getOrUndefined(out) ?? defaultPas5OutName(new Date());
 
         if (!apply) {
           for (const line of lines) {
@@ -993,9 +1024,7 @@ export const pas5CreateCommand = Command.make("create", {
 
         yield* Effect.tryPromise({
           try: async () => {
-            const zip = buildPas5Zip(merged);
-            mkdirSync(dirname(outPath), { recursive: true });
-            writeFileSync(outPath, zip);
+            writeArchive(outPath, buildPas5Zip(merged));
             frameDetail(
               "After restoring, run Paperback database repair and verify a title stays categorized after reopening.",
             );

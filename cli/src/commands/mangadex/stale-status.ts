@@ -164,6 +164,32 @@ const loadStalePlan = (): Promise<StalePlanFile | undefined> =>
     }),
   );
 
+/** A saved plan older than this is refused: titles may have had uploads since. */
+const PLAN_MAX_AGE_MS = STALE_CACHE_TTL_MS;
+
+/**
+ * Checks a saved plan against the shelf as it is now. The plan is refused when
+ * it is too old (or its date is unreadable), and an entry is dropped when its
+ * status is no longer one of `--from`: it was changed after the plan was made.
+ */
+export const recheckStalePlan = (
+  plan: { readonly savedAt: string; readonly staleIds: readonly string[] },
+  statuses: Readonly<Record<string, string>>,
+  fromStatuses: readonly string[],
+  nowMs: number,
+) => {
+  const ageMs = nowMs - Date.parse(plan.savedAt);
+
+  return {
+    expired: !(ageMs >= 0 && ageMs < PLAN_MAX_AGE_MS),
+    staleIds: plan.staleIds.filter((id) => {
+      const status = statuses[id];
+
+      return status !== undefined && fromStatuses.includes(status);
+    }),
+  };
+};
+
 const VALID_STATUSES = MangaDexReadingStatus.literals;
 const isReadingStatus = Schema.is(MangaDexReadingStatus);
 
@@ -460,15 +486,32 @@ export const staleStatusCommand = Command.make(
                 );
               }
 
-              ctx.staleIds = plan.staleIds;
+              const recheck = recheckStalePlan(plan, ctx.statuses, fromStatuses, epochMillisNow());
+
+              if (recheck.expired) {
+                throw cliError(
+                  `Saved plan from ${plan.savedAt} is more than ${PLAN_MAX_AGE_MS / 86_400_000} days old. Re-run a dry run first.`,
+                );
+              }
+
+              const changed = plan.staleIds.length - recheck.staleIds.length;
+
+              ctx.staleIds = recheck.staleIds;
               ctx.titles = plan.titles;
-              reporter.note(`${plan.staleIds.length} entries from plan saved ${plan.savedAt}.`);
+              reporter.note(
+                `${recheck.staleIds.length} entries from plan saved ${plan.savedAt}` +
+                  (changed > 0
+                    ? ` (${changed} skipped: their status is no longer ${fromStatuses.join(" or ")}).`
+                    : "."),
+              );
             },
             rendererOptions: { outputBar: Infinity, persistentOutput: true },
           };
 
           const run = createRun<StaleCtx>([
-            ...(usePlan ? [loadPlanTask] : [fetchStatusesTask, scanTask]),
+            // The statuses are always read: a saved plan is checked against them.
+            fetchStatusesTask,
+            usePlan ? loadPlanTask : scanTask,
             apply
               ? {
                   title: `Update stale entries to ${targetStatus}`,

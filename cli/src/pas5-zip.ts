@@ -108,6 +108,16 @@ const findEocd = (buf: Buffer): number => {
   throw new Error("Not a zip archive (no end-of-central-directory record)");
 };
 
+/** No entity file of a real backup comes near this; a larger entry is a corrupt or hostile archive. */
+const MAX_ENTRY_BYTES = 256 * 1024 * 1024;
+
+/** Reads past the end throw a bare RangeError; name the archive problem instead. */
+const requireRange = (buf: Buffer, start: number, length: number, what: string): void => {
+  if (start + length > buf.length) {
+    throw new Error(`Corrupt zip archive: ${what} runs past the end of the file`);
+  }
+};
+
 /** Zip entry name → UTF-8 text contents. */
 export interface ZipTextEntries {
   [name: string]: string;
@@ -121,6 +131,8 @@ export const readZipText = (buf: Buffer): ZipTextEntries => {
   const out: ZipTextEntries = {};
 
   for (let i = 0; i < count; i++) {
+    requireRange(buf, ptr, 46, `central directory entry ${i}`);
+
     if (buf.readUInt32LE(ptr) !== 0x02014b50) {
       throw new Error(`Corrupt central directory at entry ${i}`);
     }
@@ -134,11 +146,27 @@ export const readZipText = (buf: Buffer): ZipTextEntries => {
     const name = buf.subarray(ptr + 46, ptr + 46 + nameLen).toString("utf8");
 
     if (method === 0 || method === 8) {
+      requireRange(buf, localOffset, 30, `the header of ${name}`);
+
+      if (buf.readUInt32LE(localOffset) !== 0x04034b50) {
+        throw new Error(`Corrupt zip archive: no local header for ${name}`);
+      }
+
       const localNameLen = buf.readUInt16LE(localOffset + 26);
       const localExtraLen = buf.readUInt16LE(localOffset + 28);
       const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+      requireRange(buf, dataStart, compressedSize, `the data of ${name}`);
+
+      if (compressedSize > MAX_ENTRY_BYTES) {
+        throw new Error(`Zip entry ${name} is larger than ${MAX_ENTRY_BYTES} bytes`);
+      }
+
       const data = buf.subarray(dataStart, dataStart + compressedSize);
-      out[name] = method === 0 ? data.toString("utf8") : inflateRawSync(data).toString("utf8");
+
+      out[name] =
+        method === 0
+          ? data.toString("utf8")
+          : inflateRawSync(data, { maxOutputLength: MAX_ENTRY_BYTES }).toString("utf8");
     }
 
     ptr += 46 + nameLen + extraLen + commentLen;

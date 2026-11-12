@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { AniListRichEntry } from "../src/anilist";
 import {
   buildEntitiesForEntry as buildEntitiesForEntrySource,
+  defaultPas5OutName,
   hasUpstreamProvider,
   matchingBaseLibraryIds,
   migrateLibrarySources as migrateLibrarySourcesSource,
@@ -19,6 +20,7 @@ import {
   parsePas5 as parsePas5Source,
   pas5ArchiveFiles,
 } from "../src/pas5";
+import { readZipText } from "../src/pas5-zip";
 import type {
   LibraryManga,
   LibraryTab,
@@ -166,6 +168,45 @@ const runRegistryCreate = (flags: string[] = [], withBase = false) => {
     output: result.stdout,
   };
 };
+
+describe("pas5 create output file", () => {
+  it("refuses to write over the --base archive, before any request", () => {
+    const result = spawnSync(
+      "bun",
+      [
+        "-e",
+        `
+        import { BunServices } from '@effect/platform-bun';
+        import { Effect } from 'effect';
+        import { Command } from 'effect/cli';
+        import { makeRootCommand } from './src/cli';
+        for (const key of Object.keys(process.env)) if (key.startsWith('MANIFOLD_')) delete process.env[key];
+        process.env.MANIFOLD_TOKEN = 'test-token';
+        globalThis.fetch = async () => { throw new Error('Unexpected request'); };
+        try {
+          await Effect.runPromise(Command.runWith(makeRootCommand('test'),{version:'test'})(
+            ['pas5','create','--source','registry','--api-origin','https://example.test',
+             '--apply','--base','backups/device.pas5','--out','./backups/../backups/device.pas5']
+          ).pipe(Effect.provide(BunServices.layer)));
+        } catch (error) {
+          console.error(error.message);
+          process.exitCode = 1;
+        }
+        `,
+      ],
+      { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 20_000 },
+    );
+
+    expect(result.stderr).toContain("--out must differ from --base");
+    expect(result.status).toBe(1);
+  });
+
+  it("names the default file without colons", () => {
+    expect(defaultPas5OutName(new Date("2026-11-12T19:55:01.234Z"))).toBe(
+      "Paperback-Generated.2026-11-12.19-55-01.pas5",
+    );
+  });
+});
 
 describe("pas5 create registry scan", () => {
   it("hydrates only eligible new titles while preserving metadata and skip counts", () => {
@@ -940,6 +981,38 @@ describe("al2pas5 source attachments", () => {
     expect(
       matchingBaseLibraryIds(base, pas5EntryFromAniList(unrelated, undefined), undefined),
     ).toEqual([]);
+  });
+});
+
+describe("readZipText", () => {
+  const archive = (): Buffer => buildPas5Zip({ "a.json": '{"a":1}', "b.json": '{"b":2}' });
+
+  /** Offset of the first central directory record (signature PK\x01\x02). */
+  const centralStart = (buf: Buffer): number => buf.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+
+  it("reads back what buildZip wrote", () => {
+    expect(readZipText(archive())).toEqual({ "a.json": '{"a":1}', "b.json": '{"b":2}' });
+  });
+
+  it("names the entry whose local header offset is outside the file", () => {
+    const buf = archive();
+    buf.writeUInt32LE(0xffff_fff0, centralStart(buf) + 42);
+
+    expect(() => readZipText(buf)).toThrow("Corrupt zip archive: the header of a.json");
+  });
+
+  it("refuses an entry whose data would run past the end of the file", () => {
+    const buf = archive();
+    buf.writeUInt32LE(buf.length, centralStart(buf) + 20);
+
+    expect(() => readZipText(buf)).toThrow("Corrupt zip archive: the data of a.json");
+  });
+
+  it("refuses a local offset that does not point at a local header", () => {
+    const buf = archive();
+    buf.writeUInt32LE(3, centralStart(buf) + 42);
+
+    expect(() => readZipText(buf)).toThrow("Corrupt zip archive: no local header for a.json");
   });
 });
 
