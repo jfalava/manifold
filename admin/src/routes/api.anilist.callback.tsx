@@ -1,9 +1,11 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalTimers:off */
+/** @effect-diagnostics globalDate:off */
 import { Banner, Surface, Text } from "@cloudflare/kumo";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import { consumeAniListAuthorize } from "../lib/anilist-authorize";
 import { importAniListToken } from "../lib/registry";
 
 // The token lives in the URL fragment, which never reaches the server: render on the client only.
@@ -11,6 +13,9 @@ export const Route = createFileRoute("/api/anilist/callback")({
   ssr: false,
   component: AniListCallbackPage,
 });
+
+const NOT_STARTED_HERE =
+  "This tab did not start an AniList authorization in the last ten minutes, so the token was not imported. Use Credentials → Authorize, or paste the token there.";
 
 type Capture =
   | { readonly kind: "token"; readonly accessToken: string; readonly expiresIn?: number }
@@ -42,6 +47,12 @@ function readHash(): Capture {
 
   if (!accessToken) {
     return { kind: "empty" };
+  }
+
+  // A token nobody asked for from this tab is someone else's link: importing it
+  // would attach their AniList account to this registry.
+  if (!consumeAniListAuthorize(globalThis.sessionStorage, Date.now())) {
+    return { kind: "error", message: NOT_STARTED_HERE };
   }
 
   const expiresRaw = params.get("expires_in");
