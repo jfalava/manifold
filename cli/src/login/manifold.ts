@@ -178,7 +178,8 @@ const requestManifoldSessionEffect = (
 
 /**
  * RFC 8628 §3.5 polling: wait `interval` between polls, add 5 s on
- * `slow_down`, keep going on `authorization_pending`, stop on anything else.
+ * `slow_down`, keep going on `authorization_pending` or a failed request, stop
+ * on anything else.
  */
 const pollManifoldDeviceSessionEffect = (
   origin: string,
@@ -191,10 +192,19 @@ const pollManifoldDeviceSessionEffect = (
     while (epochMillisNow() < deadline) {
       yield* sleep(intervalMs);
 
-      const response = yield* postForm(origin, "/v1/oauth/token", {
-        grant_type: DEVICE_CODE_GRANT_TYPE,
-        device_code: grant.deviceCode,
-      });
+      // A dropped connection or timeout says nothing about the grant: poll again until it expires.
+      const response = Option.getOrUndefined(
+        yield* Effect.option(
+          postForm(origin, "/v1/oauth/token", {
+            grant_type: DEVICE_CODE_GRANT_TYPE,
+            device_code: grant.deviceCode,
+          }),
+        ),
+      );
+
+      if (!response) {
+        continue;
+      }
 
       if (response.ok) {
         return yield* decodeSessionResponseEffect(response, "device", origin);

@@ -55,7 +55,7 @@ describe("Manifold CLI device login", () => {
   });
 
   /** Runs the poller under fake timers, recording the fake clock at each token request. */
-  const pollWith = async (answers: readonly Response[]) => {
+  const pollWith = async (answers: readonly (Response | Error)[]) => {
     vi.useFakeTimers();
     const start = Date.now();
     const pollTimes: number[] = [];
@@ -69,7 +69,14 @@ describe("Manifold CLI device login", () => {
       expect(form.get("client_id")).toBe(MANIFOLD_CLI_OAUTH_CLIENT_ID);
       pollTimes.push(Date.now() - start);
 
-      return answers[index++] ?? Response.json({ error: "authorization_pending" }, { status: 400 });
+      const answer =
+        answers[index++] ?? Response.json({ error: "authorization_pending" }, { status: 400 });
+
+      if (answer instanceof Error) {
+        throw answer;
+      }
+
+      return answer;
     });
 
     const result = pollManifoldDeviceSession(origin, grant).then(
@@ -109,6 +116,20 @@ describe("Manifold CLI device login", () => {
     });
     // 5 s, 5 s, then 10 s after slow_down for the rest.
     expect(pollTimes).toEqual([5000, 10_000, 20_000, 30_000]);
+  });
+
+  it("keeps polling after a failed token request", async () => {
+    const { outcome, pollTimes } = await pollWith([
+      new TypeError("fetch failed"),
+      Response.json({
+        access_token: "mf_access_cli",
+        refresh_token: "mf_refresh_cli",
+        expires_in: 900,
+      }),
+    ]);
+
+    expect(outcome).toMatchObject({ ok: true, session: { accessToken: "mf_access_cli" } });
+    expect(pollTimes).toEqual([5000, 10_000]);
   });
 
   it("stops when the browser denies the sign-in", async () => {

@@ -51,6 +51,19 @@ export const terminalText = (text: string, limit = 192): string => {
   return result;
 };
 
+/**
+ * Retained output mixes our own styling with titles and provider text. Keep
+ * line breaks, tabs, colour (SGR) sequences and the hyperlinks `terminalHyperlink`
+ * writes; drop every other control character, so remote text cannot move the
+ * cursor, clear the screen, retitle the window or write the clipboard.
+ */
+export const retainedOutput = (text: string): string =>
+  text.replace(
+    // oxlint-disable-next-line no-control-regex -- Sanitize text that reaches the terminal.
+    /\u001b\[[0-9;]*m|\u001b\]8;;[^\u0000-\u001f\u007f-\u009f]*\u0007|[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g,
+    (match) => (match.length > 1 ? match : ""),
+  );
+
 export const createTerminalSession = (
   options: TerminalSessionOptions = {},
 ): TerminalSessionControls => {

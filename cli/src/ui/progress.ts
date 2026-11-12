@@ -7,7 +7,7 @@ import pc from "picocolors";
 import stringWidth from "string-width";
 
 import { envString, epochMillisNow } from "@/effect-kit";
-import { terminalSession, terminalText } from "@/terminal-alert";
+import { retainedOutput, terminalSession, terminalText } from "@/terminal-alert";
 
 export interface ProgressOptions {
   stream?: NodeJS.WriteStream;
@@ -24,7 +24,7 @@ export const finishProgress = (): void => active?.finish();
 export const writeOutput = (message: string, stream: NodeJS.WriteStream = process.stdout): void => {
   const current = active;
   current?.pause();
-  stream.write(message);
+  stream.write(retainedOutput(message));
   current?.resume();
 };
 

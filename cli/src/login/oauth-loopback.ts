@@ -339,6 +339,39 @@ type WaitOptions = {
   readonly hint: string | undefined;
 };
 
+/**
+ * Length of the escape sequence at the start of `buffer` (which begins with
+ * ESC), or 0 while it is still incomplete. Covers CSI (`ESC [ … final`), SS3
+ * (`ESC O x`) and Alt+key (`ESC x`), so arrow and function keys are dropped
+ * whole instead of stalling the reader or leaking their tail as keybinds.
+ */
+export const escapeSequenceLength = (buffer: string): number => {
+  if (buffer.length < 2) {
+    return 0;
+  }
+
+  const kind = buffer.charAt(1);
+
+  if (kind === "O") {
+    return buffer.length < 3 ? 0 : 3;
+  }
+
+  if (kind !== "[") {
+    return 2;
+  }
+
+  for (let index = 2; index < buffer.length; index++) {
+    const code = buffer.charCodeAt(index);
+
+    // Parameter and intermediate bytes continue the sequence; anything else ends it.
+    if (code < 0x20 || code > 0x3f) {
+      return code >= 0x40 && code <= 0x7e ? index + 1 : index;
+    }
+  }
+
+  return 0;
+};
+
 const waitForPasteOrKey = async (
   rawStdin: RawStdin,
   options: WaitOptions,
@@ -468,18 +501,15 @@ const waitForPasteOrKey = async (
           continue;
         }
 
-        // Incomplete CSI / OSC escape — wait for more bytes.
+        // Drop arrow keys and other escape sequences; wait while one is incomplete.
         if (buffer.startsWith("\u001b")) {
-          if (buffer.length === 1) {
+          const length = escapeSequenceLength(buffer);
+
+          if (length === 0) {
             return;
           }
 
-          // Drop unknown short escapes; keep waiting if it might still grow into paste start.
-          if (BRACKETED_PASTE_START.startsWith(buffer) || buffer.length < 6) {
-            return;
-          }
-
-          buffer = buffer.slice(1);
+          buffer = buffer.slice(length);
           continue;
         }
 
@@ -515,6 +545,14 @@ const waitForPasteOrKey = async (
       }
 
       const text = chunk.toString("utf8");
+
+      // Ctrl+C always cancels, even behind a half-read escape sequence or paste.
+      if (text.includes("\u0003")) {
+        terminalSession()?.cancel();
+        fail(cliError("Login cancelled."));
+
+        return;
+      }
 
       // A lone ESC chunk is the Esc key; escape sequences arrive with their tail.
       if (text === "\u001b" && buffer.length === 0 && !inBracketedPaste) {
