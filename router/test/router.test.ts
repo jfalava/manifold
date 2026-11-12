@@ -163,3 +163,29 @@ test("/device approval page forwards GET and POST to the API device route", asyn
   ]);
   expect(calls.DOCS_WORKER).toEqual([]);
 });
+
+test("cover proxy does not long-cache an upstream error", async () => {
+  const realFetch = globalThis.fetch;
+  const cover = "https://df.example/mangadex-cover/0123456789abcdef/0123456789abcdef.jpg.256.jpg";
+
+  const cacheControlFor = async (status: number) => {
+    globalThis.fetch = Object.assign(async () => new Response("body", { status }), {
+      preconnect: realFetch.preconnect,
+    });
+
+    const response = await router.request(cover, {}, makeEnv().env);
+
+    return [response.status, response.headers.get("cache-control")];
+  };
+
+  try {
+    expect(await cacheControlFor(200)).toEqual([
+      200,
+      "public, max-age=604800, stale-while-revalidate=86400",
+    ]);
+    // A cached 503 would otherwise pin a broken cover in the browser for a week.
+    expect(await cacheControlFor(503)).toEqual([503, "no-store"]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

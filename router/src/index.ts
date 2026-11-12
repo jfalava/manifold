@@ -47,7 +47,11 @@ const mangadexCover: Handler<App> = async (c) => {
 
   const headers = new Headers();
   headers.set("content-type", upstream.headers.get("content-type") ?? "image/jpeg");
-  headers.set("cache-control", "public, max-age=604800, stale-while-revalidate=86400");
+  // Only a real cover is cacheable; a 429/5xx must not stick in the browser for a week.
+  headers.set(
+    "cache-control",
+    upstream.ok ? "public, max-age=604800, stale-while-revalidate=86400" : "no-store",
+  );
 
   return new Response(upstream.body, { status: upstream.status, headers });
 };
