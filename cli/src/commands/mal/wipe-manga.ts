@@ -46,9 +46,12 @@ export const wipeMalMangaCommand = Command.make("manga", {
 
         openFrame("mal wipe manga");
 
-        if (resolveValue(apiToken, "MANIFOLD_TOKEN")) {
+        // A keychain login is as good as MANIFOLD_TOKEN for this check.
+        const config = await apiConfig(apiOrigin, apiToken).catch(() => undefined);
+
+        if (config) {
           const connection = await apiCall(
-            await apiConfig(apiOrigin, apiToken),
+            config,
             "/v1/auth/mal",
             "GET",
             undefined,
@@ -68,7 +71,7 @@ export const wipeMalMangaCommand = Command.make("manga", {
           }
         } else {
           frameDetail(
-            "API backup connection not checked: MANIFOLD_TOKEN is unset. Verify other writers are paused yourself.",
+            "API backup connection not checked: no Manifold login or MANIFOLD_TOKEN. Verify other writers are paused yourself.",
           );
         }
 

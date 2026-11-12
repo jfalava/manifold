@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 // Real Effect CLI path with mocked fetch — no live AniList/MAL credentials.
-const runImport = (flags: string[], connected: boolean) =>
+const runImport = (flags: string[], connected: boolean, auth: "token" | "session" = "token") =>
   spawnSync(
     "bun",
     [
@@ -15,7 +15,11 @@ const runImport = (flags: string[], connected: boolean) =>
   for (const key of Object.keys(process.env)) {
     if (key.startsWith("MANIFOLD_")) delete process.env[key];
   }
-  process.env.MANIFOLD_TOKEN = "fake-api-token";
+  ${
+    auth === "token"
+      ? 'process.env.MANIFOLD_TOKEN = "fake-api-token";'
+      : 'Bun.secrets = { get: async ({ name }) => name === "manifold-session" ? JSON.stringify({ accessToken: "fake-session-token", refreshToken: "fake-refresh-token", expiresAt: Date.now() + 3_600_000 }) : null };'
+  }
   process.env.MANIFOLD_ANILIST_TOKEN = "fake-anilist-token";
   process.env.MANIFOLD_MAL_TOKEN = "fake-mal-token";
   process.env.MANIFOLD_MAL_CLIENT_ID = "fake-mal-client";
@@ -96,6 +100,13 @@ describe("anilist-to-mal CLI safeguards", () => {
 
   it("refuses a still-connected backup even with all apply flags", () => {
     const result = runImport(["--apply", "--backup-paused"], true);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("still connected to MAL");
+    expect(result.stdout).not.toContain("MOCK PATCH");
+  });
+
+  it("checks the backup connection with a keychain login too", () => {
+    const result = runImport(["--apply", "--backup-paused"], true, "session");
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("still connected to MAL");
     expect(result.stdout).not.toContain("MOCK PATCH");

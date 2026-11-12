@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 // Run the real command with Bun services, but never use real credentials or HTTP.
-const runWipe = (flags: string[], connected: boolean) =>
+const runWipe = (flags: string[], connected: boolean, auth: "token" | "session" = "token") =>
   spawnSync(
     "bun",
     [
@@ -15,7 +15,11 @@ const runWipe = (flags: string[], connected: boolean) =>
   for (const key of Object.keys(process.env)) {
     if (key.startsWith("MANIFOLD_")) delete process.env[key];
   }
-  process.env.MANIFOLD_TOKEN = "fake-api-token";
+  ${
+    auth === "token"
+      ? 'process.env.MANIFOLD_TOKEN = "fake-api-token";'
+      : 'Bun.secrets = { get: async ({ name }) => name === "manifold-session" ? JSON.stringify({ accessToken: "fake-session-token", refreshToken: "fake-refresh-token", expiresAt: Date.now() + 3_600_000 }) : null };'
+  }
   process.env.MANIFOLD_MAL_TOKEN = "fake-mal-token";
   let deleted = false;
   globalThis.fetch = async (input, init) => {
@@ -66,6 +70,13 @@ describe("MAL CLI safeguards", () => {
     expect(result.stderr).toContain("still connected to MAL");
     expect(result.stdout).not.toContain("MOCK DELETE");
     expect(result.stdout).not.toContain("/v2/");
+  });
+
+  it("checks the backup connection with a keychain login too", () => {
+    const result = runWipe(["--apply", "--backup-paused"], true, "session");
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("still connected to MAL");
+    expect(result.stdout).not.toContain("MOCK DELETE");
   });
 
   it("applies without an interactive prompt and verifies the result", () => {
