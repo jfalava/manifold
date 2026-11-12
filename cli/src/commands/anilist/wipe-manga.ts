@@ -166,6 +166,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
           interface DeleteCtx extends RunContext {}
 
           const deleteTasks: Parameters<typeof createRun<DeleteCtx>>[0] = [];
+          let failed = 0;
 
           if (scan.entries.length > 0) {
             deleteTasks.push({
@@ -177,6 +178,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
                   makePhaseReporter(task),
                 );
 
+                failed += result.failed;
                 makePhaseReporter(task).note(
                   `Entries deleted=${result.ok} failed=${result.failed}`,
                 );
@@ -196,6 +198,7 @@ export const wipeAlMangaCommand = Command.make("manga", {
                   makePhaseReporter(task),
                 );
 
+                failed += result.failed;
                 makePhaseReporter(task).note(
                   `Activities deleted=${result.ok} failed=${result.failed} skipped=${result.skipped}`,
                 );
@@ -207,11 +210,18 @@ export const wipeAlMangaCommand = Command.make("manga", {
 
           try {
             await run.run();
-            closeFrame("Wipe complete.");
           } catch (error) {
             abortFrame();
             throw error;
           }
+
+          if (failed > 0) {
+            throw new Error(
+              `Wipe incomplete: ${failed} deletes failed. Run the command again to retry them.`,
+            );
+          }
+
+          closeFrame("Wipe complete.");
         },
         catch: (cause) => cliError(errorMessage(cause)),
       });

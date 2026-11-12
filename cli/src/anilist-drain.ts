@@ -67,7 +67,14 @@ const errorText = (cause: unknown): string => {
 
 export const aniListFetchTransport: AniListTransport = {
   post: async ({ url, headers, body }) => {
-    const response = await platformFetch(url, { method: "POST", headers, body });
+    // The looping drain is an unattended service: a stalled connection must
+    // fail the pass instead of hanging it.
+    const response = await platformFetch(url, {
+      method: "POST",
+      headers,
+      body,
+      signal: AbortSignal.timeout(30_000),
+    });
 
     return {
       status: response.status,

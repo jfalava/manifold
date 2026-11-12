@@ -24,6 +24,7 @@ import {
 /** AniList's degraded limit is ~30 req/min; 2.5 s spacing keeps every CLI caller at ≤24 req/min. */
 const REQUEST_INTERVAL_MS = 2_500;
 const MAX_RATE_LIMIT_RETRIES = 5;
+const REQUEST_TIMEOUT_MS = 30_000;
 
 let lastRequestAt = 0;
 
@@ -60,13 +61,18 @@ export const aniListGraphqlEffect = (
           "user-agent": manifoldUserAgent(surface),
         },
         body: toJsonText({ query, variables }),
-        ...(signal !== undefined && { signal }),
+        // A stalled connection fails the request instead of hanging the command.
+        signal:
+          signal === undefined
+            ? AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+            : AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
       }),
     ).pipe(Effect.mapError((cause) => cliError(`AniList fetch failed: ${cause.message}`)));
 
     if (response.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
-      const retryAfter = Number(response.headers.get("retry-after") ?? "5");
-      yield* sleep(Math.max(retryAfter, 5) * 1000);
+      // A missing or non-numeric header waits the minimum instead of NaN.
+      const retryAfter = Number(response.headers.get("retry-after"));
+      yield* sleep((Number.isFinite(retryAfter) ? Math.max(retryAfter, 5) : 5) * 1000);
 
       return yield* aniListGraphqlEffect(surface, token, query, variables, signal, attempt + 1);
     }

@@ -24,6 +24,7 @@ import { fetchAniListMangaEntries, type AniListEntry } from "@/anilist";
 import {
   drainAniListOpsPassEffect,
   type DrainApiClient,
+  type DrainPassSummary,
   type PendingAniListOp,
 } from "@/anilist-drain";
 import { resolveAniListToken } from "@/login/anilist";
@@ -162,7 +163,9 @@ const apiCallEffect = <A>(
         const response = yield* fromPromise(() =>
           platformFetch(`${config.origin}${path}`, {
             method,
-            signal,
+            // A stalled connection must fail instead of hanging a long sweep or
+            // the drain service. Two minutes leaves room for the slowest routes.
+            signal: signal ?? AbortSignal.timeout(120_000),
             headers: {
               accept: "application/json",
               authorization: `Bearer ${token}`,
@@ -549,7 +552,7 @@ export const opsCommand = Command.make("ops").pipe(
           });
 
           return yield* Effect.gen(function* () {
-            const onePass = (): Effect.Effect<void, CliEffectError> =>
+            const onePass = (): Effect.Effect<DrainPassSummary, CliEffectError> =>
               Effect.gen(function* () {
                 progress.detail("Fetching pending AniList operations");
                 const summary = yield* drainAniListOpsPassEffect(api, token, { limit });
@@ -568,10 +571,21 @@ export const opsCommand = Command.make("ops").pipe(
                     `pass ${passes}: fetched=${summary.fetched} ok=${summary.ok} failed=${summary.failed} reported=${summary.reported}`,
                   );
                 }
+
+                return summary;
               });
 
             if (once) {
-              yield* onePass();
+              const summary = yield* onePass();
+
+              // A failed op is retried by a later pass, but this run did not
+              // apply it: a script or timer must not read that as success.
+              if (summary.failed > 0) {
+                return yield* cliError(
+                  `${summary.failed} of ${summary.fetched} AniList operations failed. Each is retried by later passes until it is blocked; see ops pending.`,
+                );
+              }
+
               closeFrame(`drain-anilist once complete (${passes} pass)`);
 
               return;
