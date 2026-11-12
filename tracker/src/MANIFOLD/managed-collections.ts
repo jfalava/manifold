@@ -446,6 +446,9 @@ const commitManagedCollectionChangesEffect = (
       // An addition for a pending-nuked title means the deletion was one half
       // of a move — cancel the nuke.
       delete pending[resolved.anilistId];
+      // Persist the cancellation before the AniList write: if that write fails,
+      // the stored nuke would otherwise fire and delete a title that only moved.
+      writePendingNukes(pending);
       const result = yield* fromPromise(() => saveAniListStatus(token, resolved.anilistId, status));
       rememberListEntryId(resolved.anilistId, result.mediaListEntryId);
       yield* Effect.logInfo(
@@ -599,8 +602,13 @@ const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
           }
 
           if (listEntryId !== undefined) {
-            yield* fromPromise(() => deleteAniListEntry(token, listEntryId));
+            const deleted = yield* fromPromise(() => deleteAniListEntry(token, listEntryId));
+            // Confirmed or not, drop the cached id so a retry refetches a fresh one.
             mediaListEntryIds.delete(anilistId);
+
+            if (!deleted) {
+              return yield* trackerError(`AniList did not confirm the delete of ${anilistId}`);
+            }
           } else {
             yield* Effect.logInfo(`[manifold] nuke skipped, unlisted:${anilistId}`);
           }

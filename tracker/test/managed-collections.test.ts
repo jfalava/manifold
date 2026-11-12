@@ -375,4 +375,55 @@ describe("managed collection registry reconciliation", () => {
     expect(JSON.parse(String(readAppState(PENDING_NUKES_KEY)))).toEqual({});
     expect(readAppState(PENDING_RECONCILES_KEY)).toBe("{}");
   });
+
+  it("keeps a move's nuke cancelled when the AniList status write fails", async () => {
+    const quietAt = Date.now() - 200_000;
+    applicationState.set(
+      PENDING_NUKES_KEY,
+      JSON.stringify({
+        A1: { entryId: "entry-1", anilistId: "A1", collectionId: "reading", at: quietAt },
+      }),
+    );
+    mocks.api = makeApi((entryId) => Promise.resolve(listState(entryId)));
+    mocks.saveAniListStatus.mockRejectedValue(new Error("AniList kept rate limiting"));
+
+    await expect(
+      commitManagedCollectionChanges({
+        collection: managedCollection(4),
+        additions: [sourceManga("entry-1", "A1")],
+        deletions: [],
+      }),
+    ).rejects.toThrow("AniList kept rate limiting");
+
+    // Otherwise the next flush deletes the title the user only moved.
+    expect(JSON.parse(String(readAppState(PENDING_NUKES_KEY)))).toEqual({});
+  });
+
+  it("keeps a nuke pending when AniList does not confirm the delete", async () => {
+    const quietAt = Date.now() - 200_000;
+    applicationState.set(
+      PENDING_NUKES_KEY,
+      JSON.stringify({
+        A1: { entryId: "entry-1", anilistId: "A1", collectionId: "reading", at: quietAt },
+      }),
+    );
+    mocks.fetchAniListLibrary.mockResolvedValue([] satisfies AniListLibraryItem[]);
+    mocks.fetchAniListMediaListEntryIds.mockResolvedValue({ A1: 42 });
+    mocks.deleteAniListEntry.mockResolvedValue(false);
+
+    const nukeCalls: string[] = [];
+    mocks.api = makeApi(
+      () => {
+        throw new Error("no setListState expected");
+      },
+      async (entryId) => {
+        nukeCalls.push(entryId);
+      },
+    );
+
+    expect(await flushPendingNukes()).toBe(0);
+    // The registry row must not be tombstoned while the AniList entry survives.
+    expect(nukeCalls).toEqual([]);
+    expect(readStoredObject(PENDING_NUKES_KEY)["A1"]).toMatchObject({ entryId: "entry-1" });
+  });
 });
