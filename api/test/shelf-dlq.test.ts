@@ -35,6 +35,29 @@ export class TestSync extends ManifoldSync {
   async retryAll() {
     return this.retryFailedSync();
   }
+  async seedOp(opId, state) {
+    this.ctx.storage.sql.exec(
+      "INSERT INTO sync_ops (op_id, target, kind, origin, payload, state, attempts, created_at, updated_at) VALUES (?, 'mangadex', 'mangadex.read', 'device', '{}', ?, 0, 1, 1)",
+      opId, state,
+    );
+  }
+  async seedTracked(entryId) {
+    this.ctx.storage.sql.exec(
+      "INSERT INTO canonical_entries (id, provider, provider_id, title, created_at, updated_at) VALUES (?, 'local', ?, 'Shelf DLQ', 1, 1) ON CONFLICT(id) DO NOTHING",
+      entryId, entryId,
+    );
+    this.ctx.storage.sql.exec(
+      "INSERT INTO provider_links (entry_id, provider, external_id, title, source_name, updated_at) VALUES (?, 'mangadex', ?, 'Shelf DLQ', NULL, 1)",
+      entryId, 'md-' + entryId,
+    );
+    this.ctx.storage.sql.exec(
+      "INSERT INTO progress_state (entry_id, chapter_key, chapter_number, volume_number, provider, source_chapter_id, read_at, version) VALUES (?, 'c1', 1, NULL, 'mangadex', 'ch', 1, 1)",
+      entryId,
+    );
+  }
+  async backfill() {
+    return this.backfillMangaDexShelf();
+  }
   async scheduleState() {
     await this.scheduleSync();
     return this.ctx.storage.getAlarm();
@@ -48,6 +71,9 @@ export default { async fetch(request, env) {
   if (input.op === 'read') { return Response.json({ rows: await sync.readShelf() }); }
   if (input.op === 'drain') { await sync.drainShelf(); return Response.json({ ok: true }); }
   if (input.op === 'retry') { return Response.json(await sync.retryAll()); }
+  if (input.op === 'seed-op') { await sync.seedOp(input.opId, input.state); return Response.json({ ok: true }); }
+  if (input.op === 'seed-tracked') { await sync.seedTracked(input.entryId); return Response.json({ ok: true }); }
+  if (input.op === 'backfill') { return Response.json(await sync.backfill()); }
   if (input.op === 'schedule') { return Response.json({ alarm: await sync.scheduleState() }); }
   return Response.json({ ok: false }, { status: 400 });
 } };`;
@@ -60,6 +86,7 @@ const ShelfRow = Schema.Struct({
 
 const ReadResponse = Schema.Struct({ rows: Schema.Array(ShelfRow) });
 const RetryResponse = Schema.Struct({ retried: Schema.Finite });
+const BackfillResponse = Schema.Struct({ enqueued: Schema.Finite });
 const ScheduleResponse = Schema.Struct({ alarm: Schema.NullOr(Schema.Finite) });
 
 type ShelfRowValue = Schema.Schema.Type<typeof ShelfRow>;
@@ -71,6 +98,8 @@ interface FixtureBody {
   readonly attempts?: number;
   readonly lastError?: string | null;
   readonly message?: string;
+  readonly opId?: string;
+  readonly state?: string;
 }
 
 describe("MangaDex shelf DLQ", () => {
@@ -187,6 +216,43 @@ describe("MangaDex shelf DLQ", () => {
     expect(await readRows(nonce)).toEqual([
       { entry_id: "entry-rearm", attempts: 0, last_error: null },
     ]);
+  });
+
+  it("counts only the rows a retry re-armed", async () => {
+    const nonce = "shelf-retry-count";
+    await seedShelf(nonce, "entry-blocked", 5, "boom");
+    await seedShelf(nonce, "entry-pending", 1, null);
+    expect(
+      (await dispatch({ op: "seed-op", nonce, opId: "op-blocked", state: "blocked" })).status,
+    ).toBe(200);
+
+    for (const opId of ["op-a", "op-b", "op-c"]) {
+      expect((await dispatch({ op: "seed-op", nonce, opId, state: "pending" })).status).toBe(200);
+    }
+
+    expect(await retryAll(nonce)).toBe(2);
+    expect(await retryAll(nonce)).toBe(0);
+  });
+
+  it("reports how many entries a shelf backfill enqueued", async () => {
+    const nonce = "shelf-backfill";
+
+    for (const entryId of ["entry-a", "entry-b", "entry-c"]) {
+      expect((await dispatch({ op: "seed-tracked", nonce, entryId })).status).toBe(200);
+    }
+
+    await seedShelf(nonce, "entry-a", 0, null);
+
+    const backfill = async (): Promise<number> => {
+      const response = await dispatch({ op: "backfill", nonce });
+      expect(response.status).toBe(200);
+
+      return Schema.decodeUnknownSync(BackfillResponse)(await response.json()).enqueued;
+    };
+
+    expect(await backfill()).toBe(2);
+    expect(await readRows(nonce)).toHaveLength(3);
+    expect(await backfill()).toBe(0);
   });
 
   it("leaves blocked rows alone on drain and does not schedule for them", async () => {

@@ -55,6 +55,15 @@ export class TestSync extends ManifoldSync {
   async summary() {
     return this.opsSummary();
   }
+  async seedBacklog() {
+    const insert = (opId, state, lastError, createdAt, updatedAt) => this.ctx.storage.sql.exec(
+      "INSERT INTO sync_ops (op_id, target, kind, origin, payload, state, attempts, last_error, created_at, updated_at) VALUES (?, 'mal', 'mal.status', 'device', '{}', ?, 0, ?, ?, ?)",
+      opId, state, lastError, createdAt, updatedAt,
+    );
+    // The oldest rows are blocked; the earliest-inserted one failed last.
+    for (let i = 1; i <= 30; i++) insert('blocked-' + i, 'blocked', 'boom-' + i, i, 1000 - i);
+    for (let i = 31; i <= 280; i++) insert('pending-' + i, 'pending', null, i, i);
+  }
 }
 export default { async fetch(request, env) {
   const input = await request.json();
@@ -66,6 +75,7 @@ export default { async fetch(request, env) {
   if (input.op === 'read-errors') { return Response.json({ ops: await sync.readErrorOps() }); }
   if (input.op === 'complete') { return Response.json(await sync.complete(input.results)); }
   if (input.op === 'summary') { return Response.json(await sync.summary()); }
+  if (input.op === 'seed-backlog') { await sync.seedBacklog(); return Response.json({ ok: true }); }
   return Response.json({ ok: false }, { status: 400 });
 } };`;
 
@@ -216,5 +226,15 @@ describe("sync outbox retention and summary", () => {
     expect(summary.shelfPending).toBe(1);
     expect(summary.shelfBlocked).toBe(1);
     expect(summary.shelfLastBlockedError).toBe("shelf-boom");
+  });
+
+  it("summarizes every op, not only the newest ones", async () => {
+    const nonce = "retention-backlog";
+    expect((await dispatch({ op: "seed-backlog", nonce })).status).toBe(200);
+    const summary = await summarize(nonce);
+    expect(summary.total).toBe(280);
+    expect(summary.states).toEqual({ blocked: 30, pending: 250 });
+    expect(summary.oldestPendingAt).toBe(31);
+    expect(summary.lastFailedError).toBe("boom-1");
   });
 });

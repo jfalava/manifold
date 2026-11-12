@@ -424,7 +424,7 @@ export const opsCommand = Command.make("ops").pipe(
           // the summary endpoint.
           const { summary } = yield* apiCallEffect(
             config,
-            "/v1/ops/summary?limit=200",
+            "/v1/ops/summary",
             "GET",
             undefined,
             OpsSummaryResponse,

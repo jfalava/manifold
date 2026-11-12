@@ -48,9 +48,7 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
 
       if (path.length === 3 && path[2] === "summary" && request.method === "GET") {
         return jsonEncoded(OpsSummaryResponse, {
-          summary: yield* tryPromise(() =>
-            sync.opsSummary(boundedInteger(url.searchParams.get("limit"), 200, 1, 500)),
-          ),
+          summary: yield* tryPromise(() => sync.opsSummary()),
         });
       }
 

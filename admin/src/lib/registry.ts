@@ -424,9 +424,7 @@ const libraryOverviewProgram = cachedJsonProgram(
         ),
         capture(
           "ops",
-          call("/v1/ops/summary?limit=200", OpsSummaryResponse).pipe(
-            Effect.map((body) => body.summary),
-          ),
+          call("/v1/ops/summary", OpsSummaryResponse).pipe(Effect.map((body) => body.summary)),
         ),
         capture(
           "mangadex library",

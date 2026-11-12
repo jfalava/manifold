@@ -394,8 +394,8 @@ export class ManifoldSync extends DurableObject<Env> {
     return listOps(this.host(), state, target, limit);
   }
 
-  async opsSummary(limit = 200): Promise<OpsSummary> {
-    return opsSummary(this.host(), limit);
+  async opsSummary(): Promise<OpsSummary> {
+    return opsSummary(this.host());
   }
 
   async backfillMangaDexShelf(): Promise<{ enqueued: number }> {

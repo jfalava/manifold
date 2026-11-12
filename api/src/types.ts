@@ -121,7 +121,7 @@ export interface ManifoldSyncStub {
   completeOps(input: CompleteOpsInput): Promise<{ updated: number }>;
   retryOp(opId: string): Promise<SyncOp | undefined>;
   listOps(state?: string, target?: string, limit?: number): Promise<readonly SyncOp[]>;
-  opsSummary(limit?: number): Promise<OpsSummary>;
+  opsSummary(): Promise<OpsSummary>;
   backupRegistry(): Promise<RegistryBackupMetadata>;
   listBackups(): Promise<readonly RegistryBackupMetadata[]>;
   restoreBackup(key: string): Promise<RegistryBackupMetadata>;
