@@ -7,7 +7,6 @@ import { apiCall, apiConfig, listRegistryRows } from "@/commands/toolbox";
 import { coverageComparisons, coverageDifference } from "@/chapter-coverage";
 import {
   cliError,
-  jsonBodyString,
   validateNonNegativeLimit,
   validateDelayMs,
   validateMaxPages,
@@ -338,7 +337,13 @@ export const xcomicPrefillCommand = Command.make("xcomic", {
             } finally {
               journal.close();
               closeFrame(
-                `${failure ? "Stopped" : counts.errors || counts.conflicts ? "Completed with errors" : apply ? "Applied" : "Dry run complete"}: ${jsonBodyString(counts)}. Report: ${path}`,
+                `${failure ? "Stopped" : counts.errors || counts.conflicts ? "Completed with errors" : apply ? "Applied" : "Dry run complete"}: ${Object.entries(
+                  counts,
+                )
+                  .map(([name, count]) => `${count} ${name}`)
+                  .join(
+                    "; ",
+                  )}\nReport: ${path}${apply && (failure || counts.errors + counts.conflicts > 0) ? "\nSuccessful links remain saved." : ""}`,
                 failure !== undefined || counts.errors + counts.conflicts + counts.blocked > 0,
               );
             }
