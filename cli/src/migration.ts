@@ -134,21 +134,35 @@ interface TitleMatch {
   readonly method: MatchedEntry["matchMethod"];
 }
 
-const toMatch = (
-  manga: { id: string; title: string },
+/**
+ * Picks the search result for a normalized AniList title. An exact title wins
+ * wherever it sits in the results. A longer title that only starts with the
+ * target is accepted when it is the sole such result, since "Berserk" must not
+ * resolve to "Berserk of Gluttony". An empty target (a title made only of
+ * symbols) is a prefix of everything, so it matches nothing.
+ */
+export const selectTitleMatch = (
+  results: readonly { readonly id: string; readonly title: string }[],
   normalizedTarget: string,
 ): TitleMatch | undefined => {
-  const candidates = manga.title ? [normalizeTitle(manga.title)] : [];
-
-  if (candidates.includes(normalizedTarget)) {
-    return { manga, method: "title-exact" };
+  if (normalizedTarget === "") {
+    return undefined;
   }
 
-  if (candidates.some((candidate) => candidate.startsWith(normalizedTarget))) {
-    return { manga, method: "title-prefix" };
+  const titled = results.flatMap(({ id, title }) =>
+    title ? [{ manga: { id, title }, normalized: normalizeTitle(title) }] : [],
+  );
+
+  const exact = titled.find((candidate) => candidate.normalized === normalizedTarget);
+
+  if (exact) {
+    return { manga: exact.manga, method: "title-exact" };
   }
 
-  return undefined;
+  const prefixed = titled.filter((candidate) => candidate.normalized.startsWith(normalizedTarget));
+  const [only] = prefixed;
+
+  return only && prefixed.length === 1 ? { manga: only.manga, method: "title-prefix" } : undefined;
 };
 
 const matchMangaDexEffect = (
@@ -167,9 +181,7 @@ const matchMangaDexEffect = (
       return { manga: { id: directHit.id, title: directHit.title }, method: "links-al" as const };
     }
 
-    const titleHit = results
-      .map((manga) => toMatch({ id: manga.id, title: manga.title }, normalized))
-      .find((hit): hit is TitleMatch => hit !== undefined);
+    const titleHit = selectTitleMatch(results, normalized);
 
     if (titleHit) {
       return titleHit;
@@ -191,9 +203,7 @@ const matchMangaDexEffect = (
         };
       }
 
-      const retryHit = retry
-        .map((manga) => toMatch({ id: manga.id, title: manga.title }, normalized))
-        .find((hit): hit is TitleMatch => hit !== undefined);
+      const retryHit = selectTitleMatch(retry, normalized);
 
       if (retryHit) {
         return retryHit;
@@ -233,28 +243,6 @@ const chapterIdsUpToEffect = (
 
     return ids;
   });
-
-/** Promise facade for callers that already hold a Promise-based chapter getter. */
-export const chapterIdsUpTo = (
-  client: { getChapters: (mangaId: string) => Promise<readonly MangaDexChapter[]> },
-  mangaId: string,
-  progress: number,
-): Promise<string[]> =>
-  runHost(
-    chapterIdsUpToEffect(
-      (id) =>
-        fromPromise(() => client.getChapters(id)).pipe(
-          Effect.mapError(
-            (cause) =>
-              new MangaDexSourceError({
-                message: cause instanceof Error ? cause.message : errorMessage(cause),
-              }),
-          ),
-        ),
-      mangaId,
-      progress,
-    ),
-  );
 
 /**
  * Runs one migration pass: fetches the AniList manga list, matches every
