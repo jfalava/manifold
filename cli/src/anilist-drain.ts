@@ -122,7 +122,15 @@ const executeOpEffect = (
       }
 
       case "anilist.delete": {
-        const listEntryId = parsed.mediaListEntryId ?? mediaListEntryIds?.[parsed.anilistId];
+        if (mediaListEntryIds !== undefined && mediaListEntryIds[parsed.anilistId] === undefined) {
+          // The lookup completed and the title is absent, so the desired state
+          // is already true. This also makes a replay safe after the delete
+          // was applied but its completion acknowledgement was lost.
+          return undefined;
+        }
+
+        // The payload id can be stale; prefer the id AniList reports now.
+        const listEntryId = mediaListEntryIds?.[parsed.anilistId] ?? parsed.mediaListEntryId;
 
         if (listEntryId === undefined) {
           return yield* cliError(`op ${parsed.opId}: no mediaListEntryId for ${parsed.anilistId}`);
@@ -161,9 +169,7 @@ export const drainAniListOpsPassEffect = (
       return { fetched: 0, ok: 0, failed: 0, reported: 0 };
     }
 
-    const needsListEntryIds = ops.some(
-      (op) => op.kind === "anilist.delete" && op.payload["mediaListEntryId"] === undefined,
-    );
+    const needsListEntryIds = ops.some((op) => op.kind === "anilist.delete");
 
     const mediaListEntryIds = needsListEntryIds
       ? yield* fetchViewerIdEffect(anilistToken).pipe(

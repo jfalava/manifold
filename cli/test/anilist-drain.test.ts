@@ -111,12 +111,44 @@ describe("drainAniListOpsPass", () => {
     expect(completed[1]).toMatchObject({ opId: "ok", ok: true });
   }, 15_000);
 
-  it("resolves delete mediaListEntryId from the bulk map when missing", async () => {
+  /** AniList stub for delete ops: the viewer, their list, and the delete mutation. */
+  const stubDeleteFetch = (listEntries: readonly JsonObject[]): string[] => {
+    const deleteBodies: string[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        const body = requestInitText(init) ?? "";
+
+        if (body.includes("Viewer")) {
+          return Response.json({ data: { Viewer: { id: 1, name: "reader" } } });
+        }
+
+        if (body.includes("MediaListCollection")) {
+          return Response.json({
+            data: { MediaListCollection: { lists: [{ entries: listEntries }] } },
+          });
+        }
+
+        if (body.includes("DeleteMediaListEntry")) {
+          deleteBodies.push(body);
+
+          return Response.json({ data: { DeleteMediaListEntry: { deleted: true } } });
+        }
+
+        return Response.json({ errors: [{ message: "unexpected query" }] }, { status: 400 });
+      }),
+    );
+
+    return deleteBodies;
+  };
+
+  const drainDelete = async (payload: JsonObject) => {
     __drainTest.resetThrottle();
     const completed: unknown[] = [];
 
     const api: DrainApiClient = {
-      pendingAniListOps: async () => [op("d1", "anilist.delete", { anilistId: "55" })],
+      pendingAniListOps: async () => [op("d1", "anilist.delete", payload)],
       completeOps: async (results) => {
         completed.push(...results);
 
@@ -124,34 +156,41 @@ describe("drainAniListOpsPass", () => {
       },
     };
 
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-      const body = requestInitText(init) ?? "";
-
-      if (body.includes("Viewer")) {
-        return Response.json({ data: { Viewer: { id: 1, name: "reader" } } });
-      }
-
-      if (body.includes("MediaListCollection")) {
-        return Response.json({
-          data: {
-            MediaListCollection: {
-              lists: [{ entries: [{ id: 777, mediaId: 55 }] }],
-            },
-          },
-        });
-      }
-
-      if (body.includes("DeleteMediaListEntry")) {
-        return Response.json({ data: { DeleteMediaListEntry: { deleted: true } } });
-      }
-
-      return Response.json({ errors: [{ message: "unexpected query" }] }, { status: 400 });
-    });
-
-    vi.stubGlobal("fetch", fetchMock);
-
     const summary = await drainAniListOpsPass(api, "token");
+
+    return { summary, completed };
+  };
+
+  it("resolves delete mediaListEntryId from the bulk map when missing", async () => {
+    const deleteBodies = stubDeleteFetch([{ id: 777, mediaId: 55 }]);
+
+    const { summary, completed } = await drainDelete({ anilistId: "55" });
+
     expect(summary).toEqual({ fetched: 1, ok: 1, failed: 0, reported: 1 });
     expect(completed).toEqual([{ opId: "d1", ok: true, mediaListEntryId: 777 }]);
+    expect(deleteBodies).toHaveLength(1);
+  }, 20_000);
+
+  it("completes a delete whose title is no longer on the list", async () => {
+    // A replay after a lost acknowledgement: the payload still carries the id
+    // of the entry that the first attempt deleted.
+    const deleteBodies = stubDeleteFetch([{ id: 778, mediaId: 56 }]);
+
+    const { summary, completed } = await drainDelete({ anilistId: "55", mediaListEntryId: 777 });
+
+    expect(summary).toEqual({ fetched: 1, ok: 1, failed: 0, reported: 1 });
+    expect(completed).toEqual([{ opId: "d1", ok: true }]);
+    expect(deleteBodies).toEqual([]);
+  }, 20_000);
+
+  it("deletes the entry AniList reports now instead of a stale payload id", async () => {
+    const deleteBodies = stubDeleteFetch([{ id: 900, mediaId: 55 }]);
+
+    const { completed } = await drainDelete({ anilistId: "55", mediaListEntryId: 777 });
+
+    expect(completed).toEqual([{ opId: "d1", ok: true, mediaListEntryId: 900 }]);
+    expect(deleteBodies).toHaveLength(1);
+    expect(deleteBodies[0]).toContain("900");
+    expect(deleteBodies[0]).not.toContain("777");
   }, 20_000);
 });
