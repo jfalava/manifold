@@ -18,7 +18,7 @@ const runImport = (flags: string[], connected: boolean, auth: "token" | "session
   ${
     auth === "token"
       ? 'process.env.MANIFOLD_TOKEN = "fake-api-token";'
-      : 'Bun.secrets = { get: async ({ name }) => name === "manifold-session" ? JSON.stringify({ accessToken: "fake-session-token", refreshToken: "fake-refresh-token", expiresAt: Date.now() + 3_600_000 }) : null };'
+      : 'Bun.secrets = { get: async ({ name }) => name === "manifold-session" ? JSON.stringify({ origin: "https://manifold.jfa.dev/api", accessToken: "fake-session-token", refreshToken: "fake-refresh-token", expiresAt: Date.now() + 3_600_000 }) : null };'
   }
   process.env.MANIFOLD_ANILIST_TOKEN = "fake-anilist-token";
   process.env.MANIFOLD_MAL_TOKEN = "fake-mal-token";

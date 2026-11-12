@@ -63,5 +63,13 @@ If storage has no usable replacement, run `manifold login manifold` again.
 Registry reports retain successful links and failed rows can be retried with
 `--resume` without raising discovery limits.
 
+The session records the API origin that issued it, and its tokens are sent only
+to that origin. A command whose `--api-origin` or `MANIFOLD_API_ORIGIN` names
+another origin stops before any request, so a `.env` in the working directory
+cannot redirect the saved tokens. To use another origin, run
+`manifold login manifold --api-origin <url>`; one session is stored at a time.
+A session saved by an older CLI has no origin and is reported as an
+unreadable keychain session: run `manifold login manifold` once.
+
 Downstream API credentials resolve as: **flag → `MANIFOLD_TOKEN` → keychain**.
 `MANIFOLD_TOKEN` remains a break-glass override without refresh.

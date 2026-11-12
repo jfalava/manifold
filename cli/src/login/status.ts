@@ -23,6 +23,12 @@ const StoredSession = Schema.Struct({
   refreshToken: Schema.optional(Schema.NonEmptyString),
 });
 
+/** A Manifold session without the origin that issued it is rejected on use. */
+const StoredManifoldSession = Schema.Struct({
+  ...StoredSession.fields,
+  origin: Schema.NonEmptyString,
+});
+
 export type LoginState =
   | { readonly kind: "env"; readonly variable: string }
   | { readonly kind: "missing" }
@@ -43,12 +49,29 @@ const PROVIDERS = [
     label: "Manifold",
     secret: MANIFOLD_SESSION_SECRET,
     env: "MANIFOLD_TOKEN",
+    schema: StoredManifoldSession,
   },
-  { provider: "anilist", label: "AniList", secret: ANILIST_SECRET, env: "MANIFOLD_ANILIST_TOKEN" },
-  { provider: "mal", label: "MAL", secret: MAL_SECRET, env: "MANIFOLD_MAL_TOKEN" },
+  {
+    provider: "anilist",
+    label: "AniList",
+    secret: ANILIST_SECRET,
+    env: "MANIFOLD_ANILIST_TOKEN",
+    schema: StoredSession,
+  },
+  {
+    provider: "mal",
+    label: "MAL",
+    secret: MAL_SECRET,
+    env: "MANIFOLD_MAL_TOKEN",
+    schema: StoredSession,
+  },
 ] as const;
 
-const sessionState = (raw: string | null, now: number): LoginState => {
+const sessionState = (
+  raw: string | null,
+  now: number,
+  schema: typeof StoredSession | typeof StoredManifoldSession,
+): LoginState => {
   if (!raw) {
     return { kind: "missing" };
   }
@@ -56,7 +79,7 @@ const sessionState = (raw: string | null, now: number): LoginState => {
   let session: Option.Option<Schema.Schema.Type<typeof StoredSession>>;
 
   try {
-    session = decodeJsonOption(StoredSession, parseJsonValue(raw));
+    session = decodeJsonOption(schema, parseJsonValue(raw));
   } catch {
     return { kind: "invalid" };
   }
@@ -81,11 +104,11 @@ export const loadLoginStatus = (
   now: number = epochMillisNow(),
 ): Promise<readonly LoginStatus[]> =>
   runHost(
-    Effect.forEach(PROVIDERS, ({ provider, label, secret, env }) =>
+    Effect.forEach(PROVIDERS, ({ provider, label, secret, env, schema }) =>
       envString(env)
         ? Effect.succeed({ provider, label, state: { kind: "env" as const, variable: env } })
         : fromPromise(() => get(secret)).pipe(
-            Effect.map((raw) => ({ provider, label, state: sessionState(raw, now) })),
+            Effect.map((raw) => ({ provider, label, state: sessionState(raw, now, schema) })),
           ),
     ),
   );

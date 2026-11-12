@@ -13,16 +13,23 @@ import {
   type CliEffectError,
 } from "@/effect-kit";
 
+export const DEFAULT_API_ORIGIN = "https://manifold.jfa.dev/api";
 export const MANIFOLD_CLI_OAUTH_CLIENT_ID = "manifold-cli";
 export const MANIFOLD_SESSION_SECRET = { service: "manifold", name: "manifold-session" };
 
 export interface ManifoldSession {
+  /**
+   * The API origin that issued the tokens. They are only ever sent back to it,
+   * so a changed MANIFOLD_API_ORIGIN or --api-origin cannot redirect them.
+   */
+  readonly origin: string;
   readonly accessToken: string;
   readonly refreshToken: string;
   readonly expiresAt: number;
 }
 
 const Session = Schema.Struct({
+  origin: Schema.NonEmptyString,
   accessToken: Schema.NonEmptyString,
   refreshToken: Schema.NonEmptyString,
   expiresAt: Schema.Finite,
@@ -50,7 +57,7 @@ const DeviceTokenError = Schema.Struct({ error: Schema.String });
 
 export const DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 
-const normalizeOrigin = (origin: string): string => origin.replace(/\/+$/, "");
+export const normalizeOrigin = (origin: string): string => origin.replace(/\/+$/, "");
 
 export interface ManifoldDeviceAuthorization {
   readonly deviceCode: string;
@@ -114,7 +121,10 @@ const startManifoldDeviceLoginEffect = (
 export const startManifoldDeviceLogin = (origin: string): Promise<ManifoldDeviceAuthorization> =>
   runHost(startManifoldDeviceLoginEffect(origin));
 
-const decodeTokenResponse = (body: JsonValue | undefined): ManifoldSession | undefined => {
+const decodeTokenResponse = (
+  body: JsonValue | undefined,
+  origin: string,
+): ManifoldSession | undefined => {
   const tokens = Option.getOrUndefined(Schema.decodeUnknownOption(TokenResponse)(body));
 
   if (!tokens || tokens.expires_in <= 0) {
@@ -122,6 +132,7 @@ const decodeTokenResponse = (body: JsonValue | undefined): ManifoldSession | und
   }
 
   return {
+    origin: normalizeOrigin(origin),
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token,
     expiresAt: epochMillisNow() + tokens.expires_in * 1000,
@@ -132,6 +143,7 @@ const decodeTokenResponse = (body: JsonValue | undefined): ManifoldSession | und
 const decodeSessionResponseEffect = (
   response: Response,
   grant: "device" | "refresh",
+  origin: string,
 ): Effect.Effect<ManifoldSession, CliEffectError> =>
   Effect.gen(function* () {
     if (!response.ok) {
@@ -144,7 +156,7 @@ const decodeSessionResponseEffect = (
       Effect.orElseSucceed(() => undefined),
     );
 
-    const session = decodeTokenResponse(body);
+    const session = decodeTokenResponse(body, origin);
 
     if (!session) {
       return yield* cliError(
@@ -161,7 +173,7 @@ const requestManifoldSessionEffect = (
   params: Record<string, string>,
 ): Effect.Effect<ManifoldSession, CliEffectError> =>
   postForm(origin, "/v1/oauth/token", params).pipe(
-    Effect.flatMap((response) => decodeSessionResponseEffect(response, "refresh")),
+    Effect.flatMap((response) => decodeSessionResponseEffect(response, "refresh", origin)),
   );
 
 /**
@@ -185,7 +197,7 @@ const pollManifoldDeviceSessionEffect = (
       });
 
       if (response.ok) {
-        return yield* decodeSessionResponseEffect(response, "device");
+        return yield* decodeSessionResponseEffect(response, "device", origin);
       }
 
       const body = yield* jsonFromResponseEffect(response, "manifold.device").pipe(
@@ -247,11 +259,10 @@ export const loadManifoldSession = (): Promise<ManifoldSession | undefined> =>
   runHost(loadManifoldSessionEffect());
 
 const refreshManifoldSessionEffect = (
-  origin: string,
   session: ManifoldSession,
 ): Effect.Effect<ManifoldSession, CliEffectError> =>
   Effect.gen(function* () {
-    const refreshed = yield* requestManifoldSessionEffect(origin, {
+    const refreshed = yield* requestManifoldSessionEffect(session.origin, {
       grant_type: "refresh_token",
       refresh_token: session.refreshToken,
     });
@@ -261,7 +272,5 @@ const refreshManifoldSessionEffect = (
     return refreshed;
   });
 
-export const refreshManifoldSession = (
-  origin: string,
-  session: ManifoldSession,
-): Promise<ManifoldSession> => runHost(refreshManifoldSessionEffect(origin, session));
+export const refreshManifoldSession = (session: ManifoldSession): Promise<ManifoldSession> =>
+  runHost(refreshManifoldSessionEffect(session));

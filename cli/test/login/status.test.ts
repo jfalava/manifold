@@ -23,6 +23,7 @@ describe("login status", () => {
     const statuses = await loadLoginStatus(
       store({
         "manifold-session": JSON.stringify({
+          origin: "https://manifold.example/api",
           accessToken: "a",
           refreshToken: "r",
           expiresAt: NOW + DAY,
@@ -44,6 +45,21 @@ describe("login status", () => {
       ["anilist", { kind: "expired", at: NOW - DAY }],
       ["mal", { kind: "renews" }],
     ]);
+  });
+
+  it("reports a Manifold session without its issuing origin as unreadable", async () => {
+    const statuses = await loadLoginStatus(
+      store({
+        "manifold-session": JSON.stringify({
+          accessToken: "a",
+          refreshToken: "r",
+          expiresAt: NOW + DAY,
+        }),
+      }),
+      NOW,
+    );
+
+    expect(statuses[0]?.state).toEqual({ kind: "invalid" });
   });
 
   it("reports missing, unreadable and still-valid sessions", async () => {
