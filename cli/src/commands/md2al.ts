@@ -20,9 +20,9 @@ import {
   type RunContext,
 } from "@/ui";
 import {
+  cachedMatchesFor,
   collectProgress,
   fetchExistingProgress,
-  loadMatches,
   loadSnapshot,
   phaseExport,
   phaseMatch,
@@ -156,16 +156,13 @@ export const md2alCommand = Command.make(
 
                 const max = Option.getOrUndefined(limit);
                 const limited = max === undefined ? snapshot.slice() : snapshot.slice(0, max);
-                // Scope cached matches to the limited slice so --limit also
-                // bounds the push phase.
-                const limitedIds = new Set(limited.map((entry) => entry.mangaDexId));
                 makePhaseReporter(task).detail(
                   `Processing ${limited.length} of ${snapshot.length} snapshot entries.`,
                 );
                 ctx.limited = limited;
-                ctx.matches = [...loadMatches(tmpDir).values()].filter((m) =>
-                  limitedIds.has(m.mangaDexId),
-                );
+                // Scope cached matches to the limited slice so --limit also
+                // bounds the push phase.
+                ctx.matches = cachedMatchesFor(tmpDir, limited);
               },
             },
             {

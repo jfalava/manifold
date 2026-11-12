@@ -162,13 +162,31 @@ const paths = (tmpDir: string) => ({
 export const loadSnapshot = (tmpDir: string): MdLibraryEntry[] | undefined =>
   readJsonFile(paths(tmpDir).snapshot, Schema.mutable(Schema.Array(MdLibraryEntrySchema)));
 
-export const loadMatches = (tmpDir: string): Map<string, MatchResult> =>
+const loadMatches = (tmpDir: string): Map<string, MatchResult> =>
   new Map(
     (readJsonFile(paths(tmpDir).matches, Schema.Array(MatchResultSchema)) ?? []).map((match) => [
       match.mangaDexId,
       match,
     ]),
   );
+
+/**
+ * Cached matches for the given snapshot entries. The status comes from the
+ * snapshot: the match file only remembers which AniList title an entry maps
+ * to, and its stored status goes stale once the MangaDex shelf changes.
+ */
+export const cachedMatchesFor = (
+  tmpDir: string,
+  entries: readonly MdLibraryEntry[],
+): MatchResult[] => {
+  const cached = loadMatches(tmpDir);
+
+  return entries.flatMap((entry) => {
+    const match = cached.get(entry.mangaDexId);
+
+    return match ? [{ ...match, status: entry.status }] : [];
+  });
+};
 
 const phaseExportEffect = (
   getMdToken: MdTokenProvider,
@@ -394,7 +412,7 @@ const phaseMatchEffect = (
       const cached = existing.get(entry.mangaDexId);
 
       if (cached && (cached.anilistId || options?.useCache)) {
-        results.push(cached);
+        results.push({ ...cached, status: entry.status });
 
         if (cached.anilistId) {
           matched += 1;
