@@ -4,7 +4,8 @@
 /** @effect-diagnostics newPromise:off */
 /** @effect-diagnostics nodeBuiltinImport:off */
 import { spawn } from "node:child_process";
-import { chmod, rename, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, rename, rm, writeFile } from "node:fs/promises";
 
 import { ui, writeOutput } from "@/ui";
 import { extractZipBinary } from "@/upgrade/archive";
@@ -145,11 +146,46 @@ export const scheduleWindowsReplacement = (
   child.unref();
 };
 
-export const installRelease = async (release: CliRelease, targetPath: string): Promise<void> => {
-  const assetBytes = await downloadBytes(release.assetUrl, "Release asset");
-  const checksumBytes = await downloadBytes(release.checksumUrl, "Release checksum");
+/**
+ * Ad-hoc signs a macOS binary so Bun.secrets / keychain access is not killed
+ * (exit 137). `targetPath` is where the binary ends up, for the manual command.
+ */
+const adHocSign = async (path: string, targetPath: string): Promise<void> => {
+  try {
+    const proc = Bun.spawn(["codesign", "--force", "--sign", "-", path], {
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+
+    await proc.exited;
+
+    if (proc.exitCode !== 0) {
+      writeOutput(
+        `${ui.warning(
+          `codesign failed for ${targetPath} (exit ${proc.exitCode}). The binary may be killed on keychain access (exit 137). Run 'codesign --force --sign - ${targetPath}' manually.`,
+        )}\n`,
+        process.stderr,
+      );
+    }
+  } catch (cause) {
+    writeOutput(
+      `${ui.warning(
+        `Could not codesign ${targetPath}: ${errorMessage(cause)}. The binary may be killed on keychain access.`,
+      )}\n`,
+      process.stderr,
+    );
+  }
+};
+
+export const installRelease = async (
+  release: CliRelease,
+  targetPath: string,
+  fetcher: Fetcher = fetch,
+): Promise<void> => {
+  const assetBytes = await downloadBytes(release.assetUrl, "Release asset", fetcher);
+  const checksumBytes = await downloadBytes(release.checksumUrl, "Release checksum", fetcher);
   const expectedChecksum = checksumFromFile(new TextDecoder().decode(checksumBytes));
-  const actualChecksum = new Bun.CryptoHasher("sha256").update(assetBytes).digest("hex");
+  const actualChecksum = createHash("sha256").update(assetBytes).digest("hex");
 
   if (actualChecksum !== expectedChecksum) {
     throw new Error(
@@ -160,42 +196,27 @@ export const installRelease = async (release: CliRelease, targetPath: string): P
   const bytes = extractZipBinary(assetBytes, release.executableName);
 
   const temporaryPath = `${targetPath}.upgrade-${process.pid}`;
-  await writeFile(temporaryPath, bytes, { mode: 0o755 });
 
-  if (process.platform === "win32") {
-    scheduleWindowsReplacement(temporaryPath, targetPath);
+  try {
+    await writeFile(temporaryPath, bytes, { mode: 0o755 });
 
-    return;
-  }
+    if (process.platform === "win32") {
+      scheduleWindowsReplacement(temporaryPath, targetPath);
 
-  await chmod(temporaryPath, 0o755);
-  await rename(temporaryPath, targetPath);
-
-  // Ad-hoc sign on macOS so Bun.secrets / keychain access is not killed (exit 137).
-  if (process.platform === "darwin") {
-    try {
-      const proc = Bun.spawn(["codesign", "--force", "--sign", "-", targetPath], {
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-
-      await proc.exited;
-
-      if (proc.exitCode !== 0) {
-        writeOutput(
-          `${ui.warning(
-            `codesign failed for ${targetPath} (exit ${proc.exitCode}). The binary may be killed on keychain access (exit 137). Run 'codesign --force --sign - ${targetPath}' manually.`,
-          )}\n`,
-          process.stderr,
-        );
-      }
-    } catch (cause) {
-      writeOutput(
-        `${ui.warning(
-          `Could not codesign ${targetPath}: ${errorMessage(cause)}. The binary may be killed on keychain access.`,
-        )}\n`,
-        process.stderr,
-      );
+      return;
     }
+
+    await chmod(temporaryPath, 0o755);
+
+    // Sign before the swap, so the installed path never holds an unsigned binary.
+    if (process.platform === "darwin") {
+      await adHocSign(temporaryPath, targetPath);
+    }
+
+    await rename(temporaryPath, targetPath);
+  } catch (cause) {
+    await rm(temporaryPath, { force: true });
+
+    throw cause;
   }
 };

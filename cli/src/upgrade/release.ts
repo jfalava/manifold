@@ -5,6 +5,9 @@ import { isNewerVersion } from "@/upgrade/version";
 
 const RELEASES_URL = "https://api.github.com/repos/jfalava/manifold/releases?per_page=30";
 
+/** Release assets are downloaded only from this repository's release page. */
+const RELEASE_DOWNLOAD_PREFIX = "https://github.com/jfalava/manifold/releases/download/";
+
 const GitHubAssetSchema = Schema.Struct({
   name: Schema.String,
   browser_download_url: Schema.String,
@@ -133,6 +136,14 @@ export const latestCliRelease = async (
 
   if (!selected) {
     throw new Error(`Release ${release.tag_name} does not contain ${assetName} and its checksum.`);
+  }
+
+  for (const { browser_download_url: url } of [selected.assets.asset, selected.assets.checksum]) {
+    if (!url.startsWith(RELEASE_DOWNLOAD_PREFIX)) {
+      throw new Error(
+        `Release ${selected.release.tag_name} lists an unexpected download URL: ${url}`,
+      );
+    }
   }
 
   return {

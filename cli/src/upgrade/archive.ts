@@ -96,14 +96,28 @@ const readEntry = (archive: Uint8Array, view: DataView, offset: number): ZipEntr
   };
 };
 
+/** A release binary is about 100 MiB; anything declared larger is not one. */
+const MAX_EXECUTABLE_BYTES = 512 * 1024 * 1024;
+
 /** ZIP method 0 is stored, 8 is raw deflate; release archives use nothing else. */
-const decompress = (method: number, compressed: Uint8Array): Uint8Array => {
+const decompress = (method: number, compressed: Uint8Array, size: number): Uint8Array => {
   if (method === 0) {
     return compressed;
   }
 
   if (method === 8) {
-    return new Uint8Array(inflateRawSync(compressed));
+    try {
+      // Stop inflating at the declared size instead of filling memory first.
+      return new Uint8Array(inflateRawSync(compressed, { maxOutputLength: Math.max(size, 1) }));
+    } catch (cause) {
+      if (cause instanceof RangeError) {
+        throw new Error("Downloaded release executable size does not match its ZIP entry.", {
+          cause,
+        });
+      }
+
+      throw cause;
+    }
   }
 
   throw new Error(`Downloaded release uses unsupported ZIP compression method ${method}.`);
@@ -132,7 +146,11 @@ const extractEntry = (archive: Uint8Array, view: DataView, entry: ZipEntry): Uin
   );
   const compressed = archive.subarray(dataOffset, dataOffset + entry.compressedSize);
 
-  const binary = decompress(entry.compressionMethod, compressed);
+  if (entry.uncompressedSize > MAX_EXECUTABLE_BYTES) {
+    throw new Error("Downloaded release executable is larger than any manifold release.");
+  }
+
+  const binary = decompress(entry.compressionMethod, compressed, entry.uncompressedSize);
 
   if (binary.byteLength !== entry.uncompressedSize) {
     throw new Error("Downloaded release executable size does not match its ZIP entry.");
