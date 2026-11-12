@@ -92,8 +92,8 @@ export function useRefreshingLoad<T>(load: () => Promise<T>) {
 
       try {
         await action();
+        // refresh never rejects: it records a failed reload in `error` itself.
         await refresh();
-        setError(null);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
       } finally {
