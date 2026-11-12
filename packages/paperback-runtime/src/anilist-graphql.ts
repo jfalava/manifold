@@ -770,6 +770,48 @@ const fetchAniListMediaListEntryIdsEffect = (
     return ids;
   });
 
+const MediaProgressDataSchema = Schema.Struct({
+  Media: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        mediaListEntry: Schema.optional(
+          Schema.NullOr(Schema.Struct({ progress: Schema.optional(Schema.NullOr(Schema.Finite)) })),
+        ),
+      }),
+    ),
+  ),
+});
+
+type MediaProgressData = Schema.Schema.Type<typeof MediaProgressDataSchema>;
+
+const decodeMediaProgressData = decodeWithSchema<MediaProgressData>(MediaProgressDataSchema);
+
+/** The signed-in user's chapter progress for one title; undefined when it is not on their list. */
+const fetchAniListProgressEffect = (
+  request: AniListRequest,
+  token: string,
+  anilistId: string,
+): Effect.Effect<number | undefined, PaperbackRuntimeError> =>
+  Effect.gen(function* () {
+    const mediaId = yield* Effect.try({
+      try: () => mediaIdOf(anilistId),
+      catch: (cause) => paperbackError(errorMessage(cause)),
+    });
+
+    const data = yield* fromPromise(() =>
+      request(
+        token,
+        `query ($mediaId: Int!) {
+      Media(id: $mediaId, type: MANGA) { mediaListEntry { progress } }
+    }`,
+        { mediaId },
+        decodeMediaProgressData,
+      ),
+    );
+
+    return data.Media?.mediaListEntry?.progress ?? undefined;
+  });
+
 const saveAniListProgressEffect = (
   request: AniListRequest,
   token: string,
@@ -836,6 +878,8 @@ export const createAniListClient = (transport: AniListTransport) => {
       change: AniListFieldChange,
     ): Promise<void> =>
       Effect.runPromise(saveAniListFieldsEffect(request, token, anilistId, change)),
+    fetchAniListProgress: (token: string, anilistId: string): Promise<number | undefined> =>
+      Effect.runPromise(fetchAniListProgressEffect(request, token, anilistId)),
     saveAniListProgress: (token: string, anilistId: string, progress: number): Promise<boolean> =>
       Effect.runPromise(saveAniListProgressEffect(request, token, anilistId, progress)),
     /** Resolves false when AniList does not confirm the deletion. */

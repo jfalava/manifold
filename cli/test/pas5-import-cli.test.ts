@@ -71,10 +71,10 @@ const run = (flags: string[] = [], scenario = "normal") => {
       const row = (id, anilist) => ({id, provider:'anilist', providerId:anilist, title:'Registry title', createdAt:1,updatedAt:2, providers:[{provider:'anilist',externalId:anilist,updatedAt:1}], state:{entryId:id,status:'on_hold',score:8,updatedAt:2}});
       const rows = [row('target','123')];
       const archiveExtra = {};
-      if (scenario === 'untracked' || scenario === 'untracked-ahead') {
+      if (scenario.startsWith('untracked')) {
         library.attachedSources = library.attachedSources.filter(ref => ref.id !== 'tracker');
         rows[0].providers.push({provider:'mangadex',externalId:'md-uuid',updatedAt:1});
-        rows[0].progress = {entryId:'target',chapterKey:'mangadex:old',chapterNumber:scenario === 'untracked' ? 3 : 12,readAt:1,version:1};
+        rows[0].progress = {entryId:'target',chapterKey:'mangadex:old',chapterNumber:scenario === 'untracked-ahead' ? 12 : 3,readAt:1,version:1};
         const chapter = (id, sourceManga, chapNum, extra = {}) => ({id, chapterId:'ch-'+id, chapNum, sourceManga:{id:sourceManga}, ...extra});
         // Sharded like device exports. c3 is furthest but unread; c5 belongs to no attached source.
         archiveExtra['__CHAPTER_V5-1'] = {c1:chapter('c1','md',5,{volume:1}), c2:chapter('c2','md',12,{volume:2})};
@@ -128,6 +128,11 @@ const run = (flags: string[] = [], scenario = "normal") => {
         const url = new URL(String(request));
         if (init.method === 'POST' && url.hostname === 'graphql.anilist.co') {
           const body = JSON.parse(init.body);
+          if (body.query.includes('mediaListEntry')) {
+            // 'untracked-anilist-N': the title is already on the AniList list at chapter N.
+            const listed = scenario.startsWith('untracked-anilist-') ? {progress:Number(scenario.slice('untracked-anilist-'.length))} : null;
+            return Response.json({data:{Media:{mediaListEntry:listed}}});
+          }
           aniList.push({authorization:init.headers?.Authorization ?? init.headers?.authorization, variables:body.variables});
           return Response.json({data:{SaveMediaListEntry:{id:1,progress:body.variables.progress,status:'CURRENT',private:true}}});
         }
@@ -283,6 +288,33 @@ describe("registry import-pas5", () => {
     });
     expect(JSON.stringify(result.report)).not.toContain("fake-anilist-token");
   });
+
+  it.each([
+    { aniListProgress: 11, pushes: [{ mediaId: 123, progress: 12 }] },
+    { aniListProgress: 12, pushes: [] },
+    { aniListProgress: 40, pushes: [] },
+  ])(
+    "backfills the registry but never lowers AniList progress $aniListProgress",
+    ({ aniListProgress, pushes }) => {
+      const result = run(
+        ["--apply", "--anilist-token", "fake-anilist-token"],
+        `untracked-anilist-${aniListProgress}`,
+      );
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.registry.reads).toHaveLength(1);
+      expect(result.registry.aniList.map((call) => call.variables)).toEqual(pushes);
+      expect(result.report.find((item) => item.event === "read")).toMatchObject({
+        chapterNumber: 12,
+        aniListProgress,
+        aniListPushed: pushes.length > 0,
+      });
+      expect(result.report.find((item) => item.event === "summary")).toMatchObject({
+        readsBackfilled: 1,
+        aniListPushed: pushes.length,
+      });
+    },
+  );
 
   it("skips the backfill when registry progress already covers the export", () => {
     const result = run(["--apply", "--anilist-token", "fake-anilist-token"], "untracked-ahead");
