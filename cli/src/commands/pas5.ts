@@ -699,6 +699,8 @@ export const pas5CreateCommand = Command.make("create", {
                     {
                       title: "Fetch canonical registry",
                       task: async (_, task) => {
+                        const reporter = makePhaseReporter(task);
+                        reporter.item("Listing registry entries");
                         const rows = await listRegistryRows(config);
                         const activeRows = rows.filter((row) => !row.tombstoned);
                         const limitValue = Option.getOrUndefined(limit);
@@ -708,16 +710,50 @@ export const pas5CreateCommand = Command.make("create", {
 
                         const entries: Pas5Entry[] = [];
 
+                        const allowedTabs = tabFilter ?? TAB_ORDER;
+                        let hydrated = 0;
+
+                        const needsMetadata = (row: RegistryRow): boolean => {
+                          // Base matches are enriched before new-import eligibility checks.
+                          if (baseEntities) {
+                            return true;
+                          }
+
+                          const tab = tabForStatus(row.state?.status ?? "");
+
+                          return (
+                            hasUpstreamProvider(row) &&
+                            (allowedTabs === "none" ||
+                              (tab !== undefined && allowedTabs.includes(tab)))
+                          );
+                        };
+
+                        const metadataCount = selectedRows.filter(needsMetadata).length;
+                        reporter.note(
+                          `${selectedRows.length} active registry entries selected; ${metadataCount} need live metadata.`,
+                        );
+                        reporter.progress(0, metadataCount);
+
                         for (const row of selectedRows) {
                           registry.set(row.id, row);
-                          const canonical = await getRegistryCanonical(config, row.id);
+
+                          // Keep skipped entries in the scan so the final counters stay accurate.
+                          let canonical: Awaited<ReturnType<typeof getRegistryCanonical>> = {
+                            ...row,
+                            aliases: [],
+                          };
+
+                          if (needsMetadata(row)) {
+                            reporter.item(row.title);
+                            canonical = await getRegistryCanonical(config, row.id);
+                            reporter.progress(++hydrated, metadataCount);
+                          }
+
                           entries.push(pas5EntryFromRegistry(row, canonical));
                         }
 
                         fetchedEntries = entries;
-                        makePhaseReporter(task).note(
-                          `${fetchedEntries.length} active registry entries fetched.`,
-                        );
+                        reporter.note(`${fetchedEntries.length} active registry entries fetched.`);
                       },
                     },
                   ];

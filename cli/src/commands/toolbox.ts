@@ -140,6 +140,7 @@ const apiCallEffect = <A>(
   method: string,
   body: JsonValue | undefined,
   schema: Schema.ConstraintDecoder<A>,
+  signal?: AbortSignal,
 ): Effect.Effect<A, CliEffectError> =>
   Effect.gen(function* () {
     const request = (token: string) =>
@@ -147,6 +148,7 @@ const apiCallEffect = <A>(
         const response = yield* fromPromise(() =>
           platformFetch(`${config.origin}${path}`, {
             method,
+            signal,
             headers: {
               accept: "application/json",
               authorization: `Bearer ${token}`,
@@ -300,6 +302,9 @@ const listRegistryRowsEffect = (
         "GET",
         undefined,
         RegistryListResponse,
+        AbortSignal.timeout(30_000),
+      ).pipe(
+        Effect.mapError((error) => cliError(`Registry page at offset ${offset}: ${error.message}`)),
       );
 
       page = body.entries;
@@ -317,12 +322,17 @@ export const getRegistryCanonical = (
   config: ApiConfig,
   entryId: string,
 ): Promise<Schema.Schema.Type<typeof CanonicalIdentity>> =>
-  apiCall(
-    config,
-    `/v1/entries/${encodeURIComponent(entryId)}/canonical`,
-    "GET",
-    undefined,
-    CanonicalIdentity,
+  runHost(
+    apiCallEffect(
+      config,
+      `/v1/entries/${encodeURIComponent(entryId)}/canonical`,
+      "GET",
+      undefined,
+      CanonicalIdentity,
+      AbortSignal.timeout(20_000),
+    ).pipe(
+      Effect.mapError((error) => cliError(`Canonical metadata for ${entryId}: ${error.message}`)),
+    ),
   );
 
 const anilistTokenFlag = Flag.String("anilist-token").pipe(

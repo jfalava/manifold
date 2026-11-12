@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 import type { AniListRichEntry } from "../src/anilist";
@@ -26,7 +27,7 @@ import type {
   SourceManga,
 } from "../src/pas5-model";
 import type { JsonObject } from "@manifold/json";
-import { required } from "./support/report";
+import { arrayAt, asObject, objectAt, parseJsonObject, required } from "./support/report";
 
 interface TestGeneratedEntry {
   readonly library: LibraryManga;
@@ -77,6 +78,152 @@ const sourceFreeEntities: (
 ) => TestSourceFreeResult = sourceFreeEntitiesSource;
 
 const at = <T>(items: readonly T[], index: number): T => required(items[index], `item ${index}`);
+
+const runRegistryCreate = (flags: string[] = [], withBase = false) => {
+  const tabFlags = flags.includes("--tabs") ? [] : ["--tabs", "reading,paused,planning"];
+
+  const result = spawnSync(
+    "bun",
+    [
+      "-e",
+      `
+      import { BunServices } from '@effect/platform-bun';
+      import { Effect } from 'effect';
+      import { Command } from 'effect/cli';
+      import { makeRootCommand } from './src/cli';
+      import { buildEntitiesForEntry, pas5EntryFromRegistry } from './src/commands/pas5';
+      import { buildPas5Zip, parsePas5 } from './src/pas5';
+      import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+      import { tmpdir } from 'node:os';
+      import { join } from 'node:path';
+      for (const key of Object.keys(process.env)) if (key.startsWith('MANIFOLD_')) delete process.env[key];
+      process.env.MANIFOLD_TOKEN = 'test-token';
+      const directory = mkdtempSync(join(tmpdir(), 'manifold-pas5-create-'));
+      const row = (id, status, native = true) => ({
+        id, provider:'anilist', providerId:id, title:id, createdAt:1000, updatedAt:2000,
+        providers:[{provider:'anilist', externalId:id, updatedAt:1},
+          ...(native ? [{provider:'mangadex',externalId:'md-'+id,updatedAt:1}] : [])],
+        ...(status ? {state:{entryId:id,status,updatedAt:1}} : {}),
+      });
+      const rows = [row('excluded','dropped'), row('reading','reading'),
+        row('rereading','re_reading'), row('paused','on_hold'), row('planning','plan_to_read'),
+        row('stateless'), row('providerless','reading',false),
+        {...row('deleted','reading'),tombstoned:true}];
+      const canonical = row => ({id:row.id,provider:row.provider,providerId:row.providerId,
+        title:'Hydrated '+row.id,aliases:['Alias '+row.id],
+        metadata:{description:'Description '+row.id,coverUrl:'https://example.test/'+row.id+'.jpg'}});
+      const requests = [];
+      globalThis.fetch = async (request, init) => {
+        const url = new URL(String(request));
+        if (init.method !== 'GET') throw new Error('Unexpected write');
+        if (url.pathname === '/v1/registry') return Response.json({entries:rows});
+        const match = url.pathname.match(/^\\/v1\\/entries\\/([^/]+)\\/canonical$/);
+        if (!match) throw new Error('Unexpected request '+url);
+        requests.push(match[1]);
+        return Response.json(canonical(rows.find(row => row.id === match[1])));
+      };
+      const baseFlags = [];
+      if (${JSON.stringify(withBase)}) {
+        const row = rows[0];
+        const generated = buildEntitiesForEntry(pas5EntryFromRegistry(row,canonical(row)),row,new Map());
+        const base = {__LIBRARY_MANGA_V5:{[generated.library.id]:generated.library},
+          __SOURCE_MANGA_V5:Object.fromEntries(generated.sources.map(source => [source.id,source])),
+          __MANGA_INFO_V5:generated.infos};
+        row.providers.push({provider:'kagane',externalId:'kagane-excluded',updatedAt:2});
+        const basePath = join(directory,'base.pas5');
+        writeFileSync(basePath,buildPas5Zip(Object.fromEntries(Object.entries(base).map(([name,value]) => [name,JSON.stringify(value)]))));
+        baseFlags.push('--base',basePath);
+      }
+      const out = join(directory,'out.pas5');
+      try {
+        await Effect.runPromise(Command.runWith(makeRootCommand('test'),{version:'test'})(
+          ['pas5','create','--source','registry','--api-origin','https://example.test',
+           '--apply','--out',out,...baseFlags,...${JSON.stringify([...tabFlags, ...flags])}]
+        ).pipe(Effect.provide(BunServices.layer)));
+        console.info('RESULT',JSON.stringify({requests,entities:await parsePas5(readFileSync(out))}));
+      } finally { rmSync(directory,{recursive:true,force:true}); }
+      `,
+    ],
+    { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8", timeout: 20_000 },
+  );
+
+  expect(result.status, result.stderr).toBe(0);
+
+  const payload = parseJsonObject(
+    required(
+      result.stdout.split("\n").find((line) => line.startsWith("RESULT ")),
+      "RESULT line",
+    ).slice(7),
+  );
+
+  const entities = objectAt(payload, "entities");
+
+  return {
+    requests: arrayAt(payload, "requests"),
+    libraries: Object.values(objectAt(entities, "__LIBRARY_MANGA_V5")),
+    sources: Object.values(objectAt(entities, "__SOURCE_MANGA_V5")),
+    infos: Object.values(objectAt(entities, "__MANGA_INFO_V5")),
+    output: result.stdout,
+  };
+};
+
+describe("pas5 create registry scan", () => {
+  it("hydrates only eligible new titles while preserving metadata and skip counts", () => {
+    const result = runRegistryCreate();
+    expect(result.requests).toEqual(["reading", "rereading", "paused", "planning"]);
+    expect(result.libraries).toHaveLength(4);
+    expect(result.infos).toContainEqual(
+      expect.objectContaining({
+        primaryTitle: "Hydrated paused",
+        secondaryTitles: ["Alias paused"],
+        synopsis: "Description paused",
+        thumbnailUrl: "https://example.test/paused.jpg",
+      }),
+    );
+    expect(result.output).toContain("7 active registry entries selected; 4 need live metadata.");
+    expect(result.output).toContain("Skipped (status excluded by --tabs): 2");
+    expect(result.output).toContain("Skipped (without content provider in registry): 1");
+  });
+
+  it("applies the registry limit before eligibility checks", () => {
+    const result = runRegistryCreate(["--limit", "2"]);
+    expect(result.requests).toEqual(["reading"]);
+    expect(result.libraries).toHaveLength(1);
+    expect(result.output).toContain("Skipped (status excluded by --tabs): 1");
+  });
+
+  it("keeps stateless and excluded-status titles with --tabs none", () => {
+    const result = runRegistryCreate(["--tabs", "none"]);
+    expect(result.requests).toEqual([
+      "excluded",
+      "reading",
+      "rereading",
+      "paused",
+      "planning",
+      "stateless",
+    ]);
+    expect(result.libraries).toHaveLength(6);
+    expect(
+      result.libraries.every(
+        (row) => arrayAt(asObject(row, "library"), "libraryTabs").length === 0,
+      ),
+    ).toBe(true);
+  });
+
+  it("still enriches an existing base title outside the selected tabs", () => {
+    const result = runRegistryCreate(["--limit", "1"], true);
+    expect(result.requests).toEqual(["excluded"]);
+    expect(result.libraries).toHaveLength(1);
+    expect(result.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceId: "MangaDex", mangaId: "md-excluded" }),
+        expect.objectContaining({ sourceId: "Kagane", mangaId: "kagane-excluded" }),
+      ]),
+    );
+    expect(result.output).toContain("Existing library entries enriched: 1");
+    expect(result.output).toContain("New library entries: 0");
+  });
+});
 
 const entry: AniListRichEntry = {
   mediaId: 123,
