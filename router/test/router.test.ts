@@ -189,3 +189,31 @@ test("cover proxy does not long-cache an upstream error", async () => {
     globalThis.fetch = realFetch;
   }
 });
+
+test("a percent-encoded mount prefix is not routed as that mount", async () => {
+  for (const path of [
+    "/%61dmin",
+    "/%61dmin/registry",
+    "/%61pi/v1/health",
+    "/%70aperback/extensions",
+    "/%64evice",
+  ]) {
+    const { response, calls } = request(`https://df.example${path}`);
+    expect((await response).status).toBe(418);
+    expect(calls.ADMIN).toEqual([]);
+    expect(calls.SYNC_API).toEqual([]);
+    expect(calls.DOCS_WORKER).toEqual([]);
+  }
+});
+
+test("encoded characters after a mount are forwarded as sent", async () => {
+  const api = request("https://df.example/api/v1/entries/a%2Fb%20c/list-state");
+  await api.response;
+  expect(api.calls.SYNC_API.map((call) => call.pathname)).toEqual([
+    "/v1/entries/a%2Fb%20c/list-state",
+  ]);
+
+  const admin = request("https://df.example/admin/registry%2Fx");
+  await admin.response;
+  expect(admin.calls.ADMIN.map((call) => call.pathname)).toEqual(["/admin/registry%2Fx"]);
+});

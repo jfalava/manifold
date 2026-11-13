@@ -132,7 +132,14 @@ const forwardDocs: Handler<App> = async (c) => {
   return c.env.DOCS_WORKER.fetch(c.req.raw);
 };
 
-export default new Hono<App>()
+/**
+ * Route on the path exactly as it is forwarded. Hono's default percent-decodes
+ * the path before matching, so `/%61pi/x` matched the `/api` mount while the
+ * handlers stripped and forwarded the undecoded URL.
+ */
+const rawPath = (request: Request): string => new URL(request.url).pathname;
+
+export default new Hono<App>({ getPath: rawPath })
   .all("/api", forwardStripped("/api", "SYNC_API"))
   .all("/api/*", forwardStripped("/api", "SYNC_API"))
   .get("/mangadex-cover/:mangaId/:filename", mangadexCover)
