@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
-/* Last modified by Manifold on 2026-11-01. See ATTRIBUTIONS.md. */
+/* Last modified by Manifold on 2026-11-12. See ATTRIBUTIONS.md. */
 // Bundled into the Paperback tracker, which stays as small as possible: the
 // global JSON costs nothing, while @manifold/json/text adds Schema codecs.
 /** @effect-diagnostics globalJson:off */
@@ -117,12 +117,46 @@ const decodeGraphQLResponse = (value: unknown): GraphQLResponse | undefined => {
   };
 };
 
-/** Thrown when AniList rejects the credentials (HTTP 401/403). */
+/**
+ * Thrown when AniList rejects the credentials: HTTP 401/403, or the HTTP 400
+ * "Invalid token" it answers for a malformed or expired bearer token.
+ */
 export class AniListUnauthorizedError extends Data.TaggedError("AniListUnauthorizedError")<{}> {
   override get message() {
     return "AniList rejected this token";
   }
 }
+
+/**
+ * Thrown when a request failed for a reason that says nothing about the
+ * operation it carried: the transport failed, AniList answered HTTP 5xx, or it
+ * kept rate limiting after every retry. The same request can succeed later.
+ */
+export class AniListUnavailableError extends Data.TaggedError("AniListUnavailableError")<{
+  readonly reason: "transport" | "server" | "rate_limited";
+  readonly message: string;
+}> {}
+
+export type AniListServiceFailure = AniListUnauthorizedError | AniListUnavailableError;
+
+/**
+ * True when a rejection from this client is about the credentials or about
+ * reaching AniList, not about the operation. Drains stop their pass on these
+ * instead of counting a failed attempt against the op. Every other rejection
+ * (GraphQL validation, a 404 for the title, invalid input) is about the op.
+ */
+export const isAniListServiceFailure = (cause: unknown): cause is AniListServiceFailure =>
+  cause instanceof AniListUnauthorizedError || cause instanceof AniListUnavailableError;
+
+type AniListFailure = PaperbackRuntimeError | AniListServiceFailure;
+
+/** Promise boundary for client calls: service failures keep their class, the rest flatten. */
+export const fromAniListPromise = <A>(action: () => Promise<A>): Effect.Effect<A, AniListFailure> =>
+  Effect.tryPromise({
+    try: action,
+    catch: (cause) =>
+      isAniListServiceFailure(cause) ? cause : paperbackError(errorMessage(cause)),
+  });
 
 // AniList rate-limits per IP (~30 requests/minute at present) and answers 429
 // with a retry-after header once exceeded. Every GraphQL call funnels through
@@ -135,6 +169,7 @@ const MAX_THROTTLED_RETRIES = 3;
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
 const COOLDOWN_BUFFER_MS = 1_000;
 const THROTTLE_MESSAGE = /too many requests/i;
+const INVALID_TOKEN_MESSAGE = /^invalid token\.?$/i;
 
 /**
  * How AniList requests leave the host. Paperback's runtime has no global
@@ -193,9 +228,23 @@ const isThrottled = (outcome: RawOutcome): boolean => {
   );
 };
 
+const isInvalidToken = (outcome: RawOutcome): boolean =>
+  outcome.status === 400 &&
+  (outcome.body?.errors ?? []).some(
+    (error) => error.message !== undefined && INVALID_TOKEN_MESSAGE.test(error.message.trim()),
+  );
+
 const interpretOutcome = <A>(outcome: RawOutcome, decode: AniListDataDecoder<A>): A => {
-  if (outcome.status === 401 || outcome.status === 403) {
+  if (outcome.status === 401 || outcome.status === 403 || isInvalidToken(outcome)) {
     throw new AniListUnauthorizedError();
+  }
+
+  // Checked before the body: a 5xx is an outage even when it carries GraphQL errors.
+  if (outcome.status >= 500) {
+    throw new AniListUnavailableError({
+      reason: "server",
+      message: `AniList request failed with HTTP ${outcome.status}`,
+    });
   }
 
   if (outcome.body === undefined) {
@@ -270,7 +319,7 @@ const createAniListRequest = (transport: AniListTransport): AniListRequest => {
     token: string,
     query: string,
     variables: JsonObject,
-  ): Effect.Effect<RawOutcome, PaperbackRuntimeError> =>
+  ): Effect.Effect<RawOutcome, AniListUnavailableError> =>
     Effect.gen(function* () {
       const response = yield* fromPromise(() =>
         transport.post({
@@ -284,10 +333,14 @@ const createAniListRequest = (transport: AniListTransport): AniListRequest => {
           body: JSON.stringify({ query, variables }),
         }),
       ).pipe(
-        Effect.mapError((cause) =>
-          // Offline and other transport failures can reject with message-less
-          // bridge values; label the request so logs stay actionable.
-          paperbackError(`AniList request failed: ${bridgeErrorDetail(cause)}`),
+        Effect.mapError(
+          (cause) =>
+            // Offline and other transport failures can reject with message-less
+            // bridge values; label the request so logs stay actionable.
+            new AniListUnavailableError({
+              reason: "transport",
+              message: `AniList request failed: ${bridgeErrorDetail(cause)}`,
+            }),
         ),
       );
 
@@ -307,7 +360,7 @@ const createAniListRequest = (transport: AniListTransport): AniListRequest => {
     query: string,
     variables: JsonObject,
     decode: AniListDataDecoder<A>,
-  ): Effect.Effect<A, PaperbackRuntimeError | AniListUnauthorizedError> =>
+  ): Effect.Effect<A, AniListFailure> =>
     Effect.gen(function* () {
       for (let attempt = 1; ; attempt += 1) {
         yield* gate();
@@ -317,17 +370,20 @@ const createAniListRequest = (transport: AniListTransport): AniListRequest => {
           return yield* Effect.try({
             try: () => interpretOutcome(outcome, decode),
             catch: (cause) =>
-              cause instanceof AniListUnauthorizedError
-                ? cause
-                : paperbackError(errorMessage(cause)),
+              isAniListServiceFailure(cause) ? cause : paperbackError(errorMessage(cause)),
           });
         }
 
-        if (attempt > MAX_THROTTLED_RETRIES) {
-          return yield* paperbackError("AniList kept rate limiting after repeated backoff");
-        }
-
+        // Also on the attempt that gives up: the cooldown is shared, so the
+        // next caller must wait out this 429 instead of sending immediately.
         scheduleCooldown(outcome.headers);
+
+        if (attempt > MAX_THROTTLED_RETRIES) {
+          return yield* new AniListUnavailableError({
+            reason: "rate_limited",
+            message: "AniList kept rate limiting after repeated backoff",
+          });
+        }
       }
     });
 
@@ -452,9 +508,9 @@ const fetchAniListLibraryEffect = (
   request: AniListRequest,
   token: string,
   userId: number,
-): Effect.Effect<readonly AniListLibraryItem[], PaperbackRuntimeError> =>
+): Effect.Effect<readonly AniListLibraryItem[], AniListFailure> =>
   Effect.gen(function* () {
-    const data = yield* fromPromise(() =>
+    const data = yield* fromAniListPromise(() =>
       request(token, LIBRARY_QUERY, { userId }, decodeLibraryData),
     );
 
@@ -542,6 +598,14 @@ type SavedStatusData = Schema.Schema.Type<typeof SavedStatusDataSchema>;
 
 const decodeSavedStatusData = decodeWithSchema<SavedStatusData>(SavedStatusDataSchema);
 
+// SaveMediaListEntry leaves a field unchanged when its argument is null, and
+// MediaListStatus has no "no status" value, so a cleared status cannot be
+// written. Fail instead of reporting an ignored null as applied.
+const cannotClearStatus = (anilistId: string): PaperbackRuntimeError =>
+  paperbackError(
+    `AniList cannot clear a list status (${anilistId}); delete the list entry to remove the title`,
+  );
+
 const saveAniListStatusEffect = (
   request: AniListRequest,
   token: string,
@@ -549,7 +613,7 @@ const saveAniListStatusEffect = (
   status: AniListReadingStatus | null,
 ): Effect.Effect<
   { mediaListEntryId?: number; backupIdentity?: MalBackupIdentity },
-  PaperbackRuntimeError
+  AniListFailure
 > =>
   Effect.gen(function* () {
     const mediaId = yield* Effect.try({
@@ -557,8 +621,12 @@ const saveAniListStatusEffect = (
       catch: (cause) => paperbackError(errorMessage(cause)),
     });
 
+    if (status === null) {
+      return yield* cannotClearStatus(anilistId);
+    }
+
     // Privacy policy: everything this source touches stays private.
-    const data = yield* fromPromise(() =>
+    const data = yield* fromAniListPromise(() =>
       request(
         token,
         `mutation ($mediaId: Int!, $status: MediaListStatus) {
@@ -567,7 +635,7 @@ const saveAniListStatusEffect = (
         media { idMal title { english romaji native } synonyms }
       }
     }`,
-        { mediaId, status: status === null ? null : toAniListGraphqlStatus(status) },
+        { mediaId, status: toAniListGraphqlStatus(status) },
         decodeSavedStatusData,
       ),
     );
@@ -598,9 +666,19 @@ const saveAniListStatusEffect = (
 
 // Score / notes / dates / volumes — the fields Paperback has no UI for.
 // Managed by the admin panel and drained to AniList by this device.
-const fmiDate = (value: string | null): FuzzyDateInput | null => {
+//
+// SaveMediaListEntry leaves a field unchanged when its argument is null, so a
+// cleared field is sent as the value that empties it: score 0 ("No Score"),
+// empty notes, zero volumes, and a FuzzyDateInput whose parts are all null.
+// The mutation's answer is then checked, so a clear AniList did not apply
+// fails instead of being reported as done.
+type ClearedFuzzyDate = { readonly year: null; readonly month: null; readonly day: null };
+
+const CLEARED_DATE: ClearedFuzzyDate = { year: null, month: null, day: null };
+
+const fmiDate = (value: string | null): FuzzyDateInput | ClearedFuzzyDate => {
   if (value === null) {
-    return null;
+    return CLEARED_DATE;
   }
 
   const date = parseAniListDate(value);
@@ -614,34 +692,75 @@ const fmiDate = (value: string | null): FuzzyDateInput | null => {
   return date;
 };
 
+const SavedFuzzyDateSchema = Schema.optional(
+  Schema.NullOr(
+    Schema.Struct({
+      year: Schema.optional(Schema.NullOr(Schema.Finite)),
+      month: Schema.optional(Schema.NullOr(Schema.Finite)),
+      day: Schema.optional(Schema.NullOr(Schema.Finite)),
+    }),
+  ),
+);
+
+const SavedFieldsDataSchema = Schema.Struct({
+  SaveMediaListEntry: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        score: Schema.optional(Schema.NullOr(Schema.Finite)),
+        notes: Schema.optional(Schema.NullOr(Schema.String)),
+        progressVolumes: Schema.optional(Schema.NullOr(Schema.Finite)),
+        startedAt: SavedFuzzyDateSchema,
+        completedAt: SavedFuzzyDateSchema,
+      }),
+    ),
+  ),
+});
+
+type SavedFieldsData = Schema.Schema.Type<typeof SavedFieldsDataSchema>;
+
+const decodeSavedFieldsData = decodeWithSchema<SavedFieldsData>(SavedFieldsDataSchema);
+
+type SavedFuzzyDate = NonNullable<SavedFieldsData["SaveMediaListEntry"]>["startedAt"];
+
+const isClearedDate = (date: SavedFuzzyDate): boolean =>
+  date === undefined ||
+  date === null ||
+  ((date.year ?? null) === null && (date.month ?? null) === null && (date.day ?? null) === null);
+
 const saveAniListFieldsEffect = (
   request: AniListRequest,
   token: string,
   anilistId: string,
   change: AniListFieldChange,
-): Effect.Effect<void, PaperbackRuntimeError> =>
+): Effect.Effect<void, AniListFailure> =>
   Effect.gen(function* () {
     const mediaId = yield* Effect.try({
       try: () => mediaIdOf(anilistId),
       catch: (cause) => paperbackError(errorMessage(cause)),
     });
 
+    const status = change.status;
+
+    if (status === null) {
+      return yield* cannotClearStatus(anilistId);
+    }
+
     const variables = yield* Effect.try({
       try: () => ({
         mediaId,
-        ...(!(change.status === undefined) && {
-          status: change.status === null ? null : toAniListGraphqlStatus(change.status),
-        }),
-        ...(!(change.score === undefined) && { score: change.score }),
-        ...(!(change.notes === undefined) && { notes: change.notes }),
+        ...(!(status === undefined) && { status: toAniListGraphqlStatus(status) }),
+        ...(!(change.score === undefined) && { score: change.score ?? 0 }),
+        ...(!(change.notes === undefined) && { notes: change.notes ?? "" }),
         ...(!(change.startedAt === undefined) && { startedAt: fmiDate(change.startedAt) }),
         ...(!(change.completedAt === undefined) && { completedAt: fmiDate(change.completedAt) }),
-        ...(!(change.volumeProgress === undefined) && { progressVolumes: change.volumeProgress }),
+        ...(!(change.volumeProgress === undefined) && {
+          progressVolumes: change.volumeProgress ?? 0,
+        }),
       }),
       catch: (cause) => paperbackError(errorMessage(cause)),
     });
 
-    yield* fromPromise(() =>
+    const data = yield* fromAniListPromise(() =>
       request(
         token,
         `mutation (
@@ -652,12 +771,38 @@ const saveAniListFieldsEffect = (
         mediaId: $mediaId, status: $status, score: $score, notes: $notes,
         startedAt: $startedAt, completedAt: $completedAt, progressVolumes: $progressVolumes,
         private: true
-      ) { id status score notes private }
+      ) {
+        id status score notes progressVolumes private
+        startedAt { year month day }
+        completedAt { year month day }
+      }
     }`,
         variables,
-        decodeJsonObject,
+        decodeSavedFieldsData,
       ),
     );
+
+    const saved = data.SaveMediaListEntry;
+
+    const notCleared = [
+      ...(change.score === null && !(saved && (saved.score ?? 0) === 0) ? ["score"] : []),
+      ...(change.notes === null && !(saved && (saved.notes ?? "") === "") ? ["notes"] : []),
+      ...(change.startedAt === null && !(saved && isClearedDate(saved.startedAt))
+        ? ["startedAt"]
+        : []),
+      ...(change.completedAt === null && !(saved && isClearedDate(saved.completedAt))
+        ? ["completedAt"]
+        : []),
+      ...(change.volumeProgress === null && !(saved && (saved.progressVolumes ?? 0) === 0)
+        ? ["volumeProgress"]
+        : []),
+    ];
+
+    if (notCleared.length > 0) {
+      return yield* paperbackError(
+        `AniList did not clear ${notCleared.join(", ")} for ${anilistId}`,
+      );
+    }
   });
 
 /** Deletes the list entry outright. Requires its numeric mediaListEntry id. */
@@ -677,7 +822,7 @@ const deleteAniListEntryEffect = (
   request: AniListRequest,
   token: string,
   mediaListEntryId: number,
-): Effect.Effect<boolean, PaperbackRuntimeError> =>
+): Effect.Effect<boolean, AniListFailure> =>
   Effect.gen(function* () {
     if (
       !Number.isSafeInteger(mediaListEntryId) ||
@@ -687,7 +832,7 @@ const deleteAniListEntryEffect = (
       return yield* paperbackError(`Invalid AniList list entry id: ${mediaListEntryId}`);
     }
 
-    const data = yield* fromPromise(() =>
+    const data = yield* fromAniListPromise(() =>
       request(
         token,
         `mutation ($id: Int) {
@@ -742,9 +887,9 @@ const fetchAniListMediaListEntryIdsEffect = (
   request: AniListRequest,
   token: string,
   userId: number,
-): Effect.Effect<Readonly<Record<string, number>>, PaperbackRuntimeError> =>
+): Effect.Effect<Readonly<Record<string, number>>, AniListFailure> =>
   Effect.gen(function* () {
-    const data = yield* fromPromise(() =>
+    const data = yield* fromAniListPromise(() =>
       request(
         token,
         `query ($userId: Int!) {
@@ -791,14 +936,14 @@ const fetchAniListProgressEffect = (
   request: AniListRequest,
   token: string,
   anilistId: string,
-): Effect.Effect<number | undefined, PaperbackRuntimeError> =>
+): Effect.Effect<number | undefined, AniListFailure> =>
   Effect.gen(function* () {
     const mediaId = yield* Effect.try({
       try: () => mediaIdOf(anilistId),
       catch: (cause) => paperbackError(errorMessage(cause)),
     });
 
-    const data = yield* fromPromise(() =>
+    const data = yield* fromAniListPromise(() =>
       request(
         token,
         `query ($mediaId: Int!) {
@@ -817,7 +962,7 @@ const saveAniListProgressEffect = (
   token: string,
   anilistId: string,
   progress: number,
-): Effect.Effect<boolean, PaperbackRuntimeError> =>
+): Effect.Effect<boolean, AniListFailure> =>
   Effect.gen(function* () {
     const mediaId = yield* Effect.try({
       try: () => mediaIdOf(anilistId),
@@ -837,7 +982,7 @@ const saveAniListProgressEffect = (
     // the field preserves whatever AniList already has (creating a private
     // CURRENT entry only when the title is unlisted, mirroring AniList's own
     // mark-as-read behaviour).
-    yield* fromPromise(() =>
+    yield* fromAniListPromise(() =>
       request(
         token,
         `mutation ($mediaId: Int!, $progress: Int) {

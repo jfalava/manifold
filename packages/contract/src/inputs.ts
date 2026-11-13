@@ -23,7 +23,10 @@ export const SetListStateInput = Schema.Struct({
   notes: Schema.optional(Schema.NullOr(Schema.String)),
   startedAt: Schema.optional(Schema.NullOr(Schema.String)),
   completedAt: Schema.optional(Schema.NullOr(Schema.String)),
-  volumeProgress: Schema.optional(Schema.NullOr(Schema.Finite)),
+  // AniList stores volumes read as a whole number from 0 up.
+  volumeProgress: Schema.optional(
+    Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  ),
   origin: Schema.optional(OpOrigin),
   appliedRemotely: Schema.optional(Schema.Boolean),
   backupIdentity: Schema.optional(MalBackupIdentity),

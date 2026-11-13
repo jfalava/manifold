@@ -239,6 +239,135 @@ describe("AniList operation drain", () => {
   });
 });
 
+describe("AniList operation drain failure handling", () => {
+  const statusOp = (opId: string, anilistId: string): JsonValue => ({
+    id: 1,
+    opId,
+    target: "anilist",
+    kind: "anilist.status",
+    origin: "admin",
+    payload: { anilistId, status: "reading" },
+    state: "pending",
+    attempts: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  });
+
+  const pending: Outcome = {
+    status: 200,
+    body: { ops: [statusOp("op-1", "41"), statusOp("op-2", "42"), statusOp("op-3", "43")] },
+  };
+
+  const saved = (id: number): Outcome => ({
+    status: 200,
+    body: { data: { SaveMediaListEntry: { id } } },
+  });
+
+  const anilistUrl = "https://graphql.anilist.co";
+  const completeUrl = "https://manifold.jfa.dev/api/v1/ops/complete";
+
+  it.each<[string, Outcome]>([
+    ["HTTP 401", { status: 401, body: { errors: [{ message: "Unauthorized." }] } }],
+    ["HTTP 403", { status: 403, body: { errors: [{ message: "Forbidden." }] } }],
+    [
+      "an invalid token",
+      { status: 400, body: { data: null, errors: [{ message: "Invalid token", status: 400 }] } },
+    ],
+    ["HTTP 503", { status: 503, body: { errors: [{ message: "Service Unavailable" }] } }],
+  ])("stops the pass on %s and acknowledges only the ops already done", async (_label, failure) => {
+    const harness = makeHarness();
+    harness.install((index): Outcome => {
+      if (index === 0) {
+        return pending;
+      }
+
+      if (index === 1) {
+        return saved(11);
+      }
+
+      return index === 2 ? failure : { status: 200, body: { updated: 1 } };
+    }, 7);
+    const { drainAniListOps } = await harness.loadDrain();
+
+    await expect(drainAniListOps()).rejects.toThrow();
+
+    // No request for op-3, and nothing reported for op-2 or op-3.
+    expect(harness.urls.slice(1)).toEqual([anilistUrl, anilistUrl, completeUrl]);
+    expect(JSON.parse(harness.bodies.at(-1) ?? "{}")).toEqual({
+      results: [{ opId: "op-1", ok: true, mediaListEntryId: 11 }],
+    });
+  });
+
+  it("stops the pass on a transport failure without reporting a completion", async () => {
+    const harness = makeHarness();
+    harness.install((index): Outcome => {
+      if (index === 0) {
+        return pending;
+      }
+
+      // SAFETY: replays the offline bridge rejection shape (message-less object)
+      throw {};
+    }, 7);
+    const { drainAniListOps } = await harness.loadDrain();
+
+    await expect(drainAniListOps()).rejects.toThrow("AniList request failed");
+    expect(harness.urls.slice(1)).toEqual([anilistUrl]);
+  });
+
+  it("stops the pass when rate limiting outlasts the retries", async () => {
+    const harness = makeHarness();
+    harness.install((index): Outcome => {
+      if (index === 0) {
+        return pending;
+      }
+
+      if (index === 1) {
+        return saved(11);
+      }
+
+      return index <= 5
+        ? { status: 429, body: { errors: [{ message: "Too Many Requests." }] } }
+        : { status: 200, body: { updated: 1 } };
+    }, 7);
+    const { drainAniListOps } = await harness.loadDrain();
+
+    await expect(drainAniListOps()).rejects.toThrow(/rate limit/i);
+    expect(harness.urls.at(-1)).toBe(completeUrl);
+    expect(JSON.parse(harness.bodies.at(-1) ?? "{}")).toEqual({
+      results: [{ opId: "op-1", ok: true, mediaListEntryId: 11 }],
+    });
+  });
+
+  it("still reports a failure that is about the op and continues the pass", async () => {
+    const harness = makeHarness();
+    harness.install((index): Outcome => {
+      if (index === 0) {
+        return pending;
+      }
+
+      if (index === 2) {
+        return {
+          status: 404,
+          body: { data: null, errors: [{ message: "Not Found.", status: 404 }] },
+        };
+      }
+
+      return index === 4 ? { status: 200, body: { updated: 3 } } : saved(10 + index);
+    }, 7);
+    const { drainAniListOps } = await harness.loadDrain();
+
+    await drainAniListOps();
+
+    expect(JSON.parse(harness.bodies.at(-1) ?? "{}")).toEqual({
+      results: [
+        { opId: "op-1", ok: true, mediaListEntryId: 11 },
+        { opId: "op-2", ok: false, error: "AniList error: Not Found." },
+        { opId: "op-3", ok: true, mediaListEntryId: 13 },
+      ],
+    });
+  });
+});
+
 describe("scheduledPersonalRequester", () => {
   let harness: ReturnType<typeof makeHarness>;
 

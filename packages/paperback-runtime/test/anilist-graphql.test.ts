@@ -167,6 +167,32 @@ describe("aniListRequest throttling", () => {
     expect(getCallCount()).toBe(4);
   });
 
+  it("keeps the shared cooldown from the final 429 after giving up", async () => {
+    let calls = 0;
+
+    harness.install(() => {
+      calls += 1;
+
+      if (calls > 4) {
+        const body: JsonValue = { data: { Viewer: { id: 7, name: "y" } } };
+
+        return { status: 200, body };
+      }
+
+      const body: JsonValue = { errors: [{ message: "Too Many Requests." }] };
+
+      return { status: 429, headers: { "retry-after": calls === 4 ? "90" : "5" }, body };
+    });
+
+    const { aniListRequest, viewerQuery } = await harness.loadModule();
+
+    await expect(aniListRequest("t", viewerQuery, {}, decodeObject)).rejects.toThrow(/rate limit/i);
+    await aniListRequest("t", viewerQuery, {}, decodeViewer);
+
+    // The request after the give-up waits out the retry-after of the last 429.
+    expect(harness.sleeps.some((seconds) => seconds >= 90)).toBe(true);
+  });
+
   it.each([401, 403])("maps HTTP %s GraphQL responses to auth errors", async (status) => {
     const { aniListRequest, viewerQuery, AniListUnauthorizedError } = await harness.loadModule();
 
@@ -174,6 +200,83 @@ describe("aniListRequest throttling", () => {
     await expect(aniListRequest("t", viewerQuery, {}, decodeObject)).rejects.toBeInstanceOf(
       AniListUnauthorizedError,
     );
+  });
+
+  it("maps AniList's HTTP 400 invalid-token answer to an auth error", async () => {
+    const { saveAniListStatus, AniListUnauthorizedError } = await harness.loadModule();
+
+    harness.install(() => ({
+      status: 400,
+      body: { data: null, errors: [{ message: "Invalid token", status: 400 }] },
+    }));
+    await expect(saveAniListStatus("t", "42", "reading")).rejects.toBeInstanceOf(
+      AniListUnauthorizedError,
+    );
+  });
+
+  it("keeps auth and availability failures distinguishable through the client methods", async () => {
+    const { saveAniListStatus, AniListUnauthorizedError, AniListUnavailableError } =
+      await harness.loadModule();
+
+    harness.install(() => ({ status: 401, body: { errors: [{ message: "Unauthorized." }] } }));
+    await expect(saveAniListStatus("t", "42", "reading")).rejects.toBeInstanceOf(
+      AniListUnauthorizedError,
+    );
+
+    harness.install(() => ({
+      status: 502,
+      body: { errors: [{ message: "Internal Server Error", status: 502 }] },
+    }));
+    await expect(saveAniListStatus("t", "42", "reading")).rejects.toEqual(
+      new AniListUnavailableError({
+        reason: "server",
+        message: "AniList request failed with HTTP 502",
+      }),
+    );
+
+    harness.install(() => {
+      // SAFETY: replays the offline bridge rejection shape (message-less object)
+      throw {};
+    });
+
+    const offline = saveAniListStatus("t", "42", "reading");
+
+    await expect(offline).rejects.toBeInstanceOf(AniListUnavailableError);
+    await expect(offline).rejects.toMatchObject({
+      reason: "transport",
+      message: "AniList request failed: network request failed",
+    });
+
+    harness.install(() => ({
+      status: 429,
+      headers: { "retry-after": "5" },
+      body: { errors: [{ message: "Too Many Requests." }] },
+    }));
+    await expect(saveAniListStatus("t", "42", "reading")).rejects.toEqual(
+      new AniListUnavailableError({
+        reason: "rate_limited",
+        message: "AniList kept rate limiting after repeated backoff",
+      }),
+    );
+  });
+
+  it("does not report a rejected operation as an auth or availability failure", async () => {
+    const { saveAniListStatus, isAniListServiceFailure, AniListUnauthorizedError } =
+      await harness.loadModule();
+
+    harness.install(() => ({
+      status: 404,
+      body: { data: null, errors: [{ message: "Not Found.", status: 404 }] },
+    }));
+
+    const rejected = await saveAniListStatus("t", "42", "reading").then(
+      () => undefined,
+      (cause: unknown) => cause,
+    );
+
+    expect(rejected).toMatchObject({ message: "AniList error: Not Found." });
+    expect(isAniListServiceFailure(rejected)).toBe(false);
+    expect(isAniListServiceFailure(new AniListUnauthorizedError())).toBe(true);
   });
 
   it("keeps mapping non-auth GraphQL errors as before", async () => {
@@ -225,14 +328,95 @@ describe("AniList field dates", () => {
   );
 
   it("distinguishes a valid date from an explicit clear", async () => {
-    harness.install(() => ({ status: 200 }));
+    harness.install(() => ({
+      status: 200,
+      body: {
+        data: {
+          SaveMediaListEntry: { id: 10, completedAt: { year: null, month: null, day: null } },
+        },
+      },
+    }));
     const { saveAniListFields } = await harness.loadModule();
 
     await saveAniListFields("t", "42", { startedAt: "2024-02-29" });
     await saveAniListFields("t", "42", { completedAt: null });
 
     expect(harness.requests[0]?.body).toContain('"startedAt":{"year":2024,"month":2,"day":29}');
-    expect(harness.requests[1]?.body).toContain('"completedAt":null');
+    expect(harness.requests[1]?.body).toContain(
+      '"completedAt":{"year":null,"month":null,"day":null}',
+    );
+  });
+
+  it("clears score, notes, dates and volumes with values AniList applies, never null", async () => {
+    harness.install(() => ({
+      status: 200,
+      body: {
+        data: {
+          SaveMediaListEntry: {
+            id: 10,
+            score: 0,
+            notes: null,
+            startedAt: { year: null, month: null, day: null },
+            completedAt: { year: null, month: null, day: null },
+            progressVolumes: 0,
+          },
+        },
+      },
+    }));
+    const { saveAniListFields } = await harness.loadModule();
+
+    await saveAniListFields("t", "42", {
+      score: null,
+      notes: null,
+      startedAt: null,
+      completedAt: null,
+      volumeProgress: null,
+    });
+
+    expect(JSON.parse(harness.requests[0]?.body ?? "{}")).toMatchObject({
+      variables: {
+        mediaId: 42,
+        score: 0,
+        notes: "",
+        startedAt: { year: null, month: null, day: null },
+        completedAt: { year: null, month: null, day: null },
+        progressVolumes: 0,
+      },
+    });
+  });
+
+  it("reports a clear as not applied when AniList still returns the old value", async () => {
+    harness.install(() => ({
+      status: 200,
+      body: {
+        data: {
+          SaveMediaListEntry: {
+            id: 10,
+            score: 0,
+            notes: "still here",
+            startedAt: { year: 2024, month: 2, day: 29 },
+          },
+        },
+      },
+    }));
+    const { saveAniListFields } = await harness.loadModule();
+
+    await expect(
+      saveAniListFields("t", "42", { score: null, notes: null, startedAt: null }),
+    ).rejects.toThrow("AniList did not clear notes, startedAt");
+  });
+
+  it("rejects clearing the status instead of reporting an ignored null as applied", async () => {
+    const getCallCount = harness.install(() => ({ status: 200 }));
+    const { saveAniListFields, saveAniListStatus } = await harness.loadModule();
+
+    await expect(saveAniListStatus("t", "42", null)).rejects.toThrow(
+      "AniList cannot clear a list status",
+    );
+    await expect(saveAniListFields("t", "42", { status: null, score: 80 })).rejects.toThrow(
+      "AniList cannot clear a list status",
+    );
+    expect(getCallCount()).toBe(0);
   });
 
   it("rejects non-canonical AniList ids instead of mutating a numeric prefix", async () => {
