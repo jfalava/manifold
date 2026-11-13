@@ -383,7 +383,45 @@ function dayIso(now: DateTime.Utc, daysAgo: number): string {
   return DateTime.formatIsoDate(DateTime.subtract(now, { days: daysAgo }));
 }
 
-const runGraphQL = Effect.fnUntraced(function* <T>(
+/** Longest wait for one Cloudflare analytics request; these queries scan a day of data. */
+const ANALYTICS_TIMEOUT_MS = 20_000;
+
+const WORKER_SCRIPT_NAMES = WORKER_SCRIPTS.map((worker) => `"${worker.scriptName}"`).join(", ");
+
+/**
+ * Hourly rows for the Manifold scripts only. The account holds other Workers:
+ * unfiltered, their rows fill the limit and the Manifold totals come out
+ * short. Four scripts over a 24-hour window are at most about 100 rows.
+ */
+export const WORKER_INVOCATIONS_QUERY = `query($accountTag: string!, $since: Time!) {
+  viewer {
+    accounts(filter: { accountTag: $accountTag }) {
+      workersInvocationsAdaptive(
+        limit: 1000
+        filter: { datetime_geq: $since, scriptName_in: [${WORKER_SCRIPT_NAMES}] }
+      ) {
+        sum { requests errors }
+        dimensions { scriptName datetimeHour }
+      }
+    }
+  }
+}`;
+
+/** The ManifoldSync objects live in manifold-api; other scripts in the account have their own. */
+export const DO_INVOCATIONS_QUERY = `query($accountTag: string!, $since: Time!) {
+  viewer {
+    accounts(filter: { accountTag: $accountTag }) {
+      durableObjectsInvocationsAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $since, scriptName: "manifold-api" }
+      ) {
+        sum { requests }
+      }
+    }
+  }
+}`;
+
+export const runGraphQL = Effect.fnUntraced(function* <T>(
   apiToken: string,
   query: string,
   variables: Record<string, string>,
@@ -398,6 +436,7 @@ const runGraphQL = Effect.fnUntraced(function* <T>(
         "user-agent": manifoldUserAgent("admin"),
       },
       body: toJsonText({ query, variables }),
+      signal: AbortSignal.timeout(ANALYTICS_TIMEOUT_MS),
     }),
   );
 
@@ -480,38 +519,13 @@ const fetchSnapshot = Effect.fnUntraced(function* (): Effect.fn.Return<Analytics
       [
         runGraphQL(
           apiToken,
-
-          `query($accountTag: string!, $since: Time!) {
-          viewer {
-            accounts(filter: { accountTag: $accountTag }) {
-              workersInvocationsAdaptive(
-                limit: 100
-                filter: { datetime_geq: $since }
-              ) {
-                sum { requests errors }
-                dimensions { scriptName datetimeHour }
-              }
-            }
-          }
-        }`,
+          WORKER_INVOCATIONS_QUERY,
           { accountTag, since: sinceIso(now, WINDOW_HOURS) },
           decodeInvocationsRows,
         ),
         runGraphQL(
           apiToken,
-
-          `query($accountTag: string!, $since: Time!) {
-          viewer {
-            accounts(filter: { accountTag: $accountTag }) {
-              durableObjectsInvocationsAdaptiveGroups(
-                limit: 10
-                filter: { datetime_geq: $since }
-              ) {
-                sum { requests }
-              }
-            }
-          }
-        }`,
+          DO_INVOCATIONS_QUERY,
           { accountTag, since: sinceIso(now, WINDOW_HOURS) },
           decodeDoInvocationsRows,
         ),
@@ -781,6 +795,7 @@ const resolveZoneTag = Effect.fnUntraced(function* (
         authorization: `Bearer ${apiToken}`,
         "user-agent": manifoldUserAgent("admin"),
       },
+      signal: AbortSignal.timeout(ANALYTICS_TIMEOUT_MS),
     }),
   );
 

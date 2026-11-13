@@ -153,6 +153,9 @@ const formatCacheAge = (fetchedAt: number | undefined): string | undefined => {
   return `${Math.floor(hours / 24)}d ago`;
 };
 
+const NO_LOCAL_CACHE =
+  "This browser's storage is unavailable, so the list is not kept for the next visit.";
+
 function MangaDexLibraryPage() {
   const search = useSearch({ from: "/mangadex-library" });
   const navigate = useNavigate({ from: "/mangadex-library" });
@@ -194,7 +197,11 @@ function MangaDexLibraryPage() {
       const meta = await replaceMangaDexLibraryCache(library);
       setItems(library);
       setCacheMeta(meta);
-      setNotice(`Cached ${library.length} titles from MangaDex.`);
+      setNotice(
+        meta === undefined
+          ? `Loaded ${library.length} titles from MangaDex. ${NO_LOCAL_CACHE}`
+          : `Cached ${library.length} titles from MangaDex.`,
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -203,22 +210,29 @@ function MangaDexLibraryPage() {
     }
   }, []);
 
-  const refreshStatus = useCallback(async (status: MangaDexReadingStatus) => {
-    setRefreshingStatus(status);
-    setError(undefined);
+  const refreshStatus = useCallback(
+    async (status: MangaDexReadingStatus) => {
+      setRefreshingStatus(status);
+      setError(undefined);
 
-    try {
-      const shelf = await loadMangaDexLibrary({ data: { status } });
-      const next = await mergeMangaDexStatusShelf(status, shelf);
-      setItems(next);
-      setCacheMeta({ fetchedAt: Date.now(), count: next.length });
-      setNotice(`Refetched ${formatMangaDexStatus(status)} (${shelf.length} on shelf).`);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setRefreshingStatus(undefined);
-    }
-  }, []);
+      try {
+        const shelf = await loadMangaDexLibrary({ data: { status } });
+        const merged = await mergeMangaDexStatusShelf(status, shelf, items);
+        setItems(merged.items);
+        setCacheMeta(merged.meta);
+        setNotice(
+          `Refetched ${formatMangaDexStatus(status)} (${shelf.length} on shelf).${
+            merged.meta === undefined ? ` ${NO_LOCAL_CACHE}` : ""
+          }`,
+        );
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setRefreshingStatus(undefined);
+      }
+    },
+    [items],
+  );
 
   useEffect(() => {
     if (bootstrapped.current) {
@@ -562,7 +576,7 @@ function MangaDexLibraryPage() {
           MangaDex library
         </Text>
         <Text>
-          {items.length} followed titles cached locally
+          {items.length} followed titles {cacheMeta === undefined ? "loaded" : "cached locally"}
           {formatCacheAge(cacheMeta?.fetchedAt) !== undefined
             ? ` (snapshot ${formatCacheAge(cacheMeta?.fetchedAt)})`
             : ""}

@@ -114,6 +114,12 @@ function EntryEditor({
     entry.state?.volumeProgress !== undefined ? String(entry.state.volumeProgress) : "",
   );
 
+  // The API stores volumes as a whole number, 0 or more, and refuses anything else.
+  const volumesInvalid =
+    volumeProgress.trim() !== "" &&
+    !(Number.isInteger(Number(volumeProgress)) && Number(volumeProgress) >= 0);
+
+  const [confirmingNuke, setConfirmingNuke] = useState(false);
   const dead = entry.tombstoned === true;
 
   return (
@@ -166,13 +172,18 @@ function EntryEditor({
               id="entry-editor-volumes"
               className="w-full min-w-0"
               value={volumeProgress}
+              aria-invalid={volumesInvalid}
+              variant={volumesInvalid ? "error" : "default"}
+              title="A whole number, 0 or more"
               onChange={(event) => setVolumeProgress(event.target.value)}
             />
           </label>
           <Button
             className="col-span-2 w-full sm:col-span-1 sm:w-auto"
             disabled={
-              dead || (status === "" && score.trim() === "" && volumeProgress.trim() === "")
+              dead ||
+              volumesInvalid ||
+              (status === "" && score.trim() === "" && volumeProgress.trim() === "")
             }
             onClick={() => {
               const scoreValue = Number(score);
@@ -284,20 +295,54 @@ function EntryEditor({
       </div>
 
       <div className="flex flex-col-reverse gap-2 border-t border-kumo-line pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <Button
-          variant="destructive"
-          className="w-full sm:w-auto"
-          disabled={dead}
-          title="Delete the AniList entry and tombstone this row"
-          onClick={() => {
-            onClose();
-            void onAct(async () => {
-              await nukeEntry({ data: { entryId: entry.id } });
-            });
-          }}
-        >
-          Nuke entry
-        </Button>
+        <Dialog.Root role="alertdialog" open={confirmingNuke} onOpenChange={setConfirmingNuke}>
+          <Dialog.Trigger
+            render={(props) => (
+              <Button
+                {...props}
+                variant="destructive"
+                className="w-full sm:w-auto"
+                disabled={dead}
+                title="Delete the AniList entry and tombstone this row"
+              >
+                Nuke entry
+              </Button>
+            )}
+          />
+          <Dialog size="sm" className="w-[calc(100vw-2rem)] p-4 sm:w-96 sm:p-6">
+            <div className="grid min-w-0 gap-4">
+              <div className="grid min-w-0 gap-1">
+                <Dialog.Title>Nuke this entry?</Dialog.Title>
+                <Dialog.Description>
+                  This deletes <strong className="break-words">{entry.title}</strong> from AniList
+                  and tombstones its registry entry. It cannot be undone from this panel.
+                </Dialog.Description>
+              </div>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                <Dialog.Close
+                  render={(props) => (
+                    <Button variant="secondary" {...props} className="w-full sm:w-auto">
+                      Cancel
+                    </Button>
+                  )}
+                />
+                <Button
+                  variant="destructive"
+                  className="w-full sm:w-auto"
+                  onClick={() => {
+                    setConfirmingNuke(false);
+                    onClose();
+                    void onAct(async () => {
+                      await nukeEntry({ data: { entryId: entry.id } });
+                    });
+                  }}
+                >
+                  Nuke entry
+                </Button>
+              </div>
+            </div>
+          </Dialog>
+        </Dialog.Root>
         <Dialog.Close
           render={(props) => (
             <Button variant="secondary" {...props} className="w-full sm:w-auto">
