@@ -13,33 +13,38 @@ import { type ListEventRow, type OpRow, toListEvent } from "../sync-rows";
 
 const setListStateEffect = (host: SyncHost, entryId: string, input: SetListStateInput) =>
   Effect.gen(function* () {
-    const changes = input;
-    requireEntry(host, entryId);
-    const timestamp = now();
-    const current = readListState(host, entryId);
-    const anilistId = anilistLinkOf(host, entryId);
+    // The state row, its event and the ops it queues are written together or
+    // not at all. Scheduling awaits, so it stays outside the transaction.
+    const written = host.ctx.storage.transactionSync(() => {
+      const changes = input;
+      requireEntry(host, entryId);
+      const timestamp = now();
+      const current = readListState(host, entryId);
+      const anilistId = anilistLinkOf(host, entryId);
 
-    const nextStatus =
-      changes.status === undefined ? current?.status : (changes.status ?? undefined);
+      const nextStatus =
+        changes.status === undefined ? current?.status : (changes.status ?? undefined);
 
-    const nextScore = changes.score === undefined ? current?.score : (changes.score ?? undefined);
-    const nextNotes = changes.notes === undefined ? current?.notes : (changes.notes ?? undefined);
+      const nextScore = changes.score === undefined ? current?.score : (changes.score ?? undefined);
+      const nextNotes = changes.notes === undefined ? current?.notes : (changes.notes ?? undefined);
 
-    const nextStarted =
-      changes.startedAt === undefined ? current?.startedAt : (changes.startedAt ?? undefined);
+      const nextStarted =
+        changes.startedAt === undefined ? current?.startedAt : (changes.startedAt ?? undefined);
 
-    const nextCompleted =
-      changes.completedAt === undefined ? current?.completedAt : (changes.completedAt ?? undefined);
+      const nextCompleted =
+        changes.completedAt === undefined
+          ? current?.completedAt
+          : (changes.completedAt ?? undefined);
 
-    const nextVolumes =
-      changes.volumeProgress === undefined
-        ? current?.volumeProgress
-        : (changes.volumeProgress ?? undefined);
+      const nextVolumes =
+        changes.volumeProgress === undefined
+          ? current?.volumeProgress
+          : (changes.volumeProgress ?? undefined);
 
-    const mediaListEntryId = current?.mediaListEntryId;
+      const mediaListEntryId = current?.mediaListEntryId;
 
-    host.ctx.storage.sql.exec(
-      `INSERT INTO list_state
+      host.ctx.storage.sql.exec(
+        `INSERT INTO list_state
        (entry_id, status, score, notes, started_at, completed_at, volume_progress,
         media_list_entry_id, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -52,75 +57,83 @@ const setListStateEffect = (host: SyncHost, entryId: string, input: SetListState
        volume_progress = excluded.volume_progress,
        media_list_entry_id = COALESCE(excluded.media_list_entry_id, list_state.media_list_entry_id),
        updated_at = excluded.updated_at`,
-      entryId,
-      nextStatus ?? null,
-      nextScore ?? null,
-      nextNotes ?? null,
-      nextStarted ?? null,
-      nextCompleted ?? null,
-      nextVolumes ?? null,
-      mediaListEntryId ?? null,
-      timestamp,
-    );
+        entryId,
+        nextStatus ?? null,
+        nextScore ?? null,
+        nextNotes ?? null,
+        nextStarted ?? null,
+        nextCompleted ?? null,
+        nextVolumes ?? null,
+        mediaListEntryId ?? null,
+        timestamp,
+      );
 
-    const origin: OpOrigin = changes.origin ?? "admin";
+      const origin: OpOrigin = changes.origin ?? "admin";
 
-    const eventDetail: JsonObject = {
-      ...(changes.status !== undefined && { status: changes.status }),
-      ...(changes.score !== undefined && { score: changes.score }),
-      ...(changes.notes !== undefined && { notes: changes.notes }),
-      ...(changes.startedAt !== undefined && { startedAt: changes.startedAt }),
-      ...(changes.completedAt !== undefined && { completedAt: changes.completedAt }),
-      ...(changes.volumeProgress !== undefined && { volumeProgress: changes.volumeProgress }),
-      ...(changes.origin !== undefined && { origin: changes.origin }),
-      ...(changes.appliedRemotely !== undefined && { appliedRemotely: changes.appliedRemotely }),
-    };
+      const eventDetail: JsonObject = {
+        ...(changes.status !== undefined && { status: changes.status }),
+        ...(changes.score !== undefined && { score: changes.score }),
+        ...(changes.notes !== undefined && { notes: changes.notes }),
+        ...(changes.startedAt !== undefined && { startedAt: changes.startedAt }),
+        ...(changes.completedAt !== undefined && { completedAt: changes.completedAt }),
+        ...(changes.volumeProgress !== undefined && { volumeProgress: changes.volumeProgress }),
+        ...(changes.origin !== undefined && { origin: changes.origin }),
+        ...(changes.appliedRemotely !== undefined && { appliedRemotely: changes.appliedRemotely }),
+      };
 
-    appendEvent(host, entryId, "list.state", origin, eventDetail);
+      appendEvent(host, entryId, "list.state", origin, eventDetail);
 
-    // Device-originated mutations were already applied to AniList on-device;
-    // everything else becomes an op the device will drain.
-    if (
-      !changes.appliedRemotely &&
-      anilistId &&
-      (changes.status !== undefined ||
-        changes.score !== undefined ||
-        changes.notes !== undefined ||
-        changes.startedAt !== undefined ||
-        changes.completedAt !== undefined ||
-        changes.volumeProgress !== undefined)
-    ) {
-      const onlyStatus =
-        changes.status !== undefined &&
-        changes.score === undefined &&
-        changes.notes === undefined &&
-        changes.startedAt === undefined &&
-        changes.completedAt === undefined &&
-        changes.volumeProgress === undefined;
+      // Device-originated mutations were already applied to AniList on-device;
+      // everything else becomes an op the device will drain.
+      if (
+        !changes.appliedRemotely &&
+        anilistId &&
+        (changes.status !== undefined ||
+          changes.score !== undefined ||
+          changes.notes !== undefined ||
+          changes.startedAt !== undefined ||
+          changes.completedAt !== undefined ||
+          changes.volumeProgress !== undefined)
+      ) {
+        const onlyStatus =
+          changes.status !== undefined &&
+          changes.score === undefined &&
+          changes.notes === undefined &&
+          changes.startedAt === undefined &&
+          changes.completedAt === undefined &&
+          changes.volumeProgress === undefined;
 
-      enqueueOp(host, {
-        opId: newId(),
-        target: "anilist",
-        kind: onlyStatus ? "anilist.status" : "anilist.fields",
-        origin,
-        payload: createAniListListStateOpPayload(entryId, anilistId, mediaListEntryId, changes),
-      });
-    }
+        enqueueOp(host, {
+          opId: newId(),
+          target: "anilist",
+          kind: onlyStatus ? "anilist.status" : "anilist.fields",
+          origin,
+          payload: createAniListListStateOpPayload(entryId, anilistId, mediaListEntryId, changes),
+        });
+      }
 
-    const stored = readListState(host, entryId);
+      const stored = readListState(host, entryId);
 
-    if (!stored) {
-      throw new Error(`List state missing after write: ${entryId}`);
-    }
+      if (!stored) {
+        throw new Error(`List state missing after write: ${entryId}`);
+      }
 
-    // MAL is only a backup sink. The original update commits before any
-    // upstream work, regardless of whether AniList was already updated.
-    if (origin === "device" && stored.status) {
-      enqueueMalBackup(host, entryId, changes);
+      // MAL is only a backup sink. The original update commits before any
+      // upstream work, regardless of whether AniList was already updated.
+      if (origin === "device" && stored.status) {
+        enqueueMalBackup(host, entryId, changes);
+
+        return { stored, backup: true };
+      }
+
+      return { stored, backup: false };
+    });
+
+    if (written.backup) {
       yield* fromPromise(() => scheduleSync(host));
     }
 
-    return stored;
+    return written.stored;
   });
 
 export const setListState = (

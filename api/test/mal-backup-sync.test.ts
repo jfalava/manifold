@@ -15,6 +15,8 @@ import { ManifoldSync } from './src/manifold-sync.ts';
 export class TestSync extends ManifoldSync {
   async pause() { this.ctx.storage.kv.put('registry_sync_paused', true); }
   async drain() {
+    // Every drain here stands for an alarm after any retry delay has passed.
+    this.ctx.storage.sql.exec("UPDATE sync_ops SET updated_at = updated_at - 3600000");
     this.ctx.storage.kv.delete('registry_sync_paused');
     try { await this.alarm(); }
     finally { await this.pause(); await this.ctx.storage.deleteAlarm(); }

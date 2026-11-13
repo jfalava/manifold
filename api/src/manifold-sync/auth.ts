@@ -381,6 +381,19 @@ const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
     if (!response.ok) {
       const detail = (yield* fromPromise(() => response.text())).trim().slice(0, 500);
 
+      // The fetch above lets another call into this object. If that call
+      // refreshed with the same refresh token first, this one is refused
+      // although a usable token is already stored.
+      const stored = readAuthToken(host, provider);
+
+      if (
+        stored &&
+        stored.updated_at !== row.updated_at &&
+        (stored.expires_at === null || stored.expires_at > now() + 30_000)
+      ) {
+        return yield* fromPromise(() => decryptToken(host.env, stored.access_token));
+      }
+
       return yield* apiError(
         `Auth token refresh failed for ${provider} (${response.status})` +
           (detail ? `: ${detail}` : ""),

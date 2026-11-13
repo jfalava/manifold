@@ -22,10 +22,14 @@ import {
   type RouteContext,
   type RouteEffect,
 } from "../http";
+import { createRandomValue } from "../oauth";
 
-const anilistDevicePage = (authorizeUrl: string): string => `<!DOCTYPE html>
+// Served with a nonce-only Content-Security-Policy: a nonce covers the style
+// and script elements but not inline handlers or style attributes, so the
+// buttons are wired with addEventListener and toggled with the hidden attribute.
+const anilistDevicePage = (authorizeUrl: string, nonce: string): string => `<!DOCTYPE html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
+<style nonce="${nonce}">
  body{font-family:-apple-system,sans-serif;padding:20px;max-width:480px;margin:0 auto}
  h3{margin:0 0 12px}
  #token{width:100%;height:110px;font-family:monospace;font-size:13px;padding:10px;
@@ -35,26 +39,30 @@ const anilistDevicePage = (authorizeUrl: string): string => `<!DOCTYPE html>
  button.secondary{background:#64748b}
  button:disabled{opacity:.5}
  small{color:#64748b;display:block;margin-top:10px}
+ [hidden]{display:none}
 </style></head>
 <body>
 <h3>AniList token capture</h3>
 <p id="status">Reading token from URL…</p>
 <textarea id="token" readonly placeholder="Your token will appear here"></textarea>
-<button id="copy" style="display:none" onclick="copyToken()">Copy token</button>
-<button id="start" style="display:none" onclick="location.href='${authorizeUrl}'">Connect AniList</button>
-<p id="copy-hint" style="display:none"><small>Paste this into manifold: tracker → Settings → AniList token (or the privatize script).</small></p>
-<script>
+<button id="copy" hidden>Copy token</button>
+<button id="start" data-authorize-url="${authorizeUrl}" hidden>Connect AniList</button>
+<p id="copy-hint" hidden><small>Paste this into manifold: tracker → Settings → AniList token (or the privatize script).</small></p>
+<script nonce="${nonce}">
   var m = location.hash.match(/access_token=([^&]+)/);
+  var start = document.getElementById("start");
   if (m) {
     document.getElementById("token").value = decodeURIComponent(m[1]);
     document.getElementById("status").textContent = "Token captured.";
-    document.getElementById("copy").style.display = "block";
-    document.getElementById("copy-hint").style.display = "block";
+    document.getElementById("copy").hidden = false;
+    document.getElementById("copy-hint").hidden = false;
     document.getElementById("copy").textContent = "Copy token";
   } else {
     document.getElementById("status").textContent = "No token yet — start the authorization below.";
-    document.getElementById("start").style.display = "block";
+    start.hidden = false;
   }
+  document.getElementById("copy").addEventListener("click", copyToken);
+  start.addEventListener("click", function () { location.href = start.dataset.authorizeUrl; });
   function copyToken() {
     var box = document.getElementById("token");
     var done = function () {
@@ -88,7 +96,6 @@ export const handleHealth = (ctx: RouteContext): RouteEffect =>
       return jsonEncoded(HealthResponse, {
         ok: true as const,
         environment: ctx.env.ENVIRONMENT,
-        build: "p1-oauth-fix-2",
       });
     }
 
@@ -99,7 +106,14 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
   Effect.gen(function* () {
     const { path, request, env, url } = ctx;
 
-    if (path[0] === "v1" && path[1] === "auth" && path[2] === "anilist" && path[3] === "device") {
+    if (
+      request.method === "GET" &&
+      path.length === 4 &&
+      path[0] === "v1" &&
+      path[1] === "auth" &&
+      path[2] === "anilist" &&
+      path[3] === "device"
+    ) {
       // Single-sourced with the tracker (memory 1067): the Worker app (49060,
       // registered callback https://anilist.co/api/v2/oauth/pin) uses
       // client_id + response_type=token only. The CLI app (49218) redirects
@@ -108,8 +122,16 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
         `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(ANILIST_OAUTH_CLIENT_ID)}` +
         `&response_type=token`;
 
-      return new Response(anilistDevicePage(authorizeUrl), {
-        headers: { "content-type": "text/html" },
+      const nonce = createRandomValue(16);
+
+      return new Response(anilistDevicePage(authorizeUrl, nonce), {
+        headers: {
+          "cache-control": "no-store",
+          "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+          "content-type": "text/html; charset=utf-8",
+          "referrer-policy": "no-referrer",
+          "x-content-type-options": "nosniff",
+        },
       });
     }
 

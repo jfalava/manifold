@@ -34,7 +34,7 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
       ) {
         return jsonEncoded(OpsListResponse, {
           ops: yield* tryPromise(() =>
-            sync.pendingAniListOps(boundedInteger(url.searchParams.get("limit"), 25, 1, 500)),
+            sync.pendingAniListOps(boundedInteger(url.searchParams.get("limit"), 25, 1, 100)),
           ),
         });
       }

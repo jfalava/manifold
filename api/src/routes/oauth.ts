@@ -1,12 +1,26 @@
 import { Effect, Result } from "effect";
 
 import { errorMessage } from "@manifold/json";
+import { hostLogError } from "../effect-host";
 import { json, tryPromise, type RouteContext, type RouteEffect } from "../http";
 import { DEVICE_CODE_GRANT_TYPE, isDeviceGithubState } from "../manifold-sync/device-grant";
 import { clearBindingCookie, deviceApprovalResultPage, readBindingCookie } from "./device";
 
 const oauthError = (error: string, description: string, status = 400): Response =>
   json({ error, error_description: description }, status);
+
+// These routes answer callers without a bearer, so the cause (secret binding
+// names, upstream bodies) goes to the log and the response stays generic.
+const oauthFailure = (
+  error: string,
+  description: string,
+  cause: string,
+  status = 400,
+): Response => {
+  hostLogError(`[manifold/api] oauth ${error}:${cause}`);
+
+  return oauthError(error, description, status);
+};
 
 const redirect = (location: string): Response =>
   new Response(null, {
@@ -65,7 +79,11 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
       );
 
       if (Result.isFailure(start)) {
-        return oauthError("invalid_request", start.failure.cause.message);
+        return oauthFailure(
+          "invalid_request",
+          "Authorization request was rejected",
+          start.failure.cause.message,
+        );
       }
 
       return redirect(start.success.authorizationUrl);
@@ -109,7 +127,11 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
       );
 
       if (Result.isFailure(complete)) {
-        return oauthError("invalid_grant", complete.failure.cause.message);
+        return oauthFailure(
+          "invalid_grant",
+          "Sign-in could not be completed",
+          complete.failure.cause.message,
+        );
       }
 
       if (complete.success.accountMismatch) {
@@ -155,7 +177,11 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
       );
 
       if (Result.isFailure(token)) {
-        return oauthError("invalid_grant", token.failure.cause.message);
+        return oauthFailure(
+          "invalid_grant",
+          "Token request was rejected",
+          token.failure.cause.message,
+        );
       }
 
       return json(token.success);
@@ -164,6 +190,8 @@ export const handleOAuth = (ctx: RouteContext): RouteEffect =>
     return null;
   }).pipe(
     Effect.catch((cause) =>
-      Effect.sync(() => oauthError("server_error", errorMessage(cause), 500)),
+      Effect.sync(() =>
+        oauthFailure("server_error", "Internal server error", errorMessage(cause), 500),
+      ),
     ),
   );

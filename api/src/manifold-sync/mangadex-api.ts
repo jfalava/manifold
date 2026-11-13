@@ -3,7 +3,7 @@ import { getAuthAccessToken } from "./auth";
 import type { SyncHost } from "./host";
 import { now, MD_LIBRARY_TTL_MS } from "./constants";
 import { epochMillisNow } from "../effect-host";
-import { Effect, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 import { fromPromise } from "./from-promise";
 import { manifoldUserAgent } from "@manifold/json";
 import { createMangaDexClient, type MangaDexChapter, type MangaDexPaged } from "@manifold/mangadex";
@@ -16,6 +16,7 @@ import type {
 import {
   composeMangaDexEntryStat,
   MD_STATS_CONCURRENCY,
+  MD_STATS_FEED_MAX,
   MD_STATS_FEED_SAMPLE,
   MD_STATS_TTL_MS,
   parseMdFeedStatsPayload,
@@ -93,31 +94,61 @@ const mangaDexStatsEffect = (host: SyncHost, mangaDexIds: readonly string[]) =>
       }
     }
 
-    const fetched = new Map<string, MdFeedStatsPayload>();
     // One failed lookup must not kill the batch — its cells stay "—".
     yield* Effect.forEach(
       staleIds,
       (mangaDexId) =>
-        client.feedChapters(mangaDexId, { limit: MD_STATS_FEED_SAMPLE }).pipe(
-          Effect.map((page) => {
-            fetched.set(mangaDexId, sampleFeedStats(page));
-          }),
-          Effect.ignore,
-        ),
-      { concurrency: MD_STATS_CONCURRENCY, discard: true },
-    );
+        Effect.gen(function* () {
+          const first = yield* client.feedChapters(mangaDexId, { limit: MD_STATS_FEED_SAMPLE });
+          const items = [...first.items];
+          const listed = Math.min(first.total ?? 0, MD_STATS_FEED_MAX);
 
-    for (const [mangaDexId, payload] of fetched) {
-      host.ctx.storage.sql.exec(
-        `INSERT INTO md_feed_stats (manga_id, payload, computed_at)
+          // Read chapters are counted by matching read markers to feed ids, so
+          // a feed longer than one page needs its other pages too. The offset
+          // advances by the page size, not by the items kept, so a chapter the
+          // parser dropped cannot shift every later page.
+          let complete = true;
+
+          for (let offset = MD_STATS_FEED_SAMPLE; offset < listed; offset += MD_STATS_FEED_SAMPLE) {
+            const page = yield* Effect.result(
+              client.feedChapters(mangaDexId, { limit: MD_STATS_FEED_SAMPLE, offset }),
+            );
+
+            if (Result.isFailure(page)) {
+              complete = false;
+              break;
+            }
+
+            if (page.success.items.length === 0) {
+              break;
+            }
+
+            items.push(...page.success.items);
+          }
+
+          const payload = sampleFeedStats({ ...first, items });
+          meta.set(mangaDexId, payload);
+
+          // A sweep cut short by a failed page still answers this request with
+          // the pages it read, but is not cached: the count is too low, and the
+          // next request should read the feed again.
+          if (!complete) {
+            return;
+          }
+
+          // Stored as each title finishes: a caller that gives up on a long
+          // batch leaves the finished titles cached for its next request.
+          host.ctx.storage.sql.exec(
+            `INSERT INTO md_feed_stats (manga_id, payload, computed_at)
        VALUES (?, ?, ?)
        ON CONFLICT(manga_id) DO UPDATE SET payload = excluded.payload, computed_at = excluded.computed_at`,
-        mangaDexId,
-        yield* Schema.encodeEffect(JsonString)(payload),
-        now(),
-      );
-      meta.set(mangaDexId, payload);
-    }
+            mangaDexId,
+            yield* Schema.encodeEffect(JsonString)(payload),
+            now(),
+          );
+        }).pipe(Effect.ignore),
+      { concurrency: MD_STATS_CONCURRENCY, discard: true },
+    );
 
     // 2. Fresh read markers (grouped by manga, batched 100 ids per call).
     const readMarkers = new Map<string, ReadonlySet<string>>();
@@ -298,21 +329,28 @@ const mangaDexLibraryEffect = (host: SyncHost, status?: string) =>
 
       if (host.mdLibraryCache) {
         const byId = new Map(library.map((row) => [row.mangaDexId, row]));
+        const cachedIds = new Set(host.mdLibraryCache.data.map((row) => row.mangaDexId));
+
         host.mdLibraryCache = {
           at: host.mdLibraryCache.at,
-          data: host.mdLibraryCache.data.map((row) => {
-            const hydrated = byId.get(row.mangaDexId);
+          data: [
+            ...host.mdLibraryCache.data.map((row) => {
+              const hydrated = byId.get(row.mangaDexId);
 
-            if (hydrated) {
-              return hydrated;
-            }
+              if (hydrated) {
+                return hydrated;
+              }
 
-            if ((row.status || "") === statusFilter) {
-              return { ...row, status: "" };
-            }
+              if ((row.status || "") === statusFilter) {
+                return { ...row, status: "" };
+              }
 
-            return row;
-          }),
+              return row;
+            }),
+            // Titles shelved since the full load: without them the cached
+            // library would not list them until it expires.
+            ...library.filter((row) => !cachedIds.has(row.mangaDexId)),
+          ],
         };
       }
 

@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect";
+import { Effect, Option, Result, Schema } from "effect";
 import { errorMessage, manifoldUserAgent } from "@manifold/json";
 import { createMangaDexClient } from "@manifold/mangadex";
 import type { OpState, RegistryEntry } from "../domain";
@@ -13,6 +13,7 @@ import {
   now,
   SYNC_DRAIN_LIMIT,
   SYNC_MAX_ATTEMPTS,
+  SYNC_OP_DUE_AT_SQL,
   SYNC_RETRY_DELAY_MS,
 } from "./constants";
 import type { SyncHost } from "./host";
@@ -66,6 +67,33 @@ export const failOps = (
   }
 };
 
+/**
+ * Records a failure that says nothing about the ops themselves (no usable
+ * provider token). The ops wait out the retry backoff with the cause in
+ * last_error, and stay one attempt short of the limit so they are never blocked.
+ */
+const deferOps = (
+  host: SyncHost,
+  rows: readonly { id: number; attempts: number }[],
+  cause: unknown,
+): void => {
+  const message = errorMessage(cause);
+
+  for (const row of rows) {
+    host.ctx.storage.sql.exec(
+      `UPDATE sync_ops
+       SET attempts = ?, last_error = ?, updated_at = ?
+       WHERE id = ? AND state = 'pending'`,
+      Math.min(row.attempts + 1, SYNC_MAX_ATTEMPTS - 1),
+      message.slice(0, MAX_ERROR_LENGTH),
+      now(),
+      row.id,
+    );
+  }
+
+  hostLogError(`[ManifoldSync] ${rows.length} op(s) deferred:${message}`);
+};
+
 export const readMalBackupEntry = (host: SyncHost, entryId: string): RegistryEntry | undefined => {
   const active = host.ctx.storage.sql
     .exec<{ id: string }>(
@@ -81,7 +109,10 @@ const drainMalBackupsEffect = (host: SyncHost): Effect.Effect<void> =>
   Effect.gen(function* () {
     const rows = host.ctx.storage.sql
       .exec<OpRow>(
-        "SELECT * FROM sync_ops WHERE target = 'mal' AND state = 'pending' ORDER BY id LIMIT 5",
+        `SELECT * FROM sync_ops
+         WHERE target = 'mal' AND state = 'pending' AND ${SYNC_OP_DUE_AT_SQL} <= ?
+         ORDER BY id LIMIT 5`,
+        now(),
       )
       .toArray();
 
@@ -189,8 +220,21 @@ export const drainMalBackups = (host: SyncHost): Promise<void> =>
 
 const drainMangaDexOutboxEffect = (host: SyncHost, rows: readonly OpRow[]) =>
   Effect.gen(function* () {
-    const accessToken = yield* fromPromise(() => getAuthAccessToken(host, "mangadex"));
-    const client = createMangaDexClient({ accessToken, userAgent: manifoldUserAgent("api") });
+    const token = yield* Effect.result(fromPromise(() => getAuthAccessToken(host, "mangadex")));
+
+    if (Result.isFailure(token)) {
+      // Not about any one op: record the cause and back off, but never block.
+      // A blocked op needs a manual retry, and a MangaDex sign-in outage of a
+      // few minutes would otherwise block the whole outbox.
+      deferOps(host, rows, token.failure);
+
+      return;
+    }
+
+    const client = createMangaDexClient({
+      accessToken: token.success,
+      userAgent: manifoldUserAgent("api"),
+    });
 
     // One MangaDex round-trip per manga, not per chapter: per-chapter calls
     // kept the DO input gate closed for minutes during mass-read bursts and
@@ -336,9 +380,10 @@ const alarmEffect = (host: SyncHost) =>
     const rows = host.ctx.storage.sql
       .exec<OpRow>(
         `SELECT * FROM sync_ops
-       WHERE state = 'pending' AND target = 'mangadex'
+       WHERE state = 'pending' AND target = 'mangadex' AND ${SYNC_OP_DUE_AT_SQL} <= ?
        ORDER BY id ASC
        LIMIT ${SYNC_DRAIN_LIMIT}`,
+        now(),
       )
       .toArray();
 

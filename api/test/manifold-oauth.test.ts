@@ -246,6 +246,48 @@ describe("Manifold GitHub OAuth", () => {
     }
   });
 
+  it("drops expired authorization codes that were never exchanged when the next one is issued", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 10, 4, 12, 0, 0));
+    const { host, close } = makeHost();
+
+    try {
+      stubGithub(12345);
+
+      const issueCode = async (state: string): Promise<string> => {
+        const start = await createManifoldOAuthAuthorization(host, {
+          clientId: MANIFOLD_OAUTH_CLIENT_ID,
+          redirectUri: MANIFOLD_OAUTH_REDIRECT_URI,
+          responseType: "code",
+          state,
+          codeChallenge: await createPkceChallenge("abandoned-verifier"),
+          codeChallengeMethod: "S256",
+        });
+
+        const callback = await completeGithubOAuth(
+          host,
+          requiredSearchParam(start.authorizationUrl, "state"),
+          "github-code",
+        );
+
+        return requiredSearchParam(callback.redirectUri, "code");
+      };
+
+      const codes = () =>
+        host.ctx.storage.sql.exec("SELECT code_hash FROM manifold_oauth_codes").toArray();
+
+      await issueCode("abandoned-state");
+      expect(codes()).toHaveLength(1);
+
+      vi.setSystemTime(Date.UTC(2026, 10, 4, 12, 5, 0));
+      await issueCode("next-state");
+      expect(codes()).toHaveLength(1);
+    } finally {
+      close();
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects GitHub accounts outside the configured personal allowlist", async () => {
     const { host, close } = makeHost();
 
