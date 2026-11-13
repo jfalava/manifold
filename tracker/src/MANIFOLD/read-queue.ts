@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
-/* Last modified by Manifold on 2026-11-03. See ATTRIBUTIONS.md. */
+/* Last modified by Manifold on 2026-11-12. See ATTRIBUTIONS.md. */
 // Bundled into the Paperback tracker, which stays as small as possible: the
 // global JSON costs nothing, while @manifold/json/text adds Schema codecs.
 /** @effect-diagnostics globalJson:off */
@@ -14,6 +14,7 @@ import {
 import { isFiniteNumber, isJsonObject, isString, type JsonValue } from "@manifold/json";
 import {
   errorMessage,
+  isAniListServiceFailure,
   type PersonalReadInput,
   type PersonalReadingProgress,
   ContentProvider,
@@ -223,6 +224,24 @@ const acknowledgeProgress = (mangaId: string, chapterNum: number): void => {
   Application.setState(JSON.stringify(pending), PENDING_PROGRESS_KEY);
 };
 
+/**
+ * One progress push. A rejection that says AniList is unreachable, rate
+ * limiting or refusing the token keeps its class: the next push in the same
+ * run would meet the same answer, after waiting out the client's backoff.
+ */
+const attemptPush = (
+  pushProgress: ReadQueueDeps["pushProgress"],
+  sourceManga: SourceManga,
+  chapterNum: number,
+) =>
+  Effect.result(
+    Effect.tryPromise({
+      try: () => pushProgress(sourceManga, chapterNum),
+      catch: (cause) =>
+        isAniListServiceFailure(cause) ? cause : trackerError(errorMessage(cause)),
+    }),
+  );
+
 const flushPendingProgressEffect = (
   pushProgress: ReadQueueDeps["pushProgress"],
   skip?: ReadonlySet<string>,
@@ -236,15 +255,19 @@ const flushPendingProgressEffect = (
         continue;
       }
 
-      const outcome = yield* Effect.result(
-        fromPromise(() => pushProgress(entry.sourceManga, entry.chapterNum)),
-      );
+      const outcome = yield* attemptPush(pushProgress, entry.sourceManga, entry.chapterNum);
 
       if (Result.isFailure(outcome)) {
         // Keep it queued; the next read-queue run retries.
         yield* Effect.logError(
           `[manifold] anilist progress retry failed:${mangaId}:${errorMessage(outcome.failure)}`,
         );
+
+        if (isAniListServiceFailure(outcome.failure)) {
+          // Not about this entry: leave the rest queued for a later run.
+          break;
+        }
+
         continue;
       }
 
@@ -361,13 +384,23 @@ const processReadActionsEffect = (
     }
 
     const attempted = new Set<string>();
+    // Set once AniList is unreachable, rate limiting or refusing the token.
+    // Every later push in this run is then queued without being sent.
+    let aniListUnavailable = false;
 
     for (const [mangaId, max] of maxByManga) {
       attempted.add(mangaId);
 
-      const outcome = yield* Effect.result(
-        fromPromise(() => deps.pushProgress(max.sourceManga, max.chapterNum)),
-      );
+      if (aniListUnavailable) {
+        queueProgress(mangaId, {
+          sourceManga: slimSourceManga(max.sourceManga),
+          chapterNum: max.chapterNum,
+          at: yield* Clock.currentTimeMillis,
+        });
+        continue;
+      }
+
+      const outcome = yield* attemptPush(deps.pushProgress, max.sourceManga, max.chapterNum);
 
       if (Result.isSuccess(outcome)) {
         if (outcome.success) {
@@ -385,6 +418,7 @@ const processReadActionsEffect = (
         yield* Effect.logError(
           `[manifold] anilist progress failed:${mangaId}:${errorMessage(outcome.failure)}`,
         );
+        aniListUnavailable = isAniListServiceFailure(outcome.failure);
       }
     }
 
@@ -392,7 +426,9 @@ const processReadActionsEffect = (
     // Entries attempted above are skipped: they just failed or succeeded, so
     // retrying them in the same tick only doubles upstream load during a
     // rate-limit window. Fresh acknowledgements already cleared superseded ones.
-    yield* flushPendingProgressEffect(deps.pushProgress, attempted);
+    if (!aniListUnavailable) {
+      yield* flushPendingProgressEffect(deps.pushProgress, attempted);
+    }
 
     return { successfulItems, failedItems };
   });

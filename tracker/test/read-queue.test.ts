@@ -4,7 +4,7 @@ import {
   type SourceManga,
   type TrackedMangaChapterReadAction,
 } from "@paperback/types";
-import type { PersonalReadInput } from "@manifold/paperback-runtime";
+import { AniListUnavailableError, type PersonalReadInput } from "@manifold/paperback-runtime";
 
 import { processReadActions } from "../src/MANIFOLD/read-queue.js";
 
@@ -148,6 +148,68 @@ describe("processReadActions", () => {
         mangaInfo: { thumbnailUrl: "", synopsis: "", primaryTitle: "" },
       },
     });
+  });
+
+  it("stops pushing for the rest of the run once AniList is rate limiting", async () => {
+    applicationState.set(
+      PENDING_PROGRESS_KEY_SAFE,
+      JSON.stringify({
+        "anilist:8": { sourceManga: manga("anilist:8"), chapterNum: 3, at: 1 },
+        "anilist:9": { sourceManga: manga("anilist:9"), chapterNum: 6, at: 2 },
+      }),
+    );
+    const recordRead = vi.fn().mockResolvedValue({});
+
+    // What the shared AniList client rejects with after its own 429 backoff.
+    const pushProgress = vi.fn().mockRejectedValue(
+      new AniListUnavailableError({
+        reason: "rate_limited",
+        message: "AniList kept rate limiting after repeated backoff",
+      }),
+    );
+
+    const result = await processReadActions(
+      [action("a", "c1", 4, "anilist:1"), action("b", "c2", 7, "anilist:2")],
+      { recordRead, pushProgress },
+    );
+
+    expect(result.successfulItems).toEqual(["a", "b"]);
+    expect(result.failedItems).toEqual([]);
+    // One push met the rate limit; the other three wait for a later run
+    // instead of each sitting through the same backoff.
+    expect(pushProgress).toHaveBeenCalledTimes(1);
+
+    const queued = readStoredObject(PENDING_PROGRESS_KEY_SAFE);
+
+    expect(new Set(Object.keys(queued))).toEqual(
+      new Set(["anilist:1", "anilist:2", "anilist:8", "anilist:9"]),
+    );
+    expect(queued["anilist:2"]).toMatchObject({ chapterNum: 7 });
+  });
+
+  it("stops retrying queued pushes once AniList is unreachable", async () => {
+    applicationState.set(
+      PENDING_PROGRESS_KEY_SAFE,
+      JSON.stringify({
+        "anilist:8": { sourceManga: manga("anilist:8"), chapterNum: 3, at: 1 },
+        "anilist:9": { sourceManga: manga("anilist:9"), chapterNum: 6, at: 2 },
+      }),
+    );
+    const recordRead = vi.fn().mockResolvedValue({});
+
+    const pushProgress = vi
+      .fn()
+      .mockRejectedValue(
+        new AniListUnavailableError({ reason: "transport", message: "AniList request failed" }),
+      );
+
+    await processReadActions([], { recordRead, pushProgress });
+
+    expect(pushProgress).toHaveBeenCalledTimes(1);
+    expect(Object.keys(readStoredObject(PENDING_PROGRESS_KEY_SAFE))).toEqual([
+      "anilist:8",
+      "anilist:9",
+    ]);
   });
 
   it("never queues a false push (no token/link): the next read re-pushes", async () => {

@@ -426,4 +426,127 @@ describe("managed collection registry reconciliation", () => {
     expect(nukeCalls).toEqual([]);
     expect(readStoredObject(PENDING_NUKES_KEY)["A1"]).toMatchObject({ entryId: "entry-1" });
   });
+
+  it("keeps a removal queued while another commit's AniList write is in flight", async () => {
+    mocks.api = makeApi((entryId) => Promise.resolve(listState(entryId)));
+    let finishSave = (): void => undefined;
+    mocks.saveAniListStatus.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishSave = () => resolve({ mediaListEntryId: 7 });
+        }),
+    );
+
+    const addition = commitManagedCollectionChanges({
+      collection: managedCollection(0),
+      additions: [sourceManga("entry-2", "A2")],
+      deletions: [],
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.saveAniListStatus).toHaveBeenCalledOnce();
+    });
+
+    await commitManagedCollectionChanges({
+      collection: managedCollection(0),
+      additions: [],
+      deletions: [sourceManga("entry-1", "A1")],
+    });
+    finishSave();
+    await addition;
+
+    // The first commit read the queue before the removal was written.
+    expect(readStoredObject(PENDING_NUKES_KEY)["A1"]).toMatchObject({ entryId: "entry-1" });
+  });
+
+  it("does not fire a nuke that a move cancelled while the flush was fetching the library", async () => {
+    applicationState.set(
+      PENDING_NUKES_KEY,
+      JSON.stringify({
+        A1: { entryId: "entry-1", anilistId: "A1", collectionId: "reading", at: 1 },
+      }),
+    );
+    mocks.api = makeApi((entryId) => Promise.resolve(listState(entryId)));
+    mocks.saveAniListStatus.mockResolvedValue({ mediaListEntryId: 7 });
+    mocks.fetchAniListMediaListEntryIds.mockResolvedValue({ A1: 42 });
+    mocks.deleteAniListEntry.mockResolvedValue(true);
+    let moved = false;
+    mocks.fetchAniListLibrary.mockImplementation(async () => {
+      if (!moved) {
+        moved = true;
+        await commitManagedCollectionChanges({
+          collection: managedCollection(3),
+          additions: [sourceManga("entry-1", "A1")],
+          deletions: [],
+        });
+      }
+
+      // The library answer predates the move.
+      return [{ anilistId: "A1", status: "reading", title: "Title A1" }];
+    });
+
+    expect(await flushPendingNukes()).toBe(0);
+    expect(mocks.deleteAniListEntry).not.toHaveBeenCalled();
+    expect(readStoredObject(PENDING_NUKES_KEY)).toEqual({});
+  });
+
+  it("keeps a removal queued while a flush is deleting another title", async () => {
+    applicationState.set(
+      PENDING_NUKES_KEY,
+      JSON.stringify({
+        A1: { entryId: "entry-1", anilistId: "A1", collectionId: "reading", at: 1 },
+      }),
+    );
+    mocks.api = makeApi((entryId) => Promise.resolve(listState(entryId)));
+    mocks.fetchAniListLibrary.mockResolvedValue([] satisfies AniListLibraryItem[]);
+    mocks.fetchAniListMediaListEntryIds.mockResolvedValue({ A1: 42 });
+    mocks.deleteAniListEntry.mockImplementation(async () => {
+      applicationState.set(
+        PENDING_NUKES_KEY,
+        JSON.stringify({
+          A1: { entryId: "entry-1", anilistId: "A1", collectionId: "reading", at: 1 },
+          A2: { entryId: "entry-2", anilistId: "A2", collectionId: "reading", at: Date.now() },
+        }),
+      );
+
+      return true;
+    });
+
+    expect(await flushPendingNukes()).toBe(1);
+    expect(Object.keys(readStoredObject(PENDING_NUKES_KEY))).toEqual(["A2"]);
+  });
+
+  it("leaves the registry entry alone when a move cancels the nuke during the AniList delete", async () => {
+    applicationState.set(
+      PENDING_NUKES_KEY,
+      JSON.stringify({
+        A1: { entryId: "entry-1", anilistId: "A1", collectionId: "reading", at: 1 },
+      }),
+    );
+    const nukeCalls: string[] = [];
+    mocks.api = makeApi(
+      (entryId) => Promise.resolve(listState(entryId)),
+      (entryId) => {
+        nukeCalls.push(entryId);
+
+        return Promise.resolve();
+      },
+    );
+    mocks.fetchAniListLibrary.mockResolvedValue([] satisfies AniListLibraryItem[]);
+    mocks.fetchAniListMediaListEntryIds.mockResolvedValue({ A1: 42 });
+    mocks.saveAniListStatus.mockResolvedValue({ mediaListEntryId: 7 });
+    mocks.deleteAniListEntry.mockImplementation(async () => {
+      await commitManagedCollectionChanges({
+        collection: managedCollection(3),
+        additions: [sourceManga("entry-1", "A1")],
+        deletions: [],
+      });
+
+      return true;
+    });
+
+    expect(await flushPendingNukes()).toBe(0);
+    expect(nukeCalls).toEqual([]);
+    expect(readStoredObject(PENDING_NUKES_KEY)).toEqual({});
+  });
 });

@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Form, type Request as PaperbackRequest } from "@paperback/types";
+import {
+  Form,
+  type Request as PaperbackRequest,
+  type TrackedMangaChapterReadAction,
+} from "@paperback/types";
 import { isJsonObject, isString, type JsonValue } from "@manifold/json";
 import { MANIFOLD_API_TOKEN_KEY, ANILIST_SESSION_KEY } from "@manifold/paperback-runtime";
 
@@ -31,6 +35,11 @@ const hasNotesCallback = (
 ): form is Form & { notesChanged(value: string): Promise<void> } =>
   "notesChanged" in form && typeof form.notesChanged === "function";
 
+const hasVolumeCallback = (
+  form: Form,
+): form is Form & { volumeChanged(value: string): Promise<void> } =>
+  "volumeChanged" in form && typeof form.volumeChanged === "function";
+
 const hasStatusCallback = (
   form: Form,
 ): form is Form & { statusSelected(values: string[]): Promise<void> } =>
@@ -52,24 +61,36 @@ const parseJsonObject = (value: PaperbackRequest["body"]): Record<string, JsonVa
 
 describe("Paperback canonical fallback", () => {
   const requests: PaperbackRequest[] = [];
+  const state = new Map<string, string>();
   let hasAniList = false;
   let registrySearch = false;
   let bareDetails = false;
+  let loggedIn = true;
+  let formReloads = 0;
 
   beforeEach(async () => {
     requests.length = 0;
+    state.clear();
     hasAniList = false;
     registrySearch = false;
     bareDetails = false;
-    vi.spyOn(Form.prototype, "reloadForm").mockImplementation(() => undefined);
+    loggedIn = true;
+    formReloads = 0;
+    vi.spyOn(Form.prototype, "reloadForm").mockImplementation(() => {
+      formReloads += 1;
+    });
     vi.stubGlobal("Application", {
       getSecureState: (key: string) =>
         key === MANIFOLD_API_TOKEN_KEY
-          ? "api-token"
+          ? loggedIn
+            ? "api-token"
+            : undefined
           : key === ANILIST_SESSION_KEY && hasAniList
             ? "anilist-token"
             : undefined,
-      getState: () => undefined,
+      getState: (key: string) => state.get(key),
+      setState: (value: string, key: string) => state.set(key, value),
+      Selector: (_target: never, key: string) => key,
       sleep: async () => undefined,
       arrayBufferToUTF8String: (buffer: ArrayBuffer) => new TextDecoder().decode(buffer),
       scheduleRequest: async (request: PaperbackRequest) => {
@@ -104,6 +125,8 @@ describe("Paperback canonical fallback", () => {
           body = stored;
         } else if (url.pathname.endsWith("/canonical/mal/77")) {
           body = canonical;
+        } else if (url.pathname.endsWith("/read")) {
+          body = { entryId: entry.id, chapterKey: "mangadex:chapter", readAt: 0, version: 1 };
         } else if (url.pathname.endsWith(`/entries/${entry.id}/canonical`)) {
           body = bareDetails
             ? { id: entry.id, provider: "mal", providerId: "77", title: "Example", aliases: [] }
@@ -240,5 +263,112 @@ describe("Paperback canonical fallback", () => {
       origin: "device",
       appliedRemotely: false,
     });
+  });
+
+  it.each(["1.5", "-2"])("rejects the volume progress %s without saving it", async (volume) => {
+    const tracker = new ManifoldTrackerSource();
+
+    const form = await tracker.getMangaProgressManagementForm(
+      await tracker.getMangaDetails(entry.id),
+    );
+
+    if (!hasVolumeCallback(form)) {
+      throw new Error("Missing volume callback");
+    }
+
+    await form.volumeChanged(volume);
+    await form.formDidSubmit?.();
+
+    expect(
+      requests.some((request) => request.method === "POST" && request.url.endsWith("/list-state")),
+    ).toBe(false);
+
+    const rows = form.getSections().flatMap((section) => section.items);
+
+    expect(rows.find((row) => row.id === "manifold-tracker-status-error")).toMatchObject({
+      value: "volumeProgress must be a whole number, 0 or more",
+    });
+  });
+
+  it("saves a whole volume number", async () => {
+    const tracker = new ManifoldTrackerSource();
+
+    const form = await tracker.getMangaProgressManagementForm(
+      await tracker.getMangaDetails(entry.id),
+    );
+
+    if (!hasVolumeCallback(form)) {
+      throw new Error("Missing volume callback");
+    }
+
+    await form.volumeChanged("3");
+    await form.formDidSubmit?.();
+
+    const save = requests.find(
+      (request) => request.method === "POST" && request.url.endsWith("/list-state"),
+    );
+
+    expect(parseJsonObject(save?.body)).toEqual({
+      volumeProgress: 3,
+      origin: "device",
+      appliedRemotely: false,
+    });
+  });
+
+  it("shows an unknown status instead of rejecting when logged out", async () => {
+    loggedIn = false;
+
+    const form = await new ManifoldTrackerSource().getMangaProgressManagementForm({
+      mangaId: entry.id,
+      mangaInfo: { thumbnailUrl: "", synopsis: "", primaryTitle: "Example" },
+    });
+
+    await vi.waitFor(() => {
+      expect(formReloads).toBe(1);
+    });
+
+    const rows = form.getSections().flatMap((section) => section.items);
+
+    expect(rows.find((row) => row.id === "manifold-tracker-status-current")).toMatchObject({
+      value: "Unknown",
+    });
+  });
+
+  it("stops pushing AniList progress for the rest of a read batch once AniList rejects the token", async () => {
+    hasAniList = true;
+
+    const read = (id: string, anilistId: string): TrackedMangaChapterReadAction => ({
+      id,
+      chapterId: `chapter-${id}`,
+      chapterSourceId: "MangaDex",
+      chapterMangaId: "manga-id",
+      chapterNum: 5,
+      creationDate: new Date(0),
+      errorCount: 0,
+      sourceManga: {
+        mangaId: `entry-${id}`,
+        mangaInfo: {
+          thumbnailUrl: "",
+          synopsis: "",
+          primaryTitle: id,
+          additionalInfo: { "AniList ID": anilistId },
+        },
+      },
+    });
+
+    const result = await new ManifoldTrackerSource().processChapterReadActionQueue([
+      read("a", "42"),
+      read("b", "43"),
+    ]);
+
+    expect(result).toEqual({ successfulItems: ["a", "b"], failedItems: [] });
+    // AniList answers 403 here: the second push would be refused the same way.
+    expect(requests.filter((request) => request.url.includes("graphql.anilist.co"))).toHaveLength(
+      1,
+    );
+    expect(Object.keys(parseJsonObject(state.get("manifold.pending-progress")))).toEqual([
+      "entry-a",
+      "entry-b",
+    ]);
   });
 });

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
-/* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
+/* Last modified by Manifold on 2026-11-12. See ATTRIBUTIONS.md. */
 
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics globalConsole:off */
@@ -71,6 +71,8 @@ import {
   aniListRequest,
   configuredPersonalApi,
   errorMessage,
+  fromAniListPromise,
+  isAniListServiceFailure,
   maybeDrainAniListOps,
   mangaDexProviderCandidate,
   parseAniListReadingStatus,
@@ -85,6 +87,7 @@ import {
   safeImageUrl,
   toProviderCandidateSearchResult,
   viewerQuery,
+  type AniListServiceFailure,
   type ProviderCandidate,
 } from "@manifold/paperback-runtime";
 import {
@@ -523,7 +526,7 @@ const aniLinkOf = (
 const recordTrackerAniListProgressEffect = (
   sourceManga: SourceManga,
   chapterNumber: number | undefined,
-): Effect.Effect<boolean, TrackerEffectError> =>
+): Effect.Effect<boolean, TrackerEffectError | AniListServiceFailure> =>
   Effect.gen(function* () {
     const token = aniListSessionToken();
 
@@ -546,7 +549,12 @@ const recordTrackerAniListProgressEffect = (
       return false;
     }
 
-    return yield* fromPromise(() => saveAniListProgress(token, anilistId, chapterNumber));
+    return yield* Effect.tryPromise({
+      try: () => saveAniListProgress(token, anilistId, chapterNumber),
+      // The read queue stops its run on a service failure, so it keeps its class.
+      catch: (cause) =>
+        isAniListServiceFailure(cause) ? cause : trackerError(errorMessage(cause)),
+    });
   });
 
 const recordTrackerAniListProgress = (
@@ -595,7 +603,12 @@ class TrackerStatusForm extends Form {
   private loadCurrentStatus(): Promise<void> {
     return Effect.runPromise(
       Effect.gen({ self: this }, function* () {
-        const api = configuredPersonalApi();
+        // Throws when logged out. Nothing awaits this load, so the throw must
+        // become a typed failure for the handler below, not a rejection.
+        const api = yield* Effect.try({
+          try: () => configuredPersonalApi(),
+          catch: (cause) => trackerError(errorMessage(cause)),
+        });
 
         if (!this.anilistId) {
           const stored = yield* fromPromise(() => api.getEntry(this.entryId)).pipe(
@@ -785,6 +798,12 @@ class TrackerStatusForm extends Form {
 
       if (!Number.isFinite(parsed)) {
         throw new Error(`${key} must be a number`);
+      }
+
+      // AniList stores volumes as a non-negative Int: anything else would be
+      // saved here and then rejected by every later sync attempt.
+      if (key === "volumeProgress" && (!Number.isSafeInteger(parsed) || parsed < 0)) {
+        throw new Error("volumeProgress must be a whole number, 0 or more");
       }
 
       if (parsed !== current) {
@@ -1074,7 +1093,7 @@ class TrackerSettingsForm extends Form {
           id: "tracker-personal-api",
           header: "Manifold API",
           footer:
-            "GitHub login is recommended. If it fails, paste a Manifold API bearer token; it is stored securely and checked with a read-only request.",
+            "GitHub login is recommended. If it fails, paste a Manifold API bearer token; it is checked with a read-only request and stored securely once accepted.",
         },
         [
           OAuthButtonRow("tracker-manifold-oauth", {
@@ -1123,6 +1142,7 @@ class TrackerSettingsForm extends Form {
           InputRow("tracker-anilist-token", {
             title: "AniList token",
             value: "",
+            isSecureEntry: true,
             onValueChange: Application.Selector(selectorTarget, "aniListTokenChanged"),
           }),
           LabelRow("tracker-anilist-status", {
@@ -1183,8 +1203,12 @@ class TrackerSettingsForm extends Form {
           return;
         }
 
+        // fromAniListPromise keeps the error class, so a rejected token can be
+        // told apart from a request that never reached AniList.
         const outcome = yield* Effect.result(
-          fromPromise(() => aniListRequest(aniListToken, viewerQuery, {}, decodeAniListViewer)),
+          fromAniListPromise(() =>
+            aniListRequest(aniListToken, viewerQuery, {}, decodeAniListViewer),
+          ),
         );
 
         if (Result.isSuccess(outcome)) {
@@ -1213,11 +1237,6 @@ class TrackerSettingsForm extends Form {
         const manifoldToken = this.pendingManifoldToken?.trim();
 
         if (manifoldToken) {
-          Application.setSecureState("", MANIFOLD_API_ACCESS_TOKEN_KEY);
-          Application.setSecureState("", MANIFOLD_API_REFRESH_TOKEN_KEY);
-          Application.setSecureState("", MANIFOLD_API_ACCESS_EXPIRES_AT_KEY);
-          Application.setSecureState(manifoldToken, MANIFOLD_API_TOKEN_KEY);
-
           const validation = yield* Effect.result(
             fromPromise(() =>
               scheduledPersonalRequester({
@@ -1231,18 +1250,25 @@ class TrackerSettingsForm extends Form {
             ),
           );
 
-          if (Result.isSuccess(validation)) {
-            const { status } = validation.success;
+          const status = Result.isSuccess(validation) ? validation.success.status : undefined;
+
+          if (status !== undefined && status >= 200 && status < 300) {
+            // Replace the saved credentials only now that the API accepted the
+            // token: a mistyped one must not sign the device out of GitHub.
+            Application.setSecureState("", MANIFOLD_API_ACCESS_TOKEN_KEY);
+            Application.setSecureState("", MANIFOLD_API_REFRESH_TOKEN_KEY);
+            Application.setSecureState("", MANIFOLD_API_ACCESS_EXPIRES_AT_KEY);
+            Application.setSecureState(manifoldToken, MANIFOLD_API_TOKEN_KEY);
+            Application.setState("Manual token connected", MANIFOLD_API_STATUS_KEY);
+          } else {
             Application.setState(
-              status >= 200 && status < 300
-                ? "Manual token connected"
-                : status === 401
-                  ? "Token rejected: check it or log in again"
-                  : `Token saved: could not verify (HTTP ${status})`,
+              status === 401
+                ? "Token rejected: check it or log in again"
+                : status === undefined
+                  ? "Token not saved: could not verify"
+                  : `Token not saved: could not verify (HTTP ${status})`,
               MANIFOLD_API_STATUS_KEY,
             );
-          } else {
-            Application.setState("Token saved — could not verify", MANIFOLD_API_STATUS_KEY);
           }
         }
 
