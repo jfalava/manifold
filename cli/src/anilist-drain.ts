@@ -13,7 +13,9 @@ import { isString, manifoldUserAgent } from "@manifold/json";
 import {
   createAniListClient,
   decodeAniListViewer,
+  isAniListServiceFailure,
   viewerQuery,
+  type AniListServiceFailure,
   type AniListTransport,
 } from "@manifold/paperback-runtime/anilist";
 import { Effect } from "effect";
@@ -88,6 +90,19 @@ export const aniListFetchTransport: AniListTransport = {
 
 let aniList = createAniListClient(aniListFetchTransport);
 
+/**
+ * Promise boundary for the op writes. A rejected token, an outage or a rate
+ * limit keeps its class so the pass can stop on it; every other rejection is
+ * about the op and flattens like fromPromise.
+ */
+const fromAniListWrite = <A>(
+  action: () => Promise<A>,
+): Effect.Effect<A, CliEffectError | AniListServiceFailure> =>
+  Effect.tryPromise({
+    try: action,
+    catch: (cause) => (isAniListServiceFailure(cause) ? cause : cliError(errorText(cause))),
+  });
+
 const fetchViewerIdEffect = (token: string): Effect.Effect<number, CliEffectError> =>
   fromPromise(() => aniList.aniListRequest(token, viewerQuery, {}, decodeAniListViewer)).pipe(
     Effect.map((data) => data.Viewer.id),
@@ -97,7 +112,7 @@ const executeOpEffect = (
   token: string,
   op: PendingAniListOp,
   mediaListEntryIds: Readonly<Record<string, number>> | undefined,
-): Effect.Effect<number | undefined, CliEffectError> =>
+): Effect.Effect<number | undefined, CliEffectError | AniListServiceFailure> =>
   Effect.gen(function* () {
     const parsed = yield* Effect.try({
       try: () => parsePendingAniListOp(op),
@@ -107,7 +122,7 @@ const executeOpEffect = (
 
     switch (parsed.kind) {
       case "anilist.status": {
-        const result = yield* fromPromise(() =>
+        const result = yield* fromAniListWrite(() =>
           aniList.saveAniListStatus(token, parsed.anilistId, parsed.status),
         );
 
@@ -115,7 +130,7 @@ const executeOpEffect = (
       }
 
       case "anilist.progress": {
-        yield* fromPromise(() =>
+        yield* fromAniListWrite(() =>
           aniList.saveAniListProgress(token, parsed.anilistId, parsed.progress),
         );
 
@@ -123,7 +138,9 @@ const executeOpEffect = (
       }
 
       case "anilist.fields": {
-        yield* fromPromise(() => aniList.saveAniListFields(token, parsed.anilistId, parsed.change));
+        yield* fromAniListWrite(() =>
+          aniList.saveAniListFields(token, parsed.anilistId, parsed.change),
+        );
 
         return parsed.mediaListEntryId;
       }
@@ -143,7 +160,9 @@ const executeOpEffect = (
           return yield* cliError(`op ${parsed.opId}: no mediaListEntryId for ${parsed.anilistId}`);
         }
 
-        const deleted = yield* fromPromise(() => aniList.deleteAniListEntry(token, listEntryId));
+        const deleted = yield* fromAniListWrite(() =>
+          aniList.deleteAniListEntry(token, listEntryId),
+        );
 
         if (!deleted) {
           return yield* cliError(
@@ -159,6 +178,11 @@ const executeOpEffect = (
 /**
  * One drain pass: fetch pending anilist:* ops, execute, report outcomes.
  * Empty queue is success with zeros.
+ *
+ * Fails, after reporting the ops already done, when AniList rejected the
+ * token, was unreachable or kept rate limiting. The op that hit it and the ops
+ * after it are not reported: the API blocks an op after five reported
+ * failures, and none of those failures is about the op.
  */
 export const drainAniListOpsPassEffect = (
   api: DrainApiClient,
@@ -187,6 +211,7 @@ export const drainAniListOpsPassEffect = (
       : undefined;
 
     const results: DrainOpResult[] = [];
+    let stoppedBy: AniListServiceFailure | undefined;
 
     for (const op of ops) {
       const outcome = yield* executeOpEffect(anilistToken, op, mediaListEntryIds).pipe(
@@ -194,11 +219,21 @@ export const drainAniListOpsPassEffect = (
           ok: true as const,
           mediaListEntryId,
         })),
-        Effect.catch((cause) => Effect.succeed({ ok: false as const, error: errorText(cause) })),
+        Effect.catch((cause) => Effect.succeed({ ok: false as const, cause })),
       );
 
       if (!outcome.ok) {
-        results.push({ opId: op.opId, ok: false, error: outcome.error, kind: op.kind });
+        if (isAniListServiceFailure(outcome.cause)) {
+          stoppedBy = outcome.cause;
+          break;
+        }
+
+        results.push({
+          opId: op.opId,
+          ok: false,
+          error: errorText(outcome.cause),
+          kind: op.kind,
+        });
         continue;
       }
 
@@ -219,9 +254,26 @@ export const drainAniListOpsPassEffect = (
       ...(r.mediaListEntryId !== undefined && { mediaListEntryId: r.mediaListEntryId }),
     }));
 
-    const { updated } = yield* fromPromise(() => api.completeOps(reportBody)).pipe(
-      Effect.mapError((cause) => cliError(`complete ops failed: ${errorText(cause)}`)),
-    );
+    const stopped =
+      stoppedBy === undefined
+        ? undefined
+        : `${stoppedBy.message}: ${ops.length - results.length} of ${ops.length} AniList operations stay pending and were not counted as failed.`;
+
+    const updated =
+      reportBody.length === 0
+        ? 0
+        : (yield* fromPromise(() => api.completeOps(reportBody)).pipe(
+            Effect.mapError((cause) =>
+              // Keep the reason the pass stopped when the report fails too.
+              cliError(
+                `${stopped === undefined ? "" : `${stopped} `}complete ops failed: ${errorText(cause)}`,
+              ),
+            ),
+          )).updated;
+
+    if (stopped !== undefined) {
+      return yield* cliError(stopped);
+    }
 
     return {
       fetched: ops.length,

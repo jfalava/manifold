@@ -111,6 +111,97 @@ describe("drainAniListOpsPass", () => {
     expect(completed[1]).toMatchObject({ opId: "ok", ok: true });
   }, 15_000);
 
+  it.each([
+    ["answers HTTP 503", async () => new Response("upstream down", { status: 503 })],
+    ["rejects the token", async () => new Response("{}", { status: 401 })],
+    [
+      "cannot be reached",
+      async (): Promise<Response> => {
+        throw new TypeError("fetch failed");
+      },
+    ],
+  ])(
+    "stops the pass and leaves the remaining ops pending when AniList %s",
+    async (_name, unavailable) => {
+      __drainTest.resetThrottle();
+      const completed: unknown[] = [];
+
+      const api: DrainApiClient = {
+        pendingAniListOps: async () => [
+          op("done", "anilist.progress", { anilistId: "7", progress: 3 }),
+          op("hit", "anilist.status", { anilistId: "42", status: "reading" }),
+          op("after", "anilist.status", { anilistId: "43", status: "reading" }),
+        ],
+        completeOps: async (results) => {
+          completed.push(...results);
+
+          return { updated: results.length };
+        },
+      };
+
+      let calls = 0;
+
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          calls += 1;
+
+          if (calls === 1) {
+            return Response.json({
+              data: {
+                SaveMediaListEntry: { id: 1, progress: 3, status: "CURRENT", private: true },
+              },
+            });
+          }
+
+          return unavailable();
+        }),
+      );
+
+      // The API blocks an op after five reported failures. An outage or a
+      // rejected token says nothing about the op, so neither the op that hit it
+      // nor the one after it may be reported, and the one after is not sent.
+      await expect(drainAniListOpsPass(api, "token")).rejects.toThrow(
+        /2 of 3 AniList operations stay pending/,
+      );
+      expect(completed).toEqual([{ opId: "done", ok: true }]);
+      expect(calls).toBe(2);
+    },
+    15_000,
+  );
+
+  it("keeps the reason the pass stopped when reporting the finished ops fails too", async () => {
+    __drainTest.resetThrottle();
+
+    const api: DrainApiClient = {
+      pendingAniListOps: async () => [
+        op("done", "anilist.progress", { anilistId: "7", progress: 3 }),
+        op("hit", "anilist.status", { anilistId: "42", status: "reading" }),
+      ],
+      completeOps: async () => {
+        throw new Error("api offline");
+      },
+    };
+
+    let calls = 0;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls += 1;
+
+        return calls === 1
+          ? Response.json({ data: { SaveMediaListEntry: { id: 1, progress: 3 } } })
+          : new Response("upstream down", { status: 503 });
+      }),
+    );
+
+    const failure = drainAniListOpsPass(api, "token");
+
+    await expect(failure).rejects.toThrow(/1 of 2 AniList operations stay pending/);
+    await expect(failure).rejects.toThrow(/complete ops failed: .*api offline/);
+  }, 15_000);
+
   /** AniList stub for delete ops: the viewer, their list, and the delete mutation. */
   const stubDeleteFetch = (listEntries: readonly JsonObject[]): string[] => {
     const deleteBodies: string[] = [];
