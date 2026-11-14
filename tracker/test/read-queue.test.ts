@@ -466,6 +466,31 @@ describe("processReadActions", () => {
     expect(pushProgress).toHaveBeenCalledTimes(5);
   });
 
+  it("leaves a newer read queued when the retry it replaced is refused", async () => {
+    applicationState.set(
+      PENDING_PROGRESS_KEY_SAFE,
+      JSON.stringify({
+        "anilist:1": { sourceManga: manga("anilist:1"), chapterNum: 9, at: 1, attempts: 4 },
+      }),
+    );
+
+    const newer = { sourceManga: manga("anilist:1"), chapterNum: 10, at: 2, attempts: 0 };
+    const recordRead = vi.fn().mockResolvedValue({});
+
+    // Chapter 10 is queued while the push of chapter 9 is in flight.
+    const pushProgress = vi.fn().mockImplementation(() => {
+      applicationState.set(PENDING_PROGRESS_KEY_SAFE, JSON.stringify({ "anilist:1": newer }));
+
+      return Promise.reject(new ProgressPushRefused({ message: "AniList error: Not Found." }));
+    });
+
+    await processReadActions([], { recordRead, pushProgress });
+
+    // The fifth refusal belonged to chapter 9, which is no longer queued.
+    expect(pushProgress).toHaveBeenCalledTimes(1);
+    expect(readStoredObject(PENDING_PROGRESS_KEY_SAFE)["anilist:1"]).toEqual(newer);
+  });
+
   it("drops a queued progress push when the retry permanently has no target", async () => {
     applicationState.set(
       PENDING_PROGRESS_KEY_SAFE,

@@ -403,6 +403,13 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
   ])("leaves no partial write when the event insert of $name fails", async ({ kind, write }) => {
     const target = await create();
     await link(target.id, "atomic-kept", "replace");
+
+    // With an AniList link, a list-state write and a nuke queue an op as well.
+    await request(`/v1/entries/${target.id}/providers`, {
+      provider: "anilist",
+      externalId: "70",
+      onConflict: "replace",
+    });
     await request(`/v1/entries/${target.id}/list-state`, { status: "reading" });
 
     const state = async () => ({

@@ -14,9 +14,9 @@ const fixture = `
 import { ManifoldSync } from './src/manifold-sync.ts';
 export class TestSync extends ManifoldSync {
   async pause() { this.ctx.storage.kv.put('registry_sync_paused', true); }
-  async drain() {
-    // Every drain here stands for an alarm after any retry delay has passed.
-    this.ctx.storage.sql.exec("UPDATE sync_ops SET updated_at = updated_at - 3600000");
+  async drain(elapsedMs) {
+    // Unless told otherwise, a drain stands for an alarm after any retry delay has passed.
+    this.ctx.storage.sql.exec("UPDATE sync_ops SET updated_at = updated_at - ?", elapsedMs ?? 3600000);
     this.ctx.storage.kv.delete('registry_sync_paused');
     try { await this.alarm(); }
     finally { await this.pause(); await this.ctx.storage.deleteAlarm(); }
@@ -32,7 +32,7 @@ export default { async fetch(request, env) {
     case 'set': result = await sync.setListState(input.id, input.change); break;
     case 'link': result = await sync.linkProvider(input.id, {provider:'mal', externalId:input.malId}); break;
     case 'nuke': result = await sync.nukeEntry(input.id, {origin:'device'}); break;
-    case 'drain': await sync.drain(); result = {}; break;
+    case 'drain': await sync.drain(input.elapsedMs); result = {}; break;
     case 'retry': result = await sync.retryOp(input.opId); await sync.pause(); break;
     case 'get': result = await sync.getEntry(input.id); break;
     case 'ops': result = (await sync.listOps(undefined, 'mal')).ops; break;
@@ -294,5 +294,41 @@ describe("Worker-side MAL backup outbox", () => {
     // Successes are not logged: the op row is deleted instead of marked completed.
     const completed = (await readOps()).find((op) => op.opId === blocked.opId);
     expect(completed).toBeUndefined();
+  });
+
+  it("waits out the retry delay before sending a failed backup again", async () => {
+    const entry = await createEntry("50");
+    await request({ action: "link", id: entry.id, malId: "10" });
+    await request({
+      action: "set",
+      id: entry.id,
+      change: { origin: "device", status: "reading", appliedRemotely: true },
+    });
+    upstreamStatus = 503;
+
+    const attemptsAfterDrain = async (elapsedMs: number): Promise<number | undefined> => {
+      await request({ action: "drain", elapsedMs });
+
+      return (await readOps()).find((op) => op.payload.entryId === entry.id)?.attempts;
+    };
+
+    expect(await attemptsAfterDrain(0)).toBe(1);
+    const sent = writes.length;
+
+    // An alarm right after the failure sends nothing: the first wait is 5 s.
+    expect(await attemptsAfterDrain(0)).toBe(1);
+    expect(writes).toHaveLength(sent);
+
+    // The second failure waits 20 s, so another 5 s is not enough.
+    expect(await attemptsAfterDrain(5_000)).toBe(2);
+    expect(await attemptsAfterDrain(5_000)).toBe(2);
+    expect(await attemptsAfterDrain(15_000)).toBe(3);
+
+    upstreamStatus = 200;
+    await request({ action: "drain" });
+    expect(writes.at(-1)).toEqual({
+      path: "/v2/manga/10/my_list_status",
+      body: "status=reading&is_rereading=false",
+    });
   });
 });
