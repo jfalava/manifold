@@ -99,7 +99,12 @@ import {
 } from "./managed-collections.js";
 import { processReadActions } from "./read-queue.js";
 import { canonicalResultForRegistryEntry } from "./registry-details.js";
-import { fromPromise, trackerError, type TrackerEffectError } from "./effect-error.js";
+import {
+  fromPromise,
+  ProgressPushRefused,
+  trackerError,
+  type TrackerEffectError,
+} from "./effect-error.js";
 import { filterAndRankCanonicalResults, filterAndRankRegistryEntries } from "./search-relevance.js";
 
 const piggybackDrain = (): void => {
@@ -526,7 +531,7 @@ const aniLinkOf = (
 const recordTrackerAniListProgressEffect = (
   sourceManga: SourceManga,
   chapterNumber: number | undefined,
-): Effect.Effect<boolean, TrackerEffectError | AniListServiceFailure> =>
+): Effect.Effect<boolean, TrackerEffectError | AniListServiceFailure | ProgressPushRefused> =>
   Effect.gen(function* () {
     const token = aniListSessionToken();
 
@@ -551,9 +556,12 @@ const recordTrackerAniListProgressEffect = (
 
     return yield* Effect.tryPromise({
       try: () => saveAniListProgress(token, anilistId, chapterNumber),
-      // The read queue stops its run on a service failure, so it keeps its class.
+      // The read queue stops its run on a service failure and counts a refusal
+      // toward dropping a queued retry, so both keep their class.
       catch: (cause) =>
-        isAniListServiceFailure(cause) ? cause : trackerError(errorMessage(cause)),
+        isAniListServiceFailure(cause)
+          ? cause
+          : new ProgressPushRefused({ message: errorMessage(cause) }),
     });
   });
 

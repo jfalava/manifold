@@ -20,7 +20,7 @@ import {
   ContentProvider,
 } from "@manifold/paperback-runtime";
 import { Clock, Effect, Result, Schema } from "effect";
-import { fromPromise, trackerError } from "./effect-error.js";
+import { fromPromise, ProgressPushRefused, trackerError } from "./effect-error.js";
 
 export interface ReadQueueDeps {
   readonly recordRead: (
@@ -50,12 +50,18 @@ interface PendingProgressEntry {
   readonly sourceManga: SourceManga;
   readonly chapterNum: number;
   readonly at: number;
+  /** Retries that AniList answered and refused. */
+  readonly attempts: number;
 }
 
 type PendingProgressMap = { [mangaId: string]: PendingProgressEntry };
 
 const PENDING_PROGRESS_KEY = "manifold.pending-progress";
 const PENDING_PROGRESS_MAX = 200;
+
+// A push AniList keeps refusing (the title is gone, the request is invalid)
+// would otherwise cost one request on every run for good.
+const PENDING_PROGRESS_MAX_ATTEMPTS = 5;
 
 const decodePendingSourceManga = (value: JsonValue | undefined): SourceManga | undefined => {
   if (!isJsonObject(value)) {
@@ -149,12 +155,16 @@ const readPendingProgress = (): PendingProgressMap => {
         continue;
       }
 
+      const attempts = value["attempts"];
+
       entries.push([
         mangaId,
         {
           sourceManga,
           chapterNum: value["chapterNum"],
           at: value["at"],
+          // Entries queued before retries were counted start at zero.
+          attempts: isFiniteNumber(attempts) && attempts > 0 ? attempts : 0,
         },
       ]);
     }
@@ -224,6 +234,29 @@ const acknowledgeProgress = (mangaId: string, chapterNum: number): void => {
   Application.setState(JSON.stringify(pending), PENDING_PROGRESS_KEY);
 };
 
+/** Counts a retry AniList refused and drops the entry at the limit. Returns whether it was dropped. */
+const countFailedRetry = (mangaId: string, entry: PendingProgressEntry): boolean => {
+  const pending = readPendingProgress();
+
+  if (pending[mangaId]?.chapterNum !== entry.chapterNum) {
+    // A newer read replaced the entry while this retry was in flight.
+    return false;
+  }
+
+  const attempts = entry.attempts + 1;
+  const dropped = attempts >= PENDING_PROGRESS_MAX_ATTEMPTS;
+
+  if (dropped) {
+    delete pending[mangaId];
+  } else {
+    pending[mangaId] = { ...entry, attempts };
+  }
+
+  Application.setState(JSON.stringify(pending), PENDING_PROGRESS_KEY);
+
+  return dropped;
+};
+
 /**
  * One progress push. A rejection that says AniList is unreachable, rate
  * limiting or refusing the token keeps its class: the next push in the same
@@ -238,7 +271,9 @@ const attemptPush = (
     Effect.tryPromise({
       try: () => pushProgress(sourceManga, chapterNum),
       catch: (cause) =>
-        isAniListServiceFailure(cause) ? cause : trackerError(errorMessage(cause)),
+        isAniListServiceFailure(cause) || cause instanceof ProgressPushRefused
+          ? cause
+          : trackerError(errorMessage(cause)),
     }),
   );
 
@@ -258,14 +293,19 @@ const flushPendingProgressEffect = (
       const outcome = yield* attemptPush(pushProgress, entry.sourceManga, entry.chapterNum);
 
       if (Result.isFailure(outcome)) {
-        // Keep it queued; the next read-queue run retries.
         yield* Effect.logError(
           `[manifold] anilist progress retry failed:${mangaId}:${errorMessage(outcome.failure)}`,
         );
 
         if (isAniListServiceFailure(outcome.failure)) {
-          // Not about this entry: leave the rest queued for a later run.
+          // Not about this entry: leave it and the rest queued for a later
+          // run, without counting an attempt.
           break;
+        }
+
+        // Anything else (the Manifold lookup failed) stays queued, uncounted.
+        if (outcome.failure instanceof ProgressPushRefused && countFailedRetry(mangaId, entry)) {
+          yield* Effect.logError(`[manifold] anilist progress retry dropped:${mangaId}`);
         }
 
         continue;
@@ -396,6 +436,7 @@ const processReadActionsEffect = (
           sourceManga: slimSourceManga(max.sourceManga),
           chapterNum: max.chapterNum,
           at: yield* Clock.currentTimeMillis,
+          attempts: 0,
         });
         continue;
       }
@@ -414,6 +455,7 @@ const processReadActionsEffect = (
           sourceManga: slimSourceManga(max.sourceManga),
           chapterNum: max.chapterNum,
           at: yield* Clock.currentTimeMillis,
+          attempts: 0,
         });
         yield* Effect.logError(
           `[manifold] anilist progress failed:${mangaId}:${errorMessage(outcome.failure)}`,

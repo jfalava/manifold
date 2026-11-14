@@ -6,6 +6,7 @@ import {
 } from "@paperback/types";
 import { AniListUnavailableError, type PersonalReadInput } from "@manifold/paperback-runtime";
 
+import { ProgressPushRefused } from "../src/MANIFOLD/effect-error.js";
 import { processReadActions } from "../src/MANIFOLD/read-queue.js";
 
 // Installs the Application global stub backed by an in-memory map.
@@ -414,6 +415,55 @@ describe("processReadActions", () => {
     expect(retried.successfulItems).toEqual([]);
     expect(pushProgress.mock.calls[0]?.[1]).toBe(5);
     expect(applicationState.get(PENDING_PROGRESS_KEY_SAFE)).toBe("{}");
+  });
+
+  it("drops a queued push after five retries AniList refused, counting no other failure", async () => {
+    applicationState.set(
+      PENDING_PROGRESS_KEY_SAFE,
+      // Written before retries were counted: no attempts field.
+      JSON.stringify({ "anilist:1": { sourceManga: manga("anilist:1"), chapterNum: 9, at: 1 } }),
+    );
+    const recordRead = vi.fn().mockResolvedValue({});
+    const outage = new AniListUnavailableError({ reason: "server", message: "AniList HTTP 503" });
+    const pushProgress = vi.fn().mockRejectedValue(outage);
+
+    for (let run = 0; run < 6; run += 1) {
+      await processReadActions([], { recordRead, pushProgress });
+    }
+
+    // Nor do six runs in which the Manifold lookup before the push fails.
+    pushProgress.mockReset().mockRejectedValue(new Error("Manifold API request failed"));
+
+    for (let run = 0; run < 6; run += 1) {
+      await processReadActions([], { recordRead, pushProgress });
+    }
+
+    // Twelve failures that say nothing about the push: it stays queued, uncounted.
+    expect(readStoredObject(PENDING_PROGRESS_KEY_SAFE)["anilist:1"]).toEqual({
+      sourceManga: manga("anilist:1"),
+      chapterNum: 9,
+      at: 1,
+    });
+
+    pushProgress
+      .mockReset()
+      .mockRejectedValue(new ProgressPushRefused({ message: "AniList error: Not Found." }));
+
+    for (let run = 0; run < 4; run += 1) {
+      await processReadActions([], { recordRead, pushProgress });
+    }
+
+    expect(readStoredObject(PENDING_PROGRESS_KEY_SAFE)["anilist:1"]).toMatchObject({
+      chapterNum: 9,
+      attempts: 4,
+    });
+
+    await processReadActions([], { recordRead, pushProgress });
+    await processReadActions([], { recordRead, pushProgress });
+
+    // The fifth refusal dropped it, so the sixth run had nothing to send.
+    expect(applicationState.get(PENDING_PROGRESS_KEY_SAFE)).toBe("{}");
+    expect(pushProgress).toHaveBeenCalledTimes(5);
   });
 
   it("drops a queued progress push when the retry permanently has no target", async () => {
