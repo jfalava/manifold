@@ -39,10 +39,10 @@ export class TestSync extends ManifoldSync {
   async retryAll() {
     return this.retryFailedSync();
   }
-  async seedOp(opId, state) {
+  async seedOp(opId, state, attempts) {
     this.ctx.storage.sql.exec(
-      "INSERT INTO sync_ops (op_id, target, kind, origin, payload, state, attempts, created_at, updated_at) VALUES (?, 'mangadex', 'mangadex.read', 'device', '{}', ?, 0, 1, 1)",
-      opId, state,
+      "INSERT INTO sync_ops (op_id, target, kind, origin, payload, state, attempts, created_at, updated_at) VALUES (?, 'mangadex', 'mangadex.read', 'device', '{}', ?, ?, 1, 1)",
+      opId, state, attempts ?? 0,
     );
   }
   async seedTracked(entryId) {
@@ -76,7 +76,7 @@ export default { async fetch(request, env) {
   if (input.op === 'drain') { await sync.drainShelf(); return Response.json({ ok: true }); }
   if (input.op === 'age') { await sync.ageShelf(input.entryId, input.ms); return Response.json({ ok: true }); }
   if (input.op === 'retry') { return Response.json(await sync.retryAll()); }
-  if (input.op === 'seed-op') { await sync.seedOp(input.opId, input.state); return Response.json({ ok: true }); }
+  if (input.op === 'seed-op') { await sync.seedOp(input.opId, input.state, input.attempts); return Response.json({ ok: true }); }
   if (input.op === 'seed-tracked') { await sync.seedTracked(input.entryId); return Response.json({ ok: true }); }
   if (input.op === 'backfill') { return Response.json(await sync.backfill()); }
   if (input.op === 'schedule') { return Response.json({ alarm: await sync.scheduleState() }); }
@@ -226,19 +226,30 @@ describe("MangaDex shelf DLQ", () => {
     ]);
   });
 
-  it("counts only the rows a retry re-armed", async () => {
+  it("makes blocked and backing-off rows due on a retry and counts only those", async () => {
     const nonce = "shelf-retry-count";
     await seedShelf(nonce, "entry-blocked", 5, "boom");
-    await seedShelf(nonce, "entry-pending", 1, null);
-    expect(
-      (await dispatch({ op: "seed-op", nonce, opId: "op-blocked", state: "blocked" })).status,
-    ).toBe(200);
+    await seedShelf(nonce, "entry-waiting", 1, "timeout");
+    await seedShelf(nonce, "entry-new", 0, null);
+
+    const seedOp = async (opId: string, state: string, attempts: number): Promise<void> => {
+      expect((await dispatch({ op: "seed-op", nonce, opId, state, attempts })).status).toBe(200);
+    };
+
+    await seedOp("op-blocked", "blocked", 5);
+    await seedOp("op-waiting", "pending", 2);
 
     for (const opId of ["op-a", "op-b", "op-c"]) {
-      expect((await dispatch({ op: "seed-op", nonce, opId, state: "pending" })).status).toBe(200);
+      await seedOp(opId, "pending", 0);
     }
 
-    expect(await retryAll(nonce)).toBe(2);
+    // Two shelf rows and two ops had failed; the four untried rows are not counted.
+    expect(await retryAll(nonce)).toBe(4);
+    expect(await readRows(nonce)).toEqual([
+      { entry_id: "entry-blocked", attempts: 0, last_error: null },
+      { entry_id: "entry-new", attempts: 0, last_error: null },
+      { entry_id: "entry-waiting", attempts: 0, last_error: null },
+    ]);
     expect(await retryAll(nonce)).toBe(0);
   });
 

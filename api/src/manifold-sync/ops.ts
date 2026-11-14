@@ -20,24 +20,25 @@ const retryFailedSyncEffect = (host: SyncHost) =>
     const ops = host.ctx.storage.sql
       .exec(
         `UPDATE sync_ops SET state = 'pending', attempts = 0, updated_at = ?
-     WHERE target = 'mangadex' AND state IN ('failed', 'blocked')
+     WHERE target = 'mangadex' AND (state IN ('failed', 'blocked') OR attempts > 0)
      RETURNING id`,
         timestamp,
       )
       .toArray().length;
 
-    // Re-arm shelf DLQ rows alongside sync_ops so one manual retry covers both.
+    // Shelf rows alongside sync_ops, so one manual retry covers both. Rows
+    // waiting out a backoff count too: retrying now is what was asked for.
     const shelf = host.ctx.storage.sql
       .exec(
         `UPDATE md_status_queue SET attempts = 0, last_error = NULL
-     WHERE attempts >= ${SYNC_MAX_ATTEMPTS}
+     WHERE attempts > 0
      RETURNING entry_id`,
       )
       .toArray().length;
 
     yield* fromPromise(() => scheduleSync(host));
 
-    // Rows this call re-armed, not the whole pending backlog.
+    // Rows this call made due, not the whole pending backlog.
     return { retried: ops + shelf };
   });
 
