@@ -83,12 +83,30 @@ const anilistDevicePage = (authorizeUrl: string, nonce: string): string => `<!DO
 </script>
 </body></html>`;
 
-const anilistImplicitReturnPage = `<!DOCTYPE html>
+const anilistImplicitReturnPage = (nonce: string): string => `<!DOCTYPE html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Returning to admin…</title></head>
 <body><p>Returning to the admin credentials page…</p>
-<script>location.replace("/admin/credentials" + location.hash)</script>
+<script nonce="${nonce}">location.replace("/admin/credentials" + location.hash)</script>
 <p><a href="/admin/credentials">Continue if you are not redirected.</a></p>
 </body></html>`;
+
+/**
+ * Both pages handle an AniList token in the URL fragment, so they are never
+ * cached, send no referrer and run only the code this response carries.
+ */
+const tokenPageResponse = (page: (nonce: string) => string): Response => {
+  const nonce = createRandomValue(16);
+
+  return new Response(page(nonce), {
+    headers: {
+      "cache-control": "no-store",
+      "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      "content-type": "text/html; charset=utf-8",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+    },
+  });
+};
 
 export const handleHealth = (ctx: RouteContext): RouteEffect =>
   Effect.sync(() => {
@@ -122,17 +140,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
         `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(ANILIST_OAUTH_CLIENT_ID)}` +
         `&response_type=token`;
 
-      const nonce = createRandomValue(16);
-
-      return new Response(anilistDevicePage(authorizeUrl, nonce), {
-        headers: {
-          "cache-control": "no-store",
-          "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
-          "content-type": "text/html; charset=utf-8",
-          "referrer-policy": "no-referrer",
-          "x-content-type-options": "nosniff",
-        },
-      });
+      return tokenPageResponse((nonce) => anilistDevicePage(authorizeUrl, nonce));
     }
 
     if (path[0] !== "v1" || path[1] !== "auth") {
@@ -237,9 +245,7 @@ export const handleAuth = (ctx: RouteContext): RouteEffect =>
         // fragment, which never reaches the server. Hand the browser back
         // to the admin app so its client-side capture can pick it up.
         if (path[2] === "anilist" && !error && !url.searchParams.get("code")) {
-          return new Response(anilistImplicitReturnPage, {
-            headers: { "content-type": "text/html", "cache-control": "no-store" },
-          });
+          return tokenPageResponse(anilistImplicitReturnPage);
         }
 
         return jsonEncoded(ErrorBody, { error: "OAuth callback is missing state" }, 400);

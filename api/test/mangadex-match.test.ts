@@ -1,6 +1,8 @@
+/** @effect-diagnostics asyncFunction:off */
 import { describe, expect, it } from "vitest";
 import {
   chooseMangaDexMatch,
+  embedMangaTitles,
   normalizeTitle,
   rankEmbeddedCandidates,
   type MangaDexMatchInput,
@@ -50,7 +52,7 @@ describe("MangaDex match selection", () => {
     expect(result).toMatchObject({
       status: "matched",
       externalId: "berserk",
-      method: "vectorize",
+      method: "exact-title",
     });
   });
 
@@ -110,5 +112,38 @@ describe("MangaDex match selection", () => {
 
     expect(result[0]?.manga.id).toBe("near");
     expect(result[0]?.score).toBeGreaterThan(result[1]?.score ?? 0);
+  });
+
+  it("embeds batches four at a time and returns the vectors in input order", async () => {
+    const texts = Array.from({ length: 100 }, (_, index) => String(index));
+    let inFlight = 0;
+    let peak = 0;
+    let calls = 0;
+
+    const vectors = await embedMangaTitles(
+      {
+        run: async (_model, inputs) => {
+          const chunk = [inputs.text].flat();
+          calls += 1;
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+
+          // Earlier batches take longer, so a result ordered by completion
+          // instead of by input would come back shuffled.
+          for (let tick = 0; tick < 20 - calls * 2; tick += 1) {
+            await Promise.resolve();
+          }
+
+          inFlight -= 1;
+
+          return { data: chunk.map((text) => [Number(text) + 1]) };
+        },
+      },
+      texts,
+    );
+
+    expect(calls).toBe(7);
+    expect(peak).toBe(4);
+    expect(vectors).toEqual(texts.map((text) => [Number(text) + 1]));
   });
 });

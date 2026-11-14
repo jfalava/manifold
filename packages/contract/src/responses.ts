@@ -32,7 +32,6 @@ export type ErrorBody = Schema.Schema.Type<typeof ErrorBody>;
 export const HealthResponse = Schema.Struct({
   ok: Schema.Literal(true),
   environment: Schema.optional(Schema.String),
-  build: Schema.optional(Schema.String),
 });
 
 export type HealthResponse = Schema.Schema.Type<typeof HealthResponse>;

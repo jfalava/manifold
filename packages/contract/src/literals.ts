@@ -72,6 +72,7 @@ export const MangaDexMatchMethod = Schema.Literals([
   "cached",
   "anilist-link",
   "mal-link",
+  "exact-title",
   "vectorize",
 ]);
 

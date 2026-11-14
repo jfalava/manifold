@@ -81,6 +81,23 @@ describe("GET /v1/auth/anilist/device", () => {
     expect(second.headers.get("content-security-policy")).not.toBe(policy);
   });
 
+  it("returns an implicit AniList callback to the admin under the same nonce-only policy", async () => {
+    const href = "https://api.manifold.test/v1/auth/anilist/callback";
+    const response = await authResponse(["v1", "auth", "anilist", "callback"], "GET", href);
+    const html = await response.text();
+    const policy = response.headers.get("content-security-policy") ?? "";
+    const nonce = /script-src 'nonce-([\w-]+)'/.exec(policy)?.[1];
+
+    expect(nonce).toBeTruthy();
+    expect(policy).toContain("default-src 'none'");
+    expect(html).toContain(
+      `<script nonce="${nonce}">location.replace("/admin/credentials" + location.hash)</script>`,
+    );
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
   it("serves the page only for GET on the exact path", async () => {
     const posted = await authResponse(devicePath, "POST");
     expect(posted.status).toBe(404);
