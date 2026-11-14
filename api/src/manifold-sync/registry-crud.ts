@@ -346,18 +346,22 @@ function writeProviderLink(
 }
 
 export function unlinkProvider(host: SyncHost, entryId: string, provider: string): RegistryEntry {
-  requireEntry(host, entryId);
-  host.ctx.storage.sql.exec(
-    "DELETE FROM provider_links WHERE entry_id = ? AND provider = ?",
-    entryId,
-    provider,
-  );
-  appendEvent(host, entryId, "link.remove", "admin", { provider });
-  const stored = readEntry(host, entryId);
+  // A throw between two statements does not undo the first one unless they
+  // share a transaction.
+  return host.ctx.storage.transactionSync(() => {
+    requireEntry(host, entryId);
+    host.ctx.storage.sql.exec(
+      "DELETE FROM provider_links WHERE entry_id = ? AND provider = ?",
+      entryId,
+      provider,
+    );
+    appendEvent(host, entryId, "link.remove", "admin", { provider });
+    const stored = readEntry(host, entryId);
 
-  if (!stored) {
-    throw new Error(`Canonical entry not found after unlink: ${entryId}`);
-  }
+    if (!stored) {
+      throw new Error(`Canonical entry not found after unlink: ${entryId}`);
+    }
 
-  return stored;
+    return stored;
+  });
 }

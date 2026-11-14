@@ -43,12 +43,15 @@ const parseArgs = (): CliArgs => {
   return { token: token ?? process.env.MANIFOLD_ANILIST_TOKEN, dryRun };
 };
 
+const MAX_ATTEMPTS = 6;
+
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 const gql = async <A>(
   token: string,
   query: string,
   variables: JsonObject = {},
+  attempt = 1,
 ): Promise<A> => {
   const response = await fetch(ENDPOINT, {
     method: "POST",
@@ -58,12 +61,18 @@ const gql = async <A>(
       authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(30_000),
   });
   if (response.status === 429) {
-    const retryAfter = Number(response.headers.get("retry-after") ?? "5");
+    if (attempt >= MAX_ATTEMPTS) {
+      throw new Error(`AniList still rate limited after ${MAX_ATTEMPTS} attempts`);
+    }
+    const header = Number(response.headers.get("retry-after"));
+    // A missing or non-numeric header becomes the 5 s floor instead of NaN.
+    const retryAfter = Number.isFinite(header) ? Math.max(header, 5) : 5;
     console.log(`  rate limited, waiting ${retryAfter}s…`);
-    await sleep(Math.max(retryAfter, 5) * 1000);
-    return gql<A>(token, query, variables);
+    await sleep(retryAfter * 1000);
+    return gql<A>(token, query, variables, attempt + 1);
   }
   // SAFETY: AniList GraphQL envelope is validated for errors/ok below before data is used
   const body = (await response.json()) as GraphQLResponse<A>;

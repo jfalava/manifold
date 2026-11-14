@@ -24,11 +24,14 @@ import { fetchAniListMangaEntries, type AniListEntry } from "@/anilist";
 import {
   drainAniListOpsPassEffect,
   type DrainApiClient,
+  type DrainPassSummary,
   type PendingAniListOp,
 } from "@/anilist-drain";
 import { resolveAniListToken } from "@/login/anilist";
 import {
+  DEFAULT_API_ORIGIN,
   loadManifoldSession,
+  normalizeOrigin,
   refreshManifoldSession,
   type ManifoldSession,
 } from "@/login/manifold";
@@ -53,8 +56,6 @@ import {
   sleep,
   type CliEffectError,
 } from "@/effect-kit";
-
-const DEFAULT_API_ORIGIN = "https://manifold.jfa.dev/api";
 
 const ANILIST_TO_REGISTRY = {
   CURRENT: "reading",
@@ -93,20 +94,34 @@ const apiConfigEffect = (
 ): Effect.Effect<ApiConfig, CliEffectError> =>
   Effect.gen(function* () {
     const token = resolveValue(tokenFlag, "MANIFOLD_TOKEN");
-    const origin = resolveValue(originFlag, "MANIFOLD_API_ORIGIN") ?? DEFAULT_API_ORIGIN;
+
+    const origin = normalizeOrigin(
+      resolveValue(originFlag, "MANIFOLD_API_ORIGIN") ?? DEFAULT_API_ORIGIN,
+    );
 
     if (token) {
-      return { origin: origin.replace(/\/$/, ""), token };
+      return { origin, token };
     }
 
     const session = yield* fromPromise(() => loadManifoldSession());
 
     if (!session) {
-      return yield* cliError("Manifold session missing: run login manifold or set MANIFOLD_TOKEN");
+      return yield* cliError(
+        "Manifold session missing or saved by an older CLI: run login manifold or set MANIFOLD_TOKEN",
+      );
+    }
+
+    // A .env in the working directory can set MANIFOLD_API_ORIGIN, so the saved
+    // tokens go only to the origin that issued them.
+    if (session.origin !== origin) {
+      return yield* cliError(
+        `The saved Manifold session was issued by ${session.origin} and is not sent to ${origin}. ` +
+          "Check --api-origin and MANIFOLD_API_ORIGIN, or run login manifold for that origin.",
+      );
     }
 
     return {
-      origin: origin.replace(/\/$/, ""),
+      origin,
       token: session.accessToken,
       refreshToken: session.refreshToken,
       accessExpiresAt: session.expiresAt,
@@ -140,6 +155,7 @@ const apiCallEffect = <A>(
   method: string,
   body: JsonValue | undefined,
   schema: Schema.ConstraintDecoder<A>,
+  signal?: AbortSignal,
 ): Effect.Effect<A, CliEffectError> =>
   Effect.gen(function* () {
     const request = (token: string) =>
@@ -147,6 +163,9 @@ const apiCallEffect = <A>(
         const response = yield* fromPromise(() =>
           platformFetch(`${config.origin}${path}`, {
             method,
+            // A stalled connection must fail instead of hanging a long sweep or
+            // the drain service. Two minutes leaves room for the slowest routes.
+            signal: signal ?? AbortSignal.timeout(120_000),
             headers: {
               accept: "application/json",
               authorization: `Bearer ${token}`,
@@ -173,6 +192,7 @@ const apiCallEffect = <A>(
     const refresh = (refreshToken: string) =>
       Effect.gen(function* () {
         const snapshot: ManifoldSession = {
+          origin: config.origin,
           accessToken: config.token,
           refreshToken,
           expiresAt: config.accessExpiresAt ?? 0,
@@ -180,13 +200,19 @@ const apiCallEffect = <A>(
 
         // Another CLI process can rotate the single-use refresh token during a long sweep.
         const stored = yield* fromPromise(() => loadManifoldSession());
-        const session = stored && stored.refreshToken !== snapshot.refreshToken ? stored : snapshot;
+
+        const session =
+          stored &&
+          stored.origin === snapshot.origin &&
+          stored.refreshToken !== snapshot.refreshToken
+            ? stored
+            : snapshot;
 
         if (session !== snapshot && session.expiresAt > epochMillisNow() + 30_000) {
           return session;
         }
 
-        return yield* fromPromise(() => refreshManifoldSession(config.origin, session)).pipe(
+        return yield* fromPromise(() => refreshManifoldSession(session)).pipe(
           Effect.catch((error) =>
             Effect.gen(function* () {
               // Cover rotation between the storage read and refresh, without retrying a used token.
@@ -196,6 +222,7 @@ const apiCallEffect = <A>(
 
               if (
                 latest &&
+                latest.origin === session.origin &&
                 latest.refreshToken !== session.refreshToken &&
                 latest.expiresAt > epochMillisNow() + 30_000
               ) {
@@ -300,6 +327,9 @@ const listRegistryRowsEffect = (
         "GET",
         undefined,
         RegistryListResponse,
+        AbortSignal.timeout(30_000),
+      ).pipe(
+        Effect.mapError((error) => cliError(`Registry page at offset ${offset}: ${error.message}`)),
       );
 
       page = body.entries;
@@ -317,12 +347,17 @@ export const getRegistryCanonical = (
   config: ApiConfig,
   entryId: string,
 ): Promise<Schema.Schema.Type<typeof CanonicalIdentity>> =>
-  apiCall(
-    config,
-    `/v1/entries/${encodeURIComponent(entryId)}/canonical`,
-    "GET",
-    undefined,
-    CanonicalIdentity,
+  runHost(
+    apiCallEffect(
+      config,
+      `/v1/entries/${encodeURIComponent(entryId)}/canonical`,
+      "GET",
+      undefined,
+      CanonicalIdentity,
+      AbortSignal.timeout(20_000),
+    ).pipe(
+      Effect.mapError((error) => cliError(`Canonical metadata for ${entryId}: ${error.message}`)),
+    ),
   );
 
 const anilistTokenFlag = Flag.String("anilist-token").pipe(
@@ -414,7 +449,7 @@ export const opsCommand = Command.make("ops").pipe(
           // the summary endpoint.
           const { summary } = yield* apiCallEffect(
             config,
-            "/v1/ops/summary?limit=200",
+            "/v1/ops/summary",
             "GET",
             undefined,
             OpsSummaryResponse,
@@ -517,7 +552,7 @@ export const opsCommand = Command.make("ops").pipe(
           });
 
           return yield* Effect.gen(function* () {
-            const onePass = (): Effect.Effect<void, CliEffectError> =>
+            const onePass = (): Effect.Effect<DrainPassSummary, CliEffectError> =>
               Effect.gen(function* () {
                 progress.detail("Fetching pending AniList operations");
                 const summary = yield* drainAniListOpsPassEffect(api, token, { limit });
@@ -536,10 +571,21 @@ export const opsCommand = Command.make("ops").pipe(
                     `pass ${passes}: fetched=${summary.fetched} ok=${summary.ok} failed=${summary.failed} reported=${summary.reported}`,
                   );
                 }
+
+                return summary;
               });
 
             if (once) {
-              yield* onePass();
+              const summary = yield* onePass();
+
+              // A failed op is retried by a later pass, but this run did not
+              // apply it: a script or timer must not read that as success.
+              if (summary.failed > 0) {
+                return yield* cliError(
+                  `${summary.failed} of ${summary.fetched} AniList operations failed. Each is retried by later passes until it is blocked; see ops pending.`,
+                );
+              }
+
               closeFrame(`drain-anilist once complete (${passes} pass)`);
 
               return;

@@ -6,6 +6,15 @@ import { fromPromise } from "./from-promise.js";
 import { ANILIST_SESSION_KEY, ANILIST_VIEWER_ID_KEY } from "./anilist-types.js";
 import { errorMessage, PaperbackRuntimeError, paperbackError } from "./errors.js";
 import {
+  AniListUnavailableError,
+  decodeAniListViewer,
+  fromAniListPromise,
+  isAniListServiceFailure,
+  viewerQuery,
+  type AniListServiceFailure,
+} from "./anilist-graphql.js";
+import {
+  aniListRequest,
   deleteAniListEntry,
   fetchAniListMediaListEntryIds,
   saveAniListFields,
@@ -54,7 +63,7 @@ const executeOp = (
   token: string,
   op: PendingSyncOp,
   mediaListEntryIds: Record<string, number> | undefined,
-): Effect.Effect<number | undefined, PaperbackRuntimeError> =>
+): Effect.Effect<number | undefined, PaperbackRuntimeError | AniListServiceFailure> =>
   Effect.gen(function* () {
     const parsed = yield* Effect.try({
       try: () => parsePendingAniListOp(op),
@@ -63,7 +72,7 @@ const executeOp = (
 
     switch (parsed.kind) {
       case "anilist.status": {
-        const result = yield* fromPromise(() =>
+        const result = yield* fromAniListPromise(() =>
           saveAniListStatus(token, parsed.anilistId, parsed.status),
         );
 
@@ -71,13 +80,15 @@ const executeOp = (
       }
 
       case "anilist.progress": {
-        yield* fromPromise(() => saveAniListProgress(token, parsed.anilistId, parsed.progress));
+        yield* fromAniListPromise(() =>
+          saveAniListProgress(token, parsed.anilistId, parsed.progress),
+        );
 
         return undefined;
       }
 
       case "anilist.fields": {
-        yield* fromPromise(() => saveAniListFields(token, parsed.anilistId, parsed.change));
+        yield* fromAniListPromise(() => saveAniListFields(token, parsed.anilistId, parsed.change));
 
         return parsed.mediaListEntryId;
       }
@@ -98,7 +109,7 @@ const executeOp = (
           );
         }
 
-        const deleted = yield* fromPromise(() => deleteAniListEntry(token, listEntryId));
+        const deleted = yield* fromAniListPromise(() => deleteAniListEntry(token, listEntryId));
 
         if (!deleted) {
           return yield* paperbackError(
@@ -110,6 +121,22 @@ const executeOp = (
       }
     }
   });
+
+/**
+ * Whether AniList answers a request that no op can break. Asked after an op
+ * got HTTP 5xx, to tell an outage from a request AniList cannot handle.
+ */
+const aniListAnswers = (token: string): Effect.Effect<boolean> =>
+  fromAniListPromise(() => aniListRequest(token, viewerQuery, {}, decodeAniListViewer)).pipe(
+    Effect.as(true),
+    Effect.orElseSucceed(() => false),
+  );
+
+const opTitle = (op: PendingSyncOp): string | undefined => {
+  const anilistId = op.payload["anilistId"];
+
+  return isString(anilistId) ? anilistId : undefined;
+};
 
 const drainAniListOpsEffect = () =>
   Effect.gen(function* () {
@@ -141,15 +168,57 @@ const drainAniListOpsEffect = () =>
       mediaListEntryId?: number;
     }[] = [];
 
+    let stoppedBy: AniListServiceFailure | undefined;
+
+    // Titles whose op got HTTP 5xx in this pass. Their later ops wait for the
+    // retry, so a newer change is never applied before an older one.
+    const waiting = new Set<string>();
+
     for (const op of ops) {
+      const title = opTitle(op);
+
+      if (title !== undefined && waiting.has(title)) {
+        continue;
+      }
+
       const outcome = yield* executeOp(token, op, mediaListEntryIds).pipe(
         Effect.map((mediaListEntryId) => ({ ok: true as const, mediaListEntryId })),
-        Effect.catch((cause) => Effect.succeed({ ok: false as const, error: errorMessage(cause) })),
+        Effect.catch((cause) => Effect.succeed({ ok: false as const, cause })),
       );
 
+      if (!outcome.ok && isAniListServiceFailure(outcome.cause)) {
+        const { cause } = outcome;
+
+        if (
+          cause instanceof AniListUnavailableError &&
+          cause.reason === "server" &&
+          (yield* aniListAnswers(token))
+        ) {
+          // AniList is up, so the 5xx is about this op. Count the attempt:
+          // unreported, the op would be retried first on every pass, never
+          // block and hold up everything behind it.
+          yield* Effect.logError(`[manifold] drain failed:${op.kind}:${cause.message}`);
+          results.push({ opId: op.opId, ok: false, error: cause.message });
+
+          if (title !== undefined) {
+            waiting.add(title);
+          }
+
+          continue;
+        }
+
+        // Rejected credentials, an outage or a rate limit say nothing about
+        // this op. The API blocks an op after five reported failures, so
+        // report nothing for it or the ops after it and end the pass.
+        yield* Effect.logError(`[manifold] drain stopped:${op.kind}:${cause.message}`);
+        stoppedBy = cause;
+        break;
+      }
+
       if (!outcome.ok) {
-        yield* Effect.logError(`[manifold] drain failed:${op.kind}:${outcome.error}`);
-        results.push({ opId: op.opId, ok: false, error: outcome.error });
+        const error = errorMessage(outcome.cause);
+        yield* Effect.logError(`[manifold] drain failed:${op.kind}:${error}`);
+        results.push({ opId: op.opId, ok: false, error });
         continue;
       }
 
@@ -166,20 +235,29 @@ const drainAniListOpsEffect = () =>
       );
     }
 
-    yield* fromPromise(() => api.completeOps(results)).pipe(
-      Effect.catch((cause) =>
-        // Completion reporting is best-effort; failed ops simply retry later.
-        Effect.logError(`[manifold] drain completion report failed:${errorMessage(cause)}`).pipe(
-          Effect.asVoid,
+    if (results.length > 0) {
+      yield* fromPromise(() => api.completeOps(results)).pipe(
+        Effect.catch((cause) =>
+          // Completion reporting is best-effort; failed ops simply retry later.
+          Effect.logError(`[manifold] drain completion report failed:${errorMessage(cause)}`).pipe(
+            Effect.asVoid,
+          ),
         ),
-      ),
-    );
+      );
+    }
+
+    if (stoppedBy !== undefined) {
+      // Fail the pass so the next piggyback retries after the short interval.
+      return yield* stoppedBy;
+    }
   });
 
 /**
  * Executes every pending anilist:* op, then reports per-op outcomes back to
  * the personal API. Returns silently when there is nothing to do or AniList
  * is not connected — draining is opportunistic, never a hard dependency.
+ * Rejects, after acknowledging the ops already done, when AniList rejected the
+ * token, was unreachable or kept rate limiting: the remaining ops stay pending.
  */
 export const drainAniListOps = (): Promise<void> => Effect.runPromise(drainAniListOpsEffect());
 

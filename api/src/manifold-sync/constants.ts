@@ -6,6 +6,15 @@ export const SYNC_DRAIN_LIMIT = 500;
 export const SYNC_RETRY_DELAY_MS = 5_000;
 export const SYNC_MAX_ATTEMPTS = 5;
 
+/**
+ * When a Worker-drained row may next be tried, as SQL over sync_ops or
+ * md_status_queue. A new row is due at once. After a failure the wait is four
+ * times the previous one (5 s, 20 s, 80 s, 320 s), counted from updated_at,
+ * which the failure itself set. Shelf rows from before the column existed have
+ * no updated_at and are due at once.
+ */
+export const SYNC_DUE_AT_SQL = `CASE WHEN attempts = 0 OR updated_at IS NULL THEN 0 ELSE updated_at + (${SYNC_RETRY_DELAY_MS} << (2 * (attempts - 1))) END`;
+
 /** Stored op errors carry titles, ids and upstream bodies; keep room for them. */
 export const MAX_ERROR_LENGTH = 2_000;
 

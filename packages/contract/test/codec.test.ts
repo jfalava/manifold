@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { Effect, Result } from "effect";
+import { Effect, Result, Schema } from "effect";
 import {
   EntryByProviderResponse,
   ListStateResponse,
   ProgressResponse,
   RegistryEntry,
   ResponseDecodeError,
+  SetListStateInput,
   decodeResponse,
   decodeResponseEffect,
   encodeResponse,
@@ -77,5 +78,19 @@ describe("decodeResponse", () => {
       expect(result.failure).toBeInstanceOf(ResponseDecodeError);
       expect(result.failure.label).toBe("entry");
     }
+  });
+});
+
+describe("SetListStateInput", () => {
+  const decode = Schema.decodeUnknownSync(SetListStateInput);
+
+  // AniList stores volumes read as a whole number, so any other value becomes
+  // an op that fails on every drain until it is blocked.
+  it.each([1.5, -2])("refuses the volume progress %s", (volumeProgress) => {
+    expect(() => decode({ volumeProgress })).toThrow();
+  });
+
+  it.each([0, 12, null])("accepts the volume progress %s", (volumeProgress) => {
+    expect(decode({ volumeProgress })).toEqual({ volumeProgress });
   });
 });

@@ -4,6 +4,7 @@ import { Command, Flag } from "effect/cli";
 import { errorMessage } from "@manifold/json";
 
 import {
+  DEFAULT_API_ORIGIN,
   pollManifoldDeviceSession,
   saveManifoldSession,
   startManifoldDeviceLogin,
@@ -13,8 +14,6 @@ import { warnIfEnvOverridesLogin } from "@/login/status";
 import { resolveValue } from "@/env-resolve";
 import { abortFrame, closeFrame, openFrame } from "@/ui";
 import { cliError } from "@/effect-kit";
-
-const DEFAULT_API_ORIGIN = "https://manifold.jfa.dev/api";
 
 export const manifoldLoginCommand = Command.make("manifold", {
   apiOrigin: Flag.String("api-origin").pipe(

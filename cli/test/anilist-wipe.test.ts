@@ -91,6 +91,26 @@ describe("anilist wipe activity selection", () => {
     }
   });
 
+  it("fails the scan when an activity page is an error envelope, not an empty last page", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          200,
+          JSON.stringify({ errors: [{ message: "Too Many Requests." }], data: { Page: null } }),
+        ),
+      ),
+    );
+
+    try {
+      await expect(fetchMangaActivities("token", 7)).rejects.toThrow(
+        "AniList returned an invalid activity page (page 1)",
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("includes TEXT activities only with the explicit includeTextActivities opt-in", () => {
     const activities = [
       mangaListActivity(1),

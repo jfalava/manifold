@@ -215,7 +215,8 @@ export const chooseMangaDexMatch = (
       candidates: [decisionCandidate(onlyTitle)],
       externalId: onlyTitle.manga.id,
       title: onlyTitle.manga.title,
-      method: "vectorize",
+      // Accepted on the title alone: the score is below no threshold here.
+      method: "exact-title",
       score: Number(onlyTitle.score.toFixed(6)),
       margin: 1,
     };
@@ -346,27 +347,38 @@ const uniqueManga = (values: readonly MangaDexManga[]): MangaDexManga[] => {
 // below a hundred titles, so candidate embeddings go out in small batches.
 const EMBED_BATCH_SIZE = 16;
 
+// A fresh search can return several hundred titles; one batch at a time made
+// the resolve wait on dozens of round-trips in a row.
+const EMBED_CONCURRENCY = 4;
+
 const embedMangaTitlesEffect = (ai: EmbeddingAi, texts: readonly string[]) =>
   Effect.gen(function* () {
-    if (texts.length === 0) {
-      return [];
-    }
-
-    const vectors: number[][] = [];
+    const chunks: string[][] = [];
 
     for (let index = 0; index < texts.length; index += EMBED_BATCH_SIZE) {
-      const chunk = [...texts].slice(index, index + EMBED_BATCH_SIZE);
-      const result = yield* fromPromise(() => ai.run(MANGADEX_EMBEDDING_MODEL, { text: chunk }));
-      const data = result.data ?? [];
-
-      if (data.length !== chunk.length || data.some((vector) => vector.length === 0)) {
-        return yield* apiError("Workers AI returned an invalid MangaDex embedding response");
-      }
-
-      vectors.push(...data);
+      chunks.push(texts.slice(index, index + EMBED_BATCH_SIZE));
     }
 
-    return vectors;
+    const vectors = yield* Effect.forEach(
+      chunks,
+      (chunk) =>
+        Effect.gen(function* () {
+          const result = yield* fromPromise(() =>
+            ai.run(MANGADEX_EMBEDDING_MODEL, { text: chunk }),
+          );
+
+          const data = result.data ?? [];
+
+          if (data.length !== chunk.length || data.some((vector) => vector.length === 0)) {
+            return yield* apiError("Workers AI returned an invalid MangaDex embedding response");
+          }
+
+          return data;
+        }),
+      { concurrency: EMBED_CONCURRENCY },
+    );
+
+    return vectors.flat();
   });
 
 export const embedMangaTitles = (

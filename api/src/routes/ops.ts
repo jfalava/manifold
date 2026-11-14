@@ -34,7 +34,7 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
       ) {
         return jsonEncoded(OpsListResponse, {
           ops: yield* tryPromise(() =>
-            sync.pendingAniListOps(boundedInteger(url.searchParams.get("limit"), 25, 1, 500)),
+            sync.pendingAniListOps(boundedInteger(url.searchParams.get("limit"), 25, 1, 100)),
           ),
         });
       }
@@ -48,22 +48,21 @@ export const handleOps = (ctx: RouteContext): RouteEffect =>
 
       if (path.length === 3 && path[2] === "summary" && request.method === "GET") {
         return jsonEncoded(OpsSummaryResponse, {
-          summary: yield* tryPromise(() =>
-            sync.opsSummary(boundedInteger(url.searchParams.get("limit"), 200, 1, 500)),
-          ),
+          summary: yield* tryPromise(() => sync.opsSummary()),
         });
       }
 
       if (path.length === 2 && request.method === "GET") {
-        return jsonEncoded(OpsListResponse, {
-          ops: yield* tryPromise(() =>
+        return jsonEncoded(
+          OpsListResponse,
+          yield* tryPromise(() =>
             sync.listOps(
               url.searchParams.get("state") ?? undefined,
               url.searchParams.get("target") ?? undefined,
               boundedInteger(url.searchParams.get("limit"), 200, 1, 500),
             ),
           ),
-        });
+        );
       }
 
       if (path.length === 4 && path[3] === "retry" && request.method === "POST") {

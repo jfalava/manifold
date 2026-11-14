@@ -193,6 +193,13 @@ export function migrate(host: SqlHost): void {
   }
 
   try {
+    // Time of the last failed attempt; the retry backoff counts from it.
+    host.ctx.storage.sql.exec("ALTER TABLE md_status_queue ADD COLUMN updated_at INTEGER");
+  } catch {
+    // Column already exists.
+  }
+
+  try {
     host.ctx.storage.sql.exec("ALTER TABLE provider_links ADD COLUMN source_name TEXT");
   } catch {
     // Column already exists.

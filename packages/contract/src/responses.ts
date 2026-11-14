@@ -32,7 +32,6 @@ export type ErrorBody = Schema.Schema.Type<typeof ErrorBody>;
 export const HealthResponse = Schema.Struct({
   ok: Schema.Literal(true),
   environment: Schema.optional(Schema.String),
-  build: Schema.optional(Schema.String),
 });
 
 export type HealthResponse = Schema.Schema.Type<typeof HealthResponse>;
@@ -82,12 +81,16 @@ export type RegistryListResponse = Schema.Schema.Type<typeof RegistryListRespons
 
 export const OpsListResponse = Schema.Struct({
   ops: Schema.Array(SyncOp),
+  // Every op the filter matches, of which `ops` may be only the newest.
+  total: Schema.optional(Schema.Finite),
 });
 
 export type OpsListResponse = Schema.Schema.Type<typeof OpsListResponse>;
 
 export const EventsListResponse = Schema.Struct({
   events: Schema.Array(ListEvent),
+  // Every event the filter matches, of which `events` may be only the newest.
+  total: Schema.optional(Schema.Finite),
 });
 
 export type EventsListResponse = Schema.Schema.Type<typeof EventsListResponse>;

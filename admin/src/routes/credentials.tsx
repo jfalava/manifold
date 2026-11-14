@@ -7,6 +7,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 
 import { TableSkeleton } from "../components/loading";
+import { beginAniListAuthorize } from "../lib/anilist-authorize";
 import {
   anilistImplicitAuthorizeUrl,
   AUTH_PROVIDERS,
@@ -227,7 +228,9 @@ function CredentialsPage() {
                               size="sm"
                               disabled={busy || acting !== undefined}
                               onClick={() => {
-                                // Same-tab so return to /admin/api/anilist/callback can import the hash.
+                                // Same-tab so return to /admin/api/anilist/callback can import the hash,
+                                // and so the callback finds this tab's mark.
+                                beginAniListAuthorize(globalThis.sessionStorage, Date.now());
                                 globalThis.location.assign(anilistImplicitAuthorizeUrl());
                               }}
                             >

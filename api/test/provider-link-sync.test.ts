@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { build } from "esbuild";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { Schema } from "effect";
-import { RegistryEntry, RegistryListResponse } from "@manifold/contract";
+import { EventsListResponse, RegistryEntry, RegistryListResponse } from "@manifold/contract";
 import { isJsonValue, type JsonValue } from "@manifold/json";
 import { toJsonText } from "@manifold/json/text";
 import { newId } from "../src/effect-host";
@@ -16,10 +16,11 @@ import worker from './src/index.ts';
 import { ManifoldSync } from './src/manifold-sync.ts';
 export class TestSync extends ManifoldSync {
   async pause() { this.ctx.storage.kv.put('registry_sync_paused', true); }
-  async fault(enabled) {
+  async fault(enabled, kind) {
     this.ctx.storage.sql.exec('DROP TRIGGER IF EXISTS fail_link_event');
+    if (!['link.set', 'link.remove', 'candidate.ingest', 'list.state', 'list.nuke'].includes(kind)) throw new Error('Unknown fixture event kind');
     if (enabled) this.ctx.storage.sql.exec(
-      "CREATE TRIGGER fail_link_event BEFORE INSERT ON list_events WHEN NEW.kind = 'link.set' BEGIN SELECT RAISE(ABORT, 'fixture link event failure'); END"
+      "CREATE TRIGGER fail_link_event BEFORE INSERT ON list_events WHEN NEW.kind = '" + kind + "' BEGIN SELECT RAISE(ABORT, 'fixture link event failure'); END"
     );
   }
 }
@@ -28,7 +29,7 @@ export default { async fetch(request, env, ctx) {
   await sync.pause();
   const url = new URL(request.url);
   if (url.pathname === '/fixture/fault') {
-    await sync.fault(url.searchParams.get('enabled') === 'true');
+    await sync.fault(url.searchParams.get('enabled') === 'true', url.searchParams.get('kind') ?? 'link.set');
     return Response.json({ ok: true });
   }
   return worker.fetch(request, env, ctx);
@@ -325,6 +326,15 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     expect(await entry(a.id)).toMatchObject({ providers: [{ externalId: "manual-a" }] });
   });
 
+  it("hides the failure detail of a 500 from callers without a bearer", async () => {
+    const response = await worker.dispatchFetch(
+      "https://manifold.jfa.dev/v1/auth/anilist/callback?state=unknown-state&code=x",
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "Internal server error" });
+  });
+
   it("rolls back link inserts, replacement and stolen-owner deletion when event insertion fails", async () => {
     const a = await create();
     const b = await create();
@@ -346,5 +356,97 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
 
     await link(b.id, "rollback-a", "replace");
     expect(await entry(a.id)).toMatchObject({ providers: [] });
+  });
+
+  it.each([
+    {
+      name: "an unlink",
+      kind: "link.remove",
+      write: (id: string) => request(`/v1/entries/${id}/unlink/kagane`, {}, 500),
+    },
+    {
+      name: "a candidate ingest into an existing entry",
+      kind: "candidate.ingest",
+      write: () =>
+        request(
+          "/v1/registry/ingest",
+          {
+            provider: "kagane",
+            providerId: "atomic-kept",
+            title: "Candidate title",
+            links: [{ provider: "mangadex", externalId: "atomic-added" }],
+          },
+          500,
+        ),
+    },
+    {
+      name: "a candidate ingest that mints an entry",
+      kind: "candidate.ingest",
+      write: () =>
+        request(
+          "/v1/registry/ingest",
+          { provider: "kagane", providerId: "atomic-minted", title: "Candidate title" },
+          500,
+        ),
+    },
+    {
+      name: "a list-state write",
+      kind: "list.state",
+      write: (id: string) =>
+        request(`/v1/entries/${id}/list-state`, { status: "completed", score: 9 }, 500),
+    },
+    {
+      name: "a nuke",
+      kind: "list.nuke",
+      write: (id: string) => request(`/v1/entries/${id}/delete`, {}, 500),
+    },
+  ])("leaves no partial write when the event insert of $name fails", async ({ kind, write }) => {
+    const target = await create();
+    await link(target.id, "atomic-kept", "replace");
+
+    // With an AniList link, a list-state write and a nuke queue an op as well.
+    await request(`/v1/entries/${target.id}/providers`, {
+      provider: "anilist",
+      externalId: "70",
+      onConflict: "replace",
+    });
+    await request(`/v1/entries/${target.id}/list-state`, { status: "reading" });
+
+    const state = async () => ({
+      ...(await snapshot()),
+      list: await request(`/v1/entries/${target.id}/list-state`),
+      ops: await request("/v1/ops"),
+    });
+
+    const before = await state();
+    await request(`/fixture/fault?enabled=true&kind=${kind}`);
+
+    try {
+      await write(target.id);
+      expect(await state()).toEqual(before);
+    } finally {
+      await request("/fixture/fault?enabled=false");
+    }
+  });
+
+  it("reports how many events match the filter when the list holds only the newest", async () => {
+    const target = await create();
+    await link(target.id, "total-a", "replace");
+    await link(target.id, "total-b", "replace");
+    await link((await create()).id, "total-c", "replace");
+
+    const list = async (query: string) =>
+      Schema.decodeUnknownSync(EventsListResponse)(await request(`/v1/events?${query}`));
+
+    const all = await list("limit=500");
+    const own = await list(`entryId=${target.id}&limit=500`);
+    expect(own.events.length).toBeGreaterThan(1);
+    expect(all.events.length).toBeGreaterThan(own.events.length);
+    expect(all.events.length).toBeLessThan(500);
+
+    const newest = await list("limit=1");
+    expect(newest.events).toHaveLength(1);
+    expect(newest.total).toBe(all.events.length);
+    expect((await list(`entryId=${target.id}&limit=1`)).total).toBe(own.events.length);
   });
 });

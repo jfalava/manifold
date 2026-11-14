@@ -99,6 +99,32 @@ export const hasExactKaganeTitle = (
   return names.some((name) => normalized.has(normalizeKaganeTitle(name)));
 };
 
+/** Conservative discovery budget; full titles still determine candidate eligibility. */
+export const kaganeSearchQuery = (title: string): string => {
+  const encoder = new TextEncoder();
+
+  if (encoder.encode(title).length <= 200) {
+    return title;
+  }
+
+  let query = "";
+  let bytes = 0;
+
+  for (const point of title) {
+    const size = encoder.encode(point).length;
+
+    if (bytes + size > 200) {
+      // Keep a complete word at the boundary; otherwise drop the partial last word.
+      return (/\s/u.test(point) ? query : query.replace(/\s+\S*$/u, "")).trimEnd();
+    }
+
+    query += point;
+    bytes += size;
+  }
+
+  return query;
+};
+
 /** Catalog-only client: no reader tokens, chapter downloads, or account credentials. */
 export const createKaganeClient = (options: {
   readonly delay: number;
@@ -517,6 +543,7 @@ export type KaganeCandidate = {
   readonly identities: readonly ProviderIdentity[];
   readonly matchedIds: readonly string[];
   readonly reasons: readonly string[];
+  readonly editionInfo?: string;
 };
 
 export const verifyKaganeCandidate = (
@@ -575,7 +602,20 @@ export const verifyKaganeCandidate = (
   }
 
   if (details.edition_info?.trim()) {
-    reasons.push(`edition=${details.edition_info}`);
+    const label = normalizeKaganeTitle(details.edition_info);
+    const sourceName = normalizeKaganeTitle(source ?? "");
+    // Accept whole publisher labels, not substrings or combined edition descriptions.
+    const publisher = sourceName.replace(/\s+(?:comics|entertainment|media)$/, "");
+
+    const metadata =
+      (label.length > 0 &&
+        sourceName.length > 0 &&
+        (label === sourceName || label === publisher)) ||
+      (label === "official english" && language === "en");
+
+    if (!matchedIds.length || reasons.length > 0 || !metadata) {
+      reasons.push(`edition=${details.edition_info}`);
+    }
   }
 
   const books = details.current_books ?? book.current_books ?? 0;
@@ -592,6 +632,7 @@ export const verifyKaganeCandidate = (
     identities,
     matchedIds,
     reasons,
+    ...(details.edition_info?.trim() && { editionInfo: details.edition_info }),
   };
 };
 
@@ -599,7 +640,7 @@ export const verifyKaganeCandidate = (
 export const selectKaganeCandidate = (
   candidates: readonly KaganeCandidate[],
   priority: readonly string[],
-): KaganeCandidate | undefined => {
+) => {
   const compatible = candidates.filter(
     (candidate) =>
       candidate.reasons.length === 0 &&
@@ -612,9 +653,18 @@ export const selectKaganeCandidate = (
     // A rejected competing title is not proof that the remaining title is the right work.
     const only = candidates.length === 1 ? compatible[0] : undefined;
 
-    return only?.coverage && only.coverage.unit !== "unknown" && only.coverage.count > 0
-      ? only
-      : undefined;
+    if (only?.coverage && only.coverage.unit !== "unknown" && only.coverage.count > 0) {
+      return { selected: only, basis: "single exact-title candidate; complete inventory" };
+    }
+
+    return {
+      basis:
+        compatible.length === 0
+          ? "no eligible candidates; inspect candidate rejection reasons"
+          : candidates.length > 1
+            ? "no matching external IDs; multiple title candidates require review"
+            : "exact-title candidate has unknown or empty inventory",
+    };
   }
 
   if (
@@ -625,7 +675,7 @@ export const selectKaganeCandidate = (
         candidate.coverage.count === 0,
     )
   ) {
-    return undefined;
+    return { basis: "ID-verified candidate has unknown or empty inventory" };
   }
 
   for (const provider of ["anilist", "mal", "mangadex"]) {
@@ -636,18 +686,35 @@ export const selectKaganeCandidate = (
     );
 
     if (ids.size > 1) {
-      return undefined;
+      return { basis: `conflicting ${provider} IDs between verified candidates` };
     }
   }
 
   if (verified.length === 1) {
-    return verified[0];
+    return {
+      selected: verified[0],
+      basis: "single ID-verified candidate; title-only candidates do not participate in ranking",
+    };
+  }
+
+  if (verified.some((candidate) => candidate.coverage?.unit !== "chapters")) {
+    return { basis: "competing volume inventories cannot be compared as chapters" };
   }
 
   const largest = mostCovered(verified);
 
   if (largest.length === 1) {
-    return largest[0];
+    return {
+      selected: largest[0],
+      basis: "ID-verified; contains every verified competitor's chapter positions",
+    };
+  }
+
+  if (largest.length === 0) {
+    return {
+      basis:
+        "crossing coverage between ID-verified editions; none contains their combined chapter positions",
+    };
   }
 
   for (const source of priority) {
@@ -656,9 +723,14 @@ export const selectKaganeCandidate = (
     );
 
     if (preferred.length > 0) {
-      return preferred.length === 1 ? preferred[0] : undefined;
+      return preferred.length === 1
+        ? {
+            selected: preferred[0],
+            basis: "ID-verified; source priority breaks identical-inventory tie",
+          }
+        : { basis: `identical inventories tied within preferred source ${source}` };
     }
   }
 
-  return undefined;
+  return { basis: "identical inventories tied without a unique preferred source" };
 };

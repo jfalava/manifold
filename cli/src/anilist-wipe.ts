@@ -181,6 +181,7 @@ const postGraphQLEffect = (
             "user-agent": USER_AGENT,
           },
           body: toJsonText({ query, variables }),
+          signal: AbortSignal.timeout(30_000),
         }),
       ).pipe(Effect.mapError((cause) => cliError(`${label} failed: ${cause.message}`)));
 
@@ -375,10 +376,15 @@ const fetchActivitiesPageEffect = (
     const envelope = isJsonObject(data) ? objectField(data, "data") : undefined;
     const pageRecord = envelope === undefined ? undefined : objectField(envelope, "Page");
 
-    const activityItems =
-      pageRecord === undefined
-        ? []
-        : (arrayField(pageRecord, "activities") ?? []).filter(isJsonObject);
+    const pageInfo = pageRecord === undefined ? undefined : objectField(pageRecord, "pageInfo");
+    const items = pageRecord === undefined ? undefined : arrayField(pageRecord, "activities");
+
+    // An error envelope or a truncated page must not read as "no more activities".
+    if (pageInfo === undefined || items === undefined) {
+      return yield* cliError(`AniList returned an invalid activity page (page ${page})`);
+    }
+
+    const activityItems = items.filter(isJsonObject);
 
     const activities: Activity[] = [];
 
@@ -409,9 +415,7 @@ const fetchActivitiesPageEffect = (
       }
     }
 
-    const pageInfo = pageRecord === undefined ? undefined : objectField(pageRecord, "pageInfo");
-
-    return { activities, hasNextPage: pageInfo !== undefined && pageInfo.hasNextPage === true };
+    return { activities, hasNextPage: pageInfo.hasNextPage === true };
   });
 
 export interface ActivitySelectionOptions {

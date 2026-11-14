@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 import {
+  escapeSequenceLength,
   handleLoopbackRequest,
   isBulkPasteChunk,
   parseOAuthCallbackInput,
@@ -92,6 +93,23 @@ describe("isBulkPasteChunk", () => {
       true,
     );
     expect(isBulkPasteChunk("def50200737b346d68ae438984a06fd1")).toBe(true);
+  });
+});
+
+describe("escapeSequenceLength", () => {
+  it("measures whole key sequences and waits for incomplete ones", () => {
+    // Up arrow, then a key typed after it stays in the buffer.
+    expect(escapeSequenceLength("\u001b[Ac")).toBe(3);
+    expect(escapeSequenceLength("\u001b[1;5C")).toBe(6);
+    expect(escapeSequenceLength("\u001bOP")).toBe(3);
+    expect(escapeSequenceLength("\u001bx")).toBe(2);
+    // Bracketed-paste start is a complete CSI sequence of its own.
+    expect(escapeSequenceLength("\u001b[200~paste")).toBe(6);
+    expect(escapeSequenceLength("\u001b")).toBe(0);
+    expect(escapeSequenceLength("\u001b[20")).toBe(0);
+    expect(escapeSequenceLength("\u001bO")).toBe(0);
+    // A control byte aborts the sequence and is left for the key handler.
+    expect(escapeSequenceLength("\u001b[2\r")).toBe(3);
   });
 });
 

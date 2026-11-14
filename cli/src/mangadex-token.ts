@@ -1,6 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics nodeBuiltinImport:off */
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import {
@@ -112,6 +112,7 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
   let accessToken: string | undefined;
   let refreshToken: string | undefined;
   let expiresAt = 0;
+  let cacheLoaded = false;
 
   const persistTokensEffect = (): Effect.Effect<void, CliEffectError> =>
     Effect.gen(function* () {
@@ -123,8 +124,10 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
 
       const payload: PersistedTokens = { accessToken, refreshToken, expiresAt };
       yield* fromPromise(async () => {
-        await mkdir(dirname(cachePath), { recursive: true });
+        await mkdir(dirname(cachePath), { recursive: true, mode: 0o700 });
         await writeFile(cachePath, toJsonText(payload), { mode: 0o600 });
+        // The mode above applies only when the file is created.
+        await chmod(cachePath, 0o600);
       }).pipe(
         Effect.mapError((cause) => cliError(`MangaDex token cache write failed: ${cause.message}`)),
       );
@@ -143,6 +146,7 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
             "user-agent": manifoldUserAgent("cli"),
           },
           body: grant.toString(),
+          signal: AbortSignal.timeout(30_000),
         }),
       ).pipe(Effect.mapError((cause) => cliError(`MangaDex ${label} failed: ${cause.message}`)));
 
@@ -178,7 +182,9 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
         return accessToken;
       }
 
-      if (!refreshToken && options.cachePath) {
+      // Read the cache once: after invalidate() it still holds the token that was rejected.
+      if (!cacheLoaded && options.cachePath) {
+        cacheLoaded = true;
         const stored = yield* loadPersistedTokensEffect(options.cachePath);
         accessToken = stored.accessToken;
         refreshToken = stored.refreshToken;
@@ -222,7 +228,7 @@ export const createMangaDexTokenManager = (options: MangaDexTokenManagerOptions)
   return {
     /** Returns a cached token, refreshing or re-authenticating when needed. */
     current: (): Promise<string> => runHost(currentEffect()),
-    /** Forces a fresh password grant on the next call. */
+    /** Drops the access token: the next call refreshes it, or signs in again without a refresh token. */
     invalidate: (): void => {
       accessToken = undefined;
       expiresAt = 0;

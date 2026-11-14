@@ -55,7 +55,7 @@ describe("Manifold CLI device login", () => {
   });
 
   /** Runs the poller under fake timers, recording the fake clock at each token request. */
-  const pollWith = async (answers: readonly Response[]) => {
+  const pollWith = async (answers: readonly (Response | Error)[]) => {
     vi.useFakeTimers();
     const start = Date.now();
     const pollTimes: number[] = [];
@@ -69,7 +69,14 @@ describe("Manifold CLI device login", () => {
       expect(form.get("client_id")).toBe(MANIFOLD_CLI_OAUTH_CLIENT_ID);
       pollTimes.push(Date.now() - start);
 
-      return answers[index++] ?? Response.json({ error: "authorization_pending" }, { status: 400 });
+      const answer =
+        answers[index++] ?? Response.json({ error: "authorization_pending" }, { status: 400 });
+
+      if (answer instanceof Error) {
+        throw answer;
+      }
+
+      return answer;
     });
 
     const result = pollManifoldDeviceSession(origin, grant).then(
@@ -100,10 +107,29 @@ describe("Manifold CLI device login", () => {
 
     expect(outcome).toMatchObject({
       ok: true,
-      session: { accessToken: "mf_access_cli", refreshToken: "mf_refresh_cli" },
+      // The session records the origin that issued it, without the trailing slash.
+      session: {
+        origin: "https://manifold.example/api",
+        accessToken: "mf_access_cli",
+        refreshToken: "mf_refresh_cli",
+      },
     });
     // 5 s, 5 s, then 10 s after slow_down for the rest.
     expect(pollTimes).toEqual([5000, 10_000, 20_000, 30_000]);
+  });
+
+  it("keeps polling after a failed token request", async () => {
+    const { outcome, pollTimes } = await pollWith([
+      new TypeError("fetch failed"),
+      Response.json({
+        access_token: "mf_access_cli",
+        refresh_token: "mf_refresh_cli",
+        expires_in: 900,
+      }),
+    ]);
+
+    expect(outcome).toMatchObject({ ok: true, session: { accessToken: "mf_access_cli" } });
+    expect(pollTimes).toEqual([5000, 10_000]);
   });
 
   it("stops when the browser denies the sign-in", async () => {
@@ -121,6 +147,7 @@ describe("Manifold API session recovery", () => {
   const origin = "https://manifold.example/api";
 
   const session = (generation: number, expiresAt = Date.now() + 900_000) => ({
+    origin,
     accessToken: `access-${generation}`,
     refreshToken: `refresh-${generation}`,
     expiresAt,
@@ -131,6 +158,7 @@ describe("Manifold API session recovery", () => {
     const record = parseJsonObject(value);
 
     return {
+      origin: stringAt(record, "origin"),
       accessToken: stringAt(record, "accessToken"),
       refreshToken: stringAt(record, "refreshToken"),
       expiresAt: numberAt(record, "expiresAt"),
@@ -301,6 +329,61 @@ describe("Manifold API session recovery", () => {
       apiCall(await config(), "/v1/registry", "GET", undefined, Schema.Unknown),
     ).rejects.toThrow("Manifold OAuth refresh failed: HTTP 400");
     expect(requests).toBe(1);
+  });
+
+  it.each(["flag", "environment"] as const)(
+    "does not send a stored session to another origin set by %s",
+    async (source) => {
+      vi.stubEnv("MANIFOLD_TOKEN", "");
+      vi.stubEnv("MANIFOLD_API_ORIGIN", source === "environment" ? "https://evil.example/api" : "");
+      vi.stubGlobal("Bun", { secrets: { get: async () => JSON.stringify(session(0, 0)) } });
+      const fetcher = vi.fn(async () => Response.json({}));
+      vi.stubGlobal("fetch", fetcher);
+
+      await expect(
+        apiConfig(
+          source === "flag" ? Option.some("https://evil.example/api") : Option.none(),
+          Option.none(),
+        ),
+      ).rejects.toThrow(
+        "was issued by https://manifold.example/api and is not sent to https://evil.example/api",
+      );
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
+
+  it("refreshes against the origin that issued the session", async () => {
+    vi.stubEnv("MANIFOLD_TOKEN", "");
+    let stored = session(0, 0);
+    vi.stubGlobal("Bun", {
+      secrets: {
+        get: async () => JSON.stringify(stored),
+        set: async ({ value }: { value: string }) => {
+          stored = storedSession(value);
+        },
+      },
+    });
+    const hrefs: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      hrefs.push(requestHref(input));
+
+      return requestHref(input).endsWith("/oauth/token")
+        ? Response.json({ access_token: "access-1", refresh_token: "refresh-1", expires_in: 900 })
+        : Response.json({ ok: true });
+    });
+
+    await apiCall(await config(), "/v1/registry", "GET", undefined, Schema.Unknown);
+
+    expect(hrefs).toEqual([`${origin}/v1/oauth/token`, `${origin}/v1/registry`]);
+    expect(stored.origin).toBe(origin);
+  });
+
+  it("treats a session saved without an origin as signed out", async () => {
+    vi.stubEnv("MANIFOLD_TOKEN", "");
+    const { origin: _origin, ...legacy } = session(0);
+    vi.stubGlobal("Bun", { secrets: { get: async () => JSON.stringify(legacy) } });
+
+    await expect(config()).rejects.toThrow("run login manifold");
   });
 
   it.each(["flag", "environment"] as const)(

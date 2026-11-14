@@ -1,4 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
+/** @effect-diagnostics globalDate:off */
+/** @effect-diagnostics globalConsole:off */
 /**
  * Custom TanStack Start server entry (same shape as jfa.dev keweke).
  *
@@ -18,6 +20,7 @@
  */
 import handler, { createServerEntry } from "@tanstack/react-start/server-entry";
 
+import { createAccessVerifier, fetchAccessKeySet } from "./lib/access-auth";
 import { runHost, workersRuntime } from "./lib/effect-host";
 
 const MOUNT = "/admin";
@@ -78,8 +81,27 @@ async function fetchStaticAsset(request: Request): Promise<Response | null> {
   return null;
 }
 
+const verifyAccess = createAccessVerifier(fetchAccessKeySet);
+
 export default createServerEntry({
   async fetch(request, options) {
+    // Local dev has no Access in front of it. Every built Worker checks, assets included.
+    if (!import.meta.env.DEV) {
+      const access = await verifyAccess(
+        request.headers.get("cf-access-jwt-assertion"),
+        Date.now() / 1000,
+      );
+
+      if (!access.ok) {
+        console.warn(`admin request refused: ${access.reason}`);
+
+        return new Response("Forbidden", {
+          status: 403,
+          headers: { "cache-control": "no-store" },
+        });
+      }
+    }
+
     const asset = await fetchStaticAsset(request);
 
     if (asset !== null) {

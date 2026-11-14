@@ -4,7 +4,7 @@ import { Socket } from "node:net";
 import { Terminal } from "@xterm/headless";
 import { describe, expect, it, vi } from "vitest";
 
-import { createRun, makePhaseReporter, wrapFrameText } from "../src/ui";
+import { createRun, makePhaseReporter, wrapFrameText, writeOutput } from "../src/ui";
 import { required } from "./support/report";
 
 const unused = (method: string): never => {
@@ -64,6 +64,23 @@ class TerminalStream extends Socket implements NodeJS.WriteStream {
     return unused("getWindowSize");
   }
 }
+
+describe("writeOutput", () => {
+  it("drops terminal commands from remote text and keeps colour, links and layout", () => {
+    let written = "";
+    const stream = new TerminalStream(80, (text) => (written += text));
+    const styled = "\u001b[1;31mfailed\u001b[0m\n\tnext";
+    const link = "\u001b]8;;https://example.test/a\u0007label\u001b]8;;\u0007";
+
+    // Clear screen, window title, clipboard write, cursor up, carriage return, C1 CSI, bidi override.
+    writeOutput(
+      `${styled} ${link} Title\u001b[2J\u001b]0;pwned\u0007\u001b]52;c;eA==\u0007\u001b[3A\r\u009b2J\u202e\n`,
+      stream,
+    );
+
+    expect(written).toBe(`${styled} ${link} Title[2J]0;pwned]52;c;eA==[3A2J\n`);
+  });
+});
 
 describe("wrapFrameText", () => {
   it("returns a single empty line for empty input", () => {

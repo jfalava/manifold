@@ -13,6 +13,9 @@ export const MD_STATS_TTL_MS = 24 * 60 * 60 * 1000;
 export const MD_STATS_CONCURRENCY = 4;
 export const MD_STATS_FEED_SAMPLE = 500;
 
+/** MangaDex refuses a feed offset + limit above 10 000; longer feeds are counted up to here. */
+export const MD_STATS_FEED_MAX = 10_000;
+
 export interface MdFeedChapter {
   readonly id: string;
   readonly chapterNumber?: number;
@@ -28,7 +31,7 @@ export interface MdFeedStatsPayload {
   readonly totalListed: number;
   readonly latestChapter: number | null;
   readonly latestPublishedAt: number | null;
-  /** chapter id → chapter number for the sampled feed window. */
+  /** chapter id → chapter number for every feed chapter read, up to MD_STATS_FEED_MAX. */
   readonly numbersById: Readonly<Record<string, string>>;
 }
 

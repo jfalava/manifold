@@ -102,14 +102,15 @@ export const handleRegistry = (ctx: RouteContext): RouteEffect =>
     if (path[0] === "v1" && path[1] === "events" && path.length === 2 && request.method === "GET") {
       const sync = env.MANIFOLD_SYNC.getByName("default");
 
-      return jsonEncoded(EventsListResponse, {
-        events: yield* tryPromise(() =>
+      return jsonEncoded(
+        EventsListResponse,
+        yield* tryPromise(() =>
           sync.listEvents(
             url.searchParams.get("entryId") ?? undefined,
             boundedInteger(url.searchParams.get("limit"), 100, 1, 500),
           ),
         ),
-      });
+      );
     }
 
     if (path[0] !== "v1" || path[1] !== "entries") {

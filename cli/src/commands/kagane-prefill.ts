@@ -24,6 +24,7 @@ import {
   KaganeChallengeError,
   KaganeCooldownError,
   kaganeProfileDir,
+  kaganeSearchQuery,
   selectKaganeCandidate,
   verifyKaganeCandidate,
   type KaganeBook,
@@ -49,8 +50,8 @@ interface KaganeCtx extends RunContext {
 }
 
 const KAGANE_RESUME_POLICY = {
-  searchPolicy: "kagane-aliases-v1",
-  selectionPolicy: "kagane-no-loss-v2",
+  searchPolicy: "kagane-bounded-aliases-v2",
+  selectionPolicy: "kagane-no-loss-publisher-labels-v4",
 };
 
 export const kaganePrefillCommand = Command.make("kagane", {
@@ -351,6 +352,23 @@ export const kaganePrefillCommand = Command.make("kagane", {
                 const checked = new Map<string, KaganeCandidate>();
                 const knownIds = new Set(journal.candidateIds(row));
 
+                const discovered = new Set<string>();
+                const exactMatches = new Set<string>();
+                const exclusions: { id: string; title: string; source: string }[] = [];
+
+                const discovery = {
+                  complete: false,
+                  results: 0,
+                  exact: 0,
+                  excludedMangaDex: 0,
+                  unknownSource: 0,
+                  exclusions,
+                };
+
+                let titles: readonly string[] = [];
+                const queries: { title: string; query: string }[] = [];
+                let basis = "candidate discovery or inventory verification did not complete";
+
                 const retain = (id: string): void => {
                   if (knownIds.has(id)) {
                     return;
@@ -384,7 +402,7 @@ export const kaganePrefillCommand = Command.make("kagane", {
                   reporter.item(context);
                   progress("Loading search titles");
 
-                  const titles = await loadRegistrySearchTitles(row, {
+                  titles = await loadRegistrySearchTitles(row, {
                     anilistToken: anilist,
                     onProgress: progress,
                     onIncomplete: () => {
@@ -396,18 +414,70 @@ export const kaganePrefillCommand = Command.make("kagane", {
                   context = `${entryContext} [all non-MangaDex sources]`;
                   const candidates = new Map<string, KaganeBook>();
 
+                  const sent = new Set<string>();
+
                   for (const title of searchTitlesFor(titles)) {
-                    await client.search(title, language, [], (book) => {
+                    const query = kaganeSearchQuery(title);
+                    queries.push({ title, query });
+                    record({ event: "query", key: row.id, title, query });
+
+                    if (sent.has(query)) {
+                      continue;
+                    }
+
+                    sent.add(query);
+
+                    if (query !== title) {
+                      reporter.note(
+                        `SEARCH ${row.id}: shortened discovery query to 200 UTF-8 bytes or fewer; full title still required`,
+                      );
+                    }
+
+                    await client.search(query, language, [], (book) => {
                       // Kagane caps source_id values; filter the full-catalog fallback locally.
-                      if (
-                        allowedSources.includes(book.source_id ?? "") &&
-                        hasExactKaganeTitle(titles, [book.title, ...(book.alternate_titles ?? [])])
-                      ) {
+                      const exact = hasExactKaganeTitle(titles, [
+                        book.title,
+                        ...(book.alternate_titles ?? []),
+                      ]);
+
+                      const allowed = allowedSources.includes(book.source_id ?? "");
+
+                      if (!discovered.has(book.series_id)) {
+                        discovered.add(book.series_id);
+                        discovery.results++;
+                      }
+
+                      if (exact && !exactMatches.has(book.series_id)) {
+                        exactMatches.add(book.series_id);
+                        discovery.exact++;
+
+                        if (!allowed) {
+                          const source = sources.get(book.source_id ?? "") ?? "unknown";
+
+                          if (source.trim().toLowerCase() === "mangadex") {
+                            discovery.excludedMangaDex++;
+                          } else {
+                            discovery.unknownSource++;
+                          }
+
+                          if (discovery.exclusions.length < 10) {
+                            discovery.exclusions.push({
+                              id: book.series_id,
+                              title: book.title,
+                              source,
+                            });
+                          }
+                        }
+                      }
+
+                      if (allowed && exact) {
                         candidates.set(book.series_id, book);
                         retain(book.series_id);
                       }
                     });
                   }
+
+                  discovery.complete = true;
 
                   const currentId = row.providers.find(
                     (link) => link.provider === "kagane",
@@ -459,13 +529,20 @@ export const kaganePrefillCommand = Command.make("kagane", {
                     }
                   }
 
-                  selected = selectKaganeCandidate([...checked.values()], priority);
+                  const decision = selectKaganeCandidate([...checked.values()], priority);
+                  selected = decision.selected;
+                  basis =
+                    checked.size > 0
+                      ? decision.basis
+                      : discovery.exact > 0
+                        ? `${discovery.excludedMangaDex} exact matches excluded as MangaDex; ${discovery.unknownSource} with unknown source`
+                        : discovery.results > 0
+                          ? "search returned results, but no exact full-title or alias match"
+                          : "search returned no results";
 
                   const selection = {
                     selectedId: selected?.id ?? null,
-                    basis: selected
-                      ? "verified identity; no-loss coverage; source priority only for identical inventories"
-                      : "review required",
+                    basis,
                     comparisons: coverageComparisons([...checked.values()]),
                   };
 
@@ -478,21 +555,21 @@ export const kaganePrefillCommand = Command.make("kagane", {
 
                   if (checked.size) {
                     reporter.note(
-                      `${selected ? "SELECTION" : "REVIEW"} ${row.id}: ${selected?.id ?? "no safe coverage winner"}`,
+                      `${selected ? "SELECTION" : "REVIEW"} ${row.id}: ${selected?.id ?? "no safe coverage winner"}; ${basis}`,
                     );
 
                     for (const candidate of checked.values()) {
                       reporter.note(
-                        `  ${candidate.id} [${candidate.coverage?.count ?? "?"} ${candidate.coverage?.unit ?? "unknown"}; IDs=${candidate.matchedIds.join("+") || "title-only"}; ${candidate.reasons.join(", ") || "eligible"}]`,
+                        `  ${candidate.id} [${candidate.source}; ${candidate.coverage?.count ?? "?"} ${candidate.coverage?.unit ?? "unknown"}; IDs=${candidate.matchedIds.join("+") || "title-only"}; ${candidate.reasons.join(", ") || "eligible"}]`,
                       );
                     }
                   }
 
                   if (checked.size === 0) {
-                    note = `UNMATCHED ${row.id} ${row.title}`;
+                    note = `UNMATCHED ${row.id} ${row.title}: ${basis}`;
                   } else if (!selected) {
                     outcome = "ambiguous";
-                    note = `${checked.size === 1 ? "UNVERIFIED" : "AMBIGUOUS"} ${row.id} ${row.title}: ${[...checked.values()].map((candidate) => `${candidate.id} [${candidate.source}; books=${candidate.books}; IDs=${candidate.matchedIds.join("+") || "none"}; ${candidate.reasons.join(", ") || "source/identity tie"}]`).join("; ")}`;
+                    note = `${checked.size === 1 ? "UNVERIFIED" : "AMBIGUOUS"} ${row.id} ${row.title}: ${basis}`;
                   } else if (owners.has(selected.id) && owners.get(selected.id) !== row.id) {
                     outcome = "conflicts";
                     note = `CONFLICT ${row.id}: kagane:${selected.id} already belongs to ${owners.get(selected.id)}`;
@@ -536,6 +613,9 @@ export const kaganePrefillCommand = Command.make("kagane", {
                       error: errorMessage(error),
                       candidateIds: [...knownIds],
                       candidates: [...checked.values()],
+                      titles: [...titles],
+                      queries,
+                      discovery,
                     });
                     throw error;
                   }
@@ -563,8 +643,12 @@ export const kaganePrefillCommand = Command.make("kagane", {
                   retryWhen,
                   deferredReason: outcome === "deferred" ? "page_budget" : null,
                   candidateIds: [...knownIds],
+                  titles: [...titles],
+                  queries,
+                  discovery,
                   selection: {
                     selectedId: selected?.id ?? null,
+                    basis,
                     comparisons: coverageComparisons([...checked.values()]),
                   },
                   selectedId: selected?.id ?? null,

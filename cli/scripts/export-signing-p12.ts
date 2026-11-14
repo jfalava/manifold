@@ -13,7 +13,7 @@
  * "Always Allow" so future exports don't prompt.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -71,9 +71,16 @@ if (proc.status !== 0) {
   process.exit(proc.status === null ? 1 : proc.status);
 }
 
-writeFileSync(p64Path, readFileSync(p12Path).toString("base64"));
+// The bundle holds the private key: keep all three files readable by the owner only.
+chmodSync(p12Path, 0o600);
 
-writeFileSync(pwPath, password);
+for (const [path, text] of [
+  [p64Path, readFileSync(p12Path).toString("base64")],
+  [pwPath, password],
+] as const) {
+  writeFileSync(path, text, { mode: 0o600 });
+  chmodSync(path, 0o600);
+}
 
 console.info(`[signing:export] wrote ${p12Path}`);
 

@@ -5,7 +5,7 @@ import { toJsonText } from "@manifold/json/text";
 import { build } from "esbuild";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { Schema } from "effect";
-import { OpsSummary, SyncOp } from "@manifold/contract";
+import { OpsListResponse, OpsSummary, SyncOp } from "@manifold/contract";
 
 // Outbox retention: successes delete their sync_ops row instead of logging it,
 // so the tables only hold actionable rows. OpsSummary additionally carries the
@@ -55,17 +55,27 @@ export class TestSync extends ManifoldSync {
   async summary() {
     return this.opsSummary();
   }
+  async seedBacklog() {
+    const insert = (opId, state, lastError, createdAt, updatedAt) => this.ctx.storage.sql.exec(
+      "INSERT INTO sync_ops (op_id, target, kind, origin, payload, state, attempts, last_error, created_at, updated_at) VALUES (?, 'mal', 'mal.status', 'device', '{}', ?, 0, ?, ?, ?)",
+      opId, state, lastError, createdAt, updatedAt,
+    );
+    // The oldest rows are blocked; the earliest-inserted one failed last.
+    for (let i = 1; i <= 30; i++) insert('blocked-' + i, 'blocked', 'boom-' + i, i, 1000 - i);
+    for (let i = 31; i <= 280; i++) insert('pending-' + i, 'pending', null, i, i);
+  }
 }
 export default { async fetch(request, env) {
   const input = await request.json();
   const sync = env.MANIFOLD_SYNC.getByName(input.nonce);
   if (input.op === 'seed-op') { await sync.seedOp(input.opId, input.target, input.kind); return Response.json({ ok: true }); }
   if (input.op === 'seed-shelf') { await sync.seedShelf(input.entryId, input.attempts, input.lastError); return Response.json({ ok: true }); }
-  if (input.op === 'read') { return Response.json({ ops: await sync.readAllOps() }); }
+  if (input.op === 'read') { return Response.json(await sync.readAllOps()); }
   if (input.op === 'seed-errors') { await sync.seedErrorFixture(); return Response.json({ ok: true }); }
-  if (input.op === 'read-errors') { return Response.json({ ops: await sync.readErrorOps() }); }
+  if (input.op === 'read-errors') { return Response.json(await sync.readErrorOps()); }
   if (input.op === 'complete') { return Response.json(await sync.complete(input.results)); }
   if (input.op === 'summary') { return Response.json(await sync.summary()); }
+  if (input.op === 'seed-backlog') { await sync.seedBacklog(); return Response.json({ ok: true }); }
   return Response.json({ ok: false }, { status: 400 });
 } };`;
 
@@ -216,5 +226,31 @@ describe("sync outbox retention and summary", () => {
     expect(summary.shelfPending).toBe(1);
     expect(summary.shelfBlocked).toBe(1);
     expect(summary.shelfLastBlockedError).toBe("shelf-boom");
+  });
+
+  it("summarizes every op, not only the newest ones", async () => {
+    const nonce = "retention-backlog";
+    expect((await dispatch({ op: "seed-backlog", nonce })).status).toBe(200);
+    const summary = await summarize(nonce);
+    expect(summary.total).toBe(280);
+    expect(summary.states).toEqual({ blocked: 30, pending: 250 });
+    expect(summary.oldestPendingAt).toBe(31);
+    expect(summary.lastFailedError).toBe("boom-1");
+  });
+
+  it("reports how many ops match the filter when the list holds only the newest", async () => {
+    const nonce = "retention-total";
+    expect((await dispatch({ op: "seed-backlog", nonce })).status).toBe(200);
+
+    const list = async (op: string) =>
+      Schema.decodeUnknownSync(OpsListResponse)(await (await dispatch({ op, nonce })).json());
+
+    const all = await list("read");
+    expect(all.ops).toHaveLength(200);
+    expect(all.total).toBe(280);
+
+    const errors = await list("read-errors");
+    expect(errors.ops).toHaveLength(30);
+    expect(errors.total).toBe(30);
   });
 });

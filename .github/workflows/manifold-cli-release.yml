@@ -6,7 +6,14 @@ on:
       - "cli-v*"
 
 jobs:
+  # Typecheck, lint and every test suite: a tag on a broken commit publishes nothing.
+  check:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/check.yml
+
   build:
+    needs: check
     permissions:
       contents: read
     strategy:
@@ -33,9 +40,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: 1.4.4
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -64,8 +71,8 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "${MANIFOLD_SIGNING_P12:-}" ]]; then
-            echo "MANIFOLD_SIGNING_P12 not set; leaving binary ad-hoc signed."
-            exit 0
+            echo "::error::MANIFOLD_SIGNING_P12 is not set; refusing to release an ad-hoc signed darwin binary."
+            exit 1
           fi
           P12="$RUNNER_TEMP/manifold-signing.p12"
           KEYCHAIN="$RUNNER_TEMP/manifold-signing.keychain-db"
@@ -123,9 +130,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: 1.4.4
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -154,7 +161,7 @@ jobs:
           done
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: dist/*
           generate_release_notes: true

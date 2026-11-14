@@ -61,7 +61,8 @@ past that chapter, or when the export has no readable completed chapters.
 `--apply` records it with `POST /v1/entries/:id/read` under the deterministic
 event ID `pas5:<library-id>:<chapter-id>`, so reruns are deduplicated. When the
 registry advances to that chapter and the entry has an AniList ID, it also sets
-AniList progress. Without an AniList token (`login anilist`,
+AniList progress, unless AniList is already at or past that chapter: the import
+never lowers it. Without an AniList token (`login anilist`,
 `--anilist-token` or `MANIFOLD_ANILIST_TOKEN`) the run fails before any write.
 
 Untracked entries with no registry identity stay `unresolved`; the importer

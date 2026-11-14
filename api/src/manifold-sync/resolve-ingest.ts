@@ -24,125 +24,128 @@ export function resolveEntries(
 }
 
 export function ingestCandidate(host: SyncHost, input: IngestCandidateInput): RegistryEntry {
-  const byProvider = new Map<string, LinkProviderInput>();
+  // The entry, its links and the event are written together or not at all.
+  return host.ctx.storage.transactionSync(() => {
+    const byProvider = new Map<string, LinkProviderInput>();
 
-  for (const link of [
-    {
-      provider: input.provider,
-      externalId: input.providerId,
-      title: input.title,
-    },
-    ...(input.links ?? []),
-  ]) {
-    const existing = byProvider.get(link.provider);
+    for (const link of [
+      {
+        provider: input.provider,
+        externalId: input.providerId,
+        title: input.title,
+      },
+      ...(input.links ?? []),
+    ]) {
+      const existing = byProvider.get(link.provider);
 
-    if (existing && existing.externalId !== link.externalId) {
-      throw new Error(
-        `Registry candidate has conflicting ${link.provider} ids: ` +
-          `${existing.externalId} and ${link.externalId}`,
-      );
+      if (existing && existing.externalId !== link.externalId) {
+        throw new Error(
+          `Registry candidate has conflicting ${link.provider} ids: ` +
+            `${existing.externalId} and ${link.externalId}`,
+        );
+      }
+
+      byProvider.set(link.provider, link);
     }
 
-    byProvider.set(link.provider, link);
-  }
-
-  const links = [...byProvider.values()];
-  const matchingEntryIds = new Set<string>();
-
-  for (const link of links) {
-    for (const row of host.ctx.storage.sql
-      .exec<{ entry_id: string }>(
-        `SELECT pl.entry_id FROM provider_links pl
-         JOIN canonical_entries ce ON ce.id = pl.entry_id
-         WHERE pl.provider = ? AND pl.external_id = ? AND ce.tombstoned_at IS NULL`,
-        link.provider,
-        link.externalId,
-      )
-      .toArray()) {
-      matchingEntryIds.add(row.entry_id);
-    }
-  }
-
-  if (matchingEntryIds.size > 1) {
-    throw new Error(
-      `Registry candidate links belong to multiple entries: ${[...matchingEntryIds].join(", ")}`,
-    );
-  }
-
-  const timestamp = now();
-  const matchedId = [...matchingEntryIds][0];
-  const entryId = matchedId ?? newId();
-
-  if (matchedId) {
-    const existingLinks = host.ctx.storage.sql
-      .exec<ProviderRow>(
-        "SELECT provider, external_id, title, source_name, updated_at FROM provider_links WHERE entry_id = ?",
-        entryId,
-      )
-      .toArray();
-
-    const existingByProvider = new Map(existingLinks.map((link) => [link.provider, link]));
+    const links = [...byProvider.values()];
+    const matchingEntryIds = new Set<string>();
 
     for (const link of links) {
-      const existing = existingByProvider.get(link.provider);
-
-      if (existing && existing.external_id !== link.externalId) {
-        throw new Error(
-          `Registry entry ${entryId} already has ${link.provider}:${existing.external_id}`,
-        );
+      for (const row of host.ctx.storage.sql
+        .exec<{ entry_id: string }>(
+          `SELECT pl.entry_id FROM provider_links pl
+         JOIN canonical_entries ce ON ce.id = pl.entry_id
+         WHERE pl.provider = ? AND pl.external_id = ? AND ce.tombstoned_at IS NULL`,
+          link.provider,
+          link.externalId,
+        )
+        .toArray()) {
+        matchingEntryIds.add(row.entry_id);
       }
     }
 
-    host.ctx.storage.sql.exec(
-      "UPDATE canonical_entries SET updated_at = ? WHERE id = ?",
-      timestamp,
-      entryId,
-    );
-  } else {
-    const mintProvider =
-      input.provider === "anilist" || input.provider === "mal" ? input.provider : "local";
+    if (matchingEntryIds.size > 1) {
+      throw new Error(
+        `Registry candidate links belong to multiple entries: ${[...matchingEntryIds].join(", ")}`,
+      );
+    }
 
-    host.ctx.storage.sql.exec(
-      `INSERT INTO canonical_entries (id, provider, provider_id, title, created_at, updated_at)
+    const timestamp = now();
+    const matchedId = [...matchingEntryIds][0];
+    const entryId = matchedId ?? newId();
+
+    if (matchedId) {
+      const existingLinks = host.ctx.storage.sql
+        .exec<ProviderRow>(
+          "SELECT provider, external_id, title, source_name, updated_at FROM provider_links WHERE entry_id = ?",
+          entryId,
+        )
+        .toArray();
+
+      const existingByProvider = new Map(existingLinks.map((link) => [link.provider, link]));
+
+      for (const link of links) {
+        const existing = existingByProvider.get(link.provider);
+
+        if (existing && existing.external_id !== link.externalId) {
+          throw new Error(
+            `Registry entry ${entryId} already has ${link.provider}:${existing.external_id}`,
+          );
+        }
+      }
+
+      host.ctx.storage.sql.exec(
+        "UPDATE canonical_entries SET updated_at = ? WHERE id = ?",
+        timestamp,
+        entryId,
+      );
+    } else {
+      const mintProvider =
+        input.provider === "anilist" || input.provider === "mal" ? input.provider : "local";
+
+      host.ctx.storage.sql.exec(
+        `INSERT INTO canonical_entries (id, provider, provider_id, title, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      entryId,
-      mintProvider,
-      input.providerId,
-      input.title,
-      timestamp,
-      timestamp,
-    );
-  }
+        entryId,
+        mintProvider,
+        input.providerId,
+        input.title,
+        timestamp,
+        timestamp,
+      );
+    }
 
-  for (const link of links) {
-    host.ctx.storage.sql.exec(
-      `INSERT INTO provider_links (entry_id, provider, external_id, title, source_name, updated_at)
+    for (const link of links) {
+      host.ctx.storage.sql.exec(
+        `INSERT INTO provider_links (entry_id, provider, external_id, title, source_name, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(entry_id, provider) DO UPDATE SET
          title = COALESCE(excluded.title, provider_links.title),
          source_name = COALESCE(excluded.source_name, provider_links.source_name),
          updated_at = excluded.updated_at`,
-      entryId,
-      link.provider,
-      link.externalId,
-      link.title ?? null,
-      link.sourceName ?? null,
-      timestamp,
-    );
-  }
+        entryId,
+        link.provider,
+        link.externalId,
+        link.title ?? null,
+        link.sourceName ?? null,
+        timestamp,
+      );
+    }
 
-  appendEvent(host, entryId, "candidate.ingest", "device", {
-    provider: input.provider,
-    providerId: input.providerId,
-    linkedProviders: links.map((link) => link.provider),
+    appendEvent(host, entryId, "candidate.ingest", "device", {
+      provider: input.provider,
+      providerId: input.providerId,
+      linkedProviders: links.map((link) => link.provider),
+    });
+    const entry = readEntry(host, entryId);
+
+    if (!entry) {
+      throw new Error(`Registry row not found after candidate ingest: ${entryId}`);
+    }
+
+    return entry;
   });
-  const entry = readEntry(host, entryId);
-
-  if (!entry) {
-    throw new Error(`Registry row not found after candidate ingest: ${entryId}`);
-  }
-
-  return entry;
 }
 
 export function resolveEntrySync(host: SyncHost, request: ResolveEntryInput): RegistryEntry {

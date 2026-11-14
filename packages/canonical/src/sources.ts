@@ -381,6 +381,16 @@ const requireQuery = (query: string, provider: CanonicalSourceError["provider"])
   return normalized;
 };
 
+const GRAPHQL_INT_MAX = 2_147_483_647;
+const PROVIDER_INT_ID = /^[1-9]\d*$/;
+
+/** A provider id as a GraphQL Int. Junk such as "12abc" is undefined, never its numeric prefix. */
+const providerIntId = (value: string): number | undefined => {
+  const id = PROVIDER_INT_ID.test(value) ? Number(value) : Number.NaN;
+
+  return Number.isSafeInteger(id) && id <= GRAPHQL_INT_MAX ? id : undefined;
+};
+
 export const normalizeAniListMedia = anilistMedia;
 
 export const createAniListSource = (options: AniListSourceOptions = {}): CanonicalSearchSource => {
@@ -397,6 +407,27 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
       },
       body: jsonBodyString({ query, variables }),
     });
+
+  // AniList answers an id it does not know with HTTP 404 and a "Not Found"
+  // GraphQL error. That is "no such manga" (undefined), not a failed lookup.
+  const lookupMedia = (query: string, variables: JsonObject) =>
+    Effect.gen(function* () {
+      const body = yield* request(query, variables);
+      const graphQLError = anilistGraphQLError(body);
+
+      if (graphQLError) {
+        return yield* graphQLError;
+      }
+
+      const data = objectField(body, "data");
+
+      return anilistMedia(data === undefined ? undefined : objectField(data, "Media"));
+    }).pipe(
+      Effect.catchIf(
+        (error) => error.status === 404 || error.message.includes("Not Found"),
+        () => Effect.undefined,
+      ),
+    );
 
   return {
     provider: "anilist",
@@ -434,45 +465,23 @@ export const createAniListSource = (options: AniListSourceOptions = {}): Canonic
       }),
     getById: (providerId) =>
       Effect.gen(function* () {
-        const id = Number.parseInt(providerId, 10);
+        const id = providerIntId(providerId);
 
-        if (!Number.isSafeInteger(id)) {
+        if (id === undefined) {
           return yield* sourceError("anilist", `Invalid AniList manga id: ${providerId}`);
         }
 
-        const body = yield* request(anilistGetQuery, { id });
-        const graphQLError = anilistGraphQLError(body);
-
-        if (graphQLError) {
-          return yield* graphQLError;
-        }
-
-        const data = objectField(body, "data");
-
-        return anilistMedia(data === undefined ? undefined : objectField(data, "Media"));
+        return yield* lookupMedia(anilistGetQuery, { id });
       }),
     getByIdMal: (idMal) =>
       Effect.gen(function* () {
-        const id = Number.parseInt(idMal, 10);
+        const id = providerIntId(idMal);
 
-        if (!Number.isSafeInteger(id)) {
+        if (id === undefined) {
           return yield* sourceError("anilist", `Invalid MyAnimeList manga id: ${idMal}`);
         }
 
-        const body = yield* request(anilistGetByMalQuery, { idMal: id });
-        const graphQLError = anilistGraphQLError(body);
-
-        if (graphQLError) {
-          if (graphQLError.message.includes("Not Found")) {
-            return undefined;
-          }
-
-          return yield* graphQLError;
-        }
-
-        const data = objectField(body, "data");
-
-        return anilistMedia(data === undefined ? undefined : objectField(data, "Media"));
+        return yield* lookupMedia(anilistGetByMalQuery, { idMal: id });
       }),
   };
 };

@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { SyncHost } from "./host";
-import { now, SYNC_MAX_ATTEMPTS } from "./constants";
+import { now, SYNC_MAX_ATTEMPTS, SYNC_DUE_AT_SQL } from "./constants";
 import { fromPromise } from "./from-promise";
 
 const scheduleSyncEffect = (host: SyncHost, delayMs = 0) =>
@@ -9,25 +9,31 @@ const scheduleSyncEffect = (host: SyncHost, delayMs = 0) =>
       return;
     }
 
-    const pending =
+    // NULL when no Worker-drained op is pending.
+    const opsDueAt =
       host.ctx.storage.sql
-        .exec<{ count: number }>(
-          "SELECT COUNT(*) AS count FROM sync_ops WHERE state = 'pending' AND target IN ('mangadex', 'mal')",
+        .exec<{ due_at: number | null }>(
+          `SELECT MIN(${SYNC_DUE_AT_SQL}) AS due_at FROM sync_ops
+           WHERE state = 'pending' AND target IN ('mangadex', 'mal')`,
         )
-        .toArray()[0]?.count ?? 0;
+        .toArray()[0]?.due_at ?? null;
 
-    const shelfPending =
+    // NULL when no shelf row is pending.
+    const shelfDueAt =
       host.ctx.storage.sql
-        .exec<{ count: number }>(
-          `SELECT COUNT(*) AS count FROM md_status_queue WHERE attempts < ${SYNC_MAX_ATTEMPTS}`,
+        .exec<{ due_at: number | null }>(
+          `SELECT MIN(${SYNC_DUE_AT_SQL}) AS due_at FROM md_status_queue
+           WHERE attempts < ${SYNC_MAX_ATTEMPTS}`,
         )
-        .toArray()[0]?.count ?? 0;
+        .toArray()[0]?.due_at ?? null;
 
-    if (pending === 0 && shelfPending === 0) {
+    if (opsDueAt === null && shelfDueAt === null) {
       return;
     }
 
-    const scheduledAt = now() + Math.max(0, delayMs);
+    // The alarm waits for the first op or shelf row whose retry delay has passed.
+    const dueAt = Math.min(opsDueAt ?? Infinity, shelfDueAt ?? Infinity);
+    const scheduledAt = Math.max(now() + Math.max(0, delayMs), dueAt);
     const currentAlarm = yield* fromPromise(() => host.ctx.storage.getAlarm());
 
     if (currentAlarm === null || currentAlarm <= now() || currentAlarm > scheduledAt) {

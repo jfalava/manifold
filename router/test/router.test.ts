@@ -163,3 +163,57 @@ test("/device approval page forwards GET and POST to the API device route", asyn
   ]);
   expect(calls.DOCS_WORKER).toEqual([]);
 });
+
+test("cover proxy does not long-cache an upstream error", async () => {
+  const realFetch = globalThis.fetch;
+  const cover = "https://df.example/mangadex-cover/0123456789abcdef/0123456789abcdef.jpg.256.jpg";
+
+  const cacheControlFor = async (status: number) => {
+    globalThis.fetch = Object.assign(async () => new Response("body", { status }), {
+      preconnect: realFetch.preconnect,
+    });
+
+    const response = await router.request(cover, {}, makeEnv().env);
+
+    return [response.status, response.headers.get("cache-control")];
+  };
+
+  try {
+    expect(await cacheControlFor(200)).toEqual([
+      200,
+      "public, max-age=604800, stale-while-revalidate=86400",
+    ]);
+    // A cached 503 would otherwise pin a broken cover in the browser for a week.
+    expect(await cacheControlFor(503)).toEqual([503, "no-store"]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("a percent-encoded mount prefix is not routed as that mount", async () => {
+  for (const path of [
+    "/%61dmin",
+    "/%61dmin/registry",
+    "/%61pi/v1/health",
+    "/%70aperback/extensions",
+    "/%64evice",
+  ]) {
+    const { response, calls } = request(`https://df.example${path}`);
+    expect((await response).status).toBe(418);
+    expect(calls.ADMIN).toEqual([]);
+    expect(calls.SYNC_API).toEqual([]);
+    expect(calls.DOCS_WORKER).toEqual([]);
+  }
+});
+
+test("encoded characters after a mount are forwarded as sent", async () => {
+  const api = request("https://df.example/api/v1/entries/a%2Fb%20c/list-state");
+  await api.response;
+  expect(api.calls.SYNC_API.map((call) => call.pathname)).toEqual([
+    "/v1/entries/a%2Fb%20c/list-state",
+  ]);
+
+  const admin = request("https://df.example/admin/registry%2Fx");
+  await admin.response;
+  expect(admin.calls.ADMIN.map((call) => call.pathname)).toEqual(["/admin/registry%2Fx"]);
+});

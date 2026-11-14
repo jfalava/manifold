@@ -116,12 +116,19 @@ export interface ManifoldSyncStub {
   setListState(entryId: string, input: SetListStateInput): Promise<ListState>;
   getListState(entryId: string): Promise<ListState | undefined>;
   nukeEntry(entryId: string, input: NukeEntryInput): Promise<ListState | undefined>;
-  listEvents(entryId: string | undefined, limit?: number): Promise<readonly ListEvent[]>;
+  listEvents(
+    entryId: string | undefined,
+    limit?: number,
+  ): Promise<{ readonly events: readonly ListEvent[]; readonly total: number }>;
   pendingAniListOps(limit?: number): Promise<readonly SyncOp[]>;
   completeOps(input: CompleteOpsInput): Promise<{ updated: number }>;
   retryOp(opId: string): Promise<SyncOp | undefined>;
-  listOps(state?: string, target?: string, limit?: number): Promise<readonly SyncOp[]>;
-  opsSummary(limit?: number): Promise<OpsSummary>;
+  listOps(
+    state?: string,
+    target?: string,
+    limit?: number,
+  ): Promise<{ readonly ops: readonly SyncOp[]; readonly total: number }>;
+  opsSummary(): Promise<OpsSummary>;
   backupRegistry(): Promise<RegistryBackupMetadata>;
   listBackups(): Promise<readonly RegistryBackupMetadata[]>;
   restoreBackup(key: string): Promise<RegistryBackupMetadata>;

@@ -15,6 +15,7 @@ import {
 } from "@manifold/json";
 import { toPrettyJsonText } from "@manifold/json/text";
 import { ListStatus } from "@manifold/contract";
+import { MANGADEX_CONTENT_RATINGS } from "@manifold/mangadex";
 import { Effect, Option, Schema } from "effect";
 
 import type { PhaseReporter } from "@/ui";
@@ -39,6 +40,21 @@ const MD_API = "https://api.mangadex.org";
 const USER_AGENT = manifoldUserAgent("cli");
 const MD_REQUEST_INTERVAL_MS = 250; // MangaDex global ~5 req/s
 const BATCH = 100;
+const REQUEST_TIMEOUT_MS = 30_000;
+const MD_MAX_RETRIES = 4;
+
+/** Give up on the match phase after this many AniList lookups failed in a row. */
+const MAX_CONSECUTIVE_LOOKUP_FAILURES = 5;
+
+/**
+ * Id lookups apply MangaDex's default content-rating filter, which hides
+ * pornographic titles and their chapters, so every rating is requested.
+ */
+const appendAllContentRatings = (params: URLSearchParams): void => {
+  for (const rating of MANGADEX_CONTENT_RATINGS) {
+    params.append("contentRating[]", rating);
+  }
+};
 
 /** Promise sleep for callers that still take a Promise delay. */
 export const sleep = sleepPromise;
@@ -106,6 +122,7 @@ export type MdTokenProvider = () => Promise<string>;
 const mdFetchEffect = (
   mdToken: string,
   path: string,
+  attempt = 0,
 ): Effect.Effect<readonly JsonObject[], CliEffectError> =>
   Effect.gen(function* () {
     const response = yield* fromPromise(() =>
@@ -115,14 +132,17 @@ const mdFetchEffect = (
           accept: "application/json",
           "user-agent": USER_AGENT,
         },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       }),
     ).pipe(Effect.mapError((cause) => cliError(errorMessage(cause))));
 
-    if (response.status === 429 || response.status === 403) {
-      const retryAfter = Number(response.headers.get("retry-after") ?? "5");
-      yield* sleepEffect(Math.max(retryAfter, 5) * 1000);
+    // A 403 is MangaDex's temporary ban after ignored 429s, but also a revoked
+    // client or a blocked IP, so the retries are bounded.
+    if ((response.status === 429 || response.status === 403) && attempt < MD_MAX_RETRIES) {
+      const retryAfter = Number(response.headers.get("retry-after"));
+      yield* sleepEffect((Number.isFinite(retryAfter) ? Math.max(retryAfter, 5) : 5) * 1000);
 
-      return yield* mdFetchEffect(mdToken, path);
+      return yield* mdFetchEffect(mdToken, path, attempt + 1);
     }
 
     if (!response.ok) {
@@ -162,13 +182,31 @@ const paths = (tmpDir: string) => ({
 export const loadSnapshot = (tmpDir: string): MdLibraryEntry[] | undefined =>
   readJsonFile(paths(tmpDir).snapshot, Schema.mutable(Schema.Array(MdLibraryEntrySchema)));
 
-export const loadMatches = (tmpDir: string): Map<string, MatchResult> =>
+const loadMatches = (tmpDir: string): Map<string, MatchResult> =>
   new Map(
     (readJsonFile(paths(tmpDir).matches, Schema.Array(MatchResultSchema)) ?? []).map((match) => [
       match.mangaDexId,
       match,
     ]),
   );
+
+/**
+ * Cached matches for the given snapshot entries. The status comes from the
+ * snapshot: the match file only remembers which AniList title an entry maps
+ * to, and its stored status goes stale once the MangaDex shelf changes.
+ */
+export const cachedMatchesFor = (
+  tmpDir: string,
+  entries: readonly MdLibraryEntry[],
+): MatchResult[] => {
+  const cached = loadMatches(tmpDir);
+
+  return entries.flatMap((entry) => {
+    const match = cached.get(entry.mangaDexId);
+
+    return match ? [{ ...match, status: entry.status }] : [];
+  });
+};
 
 const phaseExportEffect = (
   getMdToken: MdTokenProvider,
@@ -201,6 +239,7 @@ const phaseExportEffect = (
           accept: "application/json",
           "user-agent": USER_AGENT,
         },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       }),
     ).pipe(Effect.mapError((cause) => cliError(errorMessage(cause))));
 
@@ -245,6 +284,8 @@ const phaseExportEffect = (
       for (const id of batch) {
         params.append("ids[]", id);
       }
+
+      appendAllContentRatings(params);
 
       const mangaList = yield* mdFetchEffect(mdToken, `/manga?${params.toString()}`);
 
@@ -384,6 +425,27 @@ const phaseMatchEffect = (
     let unmatched = 0;
     let skipped = 0;
 
+    // An AniList lookup that failed says nothing about the title, so the entry
+    // is left out of the match file and a rerun asks again.
+    const lookupFailed = new Set<string>();
+    let consecutiveFailures = 0;
+    let lastFailure = "";
+
+    // Earlier matches of entries this run has not reached are kept, so
+    // stopping early does not discard them.
+    const saveResults = (): void => {
+      const reached = new Set(results.map((r) => r.mangaDexId));
+
+      mkdirSync(tmpDir, { recursive: true });
+      writeFileSync(
+        paths(tmpDir).matches,
+        toPrettyJsonText([
+          ...results.filter((r) => !lookupFailed.has(r.mangaDexId)),
+          ...[...existing.values()].filter((r) => !reached.has(r.mangaDexId)),
+        ]),
+      );
+    };
+
     for (let index = 0; index < entries.length; index += 1) {
       const entry = entries[index];
 
@@ -391,10 +453,17 @@ const phaseMatchEffect = (
         continue;
       }
 
+      let failedLookup = false;
+
+      const noteFailure = (cause: CliEffectError): void => {
+        failedLookup = true;
+        lastFailure = errorMessage(cause);
+      };
+
       const cached = existing.get(entry.mangaDexId);
 
       if (cached && (cached.anilistId || options?.useCache)) {
-        results.push(cached);
+        results.push({ ...cached, status: entry.status });
 
         if (cached.anilistId) {
           matched += 1;
@@ -440,7 +509,13 @@ const phaseMatchEffect = (
 
             return result;
           }),
-          Effect.orElseSucceed(() => result),
+          Effect.catch((cause) =>
+            Effect.sync(() => {
+              noteFailure(cause);
+
+              return result;
+            }),
+          ),
         );
 
         result = malResult;
@@ -481,7 +556,13 @@ const phaseMatchEffect = (
 
               return { result, foundExact: false };
             }),
-            Effect.orElseSucceed(() => ({ result, foundExact: false })),
+            Effect.catch((cause) =>
+              Effect.sync(() => {
+                noteFailure(cause);
+
+                return { result, foundExact: false };
+              }),
+            ),
           );
 
           result = titleResult.result;
@@ -489,34 +570,53 @@ const phaseMatchEffect = (
         }
       }
 
+      results.push(result);
+
       if (result.anilistId) {
         matched += 1;
+        consecutiveFailures = 0;
+      } else if (failedLookup) {
+        lookupFailed.add(entry.mangaDexId);
+        consecutiveFailures += 1;
+        report?.problem(`lookup failed for ${entry.mangaDexId}: ${lastFailure}`);
+
+        if (consecutiveFailures >= MAX_CONSECUTIVE_LOOKUP_FAILURES) {
+          saveResults();
+
+          return yield* cliError(
+            `AniList lookups failed ${consecutiveFailures} times in a row (${lastFailure}). ` +
+              "Matches found so far are saved; run the command again to continue.",
+          );
+        }
       } else {
         unmatched += 1;
+        consecutiveFailures = 0;
       }
-
-      results.push(result);
 
       const done = index + 1;
       report?.progress(done, entries.length, [
         ["ok", matched],
         ["miss", unmatched],
+        ["error", lookupFailed.size],
         ["cached", skipped],
       ]);
 
       if (done % 25 === 0) {
-        mkdirSync(tmpDir, { recursive: true });
-        writeFileSync(paths(tmpDir).matches, toPrettyJsonText(results));
+        saveResults();
       }
     }
 
-    mkdirSync(tmpDir, { recursive: true });
-    writeFileSync(paths(tmpDir).matches, toPrettyJsonText(results));
+    saveResults();
 
-    const unmatchedRows = results.filter((r) => !r.anilistId);
     report?.note(
-      `Match complete: ${results.length - unmatchedRows.length} matched · ${unmatchedRows.length} unmatched (cached=${skipped})`,
+      `Match complete: ${matched} matched · ${unmatched} unmatched · ${lookupFailed.size} lookups failed (cached=${skipped})`,
     );
+
+    if (lookupFailed.size > 0) {
+      report?.note(
+        "Failed lookups are not saved as unmatched; run the command again to retry them.",
+      );
+    }
 
     return results;
   });
@@ -569,6 +669,7 @@ const collectProgressEffect = (
                 accept: "application/json",
                 "user-agent": USER_AGENT,
               },
+              signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
             }),
           ).pipe(Effect.mapError((cause) => cliError(errorMessage(cause))));
 
@@ -595,10 +696,14 @@ const collectProgressEffect = (
                 params.append("ids[]", id);
               }
 
+              appendAllContentRatings(params);
+
               const chapters = yield* mdFetchEffect(mdToken, `/chapter?${params.toString()}`);
 
               for (const chapter of chapters) {
-                const num = Number.parseFloat(stringField(chapter, "chapter") ?? "");
+                // The number sits under `attributes`, like every MangaDex resource field.
+                const attrs = objectField(chapter, "attributes");
+                const num = Number.parseFloat((attrs && stringField(attrs, "chapter")) ?? "");
 
                 if (Number.isFinite(num)) {
                   maxChapter = Math.max(maxChapter, num);

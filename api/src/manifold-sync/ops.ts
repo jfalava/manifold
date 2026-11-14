@@ -16,34 +16,30 @@ export function listPendingSync(host: SyncHost): readonly SyncOp[] {
 const retryFailedSyncEffect = (host: SyncHost) =>
   Effect.gen(function* () {
     const timestamp = now();
-    host.ctx.storage.sql.exec(
-      `UPDATE sync_ops SET state = 'pending', attempts = 0, updated_at = ?
-     WHERE target = 'mangadex' AND state IN ('failed', 'blocked')`,
-      timestamp,
-    );
-    // Re-arm shelf DLQ rows alongside sync_ops so one manual retry covers both.
-    host.ctx.storage.sql.exec(
-      `UPDATE md_status_queue SET attempts = 0, last_error = NULL
-     WHERE attempts >= ${SYNC_MAX_ATTEMPTS}`,
-    );
 
-    const pending =
-      host.ctx.storage.sql
-        .exec<{ count: number }>(
-          "SELECT COUNT(*) AS count FROM sync_ops WHERE state = 'pending' AND target = 'mangadex'",
-        )
-        .toArray()[0]?.count ?? 0;
+    const ops = host.ctx.storage.sql
+      .exec(
+        `UPDATE sync_ops SET state = 'pending', attempts = 0, updated_at = ?
+     WHERE target = 'mangadex' AND (state IN ('failed', 'blocked') OR attempts > 0)
+     RETURNING id`,
+        timestamp,
+      )
+      .toArray().length;
 
-    const shelfPending =
-      host.ctx.storage.sql
-        .exec<{ count: number }>(
-          `SELECT COUNT(*) AS count FROM md_status_queue WHERE attempts < ${SYNC_MAX_ATTEMPTS}`,
-        )
-        .toArray()[0]?.count ?? 0;
+    // Shelf rows alongside sync_ops, so one manual retry covers both. Rows
+    // waiting out a backoff count too: retrying now is what was asked for.
+    const shelf = host.ctx.storage.sql
+      .exec(
+        `UPDATE md_status_queue SET attempts = 0, last_error = NULL
+     WHERE attempts > 0
+     RETURNING entry_id`,
+      )
+      .toArray().length;
 
     yield* fromPromise(() => scheduleSync(host));
 
-    return { retried: pending + shelfPending };
+    // Rows this call made due, not the whole pending backlog.
+    return { retried: ops + shelf };
   });
 
 export const retryFailedSync = (host: SyncHost): Promise<{ retried: number }> =>
@@ -133,12 +129,7 @@ const retryOpEffect = (host: SyncHost, opId: string) =>
 export const retryOp = (host: SyncHost, opId: string): Promise<SyncOp | undefined> =>
   Effect.runPromise(retryOpEffect(host, opId));
 
-export function listOps(
-  host: SyncHost,
-  state?: string,
-  target?: string,
-  limit = 200,
-): readonly SyncOp[] {
+export function listOps(host: SyncHost, state?: string, target?: string, limit = 200) {
   const clauses: string[] = [];
   const params: (string | number)[] = [];
 
@@ -157,7 +148,11 @@ export function listOps(
   }
 
   const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-  params.push(Math.min(500, Math.max(1, limit)));
+
+  const total =
+    host.ctx.storage.sql
+      .exec<{ total: number }>(`SELECT COUNT(*) AS total FROM sync_ops o ${where}`, ...params)
+      .toArray()[0]?.total ?? 0;
 
   const rows = host.ctx.storage.sql
     .exec<OpRow & { entry_title: string | null }>(
@@ -168,54 +163,39 @@ export function listOps(
        ${where}
        ORDER BY o.id DESC LIMIT ?`,
       ...params,
+      Math.min(500, Math.max(1, limit)),
     )
     .toArray();
 
-  return rows.map((row) => ({
-    ...toOp(row),
-    ...(row.entry_title !== null && { entryTitle: row.entry_title }),
-  }));
+  return {
+    ops: rows.map((row) => ({
+      ...toOp(row),
+      ...(row.entry_title !== null && { entryTitle: row.entry_title }),
+    })),
+    total,
+  };
 }
 
-export function opsSummary(host: SyncHost, limit = 200): OpsSummary {
-  const safeLimit = Math.min(500, Math.max(1, Math.trunc(limit)));
-
-  const rows = host.ctx.storage.sql
-    .exec<{
-      state: string;
-      created_at: number;
-      updated_at: number;
-      last_error: string | null;
-    }>(
-      `SELECT state, created_at, updated_at, last_error
-           FROM sync_ops
-           ORDER BY id DESC
-           LIMIT ?`,
-      safeLimit,
+export function opsSummary(host: SyncHost): OpsSummary {
+  // Aggregated in SQL over every op: a window of the newest rows would hide
+  // exactly the oldest pending and blocked ops this summary exists to surface.
+  const counts = host.ctx.storage.sql
+    .exec<{ state: string; count: number; oldest: number }>(
+      `SELECT state, COUNT(*) AS count, MIN(created_at) AS oldest
+       FROM sync_ops
+       GROUP BY state`,
     )
     .toArray();
 
-  const states = new Map<string, number>();
-  let oldestPendingAt: number | null = null;
-  let lastFailedError: string | null = null;
-  let lastFailedAt = 0;
-
-  for (const row of rows) {
-    states.set(row.state, (states.get(row.state) ?? 0) + 1);
-
-    if (row.state === "pending" && (oldestPendingAt === null || row.created_at < oldestPendingAt)) {
-      oldestPendingAt = row.created_at;
-    }
-
-    if (
-      (row.state === "failed" || row.state === "blocked") &&
-      row.last_error !== null &&
-      row.updated_at > lastFailedAt
-    ) {
-      lastFailedAt = row.updated_at;
-      lastFailedError = row.last_error;
-    }
-  }
+  const lastFailed = host.ctx.storage.sql
+    .exec<{ last_error: string }>(
+      `SELECT last_error
+       FROM sync_ops
+       WHERE state IN ('failed', 'blocked') AND last_error IS NOT NULL
+       ORDER BY updated_at DESC, id DESC
+       LIMIT 1`,
+    )
+    .toArray()[0];
 
   const shelf = host.ctx.storage.sql
     .exec<{ attempts: number; created_at: number; last_error: string | null }>(
@@ -242,10 +222,10 @@ export function opsSummary(host: SyncHost, limit = 200): OpsSummary {
   }
 
   return {
-    total: rows.length,
-    states: Object.fromEntries(states),
-    oldestPendingAt,
-    lastFailedError,
+    total: counts.reduce((sum, row) => sum + row.count, 0),
+    states: Object.fromEntries(counts.map((row) => [row.state, row.count])),
+    oldestPendingAt: counts.find((row) => row.state === "pending")?.oldest ?? null,
+    lastFailedError: lastFailed?.last_error ?? null,
     shelfPending,
     shelfBlocked,
     shelfLastBlockedError,
@@ -254,8 +234,10 @@ export function opsSummary(host: SyncHost, limit = 200): OpsSummary {
 
 const backfillMangaDexShelfEffect = (host: SyncHost) =>
   Effect.gen(function* () {
-    const enqueued =
-      host.ctx.storage.sql.exec<{ count: number }>(
+    // Counted from RETURNING: rowsWritten also counts the primary-key index
+    // row, which doubled the reported number.
+    const enqueued = host.ctx.storage.sql
+      .exec(
         `INSERT INTO md_status_queue (entry_id, created_at, attempts)
        SELECT ps.entry_id, ?, 0
        FROM progress_state ps
@@ -263,9 +245,11 @@ const backfillMangaDexShelfEffect = (host: SyncHost) =>
          ON pl.entry_id = ps.entry_id AND pl.provider = 'mangadex'
        LEFT JOIN md_status_queue q ON q.entry_id = ps.entry_id
        WHERE q.entry_id IS NULL
-       ON CONFLICT DO NOTHING`,
+       ON CONFLICT DO NOTHING
+       RETURNING entry_id`,
         now(),
-      ).rowsWritten ?? 0;
+      )
+      .toArray().length;
 
     yield* fromPromise(() => scheduleSync(host));
 

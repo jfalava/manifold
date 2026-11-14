@@ -225,6 +225,10 @@ describe("Manifold GitHub OAuth", () => {
       });
 
       expect(replacement.refresh_token).not.toBe(original.refresh_token);
+      // Rotation drops the revoked row instead of keeping it forever.
+      expect(
+        host.ctx.storage.sql.exec("SELECT access_token_hash FROM manifold_sessions").toArray(),
+      ).toHaveLength(1);
       expect(await authorizeManifoldAccessToken(host, original.access_token)).toBe(false);
       expect(await authorizeManifoldAccessToken(host, replacement.access_token)).toBe(true);
       await expect(
@@ -239,6 +243,48 @@ describe("Manifold GitHub OAuth", () => {
       expect(await authorizeManifoldAccessToken(host, replacement.access_token)).toBe(false);
     } finally {
       close();
+    }
+  });
+
+  it("drops expired authorization codes that were never exchanged when the next one is issued", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 10, 4, 12, 0, 0));
+    const { host, close } = makeHost();
+
+    try {
+      stubGithub(12345);
+
+      const issueCode = async (state: string): Promise<string> => {
+        const start = await createManifoldOAuthAuthorization(host, {
+          clientId: MANIFOLD_OAUTH_CLIENT_ID,
+          redirectUri: MANIFOLD_OAUTH_REDIRECT_URI,
+          responseType: "code",
+          state,
+          codeChallenge: await createPkceChallenge("abandoned-verifier"),
+          codeChallengeMethod: "S256",
+        });
+
+        const callback = await completeGithubOAuth(
+          host,
+          requiredSearchParam(start.authorizationUrl, "state"),
+          "github-code",
+        );
+
+        return requiredSearchParam(callback.redirectUri, "code");
+      };
+
+      const codes = () =>
+        host.ctx.storage.sql.exec("SELECT code_hash FROM manifold_oauth_codes").toArray();
+
+      await issueCode("abandoned-state");
+      expect(codes()).toHaveLength(1);
+
+      vi.setSystemTime(Date.UTC(2026, 10, 4, 12, 5, 0));
+      await issueCode("next-state");
+      expect(codes()).toHaveLength(1);
+    } finally {
+      close();
+      vi.useRealTimers();
     }
   });
 

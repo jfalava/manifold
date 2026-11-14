@@ -1,11 +1,16 @@
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { deflateRawSync } from "node:zlib";
 
+import { requestHref } from "@manifold/json";
 import { describe, expect, test } from "vitest";
 
 // Leaf modules rather than the `../src/upgrade` barrel: the barrel re-exports through the `@/`
 // path alias, which oxlint's type-aware pass does not resolve for test files.
 import { extractZipBinary } from "../src/upgrade/archive";
-import { checksumFromFile, downloadBytes } from "../src/upgrade/install";
+import { checksumFromFile, downloadBytes, installRelease } from "../src/upgrade/install";
 import { assetNameFor, executableNameFor, executablePath } from "../src/upgrade/platform";
 import { latestCliRelease } from "../src/upgrade/release";
 import { isNewerVersion, parseCliVersion } from "../src/upgrade/version";
@@ -123,6 +128,8 @@ describe("upgrade command helpers", () => {
   test("selects a stable CLI release and its zip assets", async () => {
     const asset = "manifold-cli-linux-x64.zip";
 
+    const downloads = "https://github.com/jfalava/manifold/releases/download/cli-v0.3.0";
+
     const fetcher = async () =>
       new Response(
         JSON.stringify([
@@ -146,11 +153,11 @@ describe("upgrade command helpers", () => {
             assets: [
               {
                 name: asset,
-                browser_download_url: "https://example.test/archive",
+                browser_download_url: `${downloads}/${asset}`,
               },
               {
                 name: `${asset}.sha256`,
-                browser_download_url: "https://example.test/checksum",
+                browser_download_url: `${downloads}/${asset}.sha256`,
               },
             ],
           },
@@ -159,9 +166,82 @@ describe("upgrade command helpers", () => {
 
     await expect(latestCliRelease(asset, "manifold", fetcher)).resolves.toEqual({
       version: "0.3.0",
+      assetUrl: `${downloads}/${asset}`,
+      checksumUrl: `${downloads}/${asset}.sha256`,
+      executableName: "manifold",
+    });
+  });
+
+  test("refuses a release whose assets are not on this repository's release page", async () => {
+    const asset = "manifold-cli-linux-x64.zip";
+
+    const fetcher = async () =>
+      Response.json([
+        {
+          draft: false,
+          prerelease: false,
+          tag_name: "cli-v0.3.0",
+          assets: [
+            { name: asset, browser_download_url: "https://example.test/archive" },
+            {
+              name: `${asset}.sha256`,
+              browser_download_url: `https://github.com/jfalava/manifold/releases/download/cli-v0.3.0/${asset}.sha256`,
+            },
+          ],
+        },
+      ]);
+
+    await expect(latestCliRelease(asset, "manifold", fetcher)).rejects.toThrow(
+      "unexpected download URL: https://example.test/archive",
+    );
+  });
+
+  describe("installRelease", () => {
+    const archive = makeZip("manifold", "new binary");
+    const checksum = createHash("sha256").update(archive).digest("hex");
+
+    const release = {
+      version: "0.3.0",
       assetUrl: "https://example.test/archive",
       checksumUrl: "https://example.test/checksum",
       executableName: "manifold",
+    };
+
+    const fetcher = async (input: string | URL | Request) =>
+      requestHref(input).endsWith("/checksum")
+        ? new Response(`${checksum}  manifold-cli.zip\n`)
+        : new Response(Buffer.from(archive));
+
+    test.skipIf(process.platform === "win32")("replaces the executable", async () => {
+      const directory = mkdtempSync(join(tmpdir(), "manifold-upgrade-"));
+
+      try {
+        await installRelease(release, join(directory, "manifold"), fetcher);
+
+        expect(readdirSync(directory)).toEqual(["manifold"]);
+        expect(readFileSync(join(directory, "manifold"), "utf8")).toBe("new binary");
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
     });
+
+    test.skipIf(process.platform === "win32")(
+      "leaves no temporary file behind when the swap fails",
+      async () => {
+        const directory = mkdtempSync(join(tmpdir(), "manifold-upgrade-"));
+        // A directory at the target path makes the final rename fail.
+        mkdirSync(join(directory, "manifold"));
+
+        try {
+          await expect(
+            installRelease(release, join(directory, "manifold"), fetcher),
+          ).rejects.toThrow(/rename/);
+
+          expect(readdirSync(directory)).toEqual(["manifold"]);
+        } finally {
+          rmSync(directory, { recursive: true, force: true });
+        }
+      },
+    );
   });
 });

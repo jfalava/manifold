@@ -44,6 +44,19 @@ import {
 } from "./effect-host";
 import type { MangaDexLibraryItem, MangaDexReadingStatus, MangaDexStat } from "./mangadex";
 import {
+  BindProviderInput,
+  decodeInput,
+  DisconnectAuthInput,
+  ImportAniListTokenInput,
+  LoadMangaDexLibraryInput,
+  LoadMangaDexStatsInput,
+  NukeEntryInput,
+  RetryOpInput,
+  SaveListStateInput,
+  SetMangaDexStatusInput,
+  UnlinkProviderInput,
+} from "./registry-inputs";
+import {
   cachedJsonProgram,
   type CacheDecoder,
   invalidateCachedJsonProgram,
@@ -52,6 +65,17 @@ import {
 
 const MANIFOLD_API_ORIGIN = "https://manifold.jfa.dev/api";
 const JsonString = Schema.fromJsonString(Schema.Unknown);
+
+/**
+ * Longest wait for one personal-API call. The slowest one hydrates the whole
+ * MangaDex library through several upstream requests; nothing legitimate
+ * takes longer, and without a limit a stalled call holds the page forever.
+ */
+const API_TIMEOUT_MS = 30_000;
+
+/** The Overview page's cached summary; every mutation below makes it stale. */
+const LIBRARY_OVERVIEW_CACHE_KEY = "library-overview:v2";
+const invalidateLibraryOverview = invalidateCachedJsonProgram(LIBRARY_OVERVIEW_CACHE_KEY);
 
 // Type aliases (not interfaces) so TanStack Table v9 accepts them as TData.
 export type RegistryLink = RegistryListEntry["providers"][number];
@@ -104,6 +128,7 @@ const call = Effect.fnUntraced(function* <A>(
   const requestInit: RequestInit = {
     method: init?.method ?? "GET",
     headers,
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
   };
 
   if (init?.body !== undefined) {
@@ -207,12 +232,21 @@ export const loadRegistry = createServerFn({ method: "GET" }).handler(() =>
   runHost(loadRegistryProgram),
 );
 
+/**
+ * Row limits of the two operations lists. The API returns the newest rows up
+ * to the limit and does not say whether more exist, so the page shows a
+ * notice when a list comes back full.
+ */
+export const OPS_LIST_LIMIT = 500;
+
+export const EVENTS_LIST_LIMIT = 100;
+
 const loadOperationsProgram = Effect.fnUntraced(
   function* (): Effect.fn.Return<LoadOperationsResult> {
     const [ops, events] = yield* Effect.all(
       [
-        capture("ops", call("/v1/ops?state=error&limit=500", OpsListResponse)),
-        capture("events", call("/v1/events?limit=100", EventsListResponse)),
+        capture("ops", call(`/v1/ops?state=error&limit=${OPS_LIST_LIMIT}`, OpsListResponse)),
+        capture("events", call(`/v1/events?limit=${EVENTS_LIST_LIMIT}`, EventsListResponse)),
       ],
       { concurrency: "unbounded" },
     );
@@ -245,7 +279,7 @@ export interface ListStatePatch {
 }
 
 export const saveListState = createServerFn({ method: "POST" })
-  .validator((data: ListStatePatch) => data)
+  .validator((data: ListStatePatch) => decodeInput(SaveListStateInput, "saveListState", data))
   .handler(({ data }) => {
     const { entryId, ...patch } = data;
 
@@ -253,7 +287,7 @@ export const saveListState = createServerFn({ method: "POST" })
       call(`/v1/entries/${encodeURIComponent(entryId)}/list-state`, ListState, {
         method: "POST",
         body: { ...patch, origin: "admin" },
-      }),
+      }).pipe(Effect.tap(() => invalidateLibraryOverview)),
     );
   });
 
@@ -264,13 +298,13 @@ interface BindInput {
 }
 
 export const bindProvider = createServerFn({ method: "POST" })
-  .validator((data: BindInput) => data)
+  .validator((data: BindInput) => decodeInput(BindProviderInput, "bindProvider", data))
   .handler(({ data }) =>
     runHost(
       call(`/v1/entries/${encodeURIComponent(data.entryId)}/providers`, ContractRegistryEntry, {
         method: "POST",
         body: { provider: data.provider, externalId: data.externalId },
-      }),
+      }).pipe(Effect.tap(() => invalidateLibraryOverview)),
     ),
   );
 
@@ -280,36 +314,42 @@ interface UnlinkInput {
 }
 
 export const unlinkProvider = createServerFn({ method: "POST" })
-  .validator((data: UnlinkInput) => data)
+  .validator((data: UnlinkInput) => decodeInput(UnlinkProviderInput, "unlinkProvider", data))
   .handler(({ data }) =>
     runHost(
       call(
-        `/v1/entries/${encodeURIComponent(data.entryId)}/unlink/${data.provider}`,
+        `/v1/entries/${encodeURIComponent(data.entryId)}/unlink/${encodeURIComponent(data.provider)}`,
         ContractRegistryEntry,
         { method: "POST" },
-      ),
+      ).pipe(Effect.tap(() => invalidateLibraryOverview)),
     ),
   );
 
 export const nukeEntry = createServerFn({ method: "POST" })
-  .validator((data: { entryId: string }) => data)
+  .validator((data: { entryId: string }) => decodeInput(NukeEntryInput, "nukeEntry", data))
   .handler(({ data }) =>
     runHost(
       call(`/v1/entries/${encodeURIComponent(data.entryId)}/delete`, OkWithListStateResponse, {
         method: "POST",
         body: { origin: "admin" },
-      }),
+      }).pipe(Effect.tap(() => invalidateLibraryOverview)),
     ),
   );
 
 export const retryOp = createServerFn({ method: "POST" })
-  .validator((data: { opId: string }) => data)
+  .validator((data: { opId: string }) => decodeInput(RetryOpInput, "retryOp", data))
   .handler(({ data }) =>
-    runHost(call(`/v1/ops/${encodeURIComponent(data.opId)}/retry`, SyncOp, { method: "POST" })),
+    runHost(
+      call(`/v1/ops/${encodeURIComponent(data.opId)}/retry`, SyncOp, { method: "POST" }).pipe(
+        Effect.tap(() => invalidateLibraryOverview),
+      ),
+    ),
   );
 
 export const loadMangaDexLibrary = createServerFn({ method: "POST" })
-  .validator((data: { status?: MangaDexReadingStatus } | undefined) => data ?? {})
+  .validator((data: { status?: MangaDexReadingStatus } | undefined) =>
+    decodeInput(LoadMangaDexLibraryInput, "loadMangaDexLibrary", data ?? {}),
+  )
   .handler(({ data }) => {
     const status = data.status;
 
@@ -341,7 +381,9 @@ export const loadMangaDexLibrary = createServerFn({ method: "POST" })
  * are not (yet) computable are simply absent from the response.
  */
 export const loadMangaDexStats = createServerFn({ method: "POST" })
-  .validator((data: { ids: readonly string[] }) => data)
+  .validator((data: { ids: readonly string[] }) =>
+    decodeInput(LoadMangaDexStatsInput, "loadMangaDexStats", data),
+  )
   .handler(({ data }): Promise<Record<string, MangaDexStat>> => {
     const ids = [...new Set(data.ids)].slice(0, 200);
 
@@ -359,13 +401,18 @@ export const loadMangaDexStats = createServerFn({ method: "POST" })
 
 /** Pass "unset" to clear the reading status (null on the MangaDex API). */
 export const setMangaDexStatus = createServerFn({ method: "POST" })
-  .validator((data: { mangaDexId: string; status: MangaDexReadingStatus | "unset" }) => data)
+  .validator((data: { mangaDexId: string; status: MangaDexReadingStatus | "unset" }) =>
+    decodeInput(SetMangaDexStatusInput, "setMangaDexStatus", data),
+  )
   .handler(({ data }) =>
     runHost(
-      call(`/v1/mangadex/status/${data.mangaDexId}`, OkResponse, {
+      call(`/v1/mangadex/status/${encodeURIComponent(data.mangaDexId)}`, OkResponse, {
         method: "POST",
         body: { status: data.status === "unset" ? null : data.status },
-      }).pipe(Effect.asVoid),
+      }).pipe(
+        Effect.tap(() => invalidateLibraryOverview),
+        Effect.asVoid,
+      ),
     ),
   );
 
@@ -411,7 +458,7 @@ const decodeLibraryOverview: CacheDecoder<LibraryOverview> = (value) => {
  * Result is cached (KV + in-isolate) with stale-while-revalidate — see server-cache.ts.
  */
 const libraryOverviewProgram = cachedJsonProgram(
-  "library-overview:v2",
+  LIBRARY_OVERVIEW_CACHE_KEY,
   decodeLibraryOverview,
   Effect.fnUntraced(function* (): Effect.fn.Return<ComputedSnapshot<LibraryOverview>, AdminError> {
     const [registry, ops, mangadex] = yield* Effect.all(
@@ -424,9 +471,7 @@ const libraryOverviewProgram = cachedJsonProgram(
         ),
         capture(
           "ops",
-          call("/v1/ops/summary?limit=200", OpsSummaryResponse).pipe(
-            Effect.map((body) => body.summary),
-          ),
+          call("/v1/ops/summary", OpsSummaryResponse).pipe(Effect.map((body) => body.summary)),
         ),
         capture(
           "mangadex library",
@@ -501,15 +546,7 @@ export const loadAuthConnections = createServerFn({ method: "GET" }).handler(() 
 export const loginMangaDex = createServerFn({ method: "POST" }).handler(() =>
   runHost(
     call("/v1/auth/mangadex/login", AuthConnectionSchema, { method: "POST" }).pipe(
-      Effect.tap(() =>
-        Effect.all(
-          [
-            invalidateCachedJsonProgram("library-overview:v1"),
-            invalidateCachedJsonProgram("library-overview:v2"),
-          ],
-          { concurrency: "unbounded" },
-        ),
-      ),
+      Effect.tap(() => invalidateLibraryOverview),
     ),
   ),
 );
@@ -538,7 +575,9 @@ export const startMalOAuth = createServerFn({ method: "POST" }).handler(() =>
  * 50915) or paste; the Worker never calls AniList's token endpoint.
  */
 export const importAniListToken = createServerFn({ method: "POST" })
-  .validator((data: { accessToken: string; expiresIn?: number }) => data)
+  .validator((data: { accessToken: string; expiresIn?: number }) =>
+    decodeInput(ImportAniListTokenInput, "importAniListToken", data),
+  )
   .handler(({ data }) => {
     const accessToken = data.accessToken.trim();
 
@@ -553,17 +592,7 @@ export const importAniListToken = createServerFn({ method: "POST" })
         data.expiresIn !== undefined && data.expiresIn > 0
           ? { method: "POST", body: { accessToken, expiresIn: data.expiresIn } }
           : { method: "POST", body: { accessToken } },
-      ).pipe(
-        Effect.tap(() =>
-          Effect.all(
-            [
-              invalidateCachedJsonProgram("library-overview:v1"),
-              invalidateCachedJsonProgram("library-overview:v2"),
-            ],
-            { concurrency: "unbounded" },
-          ),
-        ),
-      ),
+      ).pipe(Effect.tap(() => invalidateLibraryOverview)),
     );
   });
 
@@ -588,7 +617,9 @@ export const anilistImplicitAuthorizeUrl = (): string =>
   `&response_type=token`;
 
 export const disconnectAuth = createServerFn({ method: "POST" })
-  .validator((data: { provider: AuthProvider }) => data)
+  .validator((data: { provider: AuthProvider }) =>
+    decodeInput(DisconnectAuthInput, "disconnectAuth", data),
+  )
   .handler(({ data }) => {
     const provider = data.provider;
 
@@ -602,15 +633,7 @@ export const disconnectAuth = createServerFn({ method: "POST" })
       call(`/v1/auth/${encodeURIComponent(provider)}`, AuthDisconnectedResponse, {
         method: "DELETE",
       }).pipe(
-        Effect.tap(() =>
-          Effect.all(
-            [
-              invalidateCachedJsonProgram("library-overview:v1"),
-              invalidateCachedJsonProgram("library-overview:v2"),
-            ],
-            { concurrency: "unbounded" },
-          ),
-        ),
+        Effect.tap(() => invalidateLibraryOverview),
         Effect.map((): AuthConnection => ({ provider, connected: false })),
       ),
     );

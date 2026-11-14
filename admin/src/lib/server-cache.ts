@@ -153,12 +153,22 @@ const computeAndStore = Effect.fnUntraced(function* <T>(
         : Deferred.succeed(acquired.deferred, value),
     ),
     Effect.tapError((error) => Deferred.fail(acquired.deferred, error)),
+    // Runs on every exit. A defect or interruption skips both taps above, so
+    // release the callers already waiting on this Deferred; completing it a
+    // second time is a no-op.
     Effect.ensuring(
       Effect.sync(() => {
         if (inflight.get(key) === acquired.deferred) {
           inflight.delete(key);
         }
-      }),
+      }).pipe(
+        Effect.andThen(
+          Deferred.fail(
+            acquired.deferred,
+            new AdminError({ message: `Cache computation for ${key} did not complete` }),
+          ),
+        ),
+      ),
     ),
     Effect.map(({ value }) => value),
   );

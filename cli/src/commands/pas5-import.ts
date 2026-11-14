@@ -613,6 +613,12 @@ export const pas5ImportCommand = Command.make("import-pas5", {
                 if (plan.backfill) {
                   const { read, anilistId } = plan.backfill;
 
+                  // Looked up before the registry write, so a failed lookup leaves nothing half-done.
+                  const aniListProgress =
+                    anilistId !== undefined && aniListToken !== undefined
+                      ? await aniList.fetchAniListProgress(aniListToken, anilistId)
+                      : undefined;
+
                   const progress = await apiCall(
                     config,
                     `/v1/entries/${encodeURIComponent(entryId)}/read`,
@@ -624,9 +630,20 @@ export const pas5ImportCommand = Command.make("import-pas5", {
                   readsBackfilled += 1;
                   // Push AniList only when the registry actually advanced to this chapter.
                   const advanced = progress.chapterNumber === read.chapterNumber;
+
+                  // AniList can be ahead of an untracked entry; a push would lower it.
+                  const aniListAhead =
+                    aniListProgress !== undefined &&
+                    aniListProgress >= Math.floor(read.chapterNumber);
+
                   let pushed = false;
 
-                  if (advanced && anilistId !== undefined && aniListToken !== undefined) {
+                  if (
+                    advanced &&
+                    !aniListAhead &&
+                    anilistId !== undefined &&
+                    aniListToken !== undefined
+                  ) {
                     pushed = await aniList.saveAniListProgress(
                       aniListToken,
                       anilistId,
@@ -642,6 +659,7 @@ export const pas5ImportCommand = Command.make("import-pas5", {
                     ...(progress.chapterNumber !== undefined && {
                       registryChapter: progress.chapterNumber,
                     }),
+                    ...(aniListProgress !== undefined && { aniListProgress }),
                     aniListPushed: pushed,
                   });
                 }

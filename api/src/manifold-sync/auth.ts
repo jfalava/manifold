@@ -19,7 +19,7 @@ import {
 import { readSecret } from "../read-secret";
 import { type OAuthSessionRow, type OAuthTokenRow } from "../sync-rows";
 import { decryptToken, encryptToken } from "../token-crypto";
-import { now, SYNC_MAX_ATTEMPTS } from "./constants";
+import { now } from "./constants";
 import { apiError, fromPromise } from "./from-promise";
 import type { SyncHost } from "./host";
 import { scheduleSync } from "./schedule";
@@ -222,16 +222,16 @@ const loginMangaDexEffect = (host: SyncHost) =>
     const body = yield* fromPromise(() => response.json());
     const token = yield* Schema.decodeUnknownEffect(OAuthTokenResponseSchema)(body);
     const connection = yield* persistTokenEffect(host, "mangadex", token);
+    // Fresh credentials may clear whatever failed, so everything that is
+    // blocked or waiting out a backoff becomes due now.
     host.ctx.storage.sql.exec(
       `UPDATE sync_ops
      SET state = 'pending', attempts = 0, updated_at = ?
-     WHERE target = 'mangadex' AND state IN ('failed', 'blocked')`,
+     WHERE target = 'mangadex' AND (state IN ('failed', 'blocked') OR attempts > 0)`,
       now(),
     );
-    // Fresh credentials may unblock shelf rows parked on auth failures.
     host.ctx.storage.sql.exec(
-      `UPDATE md_status_queue SET attempts = 0, last_error = NULL
-     WHERE attempts >= ${SYNC_MAX_ATTEMPTS}`,
+      "UPDATE md_status_queue SET attempts = 0, last_error = NULL WHERE attempts > 0",
     );
     yield* fromPromise(() => scheduleSync(host)).pipe(
       Effect.catch((error) =>
@@ -380,6 +380,19 @@ const getAuthAccessTokenEffect = (host: SyncHost, provider: AuthProvider) =>
 
     if (!response.ok) {
       const detail = (yield* fromPromise(() => response.text())).trim().slice(0, 500);
+
+      // The fetch above lets another call into this object. If that call
+      // refreshed with the same refresh token first, this one is refused
+      // although a usable token is already stored.
+      const stored = readAuthToken(host, provider);
+
+      if (
+        stored &&
+        stored.updated_at !== row.updated_at &&
+        (stored.expires_at === null || stored.expires_at > now() + 30_000)
+      ) {
+        return yield* fromPromise(() => decryptToken(host.env, stored.access_token));
+      }
 
       return yield* apiError(
         `Auth token refresh failed for ${provider} (${response.status})` +

@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 import { isJsonValue, requestHref, requestInitText, type JsonValue } from "@manifold/json";
-import { CanonicalSourceError } from "../src/index";
+import { CanonicalSourceError, type CanonicalSearchSource } from "../src/index";
 import { createAniListSource, createMyAnimeListSource, parseAniListDate } from "../src/sources";
 
 const jsonResponse = (body: JsonValue, status = 200): Response =>
@@ -9,6 +9,11 @@ const jsonResponse = (body: JsonValue, status = 200): Response =>
     status,
     headers: { "content-type": "application/json" },
   });
+
+// getByIdMal is optional on the interface; the AniList source always has it.
+const lookupByMalId = (source: CanonicalSearchSource, idMal: string) =>
+  source.getByIdMal?.(idMal) ??
+  Effect.fail(new CanonicalSourceError({ provider: "anilist", message: "no MAL lookup" }));
 
 describe("AniList canonical source", () => {
   it("searches manga and normalizes stable ids, aliases, metadata, and external links", async () => {
@@ -96,6 +101,52 @@ describe("AniList canonical source", () => {
     const result = await Effect.runPromise(source.getById("42"));
     expect(result?.id).toBe("anilist:42");
     expect(result?.externalIds).toEqual({ anilist: "42" });
+  });
+
+  it.each(["12abc", "1e3", "0x10", "-5", "0", "9999999999"])(
+    "rejects the junk id %s instead of looking up a numeric prefix",
+    async (id) => {
+      let requests = 0;
+
+      const source = createAniListSource({
+        fetcher: async () => {
+          requests += 1;
+
+          return jsonResponse({ data: { Media: { id: 12, title: { romaji: "Wrong" } } } });
+        },
+      });
+
+      const byId = await Effect.runPromise(Effect.flip(source.getById(id)));
+      const byIdMal = await Effect.runPromise(Effect.flip(lookupByMalId(source, id)));
+
+      expect(byId).toBeInstanceOf(CanonicalSourceError);
+      expect(byId.message).toBe(`Invalid AniList manga id: ${id}`);
+      expect(byIdMal.message).toBe(`Invalid MyAnimeList manga id: ${id}`);
+      expect(requests).toBe(0);
+    },
+  );
+
+  it("answers undefined when AniList has no manga with that id", async () => {
+    const source = createAniListSource({
+      fetcher: async () =>
+        jsonResponse(
+          { data: { Media: null }, errors: [{ message: "Not Found.", status: 404 }] },
+          404,
+        ),
+    });
+
+    expect(await Effect.runPromise(source.getById("999999"))).toBeUndefined();
+    expect(await Effect.runPromise(lookupByMalId(source, "999999"))).toBeUndefined();
+  });
+
+  it("still fails a lookup AniList could not answer", async () => {
+    const source = createAniListSource({
+      fetcher: async () => jsonResponse({ errors: [{ message: "Internal Server Error" }] }, 500),
+    });
+
+    const error = await Effect.runPromise(Effect.flip(source.getById("42")));
+
+    expect(error.status).toBe(500);
   });
 
   it("keeps partial AniList dates positional", async () => {

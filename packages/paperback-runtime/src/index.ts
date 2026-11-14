@@ -44,10 +44,14 @@ export {
 
 export {
   AniListUnauthorizedError,
+  AniListUnavailableError,
+  fromAniListPromise,
+  isAniListServiceFailure,
   decodeAniListViewer,
   viewerQuery,
   normalizeAniListStatus,
   type AniListLibraryItem,
+  type AniListServiceFailure,
   type AniListViewer,
   type FuzzyDateInput,
 } from "./anilist-graphql.js";

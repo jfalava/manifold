@@ -200,6 +200,92 @@ describe("Manifold GitHub OAuth callback", () => {
   });
 });
 
+describe("public OAuth route failures", () => {
+  const detail = "MANIFOLD_GITHUB_CLIENT_SECRET binding failed: upstream said no";
+
+  const fail = async (): Promise<never> => {
+    throw new Error(detail);
+  };
+
+  const respond = async (request: Request, path: readonly string[]): Promise<Response> => {
+    const sync: ManifoldSyncStub = {
+      ...unusedSyncStub(),
+      createManifoldOAuthAuthorization: fail,
+      completeGithubOAuth: fail,
+      exchangeManifoldOAuthToken: fail,
+      pollDeviceToken: fail,
+    };
+
+    const response = await Effect.runPromise(
+      handleOAuth({
+        request,
+        env: { ...testEnv(), MANIFOLD_SYNC: { getByName: () => sync } },
+        url: new URL(request.url),
+        path,
+      }),
+    );
+
+    if (!response) {
+      throw new Error("OAuth route returned no response");
+    }
+
+    return response;
+  };
+
+  it.each([
+    {
+      name: "authorize",
+      request: () => new Request("https://manifold.example/v1/oauth/authorize?client_id=x"),
+      path: ["v1", "oauth", "authorize"],
+      status: 400,
+      error: "invalid_request",
+    },
+    {
+      name: "GitHub callback",
+      request: () => new Request("https://manifold.example/v1/oauth/github/callback?state=s"),
+      path: ["v1", "oauth", "github", "callback"],
+      status: 400,
+      error: "invalid_grant",
+    },
+    {
+      name: "token exchange",
+      request: () =>
+        new Request("https://manifold.example/v1/oauth/token", {
+          method: "POST",
+          body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: "r" }),
+        }),
+      path: ["v1", "oauth", "token"],
+      status: 400,
+      error: "invalid_grant",
+    },
+    {
+      name: "device poll",
+      request: () =>
+        new Request("https://manifold.example/v1/oauth/token", {
+          method: "POST",
+          body: new URLSearchParams({
+            grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+          }),
+        }),
+      path: ["v1", "oauth", "token"],
+      status: 500,
+      error: "server_error",
+    },
+  ])(
+    "keeps the $name failure detail out of the unauthenticated response",
+    async ({ request, path, status, error }) => {
+      const response = await respond(request(), path);
+      const body = await response.text();
+
+      expect(response.status).toBe(status);
+      expect(body).toContain(`"error":"${error}"`);
+      expect(body).toContain("error_description");
+      expect(body).not.toContain("MANIFOLD_GITHUB_CLIENT_SECRET");
+      expect(body).not.toContain("upstream said no");
+    },
+  );
+});
+
 describe("CLI device approval routes", () => {
   const route = async (
     request: Request,

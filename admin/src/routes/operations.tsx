@@ -18,7 +18,9 @@ import {
   useSearchPagination,
 } from "../components/data-table";
 import {
+  EVENTS_LIST_LIMIT,
   loadOperations,
+  OPS_LIST_LIMIT,
   retryOp,
   type ListEventItem,
   type LoadOperationsResult,
@@ -365,6 +367,14 @@ function OpsTable({
         </span>
       </div>
 
+      {ops.length >= OPS_LIST_LIMIT && (
+        <Banner
+          variant="alert"
+          title="List truncated"
+          description={`Only the ${OPS_LIST_LIMIT} newest operation errors are listed. Older ones may exist and are not shown or counted here.`}
+        />
+      )}
+
       {pager}
       <DataTable
         table={table}
@@ -495,6 +505,14 @@ function EventsTable({
           Showing {filtered.length} of {events.length}
         </span>
       </div>
+
+      {events.length >= EVENTS_LIST_LIMIT && (
+        <Banner
+          variant="alert"
+          title="List truncated"
+          description={`Only the ${EVENTS_LIST_LIMIT} newest events are listed. Older ones may exist and are not shown here.`}
+        />
+      )}
 
       {pager}
       <DataTable

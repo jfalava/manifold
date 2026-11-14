@@ -348,6 +348,14 @@ describe("registry xcomic", () => {
     expect(
       findLine(objectsAt(entry, "candidates"), (candidate) => candidate.id === "pilot").reasons,
     ).toContain("contradictory anilist ID");
+    expect(result.stdout).toContain(
+      "Dry run complete: 1 matched; 0 ambiguous; 0 unmatched; 0 conflicts; 0 errors; 0 blocked; 0 deferred",
+    );
+    expect(result.stdout).not.toContain('complete: {"matched"');
+    expect(findLine(result.report, (item) => item.event === "summary").counts).toMatchObject({
+      matched: 1,
+      errors: 0,
+    });
     expect(result.stdout).not.toContain("WRITE");
   });
 
@@ -398,6 +406,12 @@ describe("registry xcomic", () => {
     expect(findLine(result.report, (item) => item.entryId === "target").outcome).toBe(
       ["challenge", "rate-limit"].includes(scenario) ? "blocked" : "errors",
     );
+    expect(result.stdout).toContain(
+      ["challenge", "rate-limit"].includes(scenario)
+        ? "Stopped: 0 matched; 0 ambiguous; 0 unmatched; 0 conflicts; 0 errors; 1 blocked; 0 deferred"
+        : "Completed with errors: 0 matched; 0 ambiguous; 0 unmatched; 0 conflicts; 1 errors; 0 blocked; 0 deferred",
+    );
+    expect(result.stdout).toContain("Successful links remain saved.");
     expect(result.stdout).not.toContain("WRITE");
     expect(JSON.stringify(result.report)).not.toContain("fake");
   });

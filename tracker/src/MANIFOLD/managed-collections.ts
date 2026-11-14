@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex; modifications Copyright © 2026 Jorge Fernando Álava. */
-/* Modified by Manifold on 2026-09-05. See ATTRIBUTIONS.md. */
+/* Last modified by Manifold on 2026-11-12. See ATTRIBUTIONS.md. */
 // Bundled into the Paperback tracker, which stays as small as possible: the
 // global JSON costs nothing, while @manifold/json/text adds Schema codecs.
 /** @effect-diagnostics globalJson:off */
@@ -239,6 +239,39 @@ const writePendingNukes = (pending: PendingNukes): void => {
   Application.setState(JSON.stringify(pending), PENDING_NUKES_KEY);
 };
 
+// Commits and flushes overlap, and each awaits the network between its steps.
+// Every change below therefore reads the stored queue at the moment it writes,
+// with nothing awaited in between, so it cannot write back a stale copy and
+// drop a nuke (or a cancellation) that another writer stored meanwhile.
+
+/** Queues a nuke, superseding any earlier one for the title. */
+const enqueueNuke = (nuke: PendingNuke): void => {
+  const pending = readPendingNukes();
+  pending[nuke.anilistId] = nuke;
+  writePendingNukes(pending);
+};
+
+/** Cancels whatever nuke is pending for the title. */
+const cancelNuke = (anilistId: string): void => {
+  const pending = readPendingNukes();
+  delete pending[anilistId];
+  writePendingNukes(pending);
+};
+
+/** True while the stored nuke for the title is still the one a flush read. */
+const isStillPending = (nuke: PendingNuke): boolean => {
+  const current = readPendingNukes()[nuke.anilistId];
+
+  return current !== undefined && JSON.stringify(current) === JSON.stringify(nuke);
+};
+
+/** Drops a nuke a flush resolved, unless it was cancelled or replaced meanwhile. */
+const resolveNuke = (nuke: PendingNuke): void => {
+  if (isStillPending(nuke)) {
+    cancelNuke(nuke.anilistId);
+  }
+};
+
 const aniListToken = (): string => {
   const token = Application.getSecureState(ANILIST_SESSION_KEY);
 
@@ -434,7 +467,6 @@ const commitManagedCollectionChangesEffect = (
 
     const token = aniListToken();
     const api = configuredPersonalApi();
-    const pending = readPendingNukes();
 
     for (const addition of changeset.additions ?? []) {
       const resolved = yield* anilistIdOfEffect(addition);
@@ -445,7 +477,9 @@ const commitManagedCollectionChangesEffect = (
 
       // An addition for a pending-nuked title means the deletion was one half
       // of a move — cancel the nuke.
-      delete pending[resolved.anilistId];
+      // Persist the cancellation before the AniList write: if that write fails,
+      // the stored nuke would otherwise fire and delete a title that only moved.
+      cancelNuke(resolved.anilistId);
       const result = yield* fromPromise(() => saveAniListStatus(token, resolved.anilistId, status));
       rememberListEntryId(resolved.anilistId, result.mediaListEntryId);
       yield* Effect.logInfo(
@@ -495,15 +529,13 @@ const commitManagedCollectionChangesEffect = (
         continue;
       }
 
-      pending[resolved.anilistId] = {
+      enqueueNuke({
         entryId: resolved.entryId,
         anilistId: resolved.anilistId,
         collectionId: changeset.collection.id,
         at: yield* Clock.currentTimeMillis,
-      };
+      });
     }
-
-    writePendingNukes(pending);
 
     yield* flushPendingNukesEffect();
   });
@@ -533,9 +565,11 @@ export const flushPendingNukes = (): Promise<number> =>
 
 const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
   Effect.gen(function* () {
-    const pending = readPendingNukes();
     const nowMs = yield* Clock.currentTimeMillis;
-    const due = Object.entries(pending).filter(([, nuke]) => nowMs - nuke.at >= NUKE_QUIET_MS);
+
+    const due = Object.entries(readPendingNukes()).filter(
+      ([, nuke]) => nowMs - nuke.at >= NUKE_QUIET_MS,
+    );
 
     if (due.length === 0) {
       return 0;
@@ -581,11 +615,17 @@ const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
     let executed = 0;
 
     for (const [anilistId, nuke] of due) {
+      // The requests above and each earlier nuke took time: a move may have
+      // cancelled this nuke since the queue was read.
+      if (!isStillPending(nuke)) {
+        continue;
+      }
+
       const live = library.get(anilistId);
 
       if (live !== undefined && live !== nuke.collectionId) {
         // The entry moved to another collection — not a removal.
-        delete pending[anilistId];
+        resolveNuke(nuke);
         continue;
       }
 
@@ -598,16 +638,32 @@ const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
             listEntryId = ids[anilistId];
           }
 
+          // The id lookup took a request: a move may have cancelled this nuke.
+          if (!isStillPending(nuke)) {
+            return;
+          }
+
           if (listEntryId !== undefined) {
-            yield* fromPromise(() => deleteAniListEntry(token, listEntryId));
+            const deleted = yield* fromPromise(() => deleteAniListEntry(token, listEntryId));
+            // Confirmed or not, drop the cached id so a retry refetches a fresh one.
             mediaListEntryIds.delete(anilistId);
+
+            if (!deleted) {
+              return yield* trackerError(`AniList did not confirm the delete of ${anilistId}`);
+            }
+
+            // A move that arrived during the delete keeps the title: its own
+            // AniList write restores the entry, so the registry entry must stay.
+            if (!isStillPending(nuke)) {
+              return;
+            }
           } else {
             yield* Effect.logInfo(`[manifold] nuke skipped, unlisted:${anilistId}`);
           }
 
           // The AniList side is resolved; drop the pending nuke now. The registry
           // reconciliation persists separately until nukeEntry is acknowledged.
-          delete pending[anilistId];
+          resolveNuke(nuke);
           executed += 1;
 
           const reconcile: PendingReconcile = {
@@ -644,8 +700,6 @@ const flushDueNukesEffect = (): Effect.Effect<number, TrackerEffectError> =>
         );
       }
     }
-
-    writePendingNukes(pending);
 
     return executed;
   });

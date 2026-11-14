@@ -137,7 +137,11 @@ const app: Hono<{ Bindings: Env }> = new Hono<{ Bindings: Env }>()
       const message = error instanceof Error ? error.message : "Internal server error";
       hostLogError(`[manifold/api] request failed:${message}`);
 
-      return jsonEncoded(ErrorBody, { error: message }, 500);
+      // Public routes and a failing bearer check also end up here, so only a
+      // caller that presents a valid bearer is shown the cause.
+      const trusted = await authorized(c.req.raw, c.env).catch(() => false);
+
+      return jsonEncoded(ErrorBody, { error: trusted ? message : "Internal server error" }, 500);
     }
   });
 

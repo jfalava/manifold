@@ -11,9 +11,12 @@
  */
 import { isString, manifoldUserAgent } from "@manifold/json";
 import {
+  AniListUnavailableError,
   createAniListClient,
   decodeAniListViewer,
+  isAniListServiceFailure,
   viewerQuery,
+  type AniListServiceFailure,
   type AniListTransport,
 } from "@manifold/paperback-runtime/anilist";
 import { Effect } from "effect";
@@ -67,7 +70,14 @@ const errorText = (cause: unknown): string => {
 
 export const aniListFetchTransport: AniListTransport = {
   post: async ({ url, headers, body }) => {
-    const response = await platformFetch(url, { method: "POST", headers, body });
+    // The looping drain is an unattended service: a stalled connection must
+    // fail the pass instead of hanging it.
+    const response = await platformFetch(url, {
+      method: "POST",
+      headers,
+      body,
+      signal: AbortSignal.timeout(30_000),
+    });
 
     return {
       status: response.status,
@@ -81,16 +91,45 @@ export const aniListFetchTransport: AniListTransport = {
 
 let aniList = createAniListClient(aniListFetchTransport);
 
+/**
+ * Promise boundary for the op writes. A rejected token, an outage or a rate
+ * limit keeps its class so the pass can stop on it; every other rejection is
+ * about the op and flattens like fromPromise.
+ */
+const fromAniListWrite = <A>(
+  action: () => Promise<A>,
+): Effect.Effect<A, CliEffectError | AniListServiceFailure> =>
+  Effect.tryPromise({
+    try: action,
+    catch: (cause) => (isAniListServiceFailure(cause) ? cause : cliError(errorText(cause))),
+  });
+
 const fetchViewerIdEffect = (token: string): Effect.Effect<number, CliEffectError> =>
   fromPromise(() => aniList.aniListRequest(token, viewerQuery, {}, decodeAniListViewer)).pipe(
     Effect.map((data) => data.Viewer.id),
   );
 
+/**
+ * Whether AniList answers a request that no op can break. Asked after an op
+ * got HTTP 5xx, to tell an outage from a request AniList cannot handle.
+ */
+const aniListAnswers = (token: string): Effect.Effect<boolean> =>
+  fetchViewerIdEffect(token).pipe(
+    Effect.as(true),
+    Effect.orElseSucceed(() => false),
+  );
+
+const opTitle = (op: PendingAniListOp): string | undefined => {
+  const anilistId = op.payload["anilistId"];
+
+  return isString(anilistId) ? anilistId : undefined;
+};
+
 const executeOpEffect = (
   token: string,
   op: PendingAniListOp,
   mediaListEntryIds: Readonly<Record<string, number>> | undefined,
-): Effect.Effect<number | undefined, CliEffectError> =>
+): Effect.Effect<number | undefined, CliEffectError | AniListServiceFailure> =>
   Effect.gen(function* () {
     const parsed = yield* Effect.try({
       try: () => parsePendingAniListOp(op),
@@ -100,7 +139,7 @@ const executeOpEffect = (
 
     switch (parsed.kind) {
       case "anilist.status": {
-        const result = yield* fromPromise(() =>
+        const result = yield* fromAniListWrite(() =>
           aniList.saveAniListStatus(token, parsed.anilistId, parsed.status),
         );
 
@@ -108,7 +147,7 @@ const executeOpEffect = (
       }
 
       case "anilist.progress": {
-        yield* fromPromise(() =>
+        yield* fromAniListWrite(() =>
           aniList.saveAniListProgress(token, parsed.anilistId, parsed.progress),
         );
 
@@ -116,19 +155,31 @@ const executeOpEffect = (
       }
 
       case "anilist.fields": {
-        yield* fromPromise(() => aniList.saveAniListFields(token, parsed.anilistId, parsed.change));
+        yield* fromAniListWrite(() =>
+          aniList.saveAniListFields(token, parsed.anilistId, parsed.change),
+        );
 
         return parsed.mediaListEntryId;
       }
 
       case "anilist.delete": {
-        const listEntryId = parsed.mediaListEntryId ?? mediaListEntryIds?.[parsed.anilistId];
+        if (mediaListEntryIds !== undefined && mediaListEntryIds[parsed.anilistId] === undefined) {
+          // The lookup completed and the title is absent, so the desired state
+          // is already true. This also makes a replay safe after the delete
+          // was applied but its completion acknowledgement was lost.
+          return undefined;
+        }
+
+        // The payload id can be stale; prefer the id AniList reports now.
+        const listEntryId = mediaListEntryIds?.[parsed.anilistId] ?? parsed.mediaListEntryId;
 
         if (listEntryId === undefined) {
           return yield* cliError(`op ${parsed.opId}: no mediaListEntryId for ${parsed.anilistId}`);
         }
 
-        const deleted = yield* fromPromise(() => aniList.deleteAniListEntry(token, listEntryId));
+        const deleted = yield* fromAniListWrite(() =>
+          aniList.deleteAniListEntry(token, listEntryId),
+        );
 
         if (!deleted) {
           return yield* cliError(
@@ -144,6 +195,15 @@ const executeOpEffect = (
 /**
  * One drain pass: fetch pending anilist:* ops, execute, report outcomes.
  * Empty queue is success with zeros.
+ *
+ * Fails, after reporting the ops already done, when AniList rejected the
+ * token, was unreachable or kept rate limiting. The op that hit it and the ops
+ * after it are not reported: the API blocks an op after five reported
+ * failures, and none of those failures is about the op.
+ *
+ * An HTTP 5xx stops the pass only when AniList is down. If it still answers a
+ * viewer query, the 5xx is reported as that op's failure and later ops for the
+ * same title are left for the next pass.
  */
 export const drainAniListOpsPassEffect = (
   api: DrainApiClient,
@@ -161,9 +221,7 @@ export const drainAniListOpsPassEffect = (
       return { fetched: 0, ok: 0, failed: 0, reported: 0 };
     }
 
-    const needsListEntryIds = ops.some(
-      (op) => op.kind === "anilist.delete" && op.payload["mediaListEntryId"] === undefined,
-    );
+    const needsListEntryIds = ops.some((op) => op.kind === "anilist.delete");
 
     const mediaListEntryIds = needsListEntryIds
       ? yield* fetchViewerIdEffect(anilistToken).pipe(
@@ -174,18 +232,58 @@ export const drainAniListOpsPassEffect = (
       : undefined;
 
     const results: DrainOpResult[] = [];
+    let stoppedBy: AniListServiceFailure | undefined;
+
+    // Titles whose op got HTTP 5xx in this pass. Their later ops wait for the
+    // retry, so a newer change is never applied before an older one.
+    const waiting = new Set<string>();
 
     for (const op of ops) {
+      const title = opTitle(op);
+
+      if (title !== undefined && waiting.has(title)) {
+        continue;
+      }
+
       const outcome = yield* executeOpEffect(anilistToken, op, mediaListEntryIds).pipe(
         Effect.map((mediaListEntryId) => ({
           ok: true as const,
           mediaListEntryId,
         })),
-        Effect.catch((cause) => Effect.succeed({ ok: false as const, error: errorText(cause) })),
+        Effect.catch((cause) => Effect.succeed({ ok: false as const, cause })),
       );
 
+      if (!outcome.ok && isAniListServiceFailure(outcome.cause)) {
+        const { cause } = outcome;
+
+        if (
+          cause instanceof AniListUnavailableError &&
+          cause.reason === "server" &&
+          (yield* aniListAnswers(anilistToken))
+        ) {
+          // AniList is up, so the 5xx is about this op. Count the attempt:
+          // unreported, the op would be retried first on every pass, never
+          // block and hold up everything behind it.
+          results.push({ opId: op.opId, ok: false, error: cause.message, kind: op.kind });
+
+          if (title !== undefined) {
+            waiting.add(title);
+          }
+
+          continue;
+        }
+
+        stoppedBy = cause;
+        break;
+      }
+
       if (!outcome.ok) {
-        results.push({ opId: op.opId, ok: false, error: outcome.error, kind: op.kind });
+        results.push({
+          opId: op.opId,
+          ok: false,
+          error: errorText(outcome.cause),
+          kind: op.kind,
+        });
         continue;
       }
 
@@ -206,9 +304,26 @@ export const drainAniListOpsPassEffect = (
       ...(r.mediaListEntryId !== undefined && { mediaListEntryId: r.mediaListEntryId }),
     }));
 
-    const { updated } = yield* fromPromise(() => api.completeOps(reportBody)).pipe(
-      Effect.mapError((cause) => cliError(`complete ops failed: ${errorText(cause)}`)),
-    );
+    const stopped =
+      stoppedBy === undefined
+        ? undefined
+        : `${stoppedBy.message}: ${ops.length - results.length} of ${ops.length} AniList operations stay pending and were not counted as failed.`;
+
+    const updated =
+      reportBody.length === 0
+        ? 0
+        : (yield* fromPromise(() => api.completeOps(reportBody)).pipe(
+            Effect.mapError((cause) =>
+              // Keep the reason the pass stopped when the report fails too.
+              cliError(
+                `${stopped === undefined ? "" : `${stopped} `}complete ops failed: ${errorText(cause)}`,
+              ),
+            ),
+          )).updated;
+
+    if (stopped !== undefined) {
+      return yield* cliError(stopped);
+    }
 
     return {
       fetched: ops.length,
