@@ -413,6 +413,17 @@ describe("queued reads with stale registry IDs", () => {
             updated_at: 5,
           },
         ],
+        // One row that failed and is backing off, one never tried.
+        md_status_queue: [
+          {
+            entry_id: "retired-only",
+            created_at: 6,
+            attempts: 2,
+            last_error: "timeout",
+            updated_at: 8,
+          },
+          { entry_id: "mixed", created_at: 7, attempts: 0, last_error: null, updated_at: null },
+        ],
       },
     });
     const before = await request({ action: "snapshot" });
@@ -431,6 +442,13 @@ describe("queued reads with stale registry IDs", () => {
     expect(after.list_state).toEqual(before.list_state);
     expect(after.sync_ops).toEqual(before.sync_ops);
     expect(after.md_status_queue).toEqual(before.md_status_queue);
+    expect(arrayField(after, "md_status_queue")).toContainEqual({
+      entry_id: "retired-only",
+      created_at: 6,
+      attempts: 2,
+      last_error: "timeout",
+      updated_at: 8,
+    });
     expect(after.list_events).toEqual(before.list_events);
     expect(arrayField(after, "canonical_entries")).toHaveLength(
       requiredArrayField(before, "canonical_entries").length,

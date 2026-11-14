@@ -30,11 +30,18 @@ export class TestSync extends ManifoldSync {
     );
   }
   async clearAlarm() { await this.ctx.storage.deleteAlarm(); }
+  async seedShelf(entryId) {
+    this.ctx.storage.sql.exec("INSERT INTO md_status_queue (entry_id, created_at) VALUES (?, 1)", entryId);
+  }
+  async shelfAttempts() {
+    return this.ctx.storage.sql.exec("SELECT attempts FROM md_status_queue ORDER BY entry_id").toArray().map((row) => row.attempts);
+  }
   async expireToken() {
     this.ctx.storage.sql.exec("UPDATE oauth_tokens SET expires_at = 1 WHERE provider = 'mangadex'");
   }
   async elapse(ms) {
     this.ctx.storage.sql.exec("UPDATE sync_ops SET updated_at = updated_at - ?", ms);
+    this.ctx.storage.sql.exec("UPDATE md_status_queue SET updated_at = updated_at - ?", ms);
   }
   async drain() {
     let rejected = null;
@@ -62,6 +69,8 @@ export default { async fetch(request, env) {
     case 'expire': await sync.expireToken(); result = {}; break;
     case 'seed-read': await sync.seedRead(input.opId, input.entryId, input.mangaDexId); result = {}; break;
     case 'elapse': await sync.elapse(input.ms); result = {}; break;
+    case 'seed-shelf': await sync.seedShelf(input.entryId); result = {}; break;
+    case 'shelf-attempts': result = await sync.shelfAttempts(); break;
     case 'drain': result = await sync.drain(); break;
     case 'scheduled': result = await sync.scheduled(); break;
     case 'tokens': {
@@ -298,7 +307,7 @@ describe("MangaDex sync against a mocked upstream", () => {
     expect(result.alarmInMs).not.toBeNull();
   });
 
-  it("never blocks an op over a sign-in outage, however long, and sends it once sign-in works", async () => {
+  it("never blocks an op over a sign-in outage, however long, and sends it as soon as sign-in works", async () => {
     const nonce = "token-outage";
     await request({
       action: "seed-read",
@@ -307,6 +316,8 @@ describe("MangaDex sync against a mocked upstream", () => {
       entryId: "entry-1",
       mangaDexId: "md-1",
     });
+
+    await request({ action: "seed-shelf", nonce, entryId: "entry-1" });
 
     let last = await drain(nonce);
 
@@ -318,9 +329,12 @@ describe("MangaDex sync against a mocked upstream", () => {
 
     expect(last.ops[0]).toMatchObject({ opId: "read-1", state: "pending", attempts: 4 });
     expect(last.alarmInMs).toBeGreaterThan(300_000);
+    expect(await request({ action: "shelf-attempts", nonce })).toEqual([4]);
 
+    // Signing in ends the wait: the op goes out on the next alarm and the
+    // shelf row is due again.
     await request({ action: "login", nonce });
-    await request({ action: "elapse", nonce, ms: 320_000 });
+    expect(await request({ action: "shelf-attempts", nonce })).toEqual([0]);
     const recovered = await drain(nonce);
 
     expect(marked).toEqual(["/manga/md-1/read"]);

@@ -13,7 +13,7 @@ import {
   now,
   SYNC_DRAIN_LIMIT,
   SYNC_MAX_ATTEMPTS,
-  SYNC_OP_DUE_AT_SQL,
+  SYNC_DUE_AT_SQL,
   SYNC_RETRY_DELAY_MS,
 } from "./constants";
 import type { SyncHost } from "./host";
@@ -32,9 +32,10 @@ export const failShelfEntry = (
 ): void => {
   const message = errorMessage(cause).slice(0, MAX_ERROR_LENGTH);
   host.ctx.storage.sql.exec(
-    "UPDATE md_status_queue SET attempts = ?, last_error = ? WHERE entry_id = ?",
+    "UPDATE md_status_queue SET attempts = ?, last_error = ?, updated_at = ? WHERE entry_id = ?",
     attempts,
     message,
+    now(),
     entryId,
   );
   const outcome = attempts >= SYNC_MAX_ATTEMPTS ? "blocked" : "retry";
@@ -94,6 +95,27 @@ const deferOps = (
   hostLogError(`[ManifoldSync] ${rows.length} op(s) deferred:${message}`);
 };
 
+/** The shelf queue's deferOps: a failure of the whole batch, not of any one entry. */
+const deferShelfEntries = (
+  host: SyncHost,
+  rows: readonly { entry_id: string; attempts: number }[],
+  cause: unknown,
+): void => {
+  const message = errorMessage(cause);
+
+  for (const row of rows) {
+    host.ctx.storage.sql.exec(
+      "UPDATE md_status_queue SET attempts = ?, last_error = ?, updated_at = ? WHERE entry_id = ?",
+      Math.min(row.attempts + 1, SYNC_MAX_ATTEMPTS - 1),
+      message.slice(0, MAX_ERROR_LENGTH),
+      now(),
+      row.entry_id,
+    );
+  }
+
+  hostLogError(`[ManifoldSync] MangaDex shelf mirror batch of ${rows.length} deferred:${message}`);
+};
+
 export const readMalBackupEntry = (host: SyncHost, entryId: string): RegistryEntry | undefined => {
   const active = host.ctx.storage.sql
     .exec<{ id: string }>(
@@ -110,7 +132,7 @@ const drainMalBackupsEffect = (host: SyncHost): Effect.Effect<void> =>
     const rows = host.ctx.storage.sql
       .exec<OpRow>(
         `SELECT * FROM sync_ops
-         WHERE target = 'mal' AND state = 'pending' AND ${SYNC_OP_DUE_AT_SQL} <= ?
+         WHERE target = 'mal' AND state = 'pending' AND ${SYNC_DUE_AT_SQL} <= ?
          ORDER BY id LIMIT 5`,
         now(),
       )
@@ -301,14 +323,15 @@ export const drainMangaDexOutbox = (host: SyncHost, rows: readonly OpRow[]): Pro
 const drainMangaDexStatusQueueEffect = (host: SyncHost): Effect.Effect<void> =>
   Effect.gen(function* () {
     // Blocked rows (attempts >= max) are retained as the shelf DLQ with
-    // last_error; only pending rows drain here. Manual retry re-arms blocked
-    // rows via retryFailedSync.
+    // last_error; only pending rows whose retry delay has passed drain here.
+    // Manual retry re-arms blocked rows via retryFailedSync.
     const pending = host.ctx.storage.sql
       .exec<{ entry_id: string; attempts: number }>(
         `SELECT entry_id, attempts FROM md_status_queue
-       WHERE attempts < ${SYNC_MAX_ATTEMPTS}
+       WHERE attempts < ${SYNC_MAX_ATTEMPTS} AND ${SYNC_DUE_AT_SQL} <= ?
        ORDER BY created_at ASC
        LIMIT ${MD_STATUS_DRAIN_LIMIT}`,
+        now(),
       )
       .toArray();
 
@@ -358,9 +381,9 @@ const drainMangaDexStatusQueueEffect = (host: SyncHost): Effect.Effect<void> =>
     }).pipe(
       Effect.catch((error) =>
         Effect.sync(() => {
-          // Token refresh or readingStatuses failed: leave the queue intact and
-          // let the next alarm retry.
-          hostLogError(`[ManifoldSync] MangaDex shelf mirror batch failed: ${errorMessage(error)}`);
+          // Token refresh or readingStatuses failed, which says nothing about
+          // any one entry: record the cause and back off, but never block.
+          deferShelfEntries(host, pending, error);
         }),
       ),
     );
@@ -380,7 +403,7 @@ const alarmEffect = (host: SyncHost) =>
     const rows = host.ctx.storage.sql
       .exec<OpRow>(
         `SELECT * FROM sync_ops
-       WHERE state = 'pending' AND target = 'mangadex' AND ${SYNC_OP_DUE_AT_SQL} <= ?
+       WHERE state = 'pending' AND target = 'mangadex' AND ${SYNC_DUE_AT_SQL} <= ?
        ORDER BY id ASC
        LIMIT ${SYNC_DRAIN_LIMIT}`,
         now(),

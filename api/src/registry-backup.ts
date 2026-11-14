@@ -39,7 +39,7 @@ export const REGISTRY_BACKUP_TABLE_COLUMNS = {
     "read_at",
     "version",
   ],
-  md_status_queue: ["entry_id", "created_at", "attempts", "last_error"],
+  md_status_queue: ["entry_id", "created_at", "attempts", "last_error", "updated_at"],
   md_feed_stats: ["manga_id", "payload", "computed_at"],
   oauth_tokens: [
     "provider",
@@ -146,8 +146,9 @@ const isBackupScalar = (value: unknown): value is BackupScalar =>
   value === null || isString(value) || isFiniteNumber(value);
 
 /**
- * Shelf queue rows predate the last_error DLQ column; old backups omit it.
- * Missing values restore as NULL so v1 backups remain restorable.
+ * Shelf queue rows predate the last_error DLQ column and the updated_at retry
+ * time; old backups omit them. Missing values restore as NULL so v1 backups
+ * remain restorable.
  */
 const parseShelfQueueRows = (value: JsonValue | undefined): readonly BackupRow[] => {
   if (!Array.isArray(value)) {
@@ -171,13 +172,15 @@ const parseShelfQueueRows = (value: JsonValue | undefined): readonly BackupRow[]
       row[column] = cell;
     }
 
-    const lastError: unknown = rawRow.last_error ?? null;
+    for (const column of ["last_error", "updated_at"] as const) {
+      const cell: unknown = rawRow[column] ?? null;
 
-    if (!isBackupScalar(lastError)) {
-      throw new Error(`Backup table md_status_queue row ${index} is missing last_error`);
+      if (!isBackupScalar(cell)) {
+        throw new Error(`Backup table md_status_queue row ${index} is missing ${column}`);
+      }
+
+      row[column] = cell;
     }
-
-    row.last_error = lastError;
 
     return row;
   });

@@ -240,4 +240,32 @@ describe("canonical fallback with the real registry", () => {
       (await worker.dispatchFetch("https://fixture.test/v1/entries/missing/canonical")).status,
     ).toBe(404);
   });
+
+  it("keeps a cleared status off the AniList outbox, since AniList cannot clear one", async () => {
+    const created = Schema.decodeUnknownSync(RegistryEntry)(
+      await request("/v1/registry/ingest", {
+        provider: "anilist",
+        providerId: "61",
+        title: "Cleared status",
+      }),
+    );
+
+    const opsFor = async () =>
+      Schema.decodeUnknownSync(OpsListResponse)(await request("/ops")).ops.filter(
+        (op) => op.payload["entryId"] === created.id,
+      );
+
+    const write = (change: JsonValue) => request(`/v1/entries/${created.id}/list-state`, change);
+
+    await write({ status: "reading", appliedRemotely: true });
+    expect(Schema.decodeUnknownSync(ListState)(await write({ status: null })).status).toBe(
+      undefined,
+    );
+    expect(await opsFor()).toEqual([]);
+
+    await write({ status: null, score: 7 });
+    const ops = await opsFor();
+    expect(ops.map((op) => op.kind)).toEqual(["anilist.fields"]);
+    expect(ops[0]?.payload).toEqual({ entryId: created.id, anilistId: "61", score: 7 });
+  });
 });

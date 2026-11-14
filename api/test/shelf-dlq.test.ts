@@ -1,5 +1,6 @@
 /** @effect-diagnostics asyncFunction:off */
 /** @effect-diagnostics schemaSync:off */
+/** @effect-diagnostics globalDate:off */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { toJsonText } from "@manifold/json/text";
 import { build } from "esbuild";
@@ -31,6 +32,9 @@ export class TestSync extends ManifoldSync {
   }
   async drainShelf() {
     await this.drainMangaDexStatusQueue();
+  }
+  async ageShelf(entryId, ms) {
+    this.ctx.storage.sql.exec("UPDATE md_status_queue SET updated_at = updated_at - ? WHERE entry_id = ?", ms, entryId);
   }
   async retryAll() {
     return this.retryFailedSync();
@@ -70,6 +74,7 @@ export default { async fetch(request, env) {
   if (input.op === 'fail') { await sync.failShelf(input.entryId, input.attempts, input.message); return Response.json({ ok: true }); }
   if (input.op === 'read') { return Response.json({ rows: await sync.readShelf() }); }
   if (input.op === 'drain') { await sync.drainShelf(); return Response.json({ ok: true }); }
+  if (input.op === 'age') { await sync.ageShelf(input.entryId, input.ms); return Response.json({ ok: true }); }
   if (input.op === 'retry') { return Response.json(await sync.retryAll()); }
   if (input.op === 'seed-op') { await sync.seedOp(input.opId, input.state); return Response.json({ ok: true }); }
   if (input.op === 'seed-tracked') { await sync.seedTracked(input.entryId); return Response.json({ ok: true }); }
@@ -96,6 +101,7 @@ interface FixtureBody {
   readonly nonce: string;
   readonly entryId?: string;
   readonly attempts?: number;
+  readonly ms?: number;
   readonly lastError?: string | null;
   readonly message?: string;
   readonly opId?: string;
@@ -201,12 +207,14 @@ describe("MangaDex shelf DLQ", () => {
   it("keeps sub-max failures pending with last_error", async () => {
     const nonce = "shelf-retryable";
     await seedShelf(nonce, "entry-retry", 1, null);
+    const failedAt = Date.now();
     await failShelf(nonce, "entry-retry", 2, "timeout");
     const rows = await readRows(nonce);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ entry_id: "entry-retry", attempts: 2 });
     expect(rows[0]?.last_error).toContain("timeout");
-    expect(await scheduledAlarm(nonce)).toEqual(expect.any(Number));
+    // The second failure waits 20 s before the next try.
+    expect(await scheduledAlarm(nonce)).toBeGreaterThanOrEqual(failedAt + 20_000);
   });
 
   it("re-arms blocked rows through retryFailedSync", async () => {
@@ -265,14 +273,41 @@ describe("MangaDex shelf DLQ", () => {
     expect(await scheduledAlarm(nonce)).toBeNull();
   });
 
-  it("leaves pending rows intact when the drain batch fails", async () => {
+  it("backs off a failing drain batch with its cause and never blocks the rows", async () => {
     const nonce = "shelf-batch-fail";
-    await seedShelf(nonce, "entry-batch", 0, null);
+    const entryId = "entry-batch";
+    await seedShelf(nonce, entryId, 0, null);
+
+    const attemptsAfterDrain = async (): Promise<number | undefined> => {
+      await drainShelf(nonce);
+
+      return (await readRows(nonce))[0]?.attempts;
+    };
+
+    const age = async (ms: number): Promise<void> => {
+      expect((await dispatch({ op: "age", nonce, entryId, ms })).status).toBe(200);
+    };
+
     // No MangaDex credentials in the fixture, so the batch fails before any
-    // per-row write: the queue must stay intact for the next alarm.
-    await drainShelf(nonce);
-    expect(await readRows(nonce)).toEqual([
-      { entry_id: "entry-batch", attempts: 0, last_error: null },
-    ]);
+    // per-row work. The row keeps its place and records why.
+    const before = Date.now();
+    expect(await attemptsAfterDrain()).toBe(1);
+    expect((await readRows(nonce))[0]?.last_error).toContain("mangadex");
+    expect(await scheduledAlarm(nonce)).toBeGreaterThanOrEqual(before + 5_000);
+
+    // Not due yet: a drain right away does not try it again.
+    expect(await attemptsAfterDrain()).toBe(1);
+
+    // 5 s after the first failure it is due; the second failure waits 20 s.
+    await age(5_000);
+    expect(await attemptsAfterDrain()).toBe(2);
+    await age(15_000);
+    expect(await attemptsAfterDrain()).toBe(2);
+
+    // However long the outage, the row stays one attempt short of blocked.
+    for (const expected of [3, 4, 4, 4]) {
+      await age(3_600_000);
+      expect(await attemptsAfterDrain()).toBe(expected);
+    }
   });
 });

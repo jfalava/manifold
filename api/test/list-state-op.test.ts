@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createAniListListStateOpPayload } from "../src/list-state-op";
 
 describe("createAniListListStateOpPayload", () => {
-  it("preserves explicit clears for the device-bound AniList mutation", () => {
+  it("preserves explicit clears, except a status AniList cannot clear", () => {
     expect(
       createAniListListStateOpPayload("entry", "42", 7, {
         status: null,
@@ -16,7 +16,6 @@ describe("createAniListListStateOpPayload", () => {
       entryId: "entry",
       anilistId: "42",
       mediaListEntryId: 7,
-      status: null,
       score: null,
       notes: null,
       startedAt: null,

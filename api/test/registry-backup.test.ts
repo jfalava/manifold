@@ -62,7 +62,7 @@ describe("registry backups", () => {
     expect(() => parseRegistryBackup(invalid)).toThrow(/canonical_entries.*provider/u);
   });
 
-  it("restores shelf rows predating the last_error DLQ column", () => {
+  it("restores shelf rows predating the last_error and updated_at columns", () => {
     const legacy = {
       ...emptyBackup,
       tables: {
@@ -72,16 +72,18 @@ describe("registry backups", () => {
     } satisfies JsonValue;
 
     expect(parseRegistryBackup(legacy).tables.md_status_queue).toEqual([
-      { entry_id: "entry-1", created_at: 1, attempts: 5, last_error: null },
+      { entry_id: "entry-1", created_at: 1, attempts: 5, last_error: null, updated_at: null },
     ]);
   });
 
-  it("round-trips shelf rows with last_error", () => {
+  it("round-trips shelf rows with last_error and updated_at", () => {
     const current = {
       ...emptyBackup,
       tables: {
         ...emptyBackup.tables,
-        md_status_queue: [{ entry_id: "entry-1", created_at: 1, attempts: 5, last_error: "boom" }],
+        md_status_queue: [
+          { entry_id: "entry-1", created_at: 1, attempts: 5, last_error: "boom", updated_at: 7 },
+        ],
       },
     } satisfies JsonValue;
 

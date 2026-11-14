@@ -83,12 +83,16 @@ const setListStateEffect = (host: SyncHost, entryId: string, input: SetListState
 
       appendEvent(host, entryId, "list.state", origin, eventDetail);
 
+      // AniList has no entry without a status, so a cleared status stays local:
+      // an op carrying it could only fail on the device until it blocked.
+      const remoteStatus = changes.status ?? undefined;
+
       // Device-originated mutations were already applied to AniList on-device;
       // everything else becomes an op the device will drain.
       if (
         !changes.appliedRemotely &&
         anilistId &&
-        (changes.status !== undefined ||
+        (remoteStatus !== undefined ||
           changes.score !== undefined ||
           changes.notes !== undefined ||
           changes.startedAt !== undefined ||
@@ -96,7 +100,7 @@ const setListStateEffect = (host: SyncHost, entryId: string, input: SetListState
           changes.volumeProgress !== undefined)
       ) {
         const onlyStatus =
-          changes.status !== undefined &&
+          remoteStatus !== undefined &&
           changes.score === undefined &&
           changes.notes === undefined &&
           changes.startedAt === undefined &&
@@ -151,40 +155,43 @@ export function nukeEntry(
   entryId: string,
   input: NukeEntryInput,
 ): ListState | undefined {
-  const origin: OpOrigin = input.origin ?? "admin";
-  requireEntry(host, entryId);
-  const anilistId = anilistLinkOf(host, entryId);
-  const current = readListState(host, entryId);
+  // The delete op, the tombstone and its event are written together or not at all.
+  return host.ctx.storage.transactionSync(() => {
+    const origin: OpOrigin = input.origin ?? "admin";
+    requireEntry(host, entryId);
+    const anilistId = anilistLinkOf(host, entryId);
+    const current = readListState(host, entryId);
 
-  if (origin !== "device" && anilistId) {
-    enqueueOp(host, {
-      opId: newId(),
-      target: "anilist",
-      kind: "anilist.delete",
-      origin,
-      payload: {
-        entryId,
-        anilistId,
-        ...(current?.mediaListEntryId !== undefined && {
-          mediaListEntryId: current.mediaListEntryId,
-        }),
-      },
+    if (origin !== "device" && anilistId) {
+      enqueueOp(host, {
+        opId: newId(),
+        target: "anilist",
+        kind: "anilist.delete",
+        origin,
+        payload: {
+          entryId,
+          anilistId,
+          ...(current?.mediaListEntryId !== undefined && {
+            mediaListEntryId: current.mediaListEntryId,
+          }),
+        },
+      });
+    }
+
+    const timestamp = now();
+    host.ctx.storage.sql.exec(
+      "UPDATE canonical_entries SET tombstoned_at = ?, updated_at = ? WHERE id = ?",
+      timestamp,
+      timestamp,
+      entryId,
+    );
+    host.ctx.storage.sql.exec("DELETE FROM md_status_queue WHERE entry_id = ?", entryId);
+    appendEvent(host, entryId, "list.nuke", origin, {
+      ...(anilistId !== undefined && { anilistId }),
     });
-  }
 
-  const timestamp = now();
-  host.ctx.storage.sql.exec(
-    "UPDATE canonical_entries SET tombstoned_at = ?, updated_at = ? WHERE id = ?",
-    timestamp,
-    timestamp,
-    entryId,
-  );
-  host.ctx.storage.sql.exec("DELETE FROM md_status_queue WHERE entry_id = ?", entryId);
-  appendEvent(host, entryId, "list.nuke", origin, {
-    ...(anilistId !== undefined && { anilistId }),
+    return readListState(host, entryId);
   });
-
-  return readListState(host, entryId);
 }
 
 export function listEvents(

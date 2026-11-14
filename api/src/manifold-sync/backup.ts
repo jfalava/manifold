@@ -251,7 +251,10 @@ const snapshotRegistryEffect = (host: SyncHost) =>
                 created_at: number;
                 attempts: number;
                 last_error: string | null;
-              }>("SELECT entry_id, created_at, attempts, last_error FROM md_status_queue")
+                updated_at: number | null;
+              }>(
+                "SELECT entry_id, created_at, attempts, last_error, updated_at FROM md_status_queue",
+              )
               .toArray(),
             REGISTRY_BACKUP_TABLE_COLUMNS.md_status_queue,
           ),

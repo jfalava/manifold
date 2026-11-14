@@ -18,7 +18,7 @@ export class TestSync extends ManifoldSync {
   async pause() { this.ctx.storage.kv.put('registry_sync_paused', true); }
   async fault(enabled, kind) {
     this.ctx.storage.sql.exec('DROP TRIGGER IF EXISTS fail_link_event');
-    if (!['link.set', 'link.remove', 'candidate.ingest', 'list.state'].includes(kind)) throw new Error('Unknown fixture event kind');
+    if (!['link.set', 'link.remove', 'candidate.ingest', 'list.state', 'list.nuke'].includes(kind)) throw new Error('Unknown fixture event kind');
     if (enabled) this.ctx.storage.sql.exec(
       "CREATE TRIGGER fail_link_event BEFORE INSERT ON list_events WHEN NEW.kind = '" + kind + "' BEGIN SELECT RAISE(ABORT, 'fixture link event failure'); END"
     );
@@ -394,6 +394,11 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
       kind: "list.state",
       write: (id: string) =>
         request(`/v1/entries/${id}/list-state`, { status: "completed", score: 9 }, 500),
+    },
+    {
+      name: "a nuke",
+      kind: "list.nuke",
+      write: (id: string) => request(`/v1/entries/${id}/delete`, {}, 500),
     },
   ])("leaves no partial write when the event insert of $name fails", async ({ kind, write }) => {
     const target = await create();
