@@ -11,6 +11,7 @@
  */
 import { isString, manifoldUserAgent } from "@manifold/json";
 import {
+  AniListUnavailableError,
   createAniListClient,
   decodeAniListViewer,
   isAniListServiceFailure,
@@ -108,6 +109,22 @@ const fetchViewerIdEffect = (token: string): Effect.Effect<number, CliEffectErro
     Effect.map((data) => data.Viewer.id),
   );
 
+/**
+ * Whether AniList answers a request that no op can break. Asked after an op
+ * got HTTP 5xx, to tell an outage from a request AniList cannot handle.
+ */
+const aniListAnswers = (token: string): Effect.Effect<boolean> =>
+  fetchViewerIdEffect(token).pipe(
+    Effect.as(true),
+    Effect.orElseSucceed(() => false),
+  );
+
+const opTitle = (op: PendingAniListOp): string | undefined => {
+  const anilistId = op.payload["anilistId"];
+
+  return isString(anilistId) ? anilistId : undefined;
+};
+
 const executeOpEffect = (
   token: string,
   op: PendingAniListOp,
@@ -183,6 +200,10 @@ const executeOpEffect = (
  * token, was unreachable or kept rate limiting. The op that hit it and the ops
  * after it are not reported: the API blocks an op after five reported
  * failures, and none of those failures is about the op.
+ *
+ * An HTTP 5xx stops the pass only when AniList is down. If it still answers a
+ * viewer query, the 5xx is reported as that op's failure and later ops for the
+ * same title are left for the next pass.
  */
 export const drainAniListOpsPassEffect = (
   api: DrainApiClient,
@@ -213,7 +234,17 @@ export const drainAniListOpsPassEffect = (
     const results: DrainOpResult[] = [];
     let stoppedBy: AniListServiceFailure | undefined;
 
+    // Titles whose op got HTTP 5xx in this pass. Their later ops wait for the
+    // retry, so a newer change is never applied before an older one.
+    const waiting = new Set<string>();
+
     for (const op of ops) {
+      const title = opTitle(op);
+
+      if (title !== undefined && waiting.has(title)) {
+        continue;
+      }
+
       const outcome = yield* executeOpEffect(anilistToken, op, mediaListEntryIds).pipe(
         Effect.map((mediaListEntryId) => ({
           ok: true as const,
@@ -222,12 +253,31 @@ export const drainAniListOpsPassEffect = (
         Effect.catch((cause) => Effect.succeed({ ok: false as const, cause })),
       );
 
-      if (!outcome.ok) {
-        if (isAniListServiceFailure(outcome.cause)) {
-          stoppedBy = outcome.cause;
-          break;
+      if (!outcome.ok && isAniListServiceFailure(outcome.cause)) {
+        const { cause } = outcome;
+
+        if (
+          cause instanceof AniListUnavailableError &&
+          cause.reason === "server" &&
+          (yield* aniListAnswers(anilistToken))
+        ) {
+          // AniList is up, so the 5xx is about this op. Count the attempt:
+          // unreported, the op would be retried first on every pass, never
+          // block and hold up everything behind it.
+          results.push({ opId: op.opId, ok: false, error: cause.message, kind: op.kind });
+
+          if (title !== undefined) {
+            waiting.add(title);
+          }
+
+          continue;
         }
 
+        stoppedBy = cause;
+        break;
+      }
+
+      if (!outcome.ok) {
         results.push({
           opId: op.opId,
           ok: false,

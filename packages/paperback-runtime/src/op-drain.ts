@@ -6,11 +6,15 @@ import { fromPromise } from "./from-promise.js";
 import { ANILIST_SESSION_KEY, ANILIST_VIEWER_ID_KEY } from "./anilist-types.js";
 import { errorMessage, PaperbackRuntimeError, paperbackError } from "./errors.js";
 import {
+  AniListUnavailableError,
+  decodeAniListViewer,
   fromAniListPromise,
   isAniListServiceFailure,
+  viewerQuery,
   type AniListServiceFailure,
 } from "./anilist-graphql.js";
 import {
+  aniListRequest,
   deleteAniListEntry,
   fetchAniListMediaListEntryIds,
   saveAniListFields,
@@ -118,6 +122,22 @@ const executeOp = (
     }
   });
 
+/**
+ * Whether AniList answers a request that no op can break. Asked after an op
+ * got HTTP 5xx, to tell an outage from a request AniList cannot handle.
+ */
+const aniListAnswers = (token: string): Effect.Effect<boolean> =>
+  fromAniListPromise(() => aniListRequest(token, viewerQuery, {}, decodeAniListViewer)).pipe(
+    Effect.as(true),
+    Effect.orElseSucceed(() => false),
+  );
+
+const opTitle = (op: PendingSyncOp): string | undefined => {
+  const anilistId = op.payload["anilistId"];
+
+  return isString(anilistId) ? anilistId : undefined;
+};
+
 const drainAniListOpsEffect = () =>
   Effect.gen(function* () {
     const token = aniListToken();
@@ -150,24 +170,53 @@ const drainAniListOpsEffect = () =>
 
     let stoppedBy: AniListServiceFailure | undefined;
 
+    // Titles whose op got HTTP 5xx in this pass. Their later ops wait for the
+    // retry, so a newer change is never applied before an older one.
+    const waiting = new Set<string>();
+
     for (const op of ops) {
+      const title = opTitle(op);
+
+      if (title !== undefined && waiting.has(title)) {
+        continue;
+      }
+
       const outcome = yield* executeOp(token, op, mediaListEntryIds).pipe(
         Effect.map((mediaListEntryId) => ({ ok: true as const, mediaListEntryId })),
         Effect.catch((cause) => Effect.succeed({ ok: false as const, cause })),
       );
 
-      if (!outcome.ok) {
-        const error = errorMessage(outcome.cause);
+      if (!outcome.ok && isAniListServiceFailure(outcome.cause)) {
+        const { cause } = outcome;
 
-        if (isAniListServiceFailure(outcome.cause)) {
-          // Rejected credentials, an outage or a rate limit say nothing about
-          // this op. The API blocks an op after five reported failures, so
-          // report nothing for it or the ops after it and end the pass.
-          yield* Effect.logError(`[manifold] drain stopped:${op.kind}:${error}`);
-          stoppedBy = outcome.cause;
-          break;
+        if (
+          cause instanceof AniListUnavailableError &&
+          cause.reason === "server" &&
+          (yield* aniListAnswers(token))
+        ) {
+          // AniList is up, so the 5xx is about this op. Count the attempt:
+          // unreported, the op would be retried first on every pass, never
+          // block and hold up everything behind it.
+          yield* Effect.logError(`[manifold] drain failed:${op.kind}:${cause.message}`);
+          results.push({ opId: op.opId, ok: false, error: cause.message });
+
+          if (title !== undefined) {
+            waiting.add(title);
+          }
+
+          continue;
         }
 
+        // Rejected credentials, an outage or a rate limit say nothing about
+        // this op. The API blocks an op after five reported failures, so
+        // report nothing for it or the ops after it and end the pass.
+        yield* Effect.logError(`[manifold] drain stopped:${op.kind}:${cause.message}`);
+        stoppedBy = cause;
+        break;
+      }
+
+      if (!outcome.ok) {
+        const error = errorMessage(outcome.cause);
         yield* Effect.logError(`[manifold] drain failed:${op.kind}:${error}`);
         results.push({ opId: op.opId, ok: false, error });
         continue;

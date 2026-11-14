@@ -112,7 +112,6 @@ describe("drainAniListOpsPass", () => {
   }, 15_000);
 
   it.each([
-    ["answers HTTP 503", async () => new Response("upstream down", { status: 503 })],
     ["rejects the token", async () => new Response("{}", { status: 401 })],
     [
       "cannot be reached",
@@ -169,6 +168,90 @@ describe("drainAniListOpsPass", () => {
     },
     15_000,
   );
+
+  /** Three status ops; the first mutation gets HTTP 503 and the viewer query answers as given. */
+  const drainAfterServerError = async (
+    viewer: () => Response,
+    titles: readonly [string, string, string],
+  ) => {
+    __drainTest.resetThrottle();
+    const completed: unknown[] = [];
+    const sent: string[] = [];
+
+    const api: DrainApiClient = {
+      pendingAniListOps: async () => [
+        op("first", "anilist.status", { anilistId: titles[0], status: "reading" }),
+        op("second", "anilist.status", { anilistId: titles[1], status: "completed" }),
+        op("third", "anilist.status", { anilistId: titles[2], status: "reading" }),
+      ],
+      completeOps: async (results) => {
+        completed.push(...results);
+
+        return { updated: results.length };
+      },
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        const body = requestInitText(init) ?? "";
+        sent.push(body);
+
+        if (body.includes("Viewer")) {
+          return viewer();
+        }
+
+        return sent.length === 1
+          ? new Response("upstream down", { status: 503 })
+          : Response.json({ data: { SaveMediaListEntry: { id: sent.length } } });
+      }),
+    );
+
+    return { pass: drainAniListOpsPass(api, "token"), completed, sent };
+  };
+
+  const viewerAnswers = () => Response.json({ data: { Viewer: { id: 1, name: "reader" } } });
+
+  it("counts an HTTP 503 against its op when AniList still answers a viewer query", async () => {
+    const { pass, completed } = await drainAfterServerError(viewerAnswers, ["41", "42", "43"]);
+
+    // Unreported, the first op would be retried first on every pass and never block.
+    expect(await pass).toEqual({ fetched: 3, ok: 2, failed: 1, reported: 3 });
+    expect(completed).toEqual([
+      { opId: "first", ok: false, error: "AniList request failed with HTTP 503" },
+      { opId: "second", ok: true, mediaListEntryId: 3 },
+      { opId: "third", ok: true, mediaListEntryId: 4 },
+    ]);
+  }, 15_000);
+
+  it("stops the pass on an HTTP 503 when the viewer query fails too, reporting nothing", async () => {
+    const { pass, completed, sent } = await drainAfterServerError(
+      () => new Response("upstream down", { status: 503 }),
+      ["41", "42", "43"],
+    );
+
+    await expect(pass).rejects.toThrow(/3 of 3 AniList operations stay pending/);
+    expect(completed).toEqual([]);
+    // One op and the viewer query: an outage is not a failed attempt.
+    expect(sent).toHaveLength(2);
+  }, 15_000);
+
+  it("holds back a later op for the title whose op got the HTTP 503", async () => {
+    const { pass, completed, sent } = await drainAfterServerError(viewerAnswers, [
+      "41",
+      "41",
+      "43",
+    ]);
+
+    // "second" is neither sent nor reported: applied now, the retry of "first"
+    // would overwrite it on the next pass.
+    expect(await pass).toEqual({ fetched: 3, ok: 1, failed: 1, reported: 2 });
+    expect(completed).toEqual([
+      { opId: "first", ok: false, error: "AniList request failed with HTTP 503" },
+      { opId: "third", ok: true, mediaListEntryId: 3 },
+    ]);
+    expect(sent.filter((body) => body.includes("COMPLETED"))).toEqual([]);
+  }, 15_000);
 
   it("keeps the reason the pass stopped when reporting the finished ops fails too", async () => {
     __drainTest.resetThrottle();

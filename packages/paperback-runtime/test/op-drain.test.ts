@@ -273,7 +273,6 @@ describe("AniList operation drain failure handling", () => {
       "an invalid token",
       { status: 400, body: { data: null, errors: [{ message: "Invalid token", status: 400 }] } },
     ],
-    ["HTTP 503", { status: 503, body: { errors: [{ message: "Service Unavailable" }] } }],
   ])("stops the pass on %s and acknowledges only the ops already done", async (_label, failure) => {
     const harness = makeHarness();
     harness.install((index): Outcome => {
@@ -295,6 +294,101 @@ describe("AniList operation drain failure handling", () => {
     expect(harness.urls.slice(1)).toEqual([anilistUrl, anilistUrl, completeUrl]);
     expect(JSON.parse(harness.bodies.at(-1) ?? "{}")).toEqual({
       results: [{ opId: "op-1", ok: true, mediaListEntryId: 11 }],
+    });
+  });
+
+  const unavailable: Outcome = {
+    status: 503,
+    body: { errors: [{ message: "Service Unavailable" }] },
+  };
+
+  const viewer: Outcome = { status: 200, body: { data: { Viewer: { id: 1, name: "reader" } } } };
+
+  it("counts an HTTP 503 against its op when AniList still answers a viewer query", async () => {
+    const harness = makeHarness();
+    harness.install((index): Outcome => {
+      if (index === 0) {
+        return pending;
+      }
+
+      if (index === 1) {
+        return unavailable;
+      }
+
+      if (index === 2) {
+        return viewer;
+      }
+
+      return index <= 4 ? saved(10 + index) : { status: 200, body: { updated: 3 } };
+    }, 7);
+    const { drainAniListOps } = await harness.loadDrain();
+
+    await drainAniListOps();
+
+    // Unreported, op-1 would be retried first on every pass and never block.
+    expect(harness.bodies[2]).toContain("Viewer");
+    expect(harness.urls.slice(1)).toEqual([
+      anilistUrl,
+      anilistUrl,
+      anilistUrl,
+      anilistUrl,
+      completeUrl,
+    ]);
+    expect(JSON.parse(harness.bodies.at(-1) ?? "{}")).toEqual({
+      results: [
+        { opId: "op-1", ok: false, error: "AniList request failed with HTTP 503" },
+        { opId: "op-2", ok: true, mediaListEntryId: 13 },
+        { opId: "op-3", ok: true, mediaListEntryId: 14 },
+      ],
+    });
+  });
+
+  it("stops the pass on an HTTP 503 when the viewer query fails too, reporting nothing", async () => {
+    const harness = makeHarness();
+    harness.install((index): Outcome => (index === 0 ? pending : unavailable), 7);
+    const { drainAniListOps } = await harness.loadDrain();
+
+    await expect(drainAniListOps()).rejects.toThrow("HTTP 503");
+
+    // One op and the viewer query: an outage is not a failed attempt.
+    expect(harness.urls.slice(1)).toEqual([anilistUrl, anilistUrl]);
+  });
+
+  it("holds back a later op for the title whose op got the HTTP 503", async () => {
+    const harness = makeHarness();
+    harness.install((index): Outcome => {
+      if (index === 0) {
+        return {
+          status: 200,
+          body: {
+            ops: [statusOp("older", "41"), statusOp("newer", "41"), statusOp("other", "43")],
+          },
+        };
+      }
+
+      if (index === 1) {
+        return unavailable;
+      }
+
+      if (index === 2) {
+        return viewer;
+      }
+
+      return index === 3 ? saved(13) : { status: 200, body: { updated: 2 } };
+    }, 7);
+    const { drainAniListOps } = await harness.loadDrain();
+
+    await drainAniListOps();
+
+    // "newer" is neither sent nor reported: applied now, the retry of "older"
+    // would overwrite it on the next pass.
+    expect(harness.urls.slice(1)).toEqual([anilistUrl, anilistUrl, anilistUrl, completeUrl]);
+    expect(harness.bodies[3]).toContain("43");
+    expect(JSON.parse(harness.bodies.at(-1) ?? "{}")).toEqual({
+      results: [
+        { opId: "older", ok: false, error: "AniList request failed with HTTP 503" },
+        { opId: "other", ok: true, mediaListEntryId: 13 },
+      ],
     });
   });
 
