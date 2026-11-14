@@ -35,7 +35,7 @@ export default { async fetch(request, env) {
     case 'drain': await sync.drain(); result = {}; break;
     case 'retry': result = await sync.retryOp(input.opId); await sync.pause(); break;
     case 'get': result = await sync.getEntry(input.id); break;
-    case 'ops': result = await sync.listOps(undefined, 'mal'); break;
+    case 'ops': result = (await sync.listOps(undefined, 'mal')).ops; break;
     default: throw new Error('Unknown fixture action');
   }
   return Response.json(result);

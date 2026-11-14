@@ -374,7 +374,10 @@ export class ManifoldSync extends DurableObject<Env> {
     return nukeEntry(this.host(), entryId, input);
   }
 
-  async listEvents(entryId: string | undefined, limit = 100): Promise<readonly ListEvent[]> {
+  async listEvents(
+    entryId: string | undefined,
+    limit = 100,
+  ): Promise<{ readonly events: readonly ListEvent[]; readonly total: number }> {
     return listEvents(this.host(), entryId, limit);
   }
 
@@ -390,7 +393,11 @@ export class ManifoldSync extends DurableObject<Env> {
     return retryOp(this.host(), opId);
   }
 
-  async listOps(state?: string, target?: string, limit = 200): Promise<readonly SyncOp[]> {
+  async listOps(
+    state?: string,
+    target?: string,
+    limit = 200,
+  ): Promise<{ readonly ops: readonly SyncOp[]; readonly total: number }> {
     return listOps(this.host(), state, target, limit);
   }
 

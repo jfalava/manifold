@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { build } from "esbuild";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { Schema } from "effect";
-import { RegistryEntry, RegistryListResponse } from "@manifold/contract";
+import { EventsListResponse, RegistryEntry, RegistryListResponse } from "@manifold/contract";
 import { isJsonValue, type JsonValue } from "@manifold/json";
 import { toJsonText } from "@manifold/json/text";
 import { newId } from "../src/effect-host";
@@ -420,5 +420,26 @@ describe("entry-targeted provider links over SQLite HTTP", () => {
     } finally {
       await request("/fixture/fault?enabled=false");
     }
+  });
+
+  it("reports how many events match the filter when the list holds only the newest", async () => {
+    const target = await create();
+    await link(target.id, "total-a", "replace");
+    await link(target.id, "total-b", "replace");
+    await link((await create()).id, "total-c", "replace");
+
+    const list = async (query: string) =>
+      Schema.decodeUnknownSync(EventsListResponse)(await request(`/v1/events?${query}`));
+
+    const all = await list("limit=500");
+    const own = await list(`entryId=${target.id}&limit=500`);
+    expect(own.events.length).toBeGreaterThan(1);
+    expect(all.events.length).toBeGreaterThan(own.events.length);
+    expect(all.events.length).toBeLessThan(500);
+
+    const newest = await list("limit=1");
+    expect(newest.events).toHaveLength(1);
+    expect(newest.total).toBe(all.events.length);
+    expect((await list(`entryId=${target.id}&limit=1`)).total).toBe(own.events.length);
   });
 });

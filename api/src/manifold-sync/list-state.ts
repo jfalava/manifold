@@ -6,7 +6,7 @@ import type { SyncHost } from "./host";
 import { now } from "./constants";
 import { newId } from "../effect-host";
 import { type JsonObject } from "@manifold/json";
-import type { ListEvent, ListState, NukeEntryInput, OpOrigin, SetListStateInput } from "../domain";
+import type { ListState, NukeEntryInput, OpOrigin, SetListStateInput } from "../domain";
 import { createAniListListStateOpPayload } from "../list-state-op";
 import { MalBackupPayload } from "../mal-backup";
 import { type ListEventRow, type OpRow, toListEvent } from "../sync-rows";
@@ -194,12 +194,17 @@ export function nukeEntry(
   });
 }
 
-export function listEvents(
-  host: SyncHost,
-  entryId: string | undefined,
-  limit = 100,
-): readonly ListEvent[] {
-  const rows = (
+export function listEvents(host: SyncHost, entryId: string | undefined, limit = 100) {
+  const total =
+    (entryId
+      ? host.ctx.storage.sql.exec<{ total: number }>(
+          "SELECT COUNT(*) AS total FROM list_events WHERE entry_id = ?",
+          entryId,
+        )
+      : host.ctx.storage.sql.exec<{ total: number }>("SELECT COUNT(*) AS total FROM list_events")
+    ).toArray()[0]?.total ?? 0;
+
+  const events = (
     entryId
       ? host.ctx.storage.sql
           .exec<ListEventRow>(
@@ -216,7 +221,7 @@ export function listEvents(
           .toArray()
   ).map((row) => toListEvent(row));
 
-  return rows;
+  return { events, total };
 }
 
 export function enqueueMalBackup(

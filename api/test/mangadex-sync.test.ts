@@ -48,7 +48,7 @@ export class TestSync extends ManifoldSync {
     try { await this.alarm(); } catch (error) { rejected = String(error && error.message); }
     const alarm = await this.ctx.storage.getAlarm();
     await this.ctx.storage.deleteAlarm();
-    return { rejected, alarmInMs: alarm === null ? null : alarm - Date.now(), ops: await this.listOps(undefined, 'mangadex') };
+    return { rejected, alarmInMs: alarm === null ? null : alarm - Date.now(), ops: (await this.listOps(undefined, 'mangadex')).ops };
   }
   async scheduled() {
     // The gate keeps an alarm set for now from running before it is read.

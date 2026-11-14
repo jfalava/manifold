@@ -128,12 +128,7 @@ const retryOpEffect = (host: SyncHost, opId: string) =>
 export const retryOp = (host: SyncHost, opId: string): Promise<SyncOp | undefined> =>
   Effect.runPromise(retryOpEffect(host, opId));
 
-export function listOps(
-  host: SyncHost,
-  state?: string,
-  target?: string,
-  limit = 200,
-): readonly SyncOp[] {
+export function listOps(host: SyncHost, state?: string, target?: string, limit = 200) {
   const clauses: string[] = [];
   const params: (string | number)[] = [];
 
@@ -152,7 +147,11 @@ export function listOps(
   }
 
   const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-  params.push(Math.min(500, Math.max(1, limit)));
+
+  const total =
+    host.ctx.storage.sql
+      .exec<{ total: number }>(`SELECT COUNT(*) AS total FROM sync_ops o ${where}`, ...params)
+      .toArray()[0]?.total ?? 0;
 
   const rows = host.ctx.storage.sql
     .exec<OpRow & { entry_title: string | null }>(
@@ -163,13 +162,17 @@ export function listOps(
        ${where}
        ORDER BY o.id DESC LIMIT ?`,
       ...params,
+      Math.min(500, Math.max(1, limit)),
     )
     .toArray();
 
-  return rows.map((row) => ({
-    ...toOp(row),
-    ...(row.entry_title !== null && { entryTitle: row.entry_title }),
-  }));
+  return {
+    ops: rows.map((row) => ({
+      ...toOp(row),
+      ...(row.entry_title !== null && { entryTitle: row.entry_title }),
+    })),
+    total,
+  };
 }
 
 export function opsSummary(host: SyncHost): OpsSummary {

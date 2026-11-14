@@ -26,7 +26,7 @@ export default { async fetch(request, env) {
   const sync = env.MANIFOLD_SYNC.getByName('default');
   await sync.pause();
   const url = new URL(request.url);
-  if (url.pathname === '/ops') return Response.json({ ops: await sync.listOps(undefined, 'anilist') });
+  if (url.pathname === '/ops') return Response.json(await sync.listOps(undefined, 'anilist'));
   const ctx = { request, env, url, path: url.pathname.split('/').filter(Boolean) };
   try {
     return await Effect.runPromise(handleRegistry(ctx)) ??

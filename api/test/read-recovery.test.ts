@@ -63,7 +63,7 @@ export default { async fetch(request, env, ctx) {
       case 'read': result = await sync.recordRead(input.id, input.read); break;
       case 'get': result = await sync.getEntry(input.id); break;
       case 'nuke': result = await sync.nukeEntry(input.id, {origin:'device'}); break;
-      case 'ops': result = await sync.listOps(); break;
+      case 'ops': result = (await sync.listOps()).ops; break;
       case 'snapshot': result = await sync.snapshot(); break;
       case 'seed': result = await sync.seed(input.tables); break;
       case 'upgrade': result = await sync.upgrade(); break;

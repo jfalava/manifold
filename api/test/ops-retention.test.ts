@@ -5,7 +5,7 @@ import { toJsonText } from "@manifold/json/text";
 import { build } from "esbuild";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { Schema } from "effect";
-import { OpsSummary, SyncOp } from "@manifold/contract";
+import { OpsListResponse, OpsSummary, SyncOp } from "@manifold/contract";
 
 // Outbox retention: successes delete their sync_ops row instead of logging it,
 // so the tables only hold actionable rows. OpsSummary additionally carries the
@@ -70,9 +70,9 @@ export default { async fetch(request, env) {
   const sync = env.MANIFOLD_SYNC.getByName(input.nonce);
   if (input.op === 'seed-op') { await sync.seedOp(input.opId, input.target, input.kind); return Response.json({ ok: true }); }
   if (input.op === 'seed-shelf') { await sync.seedShelf(input.entryId, input.attempts, input.lastError); return Response.json({ ok: true }); }
-  if (input.op === 'read') { return Response.json({ ops: await sync.readAllOps() }); }
+  if (input.op === 'read') { return Response.json(await sync.readAllOps()); }
   if (input.op === 'seed-errors') { await sync.seedErrorFixture(); return Response.json({ ok: true }); }
-  if (input.op === 'read-errors') { return Response.json({ ops: await sync.readErrorOps() }); }
+  if (input.op === 'read-errors') { return Response.json(await sync.readErrorOps()); }
   if (input.op === 'complete') { return Response.json(await sync.complete(input.results)); }
   if (input.op === 'summary') { return Response.json(await sync.summary()); }
   if (input.op === 'seed-backlog') { await sync.seedBacklog(); return Response.json({ ok: true }); }
@@ -236,5 +236,21 @@ describe("sync outbox retention and summary", () => {
     expect(summary.states).toEqual({ blocked: 30, pending: 250 });
     expect(summary.oldestPendingAt).toBe(31);
     expect(summary.lastFailedError).toBe("boom-1");
+  });
+
+  it("reports how many ops match the filter when the list holds only the newest", async () => {
+    const nonce = "retention-total";
+    expect((await dispatch({ op: "seed-backlog", nonce })).status).toBe(200);
+
+    const list = async (op: string) =>
+      Schema.decodeUnknownSync(OpsListResponse)(await (await dispatch({ op, nonce })).json());
+
+    const all = await list("read");
+    expect(all.ops).toHaveLength(200);
+    expect(all.total).toBe(280);
+
+    const errors = await list("read-errors");
+    expect(errors.ops).toHaveLength(30);
+    expect(errors.total).toBe(30);
   });
 });
