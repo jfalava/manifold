@@ -27,6 +27,8 @@ Completion leaves `done`; errors, conflicts and unresolved challenges leave `err
 Ambiguous and unmatched rows are completed findings, not failures.
 Ctrl-C reports `idle` with the title `manifold: Cancelled`. This resets terminal
 status but does not guarantee pending browser requests or report cleanup finish.
+The final report keeps its record label but resets the window title to empty, so
+the Rex tab name does not keep showing the last step.
 Interactive runs show `Waiting for MangaNato in Chrome` while paused for recovery.
 
 Set `MANIFOLD_PROGRAM_STATUS=0` to disable both status reports and window-title

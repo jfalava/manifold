@@ -247,7 +247,8 @@ describe("program status CLI", () => {
       expect(titles).toContain("manifold: Waiting for permission 37%");
       expect(titles).toContain("manifold: Waiting for auth 37%");
       expect(titles).toContain("manifold: Clear build subtree, keep sibling");
-      expect(titles.at(-1)).toBe("manifold: Done");
+      // The final root record keeps its title; the window title resets after it.
+      expect(titles.at(-1)).toBe("");
       const roots = reports.filter((report) => !report.includes(":id="));
       expect(
         roots.map((report) =>
@@ -259,7 +260,7 @@ describe("program status CLI", () => {
             "base64",
           ).toString("utf8"),
         ),
-      ).toEqual(titles);
+      ).toEqual([...titles.slice(0, -1), "manifold: Done"]);
 
       for (const state of ["idle", "working", "blocked", "done", "error", "clear"]) {
         expect(reports.some((report) => report.startsWith(`\x1b]7501;state=${state}`))).toBe(true);
@@ -277,9 +278,11 @@ describe("program status CLI", () => {
       expect(reports).toContain("\x1b]7501;state=working:id=manifold-status-demo/sibling");
       expect(reports).not.toContain("\x1b]7501;state=clear");
       expect(reports.at(-2)).toBe("\x1b]7501;state=clear:id=manifold-status-demo");
-      expect(reports.at(-1)).toBe(
-        "\x1b]7501;state=done:app=manifold:title=bWFuaWZvbGQ6IERvbmU=:msg=UHJvZ3JhbSBzdGF0dXMgdG91ciBmaW5pc2hlZA==",
-      );
+      expect(
+        result.stdout.endsWith(
+          "\x1b]7501;state=done:app=manifold:title=bWFuaWZvbGQ6IERvbmU=:msg=UHJvZ3JhbSBzdGF0dXMgdG91ciBmaW5pc2hlZA==\x1b\\\x1b]2;\x1b\\",
+        ),
+      ).toBe(true);
     },
   );
 
@@ -329,7 +332,7 @@ describe("program status CLI", () => {
     );
     expect(
       stdout.endsWith(
-        "\x1b]7501;state=clear:id=manifold-status-demo\x07\x1b]2;manifold: Cancelled\x07\x1b]7501;state=idle:app=manifold:title=bWFuaWZvbGQ6IENhbmNlbGxlZA==\x07",
+        "\x1b]7501;state=clear:id=manifold-status-demo\x07\x1b]7501;state=idle:app=manifold:title=bWFuaWZvbGQ6IENhbmNlbGxlZA==\x07\x1b]2;\x07",
       ),
     ).toBe(true);
     expect(stdout).not.toContain("\x1b]7501;state=clear\x07");
@@ -378,7 +381,7 @@ describe("command program status", () => {
       "manifold: Checking 66%",
       "manifold: Checking 100%",
       "manifold: Finalizing",
-      "manifold: Done",
+      "",
     ]);
 
     const reports = result.stdout
@@ -387,6 +390,7 @@ describe("command program status", () => {
 
     expect(reports.at(-2)).not.toContain(":progress=");
     expect(reports.at(-1)).toContain("state=done:app=manifold:");
+    expect(result.stdout.endsWith("\x1b\\\x1b]2;\x1b\\")).toBe(true);
     expect(reports.at(-1)).toContain(
       `:msg=${Buffer.from("2 matched; 1 ambiguous").toString("base64")}`,
     );
@@ -471,10 +475,12 @@ describe("command program status", () => {
       "\x1b]7501;state=working:app=manifold:",
     );
 
-    expect(stdout).toContain("\x1b]2;manifold: Cancelled\x1b\\");
+    expect(stdout).not.toContain("\x1b]2;manifold: Cancelled");
     expect(stdout.match(/state=idle/g)).toHaveLength(1);
     expect(
-      stdout.endsWith("\x1b]7501;state=idle:app=manifold:title=bWFuaWZvbGQ6IENhbmNlbGxlZA==\x1b\\"),
+      stdout.endsWith(
+        "\x1b]7501;state=idle:app=manifold:title=bWFuaWZvbGQ6IENhbmNlbGxlZA==\x1b\\\x1b]2;\x1b\\",
+      ),
     ).toBe(true);
   });
 
