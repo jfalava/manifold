@@ -105,7 +105,11 @@ describe("registry manganato program status", () => {
         ? "manifold: Checking and linking MangaNato 33%"
         : "manifold: Checking MangaNato links 33%",
     );
-    expect(result.titles).toEqual(result.reports.map((report) => report.title));
+    // Rex names the tab after the window title: the final record keeps it, the title resets.
+    expect(result.titles).toEqual([
+      ...result.reports.slice(0, -1).map((report) => report.title),
+      "",
+    ]);
     expect(result.reports.at(-2)?.title).toBe("manifold: Finalizing report");
     expect(result.reports.at(-2)?.progress).toBeUndefined();
     expect(result.reports.at(-1)).toMatchObject({
@@ -131,6 +135,9 @@ describe("registry manganato program status", () => {
       const result = run(scenario);
       expect(result.status, result.stderr).toBe(scenario === "unmatched" ? 0 : 1);
       expect(result.reports.at(-1)?.state).toBe(scenario === "unmatched" ? "done" : "error");
+      // oxlint-disable-next-line no-control-regex -- Match the final record, then the title reset.
+      expect(result.stderr).toMatch(/\x1b\]7501;state=(?:done|error):[^\x1b]*\x1b\\\x1b\]2;\x1b\\/);
+      expect(result.titles.at(-1)).toBe("");
       expect(result.reports.some((report) => report.state === "blocked")).toBe(false);
       expect(result.reports.at(-1)?.msg).toContain(
         Match.value(scenario).pipe(

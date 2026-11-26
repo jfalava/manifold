@@ -147,19 +147,33 @@ const caption = (message: string) =>
     process.stderr.write(`${message}\n`);
   });
 
+/** Rex names the tab after the window title, so the final step retains its record but resets it. */
 const emitTourRoot = Effect.fnUntraced(function* (
   step: string,
   report: ProgramStatus,
   terminator: StatusTerminator,
+  final = false,
 ) {
   const title = `manifold: ${step}`;
-  yield* Effect.try({
-    try: () => {
-      writeSync(1, `\u001b]2;${title}${terminator === "bel" ? "\u0007" : "\u001b\\"}`);
-    },
-    catch: (cause) => cliError(`Could not set terminal window title: ${errorMessage(cause)}`),
-  });
+
+  const setTitle = (text: string) =>
+    Effect.try({
+      try: () => {
+        writeSync(1, `\u001b]2;${text}${terminator === "bel" ? "\u0007" : "\u001b\\"}`);
+      },
+      catch: (cause) => cliError(`Could not set terminal window title: ${errorMessage(cause)}`),
+    });
+
+  // The final record goes first so the tab does not flash the final title.
+  if (!final) {
+    yield* setTitle(title);
+  }
+
   yield* emitProgramStatus({ ...ROOT, ...report, title }, terminator);
+
+  if (final) {
+    yield* setTitle("");
+  }
 });
 
 const runTour = Effect.fnUntraced(function* (interval: number, terminator: StatusTerminator) {
@@ -196,13 +210,14 @@ const runTour = Effect.fnUntraced(function* (interval: number, terminator: Statu
       "Done",
       { state: "done", message: "Program status tour finished" },
       terminator,
+      true,
     );
     yield* caption("Tour finished. Root done is left for Rex to retain after the shell prompt.");
   }).pipe(
     Effect.onInterrupt(() =>
       Effect.gen(function* () {
         yield* emitProgramStatus({ state: "clear", id: TOUR_ID }, terminator);
-        yield* emitTourRoot("Cancelled", { state: "idle" }, terminator);
+        yield* emitTourRoot("Cancelled", { state: "idle" }, terminator, true);
       }),
     ),
   );

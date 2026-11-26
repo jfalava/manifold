@@ -81,7 +81,16 @@ export const createTerminalSession = (
   let begun = false;
   let previous: string | undefined;
 
-  const publish = (state: "working" | "blocked" | "idle" | "done" | "error", label: string) => {
+  /**
+   * Rex names the tab after the window title, so the final report retains its
+   * 7501 record but resets the title. Its record goes first so the tab does not
+   * flash the final label; no earlier report has that shape, so it always writes.
+   */
+  const publish = (
+    state: "working" | "blocked" | "idle" | "done" | "error",
+    label: string,
+    final = false,
+  ) => {
     if (!enabled || !begun) {
       return;
     }
@@ -108,7 +117,8 @@ export const createTerminalSession = (
       pairs.push(`progress=${progress}`);
     }
 
-    const sequence = `\u001b]2;${title}\u001b\\\u001b]7501;${pairs.join(":")}\u001b\\`;
+    const record = `\u001b]7501;${pairs.join(":")}\u001b\\`;
+    const sequence = final ? `${record}\u001b]2;\u001b\\` : `\u001b]2;${title}\u001b\\${record}`;
 
     if (sequence === previous) {
       return;
@@ -207,7 +217,7 @@ export const createTerminalSession = (
         summary = undefined;
       }
 
-      publish(state, CLOSE_LABELS[state]);
+      publish(state, CLOSE_LABELS[state], true);
     },
   };
 };

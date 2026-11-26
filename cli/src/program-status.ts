@@ -135,7 +135,13 @@ export const withProgramStatus = Effect.fnUntraced(function* <A, E, R>(
   let hasErrors = false;
   let previous: string | undefined;
 
-  const publish = (state: ProgramStatus["state"], label: string, progress?: number) => {
+  // The final report retains its record but resets the title Rex names the tab after.
+  const publish = (
+    state: ProgramStatus["state"],
+    label: string,
+    progress?: number,
+    final = false,
+  ) => {
     if (!enabled) {
       return;
     }
@@ -154,7 +160,10 @@ export const withProgramStatus = Effect.fnUntraced(function* <A, E, R>(
     const sequence = encoded.value;
 
     try {
-      const bytes = Buffer.from(`\u001b]2;${title}\u001b\\${sequence}`);
+      const bytes = Buffer.from(
+        final ? `${sequence}\u001b]2;\u001b\\` : `\u001b]2;${title}\u001b\\${sequence}`,
+      );
+
       let offset = 0;
 
       while (offset < bytes.length) {
@@ -197,11 +206,16 @@ export const withProgramStatus = Effect.fnUntraced(function* <A, E, R>(
 
         if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) {
           summary = undefined;
-          publish("idle", "Cancelled");
+          publish("idle", "Cancelled", undefined, true);
         } else if (Exit.isFailure(exit) || hasErrors) {
-          publish("error", Exit.isFailure(exit) ? "Failed" : "Completed with errors");
+          publish(
+            "error",
+            Exit.isFailure(exit) ? "Failed" : "Completed with errors",
+            undefined,
+            true,
+          );
         } else {
-          publish("done", "Done");
+          publish("done", "Done", undefined, true);
         }
       }),
     ),

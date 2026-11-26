@@ -10,5 +10,6 @@
     "gfm": true,
     "smartPunctuation": true
   },
-  "base": ""
+  "base": "",
+  "configHash": "fca5a49dd44edfb087aea72d4e1eed5c468ad362767a06bbbe65ae8e28cc64fa"
 }

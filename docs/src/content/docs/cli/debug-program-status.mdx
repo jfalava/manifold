@@ -37,10 +37,11 @@ subtree and leaves root `done`. Ctrl-C clears its subtree and reports root
 
 The tour updates the window title and root status label together for each
 step, for example `manifold: Working 37%` or
-`manifold: Waiting for permission 37%`. Completion shows `manifold: Done`;
-Ctrl-C shows `manifold: Cancelled`. Your shell or a later program may replace
-the window title afterward. Individual `--state` reports do not change the
-window title; use `--title` to set their record label.
+`manifold: Waiting for permission 37%`. Completion labels the root record
+`manifold: Done`; Ctrl-C labels it `manifold: Cancelled`. Both then reset the
+window title to empty, because Rex names the tab after the window title and
+would otherwise keep showing the final step. Individual `--state` reports do not
+change the window title; use `--title` to set their record label.
 
 ## Emit a single report
 

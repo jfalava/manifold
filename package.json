@@ -15,29 +15,29 @@
     ],
     "catalogs": {
       "effect": {
-        "effect": "4.1.2",
-        "@effect/platform-bun": "4.1.2",
-        "@effect/platform-node": "4.1.2"
+        "effect": "4.1.4",
+        "@effect/platform-bun": "4.1.4",
+        "@effect/platform-node": "4.1.4"
       },
       "cloudflare": {
-        "@cloudflare/vite-plugin": "1.67.0",
-        "@cloudflare/workers-types": "5.20261104.1",
-        "hono": "4.13.16",
-        "wrangler": "4.157.0"
+        "@cloudflare/vite-plugin": "1.70.0",
+        "@cloudflare/workers-types": "5.20261118.1",
+        "hono": "4.13.19",
+        "wrangler": "4.164.0"
       },
       "build": {
-        "oxlint": "1.91.0",
-        "oxlint-tsgolint": "7.0.2005",
-        "@oxlint/plugins": "1.91.0",
-        "tsrs": "0.21.0-ts7.1.0-beta",
+        "oxlint": "1.94.0",
+        "oxlint-tsgolint": "7.0.2007",
+        "@oxlint/plugins": "1.94.0",
+        "tsrs": "0.25.0-ts7.1.0-beta",
         "typescript": "7.0.2",
-        "oxfmt": "0.76.0",
+        "oxfmt": "0.79.0",
         "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
         "vitest": "5.1.0"
       },
       "styling": {
-        "@tailwindcss/vite": "4.3.4",
-        "tailwindcss": "4.3.4"
+        "@tailwindcss/vite": "4.3.5",
+        "tailwindcss": "4.3.5"
       },
       "types": {
         "bun-types": "1.4.4",
@@ -85,13 +85,13 @@
     "typecheck:global": "bun run --filter @manifold/admin --filter @manifold/api --filter @manifold/cli --filter @manifold/docs --filter @manifold/router --filter @manifold/json --filter @manifold/canonical --filter @manifold/contract --filter @manifold/mangadex --filter @manifold/paperback-runtime --filter @manifold/tracker --filter @manifold/iac typecheck"
   },
   "devDependencies": {
-    "@effect/tsgo": "0.67.1",
+    "@effect/tsgo": "0.70.0",
     "@oxlint/plugins": "catalog:build",
     "@types/node": "catalog:types",
     "mime": "4.1.2",
     "oxfmt": "catalog:build",
-    "oxlint": "1.91.0",
-    "oxlint-tsgolint": "7.0.2005",
+    "oxlint": "1.94.0",
+    "oxlint-tsgolint": "7.0.2007",
     "realm": "catalog:paperback",
     "tsrs": "catalog:build",
     "typescript": "7.0.2"
