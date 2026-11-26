@@ -1,19 +1,88 @@
 name: Manifold CLI - Release
 
+# Publishes the version in cli/package.json as cli-vX.Y.Z when it reaches the
+# stable branch. A push whose version is already released publishes nothing.
 on:
   push:
-    tags:
-      - "cli-v*"
+    branches: [stable]
+
+concurrency:
+  group: manifold-cli-release
+  cancel-in-progress: false
 
 jobs:
-  # Typecheck, lint and every test suite: a tag on a broken commit publishes nothing.
-  check:
+  version:
     permissions:
       contents: read
-    uses: ./.github/workflows/check.yml
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      released: ${{ steps.version.outputs.released }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read version and check for an existing release
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="cli-v$(node -p "require('./cli/package.json').version")"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${TAG} is already released; bump cli/package.json to publish."
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The CLI's typecheck, lint and tests: a broken stable commit publishes nothing.
+  # The rest of the monorepo is checked on Cloudflare.
+  check:
+    needs: version
+    if: needs.version.outputs.released == 'false'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.5
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Composite packages resolve each other through emitted declarations, so
+      # the CLI typecheck fails with TS6305 on a fresh checkout until the
+      # project references are built.
+      - name: Build TypeScript project references
+        run: bunx tsrs -b tsconfig.json
+
+      - name: Typecheck
+        working-directory: cli
+        run: bun run typecheck
+
+      - name: Lint
+        working-directory: cli
+        run: bun run lint
+
+      - name: Test
+        working-directory: cli
+        run: bun run test
+
+      # Same check the release runs: fails when the binary bundles a package
+      # that ships no license file.
+      - name: Bundled third-party license notices
+        working-directory: cli
+        run: |
+          bun scripts/third-party-notices.ts "${RUNNER_TEMP}/THIRD-PARTY-NOTICES.md" \
+            "https://github.com/${GITHUB_REPOSITORY}/tree/${GITHUB_SHA}"
 
   build:
-    needs: check
+    needs: [version, check]
     permissions:
       contents: read
     strategy:
@@ -46,16 +115,6 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-
-      - name: Validate version against tag
-        shell: bash
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#cli-v}"
-          PACKAGE_VERSION="$(node -p "require('./cli/package.json').version")"
-          if [[ "${TAG_VERSION}" != "${PACKAGE_VERSION}" ]]; then
-            echo "Tag version ${TAG_VERSION} does not match cli/package.json version ${PACKAGE_VERSION}."
-            exit 1
-          fi
 
       - name: Build target
         working-directory: cli
@@ -123,7 +182,7 @@ jobs:
             cli/dist/${{ matrix.artifact_name }}.zip.sha256
 
   release:
-    needs: build
+    needs: [version, build]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -148,11 +207,13 @@ jobs:
       # ships the license texts, attributions, and the bundled packages' notices.
       - name: Add license notices to archives
         shell: bash
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
           set -euo pipefail
           mkdir -p notices
           (cd cli && bun scripts/third-party-notices.ts ../notices/THIRD-PARTY-NOTICES.md \
-            "https://github.com/${GITHUB_REPOSITORY}/tree/${GITHUB_REF_NAME}")
+            "https://github.com/${GITHUB_REPOSITORY}/tree/${TAG}")
           cp LICENSE LICENSE-MIT ATTRIBUTIONS.md notices/
           cd dist
           for ARCHIVE in *.zip; do
@@ -160,8 +221,11 @@ jobs:
             sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
           done
 
+      # Reuses a signed tag pushed beforehand; otherwise tags the stable commit.
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: dist/*
           generate_release_notes: true
