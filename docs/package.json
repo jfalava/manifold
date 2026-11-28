@@ -25,28 +25,28 @@
     "typecheck": "astro check"
   },
   "dependencies": {
-    "@cloudflare/nimbus-docs": "0.20.0",
+    "@cloudflare/nimbus-docs": "0.20.2",
     "@fontsource/google-sans-code": "catalog:fonts",
     "@fontsource/ibm-plex-sans": "catalog:fonts",
     "@fontsource/zilla-slab": "catalog:fonts",
     "@iconify-json/ph": "1.2.2",
     "@manifold/json": "workspace:*",
-    "astro": "~7.4.12",
+    "astro": "~7.4.13",
     "astro-icon": "1.2.0",
     "astro-og-canvas": "0.13.3",
     "canvaskit-wasm": "0.42.0",
     "clsx": "2.1.1",
-    "tailwind-merge": "3.7.0"
+    "tailwind-merge": "3.7.1"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.12",
     "@astrojs/compiler": "4.0.0",
     "@oxlint/plugins": "catalog:build",
     "@tailwindcss/vite": "catalog:styling",
-    "@typescript-eslint/parser": "8.73.0",
+    "@typescript-eslint/parser": "8.74.0",
     "cross-spawn": "7.0.6",
     "eslint": "10.15.0",
-    "eslint-plugin-astro": "3.2.1",
+    "eslint-plugin-astro": "3.2.2",
     "oxlint": "catalog:build",
     "pagefind": "1.6.0",
     "prettier": "3.10.1",
@@ -54,7 +54,7 @@
     "satteri": "0.11.7",
     "satteri-source-parser": "npm:satteri@0.11.7",
     "tailwindcss": "catalog:styling",
-    "typescript": "6.0.2"
+    "typescript": "6.0.3"
   },
   "optionalDependencies": {
     "@bruits/satteri-darwin-arm64": "0.11.7",
